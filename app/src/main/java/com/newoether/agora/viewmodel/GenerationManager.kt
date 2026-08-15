@@ -232,7 +232,7 @@ class GenerationManager(
                     conversationId = conversationId,
                     config = config,
                     context = ctx,
-                    loadedMessages = loadedMessages,
+                    loadedMessages = if (transcription.performed) null else loadedMessages,
                 ),
             )
             requestTrace?.mark(
