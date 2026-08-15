@@ -35,26 +35,21 @@ jobs:
       - name: Configure Agora Dev identity
         run: |
           python3 - <<'PY'
+          import re
           from pathlib import Path
           p = Path("app/build.gradle.kts")
           s = p.read_text()
-          old = '''        create("fdroid") {
-              dimension = "store"
-          }'''
-          # Tolerate the repository's current four-space body indentation.
-          if old not in s:
-              old = '''        create("fdroid") {
-              dimension = "store"
-          }'''.replace('              ', '            ')
-          new = '''        create("fdroid") {
-              dimension = "store"
-              applicationIdSuffix = ".dev"
-              versionNameSuffix = "-dev"
-              resValue("string", "app_name", "Agora Dev")
-          }'''.replace('              ', '            ')
-          if old not in s:
-              raise SystemExit("fdroid product flavor block not found")
-          p.write_text(s.replace(old, new, 1))
+          pattern = r'(?ms)^(\s*)create\("fdroid"\)\s*\{\s*\n\s*dimension\s*=\s*"store"\s*\n\s*\}'
+          replacement = '''        create("fdroid") {
+            dimension = "store"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            resValue("string", "app_name", "Agora Dev")
+        }'''
+          out, count = re.subn(pattern, replacement, s, count=1)
+          if count != 1:
+              raise SystemExit(f"expected one fdroid product flavor block, found {count}")
+          p.write_text(out)
           PY
 
       - name: Build PRoot runtime
