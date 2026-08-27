@@ -32,7 +32,33 @@ class DefaultSystemPromptTest {
         assertTrue(systemPrompt.contains("<active_memory_context>\nUser prefers concise answers.\n</active_memory_context>"))
         assertTrue(systemPrompt.contains("Shell and device files:"))
         assertTrue(systemPrompt.contains("configured shell server or the Local Sandbox"))
+        assertTrue(systemPrompt.contains("for factual or externally verifiable questions, prefer using it before substantial reasoning"))
+        assertTrue(systemPrompt.contains("Ground the facts first, then reason and synthesize from retrieved evidence"))
         assertFalse(systemPrompt.contains("generate_image"))
+    }
+
+    @Test
+    fun migrateLegacyWebSearchGuidance_updatesOnlyLegacyStockParagraph() {
+        val current = DefaultSystemPrompt.create(Locale.ENGLISH)
+        val legacyGuidance =
+            "Use web_search for current, time-sensitive, or uncertain facts. Use web_fetch when a search result needs source-level detail. Prefer primary or official sources for technical, legal, medical, financial, or high-impact claims. When web search is used, cite sources and distinguish sourced facts from inference."
+        val legacyEntry = current.copy(
+            systemItems = current.systemItems.map { item ->
+                if (item.type == PromptItemType.CUSTOM && DefaultSystemPrompt.WEB_SEARCH_GUIDANCE in item.value) {
+                    item.copy(value = item.value.replace(DefaultSystemPrompt.WEB_SEARCH_GUIDANCE, legacyGuidance))
+                } else {
+                    item
+                }
+            }
+        )
+
+        val migrated = DefaultSystemPrompt.migrateLegacyWebSearchGuidance(legacyEntry)
+        val systemPrompt = PredefinedVariables.compile(migrated.systemItems, emptyMap())
+
+        assertTrue(systemPrompt.contains(DefaultSystemPrompt.WEB_SEARCH_GUIDANCE))
+        assertFalse(systemPrompt.contains(legacyGuidance))
+        assertEquals(current.userPrependItems, migrated.userPrependItems)
+        assertEquals(current.userPostpendItems, migrated.userPostpendItems)
     }
 
     @Test
