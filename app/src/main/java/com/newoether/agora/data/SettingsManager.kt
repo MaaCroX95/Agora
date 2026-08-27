@@ -310,11 +310,13 @@ class SettingsManager(private val context: Context) {
             }
             val migratedPrompts = migrateLegacyDefaultPromptTitle(currentPrompts, locale)
             val runtimeMigrated = migrateOldRuntimeContext(migratedPrompts, locale)
-            if (runtimeMigrated != currentPrompts) {
-                prefs[SYSTEM_PROMPTS_JSON] = json.encodeToString(runtimeMigrated)
+            val webSearchGuidanceMigrated =
+                runtimeMigrated.map(DefaultSystemPrompt::migrateLegacyWebSearchGuidance)
+            if (webSearchGuidanceMigrated != currentPrompts) {
+                prefs[SYSTEM_PROMPTS_JSON] = json.encodeToString(webSearchGuidanceMigrated)
             }
             if (looksLikeFreshInstall) {
-                if (runtimeMigrated.isEmpty()) {
+                if (webSearchGuidanceMigrated.isEmpty()) {
                     val defaultPrompt = DefaultSystemPrompt.create(locale)
                     prefs[SYSTEM_PROMPTS_JSON] = json.encodeToString(listOf(defaultPrompt))
                     if (prefs[ACTIVE_SYSTEM_PROMPT_ID] == null) {
