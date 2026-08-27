@@ -1,0 +1,68 @@
+name: Apply factual search contract
+
+on:
+  push:
+    branches:
+      - feature/richer-web-search
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/richer-web-search
+          fetch-depth: 0
+
+      - name: Patch contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("development/web-search.md")
+          text = path.read_text()
+          marker = (
+              "- `web_fetch` remains the explicit deeper-reading tool. It accepts an optional focus `query`; on long\n"
+              "  pages that query may select a relevant bounded passage instead of only the leading text. The model\n"
+          )
+          insert = (
+              "- The stock default system prompt may softly prefer `web_search` before substantial reasoning for factual\n"
+              "  or externally verifiable questions when that tool is available: ground facts first, then reason and\n"
+              "  synthesize from retrieved evidence. This is model-facing guidance only, not a harness-level forced first\n"
+              "  tool call. Existing stored stock prompts may receive this guidance only through an exact legacy stock\n"
+              "  paragraph replacement; user-authored prompt content must not be replaced wholesale.\n"
+          )
+          if insert not in text:
+              if marker not in text:
+                  raise SystemExit("Contract insertion marker not found")
+              text = text.replace(marker, insert + marker, 1)
+
+          old_verify = (
+              "10. the generic tool description encourages factual verification and uncertainty resolution beyond\n"
+              "    only current events without introducing a forced search-first generation gate;\n"
+          )
+          new_verify = (
+              "10. the generic tool description encourages factual verification and uncertainty resolution beyond\n"
+              "    only current events, while the stock default prompt softly prefers grounding factual/external claims\n"
+              "    before substantial reasoning without introducing a forced search-first generation gate;\n"
+          )
+          if old_verify in text:
+              text = text.replace(old_verify, new_verify, 1)
+          path.write_text(text)
+          PY
+
+      - name: Commit contract
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add development/web-search.md
+          git commit -m "docs: define factual grounding prompt guidance"
+          git push origin HEAD:feature/richer-web-search
