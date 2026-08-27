@@ -28,9 +28,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import java.util.concurrent.TimeUnit
 
-internal const val WEB_SEARCH_AUTO_READ_RESULT_COUNT = 3
-internal const val WEB_SEARCH_AUTO_READ_MAX_CHARS = 3_000
-
 internal fun searxngSearchUrl(configuredBaseUrl: String, query: String): String {
     val baseUrl = configuredBaseUrl.ifBlank { "https://searx.be" }.trimEnd('/')
     val encodedQuery = java.net.URLEncoder.encode(query, Charsets.UTF_8.name())
@@ -101,21 +98,6 @@ internal fun webSearchProviderDisplayName(provider: String): String = when (prov
     else -> "Brave Search"
 }
 
-internal fun addWebSearchPageExcerpt(
-    result: JsonObject,
-    fullText: String,
-    maxChars: Int = WEB_SEARCH_AUTO_READ_MAX_CHARS,
-): JsonObject {
-    val excerpt = fullText.take(maxChars.coerceAtLeast(1))
-    if (excerpt.isBlank()) return result
-
-    return JsonObject(result.toMutableMap().apply {
-        put("page_excerpt", JsonPrimitive(excerpt))
-        put("page_excerpt_truncated", JsonPrimitive(fullText.length > excerpt.length))
-        put("page_total_chars", JsonPrimitive(fullText.length))
-    })
-}
-
 class WebSearchToolProvider : ToolProvider {
     private val webClient = HttpClient.client.newBuilder()
         .callTimeout(Constants.NETWORK_TOOL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -127,7 +109,7 @@ class WebSearchToolProvider : ToolProvider {
         return listOf(
             ToolDefinition(function = ToolFunction(
                 name = "web_search",
-                description = "Search the web for factual information, verification, current or niche information, and sources relevant to the user's question. Use this whenever external information can improve factual accuracy, verify a claim, resolve uncertainty, or provide up-to-date or source-backed details. For specific factual questions you are not highly confident about, prefer searching over relying on memory; do not reserve web search only for recent events. Results include search snippets plus light page excerpts from the top readable results.",
+                description = "Search the web for factual information, verification, current or niche information, and sources relevant to the user's question. Use this whenever external information can improve factual accuracy, verify a claim, resolve uncertainty, or provide up-to-date or source-backed details. For specific factual questions you are not highly confident about, prefer searching over relying on memory; do not reserve web search only for recent events. Prefer primary or authoritative sources for precise claims. Treat snippets and page excerpts as evidence only for details they actually support; if sources conflict or a needed detail is not supported, search again or use web_fetch instead of filling the gap from memory. Results include search snippets plus light page excerpts from the top readable results.",
                 parameters = ToolParameters(
                     properties = mapOf(
                         "query" to ToolProperty("string", "The search query to execute."),
@@ -138,11 +120,12 @@ class WebSearchToolProvider : ToolProvider {
             )),
             ToolDefinition(function = ToolFunction(
                 name = "web_fetch",
-                description = "Fetch and read the full text content of a web page. Use this after web_search when you need more detail or context than the light page excerpt returned with search results.",
+                description = "Fetch and read a web page when search excerpts are not enough to support a specific claim. Prefer this over inferring missing details from memory, especially for exact dates, relationships, quotes, events, or disputed facts. For long pages, pass query with focus terms for the exact detail you need so the returned text can target the relevant passage.",
                 parameters = ToolParameters(
                     properties = mapOf(
                         "url" to ToolProperty("string", "The URL of the page to fetch."),
-                        "maxChars" to ToolProperty("integer", "Maximum characters of text to return (default 8000, max 100000). If the result has \"truncated\": true, call again with a larger maxChars to get more.")
+                        "query" to ToolProperty("string", "Optional focus terms or phrase for a specific fact. On long pages, use this to return a relevant passage instead of only the beginning."),
+                        "maxChars" to ToolProperty("integer", "Maximum characters of text to return (default 8000, max 100000). If the result has \"truncated\": true and more context is needed, call again with a larger maxChars.")
                     ),
                     required = listOf("url")
                 )
@@ -345,17 +328,36 @@ class WebSearchToolProvider : ToolProvider {
             ?: return@coroutineScope response
         if (results.isEmpty()) return@coroutineScope response
 
-        val enriched = results.mapIndexed { index, element ->
-            async {
-                if (index >= WEB_SEARCH_AUTO_READ_RESULT_COUNT) return@async element
-                val result = element as? JsonObject ?: return@async element
-                val url = (result["url"] as? JsonPrimitive)?.content.orEmpty()
-                if (!isHttpUrl(url)) return@async element
+        val query = (root["query"] as? JsonPrimitive)?.content.orEmpty()
+        val enriched = results.toMutableList()
+        val candidateLimit = minOf(results.size, WEB_SEARCH_AUTO_READ_CANDIDATE_COUNT)
+        var nextIndex = 0
+        var successfulReads = 0
 
-                val page = fetchReadablePage(url) ?: return@async element
-                addWebSearchPageExcerpt(result, page)
+        // Fill up to three useful excerpts in provider-result order. Start with three concurrent
+        // reads; when one fails or is too thin to be useful, spend only the missing slots on later
+        // candidates. The common case remains three requests and the result list is never reordered.
+        while (nextIndex < candidateLimit && successfulReads < WEB_SEARCH_AUTO_READ_RESULT_COUNT) {
+            val needed = WEB_SEARCH_AUTO_READ_RESULT_COUNT - successfulReads
+            val batchEnd = minOf(nextIndex + needed, candidateLimit)
+            val batch = (nextIndex until batchEnd).map { index ->
+                async {
+                    val element = results[index]
+                    val result = element as? JsonObject ?: return@async index to element
+                    val url = (result["url"] as? JsonPrimitive)?.content.orEmpty()
+                    if (!isHttpUrl(url)) return@async index to element
+
+                    val page = fetchReadablePage(url) ?: return@async index to element
+                    index to addWebSearchPageExcerpt(result, page, query)
+                }
+            }.awaitAll()
+
+            batch.forEach { (index, element) ->
+                enriched[index] = element
+                if (hasWebSearchPageExcerpt(element)) successfulReads++
             }
-        }.awaitAll()
+            nextIndex = batchEnd
+        }
 
         JsonObject(root.toMutableMap().apply {
             put("results", JsonArray(enriched))
@@ -372,7 +374,7 @@ class WebSearchToolProvider : ToolProvider {
                 ),
                 callTimeoutMillis = Constants.NETWORK_TOOL_TIMEOUT_MS,
             ) ?: return null
-            htmlToReadableText(html).takeIf { it.isNotBlank() }
+            htmlToReadableText(html).takeIf(::isUsefulWebSearchPage)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -388,6 +390,7 @@ class WebSearchToolProvider : ToolProvider {
         val args = Json.decodeFromString<Map<String, kotlinx.serialization.json.JsonElement>>(argsStr)
         val url = (args["url"] as? JsonPrimitive)?.content
             ?: return buildJsonObject { put("type", "web_fetch"); put("error", "no_url") }.toString()
+        val focusQuery = (args["query"] as? JsonPrimitive)?.content.orEmpty()
         val maxChars = (try {
             (args["maxChars"] as? JsonPrimitive)?.content?.toIntOrNull()
         } catch (_: Exception) { null } ?: 8000).coerceIn(1, 100_000)
@@ -399,14 +402,19 @@ class WebSearchToolProvider : ToolProvider {
             ), callTimeoutMillis = Constants.NETWORK_TOOL_TIMEOUT_MS)
                 ?: return buildJsonObject { put("type", "web_fetch"); put("url", url); put("error", "no_response") }.toString()
             val fullText = htmlToReadableText(html)
-            val text = fullText.take(maxChars)
+            val excerpt = selectWebSearchPageExcerpt(fullText, focusQuery, maxChars)
+            val text = excerpt?.text.orEmpty()
             buildJsonObject {
                 put("type", "web_fetch")
                 put("url", url)
                 put("text", text)
                 put("truncated", fullText.length > text.length)
                 put("totalChars", fullText.length)
+                put("excerptStart", excerpt?.start ?: 0)
+                put("focused", focusQuery.isNotBlank() && (excerpt?.start ?: 0) > 0)
             }.toString()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             buildJsonObject {
                 put("type", "web_fetch")
