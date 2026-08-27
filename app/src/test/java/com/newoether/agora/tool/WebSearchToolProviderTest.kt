@@ -27,6 +27,11 @@ class SearxngSearchUrlTest {
 
 class WebSearchPageExcerptTest {
     @Test
+    fun automaticExcerptBudgetIsThreeThousandCharacters() {
+        assertEquals(3_000, WEB_SEARCH_AUTO_READ_MAX_CHARS)
+    }
+
+    @Test
     fun excerptIsCappedAndPreservesExistingResultMetadata() {
         val result = JsonObject(
             mapOf(
