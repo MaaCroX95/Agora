@@ -11,7 +11,6 @@ permissions:
 
 jobs:
   patch:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,28 +23,30 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path('app/src/main/java/com/newoether/agora/data/SettingsManager.kt')
+          path = Path("app/src/main/java/com/newoether/agora/data/SettingsManager.kt")
           text = path.read_text()
-          old = '''            val migratedPrompts = migrateLegacyDefaultPromptTitle(currentPrompts, locale)
-            val runtimeMigrated = migrateOldRuntimeContext(migratedPrompts, locale)
-            if (runtimeMigrated != currentPrompts) {
-                prefs[SYSTEM_PROMPTS_JSON] = json.encodeToString(runtimeMigrated)
-            }
-            if (looksLikeFreshInstall) {
-                if (runtimeMigrated.isEmpty()) {
-'''
-          new = '''            val migratedPrompts = migrateLegacyDefaultPromptTitle(currentPrompts, locale)
-            val runtimeMigrated = migrateOldRuntimeContext(migratedPrompts, locale)
-            val webSearchGuidanceMigrated =
-                runtimeMigrated.map(DefaultSystemPrompt::migrateLegacyWebSearchGuidance)
-            if (webSearchGuidanceMigrated != currentPrompts) {
-                prefs[SYSTEM_PROMPTS_JSON] = json.encodeToString(webSearchGuidanceMigrated)
-            }
-            if (looksLikeFreshInstall) {
-                if (webSearchGuidanceMigrated.isEmpty()) {
-'''
+          old = (
+              "            val migratedPrompts = migrateLegacyDefaultPromptTitle(currentPrompts, locale)\n"
+              "            val runtimeMigrated = migrateOldRuntimeContext(migratedPrompts, locale)\n"
+              "            if (runtimeMigrated != currentPrompts) {\n"
+              "                prefs[SYSTEM_PROMPTS_JSON] = json.encodeToString(runtimeMigrated)\n"
+              "            }\n"
+              "            if (looksLikeFreshInstall) {\n"
+              "                if (runtimeMigrated.isEmpty()) {\n"
+          )
+          new = (
+              "            val migratedPrompts = migrateLegacyDefaultPromptTitle(currentPrompts, locale)\n"
+              "            val runtimeMigrated = migrateOldRuntimeContext(migratedPrompts, locale)\n"
+              "            val webSearchGuidanceMigrated =\n"
+              "                runtimeMigrated.map(DefaultSystemPrompt::migrateLegacyWebSearchGuidance)\n"
+              "            if (webSearchGuidanceMigrated != currentPrompts) {\n"
+              "                prefs[SYSTEM_PROMPTS_JSON] = json.encodeToString(webSearchGuidanceMigrated)\n"
+              "            }\n"
+              "            if (looksLikeFreshInstall) {\n"
+              "                if (webSearchGuidanceMigrated.isEmpty()) {\n"
+          )
           if old not in text:
-              raise SystemExit('Expected SettingsManager migration block not found')
+              raise SystemExit("Expected SettingsManager migration block not found")
           path.write_text(text.replace(old, new, 1))
           PY
 
