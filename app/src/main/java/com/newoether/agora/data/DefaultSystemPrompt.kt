@@ -13,6 +13,12 @@ object DefaultSystemPrompt {
     private const val SIMPLIFIED_CHINESE_TITLE = "\u9ed8\u8ba4"
     private const val TRADITIONAL_CHINESE_TITLE = "\u9810\u8a2d"
 
+    private const val LEGACY_WEB_SEARCH_GUIDANCE =
+        "Use web_search for current, time-sensitive, or uncertain facts. Use web_fetch when a search result needs source-level detail. Prefer primary or official sources for technical, legal, medical, financial, or high-impact claims. When web search is used, cite sources and distinguish sourced facts from inference."
+
+    internal const val WEB_SEARCH_GUIDANCE =
+        "When web_search is available, for factual or externally verifiable questions, prefer using it before substantial reasoning. Ground the facts first, then reason and synthesize from retrieved evidence rather than spending a long reasoning pass reconciling uncertain factual memory. Also use web_search for current, time-sensitive, niche, specific, or otherwise uncertain facts. Use web_fetch when a search result needs source-level detail. Prefer primary or official sources for technical, legal, medical, financial, or high-impact claims. When web search is used, cite sources and distinguish sourced facts from inference."
+
     fun titleForLocale(locale: Locale): String =
         when (locale.language.lowercase(Locale.ROOT)) {
             "ar" -> ARABIC_TITLE
@@ -69,13 +75,36 @@ object DefaultSystemPrompt {
             Use conversation search tools when the user asks about earlier chats or when relevant context may exist in prior conversations. Search first when you do not know the exact conversation, then read specific conversations by ID if needed.
 
             Web search:
-            Use web_search for current, time-sensitive, or uncertain facts. Use web_fetch when a search result needs source-level detail. Prefer primary or official sources for technical, legal, medical, financial, or high-impact claims. When web search is used, cite sources and distinguish sourced facts from inference.
+            $WEB_SEARCH_GUIDANCE
 
             Shell and device files:
             Shell and file tools operate on a specific device: either a configured shell server or the Local Sandbox. Use list_shells before choosing a device if the target is ambiguous. Use execute_shell_command only when command execution is needed on that device. Use file_read, file_glob, and file_grep to inspect files on a device before editing. Use file_write or file_edit only when the user has asked for file changes or explicitly approved them. Before destructive, state-changing, secret-accessing, or system-affecting operations on any device, explain what will be affected and wait for user approval. Report command and file-operation failures honestly, including the device involved when relevant.
             """.trimIndent()
         )
     )
+
+    /**
+     * Updates only the exact legacy stock web-search paragraph, preserving every other custom item.
+     * This lets installed default prompts receive newer factual-grounding guidance without replacing
+     * user-authored prompt content wholesale.
+     */
+    fun migrateLegacyWebSearchGuidance(entry: SystemPromptEntry): SystemPromptEntry {
+        var changed = false
+        val migratedItems = entry.systemItems.map { item ->
+            if (item.type == PromptItemType.CUSTOM && LEGACY_WEB_SEARCH_GUIDANCE in item.value) {
+                changed = true
+                item.copy(
+                    value = item.value.replace(
+                        LEGACY_WEB_SEARCH_GUIDANCE,
+                        WEB_SEARCH_GUIDANCE,
+                    )
+                )
+            } else {
+                item
+            }
+        }
+        return if (changed) entry.copy(systemItems = migratedItems) else entry
+    }
 
     /**
      * Returns true if [entry]'s resolved system items contain a runtime-context block,
