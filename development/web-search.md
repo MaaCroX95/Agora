@@ -106,12 +106,12 @@ No owner may infer the other capability from a matching company name or legacy s
   STOPPED remain on the shared Thinking Tool terminal path and use the same neutral gray body text as
   ordinary message terminal content, with no error/stopped bar, card background, or rounded container.
 
-## 6. Generic search result enrichment
+## 6. Generic search result enrichment and model guidance
 
 - A successful generic `web_search` keeps the selected provider's normalized result order and
   existing metadata, then automatically attempts a light read of the first three HTTP(S) result
   pages before returning the tool result to the model.
-- Each successful light read adds at most 2,500 characters of readable page text to that same result
+- Each successful light read adds at most 3,000 characters of readable page text to that same result
   as `page_excerpt`, together with `page_excerpt_truncated` and `page_total_chars`. Existing title,
   URL, description/content, provider score, answer, and result ordering must remain intact.
 - The three light reads may execute concurrently, but they remain one bounded `web_search` tool
@@ -121,11 +121,17 @@ No owner may infer the other capability from a matching company name or legacy s
   leaves that search result unchanged. One failed light read must not fail or discard an otherwise
   successful search response. Cancellation still propagates through the ordinary tool/generation
   lifecycle rather than being converted into a page-read miss.
+- The `web_search` tool description must present search as a general factual-grounding and
+  verification capability, not as a feature reserved for recent news. It must explicitly cover
+  factual verification, current or niche/specific information, uncertainty resolution, and
+  source-backed details. For specific factual questions where the model is not highly confident,
+  it should prefer searching over relying on memory.
 - `web_fetch` remains the explicit deeper-reading tool. The model may call it after `web_search` when
   the light excerpt is insufficient, and the ordinary agent/tool continuation loop remains the sole
   owner of that follow-up.
-- Enrichment does not imply a harness-level search-first gate. Enabling generic Web Search exposes
-  the ordinary tools; it does not force a `web_search` call before the model's first Provider pass.
+- Enrichment and stronger tool guidance do not imply a harness-level search-first gate. Enabling
+  generic Web Search exposes the ordinary tools; it does not force a `web_search` call before the
+  model's first Provider pass.
 
 ## 7. Failure and security behavior
 
@@ -154,11 +160,13 @@ Changes touching this subsystem must verify:
 8. Gemini grounding metadata renders one `Google Search` display-only block with normalized sources
    and retained full metadata, without generic-search execution or credentials;
 9. generic `web_search` preserves normalized result metadata/order while adding no more than three
-   light page excerpts of no more than 2,500 characters each;
-10. a failed individual page read leaves that result unchanged and does not convert a successful
+   light page excerpts of no more than 3,000 characters each;
+10. the generic tool description encourages factual verification and uncertainty resolution beyond
+    only current events without introducing a forced search-first generation gate;
+11. a failed individual page read leaves that result unchanged and does not convert a successful
     generic search into a search failure, while cancellation remains propagating;
-11. `web_fetch` remains available for deeper explicit reads and no forced search-first generation
+12. `web_fetch` remains available for deeper explicit reads and no forced search-first generation
     path is introduced;
-12. relevant resource contracts, focused tests, the complete scoped diff, and the project full build.
+13. relevant resource contracts, focused tests, the complete scoped diff, and the project full build.
 
 Compilation alone is not proof of visible order or correct capability ownership.
