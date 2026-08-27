@@ -29,7 +29,7 @@ import kotlinx.serialization.json.put
 import java.util.concurrent.TimeUnit
 
 internal const val WEB_SEARCH_AUTO_READ_RESULT_COUNT = 3
-internal const val WEB_SEARCH_AUTO_READ_MAX_CHARS = 2_500
+internal const val WEB_SEARCH_AUTO_READ_MAX_CHARS = 3_000
 
 internal fun searxngSearchUrl(configuredBaseUrl: String, query: String): String {
     val baseUrl = configuredBaseUrl.ifBlank { "https://searx.be" }.trimEnd('/')
@@ -127,7 +127,7 @@ class WebSearchToolProvider : ToolProvider {
         return listOf(
             ToolDefinition(function = ToolFunction(
                 name = "web_search",
-                description = "Search the web for current information. Results include search snippets plus light page excerpts from the top results when those pages can be read, so use this first for factual grounding and current information.",
+                description = "Search the web for factual information, verification, current or niche information, and sources relevant to the user's question. Use this whenever external information can improve factual accuracy, verify a claim, resolve uncertainty, or provide up-to-date or source-backed details. For specific factual questions you are not highly confident about, prefer searching over relying on memory; do not reserve web search only for recent events. Results include search snippets plus light page excerpts from the top readable results.",
                 parameters = ToolParameters(
                     properties = mapOf(
                         "query" to ToolProperty("string", "The search query to execute."),
