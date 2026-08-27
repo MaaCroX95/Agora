@@ -115,26 +115,35 @@ No owner may infer the other capability from a matching company name or legacy s
 ## 6. Generic search result enrichment and model guidance
 
 - A successful generic `web_search` keeps the selected provider's normalized result order and
-  existing metadata, then automatically attempts a light read of the first three HTTP(S) result
-  pages before returning the tool result to the model.
+  existing metadata, then attempts to fill up to three useful light-read excerpts in that same order.
+  The common case reads the first three HTTP(S) results concurrently. If a candidate is missing,
+  unreadable, empty, too thin to be useful, timed out, or otherwise fails, later results may fill the
+  missing slot, examining at most the first six candidates. The response must still contain no more
+  than three automatic excerpts and must never reorder the provider results.
 - Each successful light read adds at most 3,000 characters of readable page text to that same result
-  as `page_excerpt`, together with `page_excerpt_truncated` and `page_total_chars`. Existing title,
-  URL, description/content, provider score, answer, and result ordering must remain intact.
-- The three light reads may execute concurrently, but they remain one bounded `web_search` tool
+  as `page_excerpt`, together with `page_excerpt_start`, `page_excerpt_truncated`, and
+  `page_total_chars`. Existing title, URL, description/content, provider score, answer, and result
+  ordering must remain intact. On long pages, when at least two distinct search-query terms support a
+  more relevant passage, the bounded excerpt may come from that passage instead of mechanically from
+  character zero; a weak or single-term match falls back to the leading text.
+- Automatic reads may execute concurrently in bounded batches, but they remain one `web_search` tool
   execution. They must not create additional visible tool calls, Provider passes, generation Runs,
   or continuation paths.
-- A missing, non-HTTP(S), unreadable, empty, timed-out, or otherwise failed individual result page
-  leaves that search result unchanged. One failed light read must not fail or discard an otherwise
+- A failed individual result page leaves that search result unchanged and allows a later candidate to
+  fill the automatic-read quota. One failed light read must not fail or discard an otherwise
   successful search response. Cancellation still propagates through the ordinary tool/generation
   lifecycle rather than being converted into a page-read miss.
 - The `web_search` tool description must present search as a general factual-grounding and
   verification capability, not as a feature reserved for recent news. It must explicitly cover
   factual verification, current or niche/specific information, uncertainty resolution, and
   source-backed details. For specific factual questions where the model is not highly confident,
-  it should prefer searching over relying on memory.
-- `web_fetch` remains the explicit deeper-reading tool. The model may call it after `web_search` when
-  the light excerpt is insufficient, and the ordinary agent/tool continuation loop remains the sole
-  owner of that follow-up.
+  it should prefer searching over relying on memory, prefer primary/authoritative evidence for
+  precise claims, and search/fetch again instead of inventing details when excerpts are insufficient
+  or sources conflict.
+- `web_fetch` remains the explicit deeper-reading tool. It accepts an optional focus `query`; on long
+  pages that query may select a relevant bounded passage instead of only the leading text. The model
+  should use it after `web_search` for exact claims not directly supported by snippets/excerpts, and
+  the ordinary agent/tool continuation loop remains the sole owner of that follow-up.
 - Enrichment and stronger tool guidance do not imply a harness-level search-first gate. Enabling
   generic Web Search exposes the ordinary tools; it does not force a `web_search` call before the
   model's first Provider pass.
@@ -166,13 +175,16 @@ Changes touching this subsystem must verify:
 8. Gemini grounding metadata renders one `Google Search` display-only block with normalized sources
    and retained full metadata, without generic-search execution or credentials;
 9. generic `web_search` preserves normalized result metadata/order while adding no more than three
-   light page excerpts of no more than 3,000 characters each;
+   light page excerpts of no more than 3,000 characters each, filling failed/thin early reads from
+   later candidates without examining beyond the first six results;
 10. the generic tool description encourages factual verification and uncertainty resolution beyond
     only current events without introducing a forced search-first generation gate;
 11. a failed individual page read leaves that result unchanged and does not convert a successful
     generic search into a search failure, while cancellation remains propagating;
-12. `web_fetch` remains available for deeper explicit reads and no forced search-first generation
-    path is introduced;
-13. relevant resource contracts, focused tests, the complete scoped diff, and the project full build.
+12. query-focused excerpt selection can reach relevant text beyond a long page's beginning while
+    weak query matches safely fall back to leading text;
+13. `web_fetch` remains available for deeper explicit reads, supports optional query-focused passage
+    selection, and no forced search-first generation path is introduced;
+14. relevant resource contracts, focused tests, the complete scoped diff, and the project full build.
 
 Compilation alone is not proof of visible order or correct capability ownership.
