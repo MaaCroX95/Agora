@@ -17,6 +17,7 @@
     <string name="code_execution">Codeausführung</string>
     <string name="google_search">Google-Suche</string>
     <string name="openai_search">OpenAI-Suche</string>
+    <string name="openai_search_global_desc">Anbietergehostete OpenAI-Suche für OpenAI-kompatible Responses-Unterhaltungen zulassen. Standardmäßig deaktiviert; bei globaler Aktivierung kann sie für einzelne Unterhaltungen deaktiviert werden.</string>
     <string name="thinking">Nachdenken</string>
     <string name="web_search">Websuche</string>
     <string name="ask_agora">Frag Agora alles...</string>

@@ -17,6 +17,7 @@
     <string name="code_execution">Execução de código</string>
     <string name="google_search">Pesquisa Google</string>
     <string name="openai_search">Pesquisa OpenAI</string>
+    <string name="openai_search_global_desc">Permite a Pesquisa OpenAI hospedada pelo provedor em conversas Responses compatíveis com OpenAI. Desativada por padrão; quando habilitada globalmente, pode ser desativada por conversa.</string>
     <string name="thinking">Raciocínio</string>
     <string name="web_search">Pesquisa na web</string>
     <string name="ask_agora">Pergunte qualquer coisa ao Agora...</string>

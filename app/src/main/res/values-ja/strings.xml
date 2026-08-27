@@ -17,6 +17,7 @@
     <string name="code_execution">コード実行</string>
     <string name="google_search">Google 検索</string>
     <string name="openai_search">OpenAI 検索</string>
+    <string name="openai_search_global_desc">OpenAI 互換の Responses 会話で、プロバイダー側の OpenAI Search を許可します。既定ではオフで、グローバルに有効化した場合でも会話ごとにオフにできます。</string>
     <string name="thinking">思考</string>
     <string name="web_search">ウェブ検索</string>
     <string name="ask_agora">Agora に何でも質問...</string>

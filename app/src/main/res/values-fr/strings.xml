@@ -17,6 +17,7 @@
     <string name="code_execution">Exécution de code</string>
     <string name="google_search">Recherche Google</string>
     <string name="openai_search">Recherche OpenAI</string>
+    <string name="openai_search_global_desc">Autoriser la recherche OpenAI hébergée par le fournisseur pour les conversations Responses compatibles avec OpenAI. Désactivée par défaut ; elle peut être désactivée pour chaque conversation lorsqu’elle est activée globalement.</string>
     <string name="thinking">Réflexion</string>
     <string name="web_search">Recherche web</string>
     <string name="ask_agora">Demandez ce que vous voulez à Agora...</string>

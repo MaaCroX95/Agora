@@ -38,6 +38,7 @@ class GenerationRequestBuilderProviderDisplayTest {
         every { settings.defaultPresencePenalty } returns MutableStateFlow(null)
         every { settings.codeExecutionEnabled } returns MutableStateFlow(false)
         every { settings.googleSearchEnabled } returns MutableStateFlow(false)
+        every { settings.openAiWebSearchEnabled } returns MutableStateFlow(true)
         every { settings.thinkingEnabled } returns MutableStateFlow(true)
         every { settings.thinkingLevel } returns MutableStateFlow("medium")
         every { settings.thinkingBudgetEnabled } returns MutableStateFlow(false)

@@ -17,6 +17,7 @@
     <string name="code_execution">Выполнение кода</string>
     <string name="google_search">Поиск Google</string>
     <string name="openai_search">Поиск OpenAI</string>
+    <string name="openai_search_global_desc">Разрешить поиск OpenAI на стороне провайдера для совместимых с OpenAI диалогов Responses. По умолчанию отключено; при глобальном включении его можно отключать для отдельных диалогов.</string>
     <string name="thinking">Размышление</string>
     <string name="web_search">Веб-поиск</string>
     <string name="ask_agora">Спросите Agora о чём угодно...</string>

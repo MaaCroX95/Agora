@@ -17,6 +17,7 @@
     <string name="code_execution">تنفيذ التعليمات البرمجية</string>
     <string name="google_search">بحث Google</string>
     <string name="openai_search">بحث OpenAI</string>
+    <string name="openai_search_global_desc">السماح ببحث OpenAI المستضاف من المزوّد لمحادثات Responses المتوافقة مع OpenAI. يكون معطلاً افتراضيًا؛ ويمكن تعطيله لكل محادثة عند تمكينه عالميًا.</string>
     <string name="thinking">التفكير</string>
     <string name="web_search">بحث الويب</string>
     <string name="ask_agora">اسأل Agora أي شيء...</string>

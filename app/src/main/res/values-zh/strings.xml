@@ -17,6 +17,7 @@
     <string name="code_execution">代码执行</string>
     <string name="google_search">Google 搜索</string>
     <string name="openai_search">OpenAI 搜索</string>
+    <string name="openai_search_global_desc">允许在兼容 OpenAI 的 Responses 对话中使用由提供商托管的 OpenAI Search。默认关闭；全局启用后，仍可针对单个对话关闭。</string>
     <string name="thinking">思考</string>
     <string name="web_search">网页搜索</string>
     <string name="ask_agora">向 Agora 提问...</string>

@@ -17,6 +17,7 @@
     <string name="code_execution">Thực thi mã</string>
     <string name="google_search">Tìm kiếm Google</string>
     <string name="openai_search">Tìm kiếm OpenAI</string>
+    <string name="openai_search_global_desc">Cho phép OpenAI Search do nhà cung cấp lưu trữ cho các cuộc trò chuyện Responses tương thích OpenAI. Tắt theo mặc định; khi được bật toàn cục, vẫn có thể tắt cho từng cuộc trò chuyện.</string>
     <string name="thinking">Đang suy nghĩ</string>
     <string name="web_search">Tìm kiếm Web</string>
     <string name="ask_agora">Hỏi Agora bất cứ điều gì...</string>
