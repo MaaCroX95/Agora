@@ -140,6 +140,11 @@ No owner may infer the other capability from a matching company name or legacy s
   it should prefer searching over relying on memory, prefer primary/authoritative evidence for
   precise claims, and search/fetch again instead of inventing details when excerpts are insufficient
   or sources conflict.
+- The stock default system prompt may softly prefer `web_search` before substantial reasoning for factual
+  or externally verifiable questions when that tool is available: ground facts first, then reason and
+  synthesize from retrieved evidence. This is model-facing guidance only, not a harness-level forced first
+  tool call. Existing stored stock prompts may receive this guidance only through an exact legacy stock
+  paragraph replacement; user-authored prompt content must not be replaced wholesale.
 - `web_fetch` remains the explicit deeper-reading tool. It accepts an optional focus `query`; on long
   pages that query may select a relevant bounded passage instead of only the leading text. The model
   should use it after `web_search` for exact claims not directly supported by snippets/excerpts, and
@@ -178,7 +183,8 @@ Changes touching this subsystem must verify:
    light page excerpts of no more than 3,000 characters each, filling failed/thin early reads from
    later candidates without examining beyond the first six results;
 10. the generic tool description encourages factual verification and uncertainty resolution beyond
-    only current events without introducing a forced search-first generation gate;
+    only current events, while the stock default prompt softly prefers grounding factual/external claims
+    before substantial reasoning without introducing a forced search-first generation gate;
 11. a failed individual page read leaves that result unchanged and does not convert a successful
     generic search into a search failure, while cancellation remains propagating;
 12. query-focused excerpt selection can reach relevant text beyond a long page's beginning while
