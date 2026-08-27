@@ -1,0 +1,184 @@
+name: Apply OpenAI Search global setting
+
+on:
+  push:
+    branches:
+      - feature/richer-web-search
+    paths:
+      - .github/workflows/apply-openai-search-global.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/richer-web-search
+          fetch-depth: 0
+
+      - name: Apply bounded source patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f"{path}: expected exactly one match, found {count}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Persisted preference key: OFF unless explicitly enabled.
+          replace_once(
+              "app/src/main/java/com/newoether/agora/data/SettingsPreferenceSchema.kt",
+              'internal val OPENAI_RESPONSES_API_ENABLED = booleanPreferencesKey("openai_responses_api_enabled")\ninternal val PROVIDER_BASE_URLS',
+              'internal val OPENAI_RESPONSES_API_ENABLED = booleanPreferencesKey("openai_responses_api_enabled")\ninternal val OPENAI_WEB_SEARCH_ENABLED = booleanPreferencesKey("openai_web_search_enabled")\ninternal val PROVIDER_BASE_URLS',
+          )
+
+          # DataStore read/write/reset path.
+          replace_once(
+              "app/src/main/java/com/newoether/agora/data/SettingsManager.kt",
+              '    val openAiResponsesApiEnabled: Flow<Boolean> =\n        context.dataStore.data.map { it[OPENAI_RESPONSES_API_ENABLED] ?: false }\n    val titleGenerationEnabled:',
+              '    val openAiResponsesApiEnabled: Flow<Boolean> =\n        context.dataStore.data.map { it[OPENAI_RESPONSES_API_ENABLED] ?: false }\n    val openAiWebSearchEnabled: Flow<Boolean> =\n        context.dataStore.data.map { it[OPENAI_WEB_SEARCH_ENABLED] ?: false }\n    val titleGenerationEnabled:',
+          )
+          replace_once(
+              "app/src/main/java/com/newoether/agora/data/SettingsManager.kt",
+              '    suspend fun saveOpenAiResponsesApiEnabled(enabled: Boolean) {\n        context.dataStore.edit { it[OPENAI_RESPONSES_API_ENABLED] = enabled }\n    }\n    suspend fun saveTitleGenerationEnabled(enabled: Boolean) {',
+              '    suspend fun saveOpenAiResponsesApiEnabled(enabled: Boolean) {\n        context.dataStore.edit { it[OPENAI_RESPONSES_API_ENABLED] = enabled }\n    }\n    suspend fun saveOpenAiWebSearchEnabled(enabled: Boolean) {\n        context.dataStore.edit { it[OPENAI_WEB_SEARCH_ENABLED] = enabled }\n    }\n    suspend fun saveTitleGenerationEnabled(enabled: Boolean) {',
+          )
+          replace_once(
+              "app/src/main/java/com/newoether/agora/data/SettingsManager.kt",
+              '            prefs.remove(OPENAI_SERVICE_TIER)\n            prefs.remove(OPENAI_RESPONSES_API_ENABLED)\n            prefs.remove(PROVIDER_BASE_URLS)',
+              '            prefs.remove(OPENAI_SERVICE_TIER)\n            prefs.remove(OPENAI_RESPONSES_API_ENABLED)\n            prefs.remove(OPENAI_WEB_SEARCH_ENABLED)\n            prefs.remove(PROVIDER_BASE_URLS)',
+          )
+
+          # Shared repository StateFlow and setter.
+          replace_once(
+              "app/src/main/java/com/newoether/agora/data/repository/SettingsRepository.kt",
+              '    val openAiResponsesApiEnabled: StateFlow<Boolean> =\n        hot(settingsManager.openAiResponsesApiEnabled, false)\n    val providerBaseUrls:',
+              '    val openAiResponsesApiEnabled: StateFlow<Boolean> =\n        hot(settingsManager.openAiResponsesApiEnabled, false)\n    val openAiWebSearchEnabled: StateFlow<Boolean> =\n        hot(settingsManager.openAiWebSearchEnabled, false)\n    val providerBaseUrls:',
+          )
+          replace_once(
+              "app/src/main/java/com/newoether/agora/data/repository/SettingsRepository.kt",
+              '    fun setOpenAiResponsesApiEnabled(enabled: Boolean) =\n        scope.launch { settingsManager.saveOpenAiResponsesApiEnabled(enabled) }\n    fun setDefaultTemperature',
+              '    fun setOpenAiResponsesApiEnabled(enabled: Boolean) =\n        scope.launch { settingsManager.saveOpenAiResponsesApiEnabled(enabled) }\n    fun setOpenAiWebSearchEnabled(enabled: Boolean) =\n        scope.launch { settingsManager.saveOpenAiWebSearchEnabled(enabled) }\n    fun setDefaultTemperature',
+          )
+
+          # One shared policy for global master/default + per-conversation override.
+          policy_path = Path("app/src/main/java/com/newoether/agora/data/OpenAiWebSearchPolicy.kt")
+          if policy_path.exists():
+              raise RuntimeError(f"unexpected existing file: {policy_path}")
+          policy_path.write_text('''package com.newoether.agora.data\n\n/**\n * Resolves provider-hosted OpenAI Search for one conversation.\n *\n * The global setting is a hard master gate and defaults OFF. Once enabled globally, a conversation\n * inherits ON unless it stores an explicit override.\n */\ninternal fun resolveOpenAiWebSearchEnabled(\n    globalEnabled: Boolean,\n    conversationOverride: Boolean?,\n): Boolean = globalEnabled && (conversationOverride ?: true)\n''')
+
+          # Admission snapshot: remove the old implicit true fallback and inherit the global gate.
+          replace_once(
+              "app/src/main/java/com/newoether/agora/viewmodel/GenerationRequestBuilder.kt",
+              'import com.newoether.agora.data.isResponsesApiEnabledForProvider\n',
+              'import com.newoether.agora.data.isResponsesApiEnabledForProvider\nimport com.newoether.agora.data.resolveOpenAiWebSearchEnabled\n',
+          )
+          replace_once(
+              "app/src/main/java/com/newoether/agora/viewmodel/GenerationRequestBuilder.kt",
+              '            openAiWebSearchEnabled = overrides.openAiWebSearchEnabled ?: true,',
+              '            openAiWebSearchEnabled = resolveOpenAiWebSearchEnabled(\n                globalEnabled = settings.openAiWebSearchEnabled.value,\n                conversationOverride = overrides.openAiWebSearchEnabled,\n            ),',
+          )
+
+          # Chat UI mirrors the exact same frozen policy and hides native Search when globally gated off.
+          replace_once(
+              "app/src/main/java/com/newoether/agora/ui/chat/ChatApp.kt",
+              'import com.newoether.agora.data.replaceCustomProviderIdsForDisplay\n',
+              'import com.newoether.agora.data.replaceCustomProviderIdsForDisplay\nimport com.newoether.agora.data.resolveOpenAiWebSearchEnabled\n',
+          )
+          replace_once(
+              "app/src/main/java/com/newoether/agora/ui/chat/ChatApp.kt",
+              '    val openAiResponsesApiEnabled by viewModel.settings.openAiResponsesApiEnabled.collectAsState()\n    val globalWebSearch by viewModel.settings.webSearchEnabled.collectAsState()',
+              '    val openAiResponsesApiEnabled by viewModel.settings.openAiResponsesApiEnabled.collectAsState()\n    val globalOpenAiWebSearch by viewModel.settings.openAiWebSearchEnabled.collectAsState()\n    val globalWebSearch by viewModel.settings.webSearchEnabled.collectAsState()',
+          )
+          replace_once(
+              "app/src/main/java/com/newoether/agora/ui/chat/ChatApp.kt",
+              '    val openAiWebSearchAvailable = resolveOpenAiNativeSearchAvailability(\n        selectedProviderName, openAiResponsesApiEnabled, customProviders,\n    )\n    val openAiWebSearchEnabled = convOverride?.openAiWebSearchEnabled ?: true',
+              '    val openAiWebSearchAvailable = globalOpenAiWebSearch && resolveOpenAiNativeSearchAvailability(\n        selectedProviderName, openAiResponsesApiEnabled, customProviders,\n    )\n    val openAiWebSearchEnabled = resolveOpenAiWebSearchEnabled(\n        globalEnabled = globalOpenAiWebSearch,\n        conversationOverride = convOverride?.openAiWebSearchEnabled,\n    )',
+          )
+          replace_once(
+              "app/src/main/java/com/newoether/agora/ui/chat/ChatApp.kt",
+              'listOf(codeExecutionEnabled, googleSearchEnabled, webSearchEnabled, shellEnabled, shellDevices, currentConversation?.systemPromptId)',
+              'listOf(codeExecutionEnabled, googleSearchEnabled, openAiWebSearchEnabled, webSearchEnabled, shellEnabled, shellDevices, currentConversation?.systemPromptId)',
+          )
+
+          # Settings -> Web Search: native OpenAI Search gets its own independent global control.
+          replace_once(
+              "app/src/main/java/com/newoether/agora/ui/settings/SettingsWebSearchPage.kt",
+              'fun SettingsWebSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {\n    val webSearchEnabled by viewModel.settings.webSearchEnabled.collectAsState()',
+              'fun SettingsWebSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {\n    val openAiWebSearchEnabled by viewModel.settings.openAiWebSearchEnabled.collectAsState()\n    val webSearchEnabled by viewModel.settings.webSearchEnabled.collectAsState()',
+          )
+          replace_once(
+              "app/src/main/java/com/newoether/agora/ui/settings/SettingsWebSearchPage.kt",
+              '                })\n\n                if (webSearchEnabled) {\n                    SettingsGroup(title = stringResource(R.string.web_search_advanced), items = buildList {',
+              '''                })\n\n                SettingsGroup(title = stringResource(R.string.openai_search), items = buildList {\n                    add {\n                        SettingsItem(\n                            headlineContent = { Text(stringResource(R.string.openai_search)) },\n                            supportingContent = { Text(stringResource(R.string.openai_search_global_desc)) },\n                            leadingContent = { Icon(Icons.Default.Cloud, null, tint = MaterialTheme.colorScheme.primary) },\n                            trailingContent = {\n                                Switch(\n                                    checked = openAiWebSearchEnabled,\n                                    onCheckedChange = { viewModel.settings.setOpenAiWebSearchEnabled(it) },\n                                )\n                            },\n                            modifier = Modifier.clickable {\n                                viewModel.settings.setOpenAiWebSearchEnabled(!openAiWebSearchEnabled)\n                            },\n                        )\n                    }\n                })\n\n                if (webSearchEnabled) {\n                    SettingsGroup(title = stringResource(R.string.web_search_advanced), items = buildList {''',
+          )
+
+          # Default resource; localized packs fall back to this until translated.
+          replace_once(
+              "app/src/main/res/values/strings.xml",
+              '    <string name="openai_search">OpenAI Search</string>\n',
+              '    <string name="openai_search">OpenAI Search</string>\n    <string name="openai_search_global_desc">Allow provider-hosted OpenAI Search for OpenAI-compatible Responses conversations. Off by default; individual conversations can turn it off when enabled globally.</string>\n',
+          )
+
+          # Portable settings backup/import follows the same global preference.
+          replace_once(
+              "app/src/main/java/com/newoether/agora/data/PortableSettingsArchive.kt",
+              '        put("openAiResponsesApiEnabled", JsonPrimitive(sm.openAiResponsesApiEnabled.first()))\n        putEncoded("providerBaseUrls", sm.providerBaseUrls.first())',
+              '        put("openAiResponsesApiEnabled", JsonPrimitive(sm.openAiResponsesApiEnabled.first()))\n        put("openAiWebSearchEnabled", JsonPrimitive(sm.openAiWebSearchEnabled.first()))\n        putEncoded("providerBaseUrls", sm.providerBaseUrls.first())',
+          )
+          replace_once(
+              "app/src/main/java/com/newoether/agora/data/PortableSettingsArchive.kt",
+              '        obj.boolean("openAiResponsesApiEnabled")?.let {\n            sm.saveOpenAiResponsesApiEnabled(it)\n        }\n\n        obj.decode<Map<String, String>>("providerBaseUrls")',
+              '        obj.boolean("openAiResponsesApiEnabled")?.let {\n            sm.saveOpenAiResponsesApiEnabled(it)\n        }\n        obj.boolean("openAiWebSearchEnabled")?.let {\n            sm.saveOpenAiWebSearchEnabled(it)\n        }\n\n        obj.decode<Map<String, String>>("providerBaseUrls")',
+          )
+
+          # Authoritative product contracts.
+          replace_once(
+              "development/web-search.md",
+              '- An official OpenAI Provider or a custom Provider selected as OpenAI-compatible, together with\n  Responses API enabled, is sufficient to show `OpenAI Search` in the conversation UI. No\n  model-name allowlist, capability probe, local capability table, or extra relay declaration may\n  hide it. The paired Service Tier availability and request contract belongs to\n  `message-generation.md`.\n- When the user enables OpenAI Search, the immutable generation snapshot carries that choice and the\n  existing OpenAI-compatible Responses request includes the native `web_search` tool.',
+              '- Provider-hosted `OpenAI Search` has an independent global setting on the Web Search settings\n  page. That setting defaults OFF and is a hard master gate; it does not alter generic Web Search\n  provider selection, credentials, or execution.\n- When that global setting is enabled, an official OpenAI Provider or a custom Provider selected as\n  OpenAI-compatible, together with Responses API enabled for that Provider, is sufficient to show\n  `OpenAI Search` in the conversation UI. No model-name allowlist, capability probe, local capability\n  table, or extra relay declaration may hide it. The paired Service Tier availability and request\n  contract belongs to `message-generation.md`.\n- Conversations inherit the global OpenAI Search setting as ON when the master gate is enabled, but\n  may store an explicit per-conversation OFF/ON override. A global OFF always resolves the effective\n  value to OFF regardless of that override. The immutable generation snapshot freezes the resolved\n  value, and only an effective ON includes the native `web_search` tool in the existing\n  OpenAI-compatible Responses request.',
+          )
+          replace_once(
+              "development/web-search.md",
+              '4. official and custom OpenAI-compatible Providers show OpenAI Search whenever Responses is enabled,\n   without a model capability lookup or extra relay declaration;',
+              '4. global OpenAI Search defaults OFF; when enabled, official and custom OpenAI-compatible Providers\n   show OpenAI Search whenever Responses is enabled, without a model capability lookup or extra relay declaration;',
+          )
+
+          replace_once(
+              "development/message-generation.md",
+              'Status: authoritative development contract, 2026-08-13.',
+              'Status: authoritative development contract, 2026-08-27.',
+          )
+          replace_once(
+              "development/message-generation.md",
+              'An official OpenAI Provider or a custom Provider selected as OpenAI-compatible, together with\nResponses API enabled, is sufficient to expose both `OpenAI Search` and `Service Tier` in the\nconversation UI. No model-name allowlist, capability-discovery request, local capability registry,\nor extra relay declaration may suppress those controls. This is a positive availability rule; it\ndoes not redefine any separately supported Service Tier surface outside Responses.\n\nThe immutable generation snapshot freezes both choices. When OpenAI Search is enabled, the existing\nOpenAI-compatible Responses request includes the native `web_search` tool. When Service Tier is\nenabled, that same request includes the normalized selected `service_tier` value. The ordinary\nProvider owns request serialization; UI visibility must not create a second request path.',
+              'Service Tier keeps its existing availability rule: an official OpenAI Provider or a custom Provider\nselected as OpenAI-compatible, together with Responses API enabled, is sufficient to expose it.\nOpenAI Search adds one independent global master gate from Web Search settings. That gate defaults\nOFF. When it is ON, the same OpenAI-compatible + Responses availability rule exposes OpenAI Search;\nwhen it is OFF, OpenAI Search is unavailable and resolves OFF regardless of a stored conversation\noverride. No model-name allowlist, capability-discovery request, local capability registry, or extra\nrelay declaration may add another gate.\n\nThe immutable generation snapshot freezes both choices. OpenAI Search resolves global master first,\nthen the per-conversation override; only an effective ON includes the native `web_search` tool in the\nexisting OpenAI-compatible Responses request. When Service Tier is enabled, that same request\nincludes the normalized selected `service_tier` value. The ordinary Provider owns request\nserialization; UI visibility must not create a second request path.',
+          )
+
+          # Focused policy tests lock the OFF-by-default/master-gate semantics.
+          test_path = Path("app/src/test/java/com/newoether/agora/data/OpenAiWebSearchPolicyTest.kt")
+          if test_path.exists():
+              raise RuntimeError(f"unexpected existing file: {test_path}")
+          test_path.write_text('''package com.newoether.agora.data\n\nimport org.junit.Assert.assertFalse\nimport org.junit.Assert.assertTrue\nimport org.junit.Test\n\nclass OpenAiWebSearchPolicyTest {\n    @Test\n    fun globalOffForcesSearchOff() {\n        assertFalse(resolveOpenAiWebSearchEnabled(globalEnabled = false, conversationOverride = null))\n        assertFalse(resolveOpenAiWebSearchEnabled(globalEnabled = false, conversationOverride = true))\n    }\n\n    @Test\n    fun globalOnDefaultsConversationToOn() {\n        assertTrue(resolveOpenAiWebSearchEnabled(globalEnabled = true, conversationOverride = null))\n    }\n\n    @Test\n    fun conversationCanOverrideEnabledGlobalDefault() {\n        assertFalse(resolveOpenAiWebSearchEnabled(globalEnabled = true, conversationOverride = false))\n        assertTrue(resolveOpenAiWebSearchEnabled(globalEnabled = true, conversationOverride = true))\n    }\n}\n''')
+          PY
+
+      - name: Commit patch to feature branch
+        shell: bash
+        run: |
+          git config user.name "Agora patch workflow"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/src/main development
+          if git diff --cached --quiet; then
+            echo "No patch changes to commit"
+            exit 0
+          fi
+          git commit -m "feat: add global OpenAI Search setting"
+          git push origin HEAD:feature/richer-web-search
