@@ -1,6 +1,6 @@
 # Web Search Product Contract
 
-Status: authoritative, 2026-08-14.
+Status: authoritative, 2026-08-27.
 
 This contract owns Agora's generic Web Search provider settings and execution, plus the boundary
 between that feature and provider-hosted native web search.
@@ -48,7 +48,8 @@ this product boundary or provider order requires explicit user confirmation and 
 
 - `SettingsContracts.kt` owns supported-value normalization and the default.
 - `SettingsWebSearchPage.kt` owns generic provider presentation and exact visible order.
-- `WebSearchToolProvider.kt` owns generic provider execution.
+- `WebSearchToolProvider.kt` owns generic provider execution, normalized result enrichment, and
+  explicit `web_fetch` page reading.
 - Provider configuration, OpenAI-native search availability, `BaseOpenAiProvider`, and
   `GeminiProvider` own their separate provider-hosted search paths.
 
@@ -105,7 +106,28 @@ No owner may infer the other capability from a matching company name or legacy s
   STOPPED remain on the shared Thinking Tool terminal path and use the same neutral gray body text as
   ordinary message terminal content, with no error/stopped bar, card background, or rounded container.
 
-## 6. Failure and security behavior
+## 6. Generic search result enrichment
+
+- A successful generic `web_search` keeps the selected provider's normalized result order and
+  existing metadata, then automatically attempts a light read of the first three HTTP(S) result
+  pages before returning the tool result to the model.
+- Each successful light read adds at most 2,500 characters of readable page text to that same result
+  as `page_excerpt`, together with `page_excerpt_truncated` and `page_total_chars`. Existing title,
+  URL, description/content, provider score, answer, and result ordering must remain intact.
+- The three light reads may execute concurrently, but they remain one bounded `web_search` tool
+  execution. They must not create additional visible tool calls, Provider passes, generation Runs,
+  or continuation paths.
+- A missing, non-HTTP(S), unreadable, empty, timed-out, or otherwise failed individual result page
+  leaves that search result unchanged. One failed light read must not fail or discard an otherwise
+  successful search response. Cancellation still propagates through the ordinary tool/generation
+  lifecycle rather than being converted into a page-read miss.
+- `web_fetch` remains the explicit deeper-reading tool. The model may call it after `web_search` when
+  the light excerpt is insufficient, and the ordinary agent/tool continuation loop remains the sole
+  owner of that follow-up.
+- Enrichment does not imply a harness-level search-first gate. Enabling generic Web Search exposes
+  the ordinary tools; it does not force a `web_search` call before the model's first Provider pass.
+
+## 7. Failure and security behavior
 
 - API-backed generic providers fail with provider-specific missing-credential errors.
 - SearXNG validates and uses its configured URL; DuckDuckGo uses its existing public-search path.
@@ -115,7 +137,7 @@ No owner may infer the other capability from a matching company name or legacy s
 - Native search must use the selected conversation provider's established configuration and
   transport, not a hidden generic-search credential.
 
-## 7. Required verification
+## 8. Required verification
 
 Changes touching this subsystem must verify:
 
@@ -131,6 +153,12 @@ Changes touching this subsystem must verify:
    without local execution;
 8. Gemini grounding metadata renders one `Google Search` display-only block with normalized sources
    and retained full metadata, without generic-search execution or credentials;
-9. relevant resource contracts, focused tests, the complete scoped diff, and the project full build.
+9. generic `web_search` preserves normalized result metadata/order while adding no more than three
+   light page excerpts of no more than 2,500 characters each;
+10. a failed individual page read leaves that result unchanged and does not convert a successful
+    generic search into a search failure, while cancellation remains propagating;
+11. `web_fetch` remains available for deeper explicit reads and no forced search-first generation
+    path is introduced;
+12. relevant resource contracts, focused tests, the complete scoped diff, and the project full build.
 
 Compilation alone is not proof of visible order or correct capability ownership.
