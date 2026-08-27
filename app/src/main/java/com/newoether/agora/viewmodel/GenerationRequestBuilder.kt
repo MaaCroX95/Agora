@@ -9,6 +9,7 @@ import com.newoether.agora.data.PredefinedVariables
 import com.newoether.agora.data.SystemPromptEntry
 import com.newoether.agora.data.providerDisplayName
 import com.newoether.agora.data.isResponsesApiEnabledForProvider
+import com.newoether.agora.data.resolveOpenAiWebSearchEnabled
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.SettingsRepository
@@ -116,7 +117,10 @@ class GenerationRequestBuilder(
             presencePenalty = overrides.presencePenalty ?: settings.defaultPresencePenalty.value,
             codeExecutionEnabled = overrides.codeExecutionEnabled ?: settings.codeExecutionEnabled.value,
             googleSearchEnabled = overrides.googleSearchEnabled ?: settings.googleSearchEnabled.value,
-            openAiWebSearchEnabled = overrides.openAiWebSearchEnabled ?: true,
+            openAiWebSearchEnabled = resolveOpenAiWebSearchEnabled(
+                globalEnabled = settings.openAiWebSearchEnabled.value,
+                conversationOverride = overrides.openAiWebSearchEnabled,
+            ),
             thinkingEnabled = overrides.thinkingEnabled ?: settings.thinkingEnabled.value,
             thinkingLevel = overrides.thinkingLevel ?: settings.thinkingLevel.value,
             thinkingBudgetEnabled = overrides.thinkingBudgetEnabled ?: settings.thinkingBudgetEnabled.value,

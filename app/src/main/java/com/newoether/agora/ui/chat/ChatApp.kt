@@ -48,6 +48,7 @@ import com.newoether.agora.R
 import com.newoether.agora.TopLevelPresentation
 import com.newoether.agora.data.forDisplay
 import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
+import com.newoether.agora.data.resolveOpenAiWebSearchEnabled
 import com.newoether.agora.util.gradientBlur
 import com.newoether.agora.util.verticalBottomOverlayFade
 import com.newoether.agora.model.ContextBudget
@@ -156,6 +157,7 @@ fun ChatApp(
     val displayConversations = remember(conversations, customProviders) { conversations.orEmpty().map { it.forDisplay(customProviders) } }
     val displayMessagesState = remember(messagesState, customProviders) { derivedStateOf { messagesState.value.map { it.forDisplay(customProviders) } } }
     val openAiResponsesApiEnabled by viewModel.settings.openAiResponsesApiEnabled.collectAsState()
+    val globalOpenAiWebSearch by viewModel.settings.openAiWebSearchEnabled.collectAsState()
     val globalWebSearch by viewModel.settings.webSearchEnabled.collectAsState()
     val webSearchApiKeys by viewModel.settings.webSearchApiKeys.collectAsState()
     val globalShell by viewModel.settings.shellEnabled.collectAsState()
@@ -180,15 +182,18 @@ fun ChatApp(
     val openAiServiceTierState = openAiConversationServiceTierState(
         viewModel, convOverride, selectedProviderName, openAiResponsesApiEnabled, customProviders,
     )
-    val openAiWebSearchAvailable = resolveOpenAiNativeSearchAvailability(
+    val openAiWebSearchAvailable = globalOpenAiWebSearch && resolveOpenAiNativeSearchAvailability(
         selectedProviderName, openAiResponsesApiEnabled, customProviders,
     )
-    val openAiWebSearchEnabled = convOverride?.openAiWebSearchEnabled ?: true
+    val openAiWebSearchEnabled = resolveOpenAiWebSearchEnabled(
+        globalEnabled = globalOpenAiWebSearch,
+        conversationOverride = convOverride?.openAiWebSearchEnabled,
+    )
     // Web Search and Shell: global switch OFF → always false, regardless of override
     val webSearchEnabled = globalWebSearch && (convOverride?.webSearchEnabled ?: true)
     val shellEnabled = globalShell && (convOverride?.shellEnabled ?: true)
     val contextWindow = ContextBudget.normalize(convOverride?.contextWindow ?: maxContextWindow)
-    val contextProjectionKey = rememberContextProjectionInvalidationKey(viewModel, listOf(codeExecutionEnabled, googleSearchEnabled, webSearchEnabled, shellEnabled, shellDevices, currentConversation?.systemPromptId))
+    val contextProjectionKey = rememberContextProjectionInvalidationKey(viewModel, listOf(codeExecutionEnabled, googleSearchEnabled, openAiWebSearchEnabled, webSearchEnabled, shellEnabled, shellDevices, currentConversation?.systemPromptId))
     val contextProjection by viewModel.conversationContextProjection.collectAsState()
     LaunchedEffect(currentConversationId, currentConversation?.selectedBranchesJson, selectedModel, contextWindow, allMessagesState.value, contextProjectionKey) {
         viewModel.requestConversationContext(currentConversationId, currentConversation?.selectedBranchesJson, selectedModel, contextWindow)

@@ -57,13 +57,19 @@ No owner may infer the other capability from a matching company name or legacy s
 
 ## 5. Native provider-hosted availability, request, and presentation
 
-- An official OpenAI Provider or a custom Provider selected as OpenAI-compatible, together with
-  Responses API enabled, is sufficient to show `OpenAI Search` in the conversation UI. No
-  model-name allowlist, capability probe, local capability table, or extra relay declaration may
-  hide it. The paired Service Tier availability and request contract belongs to
-  `message-generation.md`.
-- When the user enables OpenAI Search, the immutable generation snapshot carries that choice and the
-  existing OpenAI-compatible Responses request includes the native `web_search` tool. Do not create
+- Provider-hosted `OpenAI Search` has an independent global setting on the Web Search settings
+  page. That setting defaults OFF and is a hard master gate; it does not alter generic Web Search
+  provider selection, credentials, or execution.
+- When that global setting is enabled, an official OpenAI Provider or a custom Provider selected as
+  OpenAI-compatible, together with Responses API enabled for that Provider, is sufficient to show
+  `OpenAI Search` in the conversation UI. No model-name allowlist, capability probe, local capability
+  table, or extra relay declaration may hide it. The paired Service Tier availability and request
+  contract belongs to `message-generation.md`.
+- Conversations inherit the global OpenAI Search setting as ON when the master gate is enabled, but
+  may store an explicit per-conversation OFF/ON override. A global OFF always resolves the effective
+  value to OFF regardless of that override. The immutable generation snapshot freezes the resolved
+  value, and only an effective ON includes the native `web_search` tool in the existing
+  OpenAI-compatible Responses request. Do not create
   another transport, tool Provider, or request adapter.
 - If the official service, model, or relay rejects the tool or request, persist its bounded ordinary
   generation error and display the shared neutral text-only generation terminal presentation. Do not
@@ -150,8 +156,8 @@ Changes touching this subsystem must verify:
 1. the exact visible provider order and DuckDuckGo-first default;
 2. absence of a generic OpenAI provider, resources, settings branch, and transport branch;
 3. legacy `openai` and unknown-value fallback to DuckDuckGo;
-4. official and custom OpenAI-compatible Providers show OpenAI Search whenever Responses is enabled,
-   without a model capability lookup or extra relay declaration;
+4. global OpenAI Search defaults OFF; when enabled, official and custom OpenAI-compatible Providers
+   show OpenAI Search whenever Responses is enabled, without a model capability lookup or extra relay declaration;
 5. an enabled search serializes the native `web_search` tool in the actual Responses request;
 6. Provider rejection persists bounded error text and renders the shared neutral text-only message
    terminal presentation without silent fallback, auto-disablement, or a Snackbar-only path;

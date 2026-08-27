@@ -1,6 +1,6 @@
 # Message Generation Architecture Contract
 
-Status: authoritative development contract, 2026-08-13.
+Status: authoritative development contract, 2026-08-27.
 
 This document is required context for every Agora development task. It defines two global and
 orthogonal message contracts. Features such as Compact consume these contracts; they must not
@@ -533,16 +533,19 @@ input; it leaves that input pending for a later explicit user action.
 
 ### 8.9 Provider-hosted output and OpenAI-compatible controls
 
-An official OpenAI Provider or a custom Provider selected as OpenAI-compatible, together with
-Responses API enabled, is sufficient to expose both `OpenAI Search` and `Service Tier` in the
-conversation UI. No model-name allowlist, capability-discovery request, local capability registry,
-or extra relay declaration may suppress those controls. This is a positive availability rule; it
-does not redefine any separately supported Service Tier surface outside Responses.
+Service Tier keeps its existing availability rule: an official OpenAI Provider or a custom Provider
+selected as OpenAI-compatible, together with Responses API enabled, is sufficient to expose it.
+OpenAI Search adds one independent global master gate from Web Search settings. That gate defaults
+OFF. When it is ON, the same OpenAI-compatible + Responses availability rule exposes OpenAI Search;
+when it is OFF, OpenAI Search is unavailable and resolves OFF regardless of a stored conversation
+override. No model-name allowlist, capability-discovery request, local capability registry, or extra
+relay declaration may add another gate.
 
-The immutable generation snapshot freezes both choices. When OpenAI Search is enabled, the existing
-OpenAI-compatible Responses request includes the native `web_search` tool. When Service Tier is
-enabled, that same request includes the normalized selected `service_tier` value. The ordinary
-Provider owns request serialization; UI visibility must not create a second request path.
+The immutable generation snapshot freezes both choices. OpenAI Search resolves global master first,
+then the per-conversation override; only an effective ON includes the native `web_search` tool in the
+existing OpenAI-compatible Responses request. When Service Tier is enabled, that same request
+includes the normalized selected `service_tier` value. The ordinary Provider owns request
+serialization; UI visibility must not create a second request path.
 
 OpenAI Responses reasoning summaries are public summary content, not raw chain-of-thought. When
 thinking is enabled on an official or custom OpenAI-compatible Responses transport, the request opts

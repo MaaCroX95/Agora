@@ -145,6 +145,8 @@ class SettingsRepository(
         hot(settingsManager.openAiServiceTier, OpenAiServiceTiers.AUTO)
     val openAiResponsesApiEnabled: StateFlow<Boolean> =
         hot(settingsManager.openAiResponsesApiEnabled, false)
+    val openAiWebSearchEnabled: StateFlow<Boolean> =
+        hot(settingsManager.openAiWebSearchEnabled, false)
     val providerBaseUrls: StateFlow<Map<String, String>> = hot(settingsManager.providerBaseUrls, emptyMap())
     val customEndpointResolutions: StateFlow<Map<String, CustomEndpointResolution>> =
         hot(settingsManager.customEndpointResolutions, emptyMap())
@@ -573,6 +575,8 @@ class SettingsRepository(
         scope.launch { settingsManager.saveOpenAiServiceTier(tier) }
     fun setOpenAiResponsesApiEnabled(enabled: Boolean) =
         scope.launch { settingsManager.saveOpenAiResponsesApiEnabled(enabled) }
+    fun setOpenAiWebSearchEnabled(enabled: Boolean) =
+        scope.launch { settingsManager.saveOpenAiWebSearchEnabled(enabled) }
     fun setDefaultTemperature(v: Float?) = scope.launch { settingsManager.saveDefaultTemperature(v) }
     fun setDefaultMaxTokens(v: Int?) = scope.launch { settingsManager.saveDefaultMaxTokens(v) }
     fun setDefaultTopP(v: Float?) = scope.launch { settingsManager.saveDefaultTopP(v) }
