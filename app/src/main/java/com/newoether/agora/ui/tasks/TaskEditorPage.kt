@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -41,7 +42,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -65,6 +66,8 @@ import com.newoether.agora.ui.settings.SettingsGroup
 import com.newoether.agora.ui.settings.SettingsIconContent
 import com.newoether.agora.ui.settings.SettingsItem
 import com.newoether.agora.viewmodel.ChatViewModel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import java.util.Locale
 
 /**
@@ -93,6 +96,9 @@ internal fun isScheduleDraftValid(mode: ScheduleEditorMode, cronExpr: String): B
     } else {
         cronExpr.isBlank() || CronExpression.isValid(cronExpr)
     }
+
+internal fun shouldRestoreTaskDetailScroll(totalItemsCount: Int, savedIndex: Int): Boolean =
+    totalItemsCount > savedIndex.coerceAtLeast(0)
 
 private fun ScheduleType.toEditorMode(): ScheduleEditorMode = when (this) {
     ScheduleType.ONCE -> ScheduleEditorMode.ONCE
@@ -137,46 +143,58 @@ private fun scheduleSeedFromCron(cronExpr: String): TaskSchedule {
 internal fun TaskDetailPage(
     viewModel: ChatViewModel,
     task: TaskEntity,
-    isNew: Boolean,
+    editorSession: TaskEditorSessionViewModel,
     onBack: () -> Unit,
-    onOpenConversation: (taskId: String, conversationId: String) -> Unit,
+    onOpenConversation: (conversationId: String) -> Unit,
 ) {
     val running by viewModel.runningTaskIds.collectAsState()
     val enabledModels by viewModel.settings.enabledModels.collectAsState()
     val modelAliases by viewModel.settings.modelAliases.collectAsState()
     val customProviders by viewModel.settings.customProviders.collectAsState()
 
-    var name by rememberSaveable(task.id) { mutableStateOf(task.name) }
-    var prompt by rememberSaveable(task.id) { mutableStateOf(task.prompt) }
-    var modelId by rememberSaveable(task.id) { mutableStateOf(task.modelId) }
-    var cronExpr by rememberSaveable(task.id) { mutableStateOf(task.cronExpr) }
-    var runAt by rememberSaveable(task.id) { mutableStateOf(task.runAt) }
-    var scheduleEditorModeName by rememberSaveable(task.id) {
-        mutableStateOf(initialScheduleEditorMode(task.cronExpr, task.runAt).name)
-    }
-    var enabled by rememberSaveable(task.id) { mutableStateOf(task.enabled) }
+    val name = editorSession.name
+    val prompt = editorSession.prompt
+    val modelId = editorSession.modelId
+    val cronExpr = editorSession.cronExpr
+    val runAt = editorSession.runAt
+    val scheduleEditorMode = editorSession.scheduleEditorMode
+    val enabled = editorSession.enabled
+    val isNew = editorSession.isNew
     var showModelPicker by remember { mutableStateOf(false) }
     var executionToDelete by remember { mutableStateOf<com.newoether.agora.automation.TaskManager.ExecutionSummary?>(null) }
+    val savedListIndex = remember(task.id) { editorSession.detailListIndex }
+    val savedListOffset = remember(task.id) { editorSession.detailListOffset }
     val listState = rememberLazyListState()
+    var scrollRestored by remember(task.id) { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
     val isRunning = task.id in running
     val executions by viewModel.executionSummariesForTask(task.id).collectAsState(initial = emptyList())
 
-    val scheduleEditorMode = ScheduleEditorMode.valueOf(scheduleEditorModeName)
     val cronValid = isScheduleDraftValid(scheduleEditorMode, cronExpr)
     val isComplete = name.isNotBlank() && prompt.isNotBlank() && cronValid
 
-    fun current() = task.copy(
-        name = name.trim(), prompt = prompt, modelId = modelId,
-        cronExpr = cronExpr, runAt = runAt, enabled = enabled,
-    )
-    fun save() { if (isComplete) viewModel.saveTask(current()) }
-    // Back still saves — an editor that silently discards work on the system back gesture is a
-    // trap. The explicit Save button exists to make the commit point visible, not to gate it.
-    fun leave() { save(); onBack() }
+    fun current() = checkNotNull(editorSession.current(task))
 
-    BackHandler { leave() }
+    BackHandler { onBack() }
+
+    LaunchedEffect(task.id, listState, savedListIndex, savedListOffset) {
+        snapshotFlow { listState.layoutInfo.totalItemsCount }
+            .first { totalItemsCount ->
+                shouldRestoreTaskDetailScroll(totalItemsCount, savedListIndex)
+            }
+        listState.scrollToItem(savedListIndex, savedListOffset)
+        scrollRestored = true
+    }
+
+    LaunchedEffect(task.id, listState, scrollRestored) {
+        if (!scrollRestored) return@LaunchedEffect
+        snapshotFlow {
+            listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        }
+            .distinctUntilChanged()
+            .collect { (index, offset) -> editorSession.updateScroll(index, offset) }
+    }
 
     LaunchedEffect(listState.isScrollInProgress) {
         if (listState.isScrollInProgress) focusManager.clearFocus()
@@ -184,11 +202,17 @@ internal fun TaskDetailPage(
 
     CollapsingSettingsLazyScaffold(
         title = name.ifBlank { stringResource(if (isNew) R.string.task_new else R.string.task_edit) },
-        onBack = { leave() },
+        onBack = onBack,
         modifier = Modifier.clearFocusOnTap(),
         listState = listState,
         actions = {
-            IconButton(enabled = isComplete, onClick = { leave() }) {
+            IconButton(
+                enabled = isComplete,
+                onClick = {
+                    viewModel.saveTask(current())
+                    onBack()
+                },
+            ) {
                 Icon(Icons.Default.Save, contentDescription = stringResource(R.string.task_save))
             }
         },
@@ -197,7 +221,10 @@ internal fun TaskDetailPage(
                 label = stringResource(if (isRunning) R.string.task_running else R.string.task_run_now),
                 icon = Icons.Default.PlayArrow,
                 onClick = {
-                    viewModel.runTaskNow(current())
+                    viewModel.runTaskNow(
+                        current(),
+                        preservePersistedEnabled = false,
+                    )
                 },
                 enabled = isComplete && !isRunning,
                 loading = isRunning,
@@ -213,7 +240,7 @@ internal fun TaskDetailPage(
                             label = stringResource(R.string.task_name),
                             icon = Icons.Default.Label,
                             value = name,
-                            onValueChange = { name = it },
+                            onValueChange = editorSession::updateName,
                             placeholder = stringResource(R.string.task_name_hint),
                             singleLine = true,
                         )
@@ -223,7 +250,7 @@ internal fun TaskDetailPage(
                             label = stringResource(R.string.task_prompt),
                             icon = Icons.Default.Psychology,
                             value = prompt,
-                            onValueChange = { prompt = it },
+                            onValueChange = editorSession::updatePrompt,
                             placeholder = stringResource(R.string.task_prompt_hint),
                             singleLine = false,
                         )
@@ -252,11 +279,11 @@ internal fun TaskDetailPage(
             ScheduleGroup(
                 cronExpr = cronExpr,
                 runAt = runAt,
-                onScheduleChange = { newCron, newRunAt -> cronExpr = newCron; runAt = newRunAt },
+                onScheduleChange = editorSession::updateSchedule,
                 editorMode = scheduleEditorMode,
-                onEditorModeChange = { scheduleEditorModeName = it.name },
+                onEditorModeChange = editorSession::updateScheduleEditorMode,
                 enabled = enabled,
-                onEnabledChange = { enabled = it },
+                onEnabledChange = editorSession::updateEnabled,
             )
             Spacer(Modifier.height(24.dp))
         }
@@ -307,7 +334,13 @@ internal fun TaskDetailPage(
                     execution = execution,
                     customProviders = customProviders,
                     shape = stackedShape(index, executions.size),
-                    onClick = { onOpenConversation(task.id, execution.conversation.id) },
+                    onClick = {
+                        editorSession.updateScroll(
+                            listState.firstVisibleItemIndex,
+                            listState.firstVisibleItemScrollOffset,
+                        )
+                        onOpenConversation(execution.conversation.id)
+                    },
                     menuEnabled = !isRunning,
                     onDelete = { executionToDelete = execution },
                 )
@@ -325,7 +358,10 @@ internal fun TaskDetailPage(
             modelAliases = modelAliases,
             customProviders = customProviders,
             selected = modelId,
-            onSelect = { modelId = it; showModelPicker = false },
+            onSelect = { selectedModelId ->
+                editorSession.updateModelId(selectedModelId)
+                showModelPicker = false
+            },
             onDismiss = { showModelPicker = false },
         )
     }
@@ -644,6 +680,9 @@ private fun ScheduleGroup(
                             color = if (oncePast) MaterialTheme.colorScheme.error
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    },
+                    leadingContent = {
+                        Icon(Icons.Default.Timer, null, tint = MaterialTheme.colorScheme.primary)
                     },
                     trailingContent = {
                         Switch(

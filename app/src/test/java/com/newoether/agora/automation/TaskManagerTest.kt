@@ -14,12 +14,15 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class TaskManagerTest {
     @Test
     fun scheduledIncompleteTaskIsDisabledWithoutCallingModel() = runTest {
@@ -56,6 +59,75 @@ class TaskManagerTest {
         manager.saveTask(task(name = "Task", prompt = ""))
 
         coVerify(exactly = 0) { repository.upsertTask(any()) }
+    }
+
+    @Test
+    fun incompleteRunNowDraftIsNeverPersistedOrExecuted() = runTest {
+        val repository = mockk<TaskRepository>()
+        val engine = mockk<TaskExecutionEngine>()
+        every { repository.getAllTasks() } returns MutableStateFlow(emptyList())
+        coEvery { repository.upsertTask(any()) } returns Unit
+        val manager = TaskManager(
+            repository,
+            mockk(),
+            engine,
+            backgroundScope,
+        )
+
+        manager.runNow(task(name = "", prompt = "Prompt"))
+        manager.runNow(task(name = "Task", prompt = ""))
+
+        coVerify(exactly = 0) { repository.upsertTask(any()) }
+        coVerify(exactly = 0) { engine.runOnce(any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun listRunNowPreservesPersistedEnabledState() = runTest {
+        val repository = mockk<TaskRepository>()
+        val conversations = mockk<ConversationRepository>()
+        val engine = mockk<TaskExecutionEngine>()
+        var stored = task().copy(enabled = false, nextRunAt = 0L)
+        every { repository.getAllTasks() } returns MutableStateFlow(listOf(stored))
+        coEvery { repository.getTask(stored.id) } coAnswers { stored }
+        coEvery { repository.upsertTask(any()) } coAnswers { stored = firstArg() }
+        coEvery { conversations.ensureRunRecovery() } returns Unit
+        coEvery { conversations.getConversation(any()) } returns null
+        coEvery { conversations.upsertConversation(any()) } returns Unit
+        coEvery { engine.runOnce(any(), any(), any(), any(), any(), any(), any()) } returns
+            TaskExecutionEngine.Result.Busy()
+        val manager = TaskManager(repository, conversations, engine, backgroundScope)
+
+        manager.runNow(stored.copy(enabled = true))
+        runCurrent()
+
+        coVerify(atLeast = 1) { repository.upsertTask(any()) }
+        assertFalse(stored.enabled)
+    }
+
+    @Test
+    fun editorRunNowPersistsCurrentEnabledState() = runTest {
+        val repository = mockk<TaskRepository>()
+        val conversations = mockk<ConversationRepository>()
+        val engine = mockk<TaskExecutionEngine>()
+        var stored = task().copy(enabled = false, nextRunAt = 0L)
+        every { repository.getAllTasks() } returns MutableStateFlow(listOf(stored))
+        coEvery { repository.getTask(stored.id) } coAnswers { stored }
+        coEvery { repository.upsertTask(any()) } coAnswers { stored = firstArg() }
+        coEvery { conversations.ensureRunRecovery() } returns Unit
+        coEvery { conversations.getConversation(any()) } returns null
+        coEvery { conversations.upsertConversation(any()) } returns Unit
+        coEvery { engine.runOnce(any(), any(), any(), any(), any(), any(), any()) } returns
+            TaskExecutionEngine.Result.Busy()
+        val manager = TaskManager(repository, conversations, engine, backgroundScope)
+
+        manager.runNow(
+            stored.copy(enabled = true),
+            preservePersistedEnabled = false,
+        )
+        runCurrent()
+
+        coVerify(atLeast = 1) { repository.upsertTask(any()) }
+        assertTrue(stored.enabled)
     }
 
     @Test

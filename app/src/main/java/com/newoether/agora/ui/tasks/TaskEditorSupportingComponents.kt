@@ -1,16 +1,16 @@
 package com.newoether.agora.ui.tasks
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
@@ -18,17 +18,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.DisplayMode
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,7 +43,6 @@ import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -55,8 +52,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,6 +65,7 @@ import com.newoether.agora.automation.ScheduleType
 import com.newoether.agora.automation.TaskSchedule
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.ModelId
+import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import com.newoether.agora.ui.settings.SettingsItem
 import java.text.DateFormatSymbols
 import java.util.Calendar
@@ -95,6 +91,7 @@ internal fun TaskMonthDayPickerDialog(
         mutableIntStateOf(schedule.dayOfMonth.coerceIn(1, daysInYearlyMonth(selectedMonth)))
     }
     var showMonthMenu by remember { mutableStateOf(false) }
+    val allowSelectionAnimation = LocalAgoraMotionPolicy.current.allowSpatialTransitions
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -160,20 +157,38 @@ internal fun TaskMonthDayPickerDialog(
                             ) {
                                 if (day != null) {
                                     val selected = day == selectedDay
-                                    Surface(
-                                        onClick = { selectedDay = day },
-                                        modifier = Modifier.size(40.dp),
-                                        shape = CircleShape,
-                                        color = if (selected) {
+                                    val containerColor by animateColorAsState(
+                                        targetValue = if (selected) {
                                             MaterialTheme.colorScheme.primary
                                         } else {
                                             MaterialTheme.colorScheme.surfaceContainer
                                         },
-                                        contentColor = if (selected) {
+                                        animationSpec = if (allowSelectionAnimation) {
+                                            tween(durationMillis = 180)
+                                        } else {
+                                            snap()
+                                        },
+                                        label = "monthDayContainerColor",
+                                    )
+                                    val contentColor by animateColorAsState(
+                                        targetValue = if (selected) {
                                             MaterialTheme.colorScheme.onPrimary
                                         } else {
                                             MaterialTheme.colorScheme.onSurface
                                         },
+                                        animationSpec = if (allowSelectionAnimation) {
+                                            tween(durationMillis = 180)
+                                        } else {
+                                            snap()
+                                        },
+                                        label = "monthDayContentColor",
+                                    )
+                                    Surface(
+                                        onClick = { selectedDay = day },
+                                        modifier = Modifier.size(40.dp),
+                                        shape = CircleShape,
+                                        color = containerColor,
+                                        contentColor = contentColor,
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Text(day.toString())
@@ -209,8 +224,8 @@ internal fun TaskMonthDayPickerDialog(
     )
 }
 
-/** Full date picker for ONCE. IME exit and calendar expansion are serialized to avoid remeasure. */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+/** Full date picker for ONCE. Material3 owns calendar/input mode and its transition. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TaskDatePickerDialog(
     schedule: TaskSchedule,
@@ -256,17 +271,6 @@ internal fun TaskDatePickerDialog(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
     )
     val dateFormatter = remember { DatePickerDefaults.dateFormatter() }
-    val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val imeVisible = WindowInsets.isImeVisible
-    var pendingCalendarMode by remember { mutableStateOf(false) }
-
-    LaunchedEffect(pendingCalendarMode, imeVisible) {
-        if (pendingCalendarMode && !imeVisible) {
-            pickerState.displayMode = DisplayMode.Picker
-            pendingCalendarMode = false
-        }
-    }
 
     DatePickerDialog(
         onDismissRequest = onDismiss,
@@ -315,51 +319,15 @@ internal fun TaskDatePickerDialog(
                 }
             },
             headline = {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, bottom = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    DatePickerDefaults.DatePickerHeadline(
-                        selectedDateMillis = pickerState.selectedDateMillis,
-                        displayMode = pickerState.displayMode,
-                        dateFormatter = dateFormatter,
-                        modifier = Modifier.weight(1f),
-                        contentColor = pickerColors.headlineContentColor,
-                    )
-                    IconButton(
-                        enabled = !pendingCalendarMode,
-                        onClick = {
-                            if (pickerState.displayMode == DisplayMode.Picker) {
-                                pickerState.displayMode = DisplayMode.Input
-                            } else {
-                                focusManager.clearFocus(force = true)
-                                keyboardController?.hide()
-                                if (imeVisible) {
-                                    pendingCalendarMode = true
-                                } else {
-                                    pickerState.displayMode = DisplayMode.Picker
-                                }
-                            }
-                        },
-                    ) {
-                        Icon(
-                            imageVector = if (pickerState.displayMode == DisplayMode.Picker) {
-                                Icons.Default.Edit
-                            } else {
-                                Icons.Default.CalendarMonth
-                            },
-                            contentDescription = stringResource(
-                                if (pickerState.displayMode == DisplayMode.Picker) {
-                                    R.string.task_switch_to_date_input
-                                } else {
-                                    R.string.task_switch_to_calendar
-                                }
-                            ),
-                        )
-                    }
-                }
+                DatePickerDefaults.DatePickerHeadline(
+                    selectedDateMillis = pickerState.selectedDateMillis,
+                    displayMode = pickerState.displayMode,
+                    dateFormatter = dateFormatter,
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 12.dp),
+                    contentColor = pickerColors.headlineContentColor,
+                )
             },
-            showModeToggle = false,
+            showModeToggle = true,
         )
     }
 }
@@ -551,6 +519,13 @@ internal fun ExecutionRow(
                         )
                     }
                 }
+            },
+            leadingContent = {
+                Icon(
+                    Icons.Default.History,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
             },
             trailingContent = {
                 Box {

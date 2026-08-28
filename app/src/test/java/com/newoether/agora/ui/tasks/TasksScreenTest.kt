@@ -7,6 +7,45 @@ import org.junit.Test
 
 class TasksScreenTest {
     @Test
+    fun initialTaskResolution_onlyAppliesWhileThatTaskOwnsNavigation() {
+        assertTrue(shouldApplyInitialTaskResolution("task-1", "task-1"))
+        assertFalse(shouldApplyInitialTaskResolution("task-1", "new-task"))
+        assertFalse(shouldApplyInitialTaskResolution("task-1", null))
+    }
+
+    @Test
+    fun missingTaskFallback_onlyAppliesToTheActiveResolvedDestination() {
+        assertTrue(
+            shouldClearMissingTaskDestination(
+                renderedTaskId = "task-1",
+                activeTaskId = "task-1",
+                resolvingInitialTaskId = null,
+            ),
+        )
+        assertFalse(
+            shouldClearMissingTaskDestination(
+                renderedTaskId = "outgoing-new-task",
+                activeTaskId = "task-1",
+                resolvingInitialTaskId = null,
+            ),
+        )
+        assertFalse(
+            shouldClearMissingTaskDestination(
+                renderedTaskId = "task-1",
+                activeTaskId = "task-1",
+                resolvingInitialTaskId = "task-1",
+            ),
+        )
+    }
+
+    @Test
+    fun scrollRestore_waitsUntilTheSavedIndexExists() {
+        assertFalse(shouldRestoreTaskDetailScroll(totalItemsCount = 0, savedIndex = 0))
+        assertFalse(shouldRestoreTaskDetailScroll(totalItemsCount = 7, savedIndex = 7))
+        assertTrue(shouldRestoreTaskDetailScroll(totalItemsCount = 8, savedIndex = 7))
+    }
+
+    @Test
     fun countdown_clampsExpiredRunsToZero() {
         assertEquals("0:00", formatTaskCountdown(-1L))
         assertEquals("0:00", formatTaskCountdown(0L))

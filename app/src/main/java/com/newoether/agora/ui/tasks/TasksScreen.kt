@@ -69,45 +69,61 @@ import java.util.UUID
  * The open task is tracked by ID (not entity) so live Room updates — countdown, run status — flow
  * into the detail page without restarting the transition.
  */
+internal fun shouldApplyInitialTaskResolution(
+    resolvingTaskId: String,
+    openTaskId: String?,
+): Boolean = openTaskId == resolvingTaskId
+
+internal fun shouldClearMissingTaskDestination(
+    renderedTaskId: String,
+    activeTaskId: String?,
+    resolvingInitialTaskId: String?,
+): Boolean = renderedTaskId == activeTaskId && renderedTaskId != resolvingInitialTaskId
+
 @Composable
-fun TasksScreen(
+internal fun TasksScreen(
     viewModel: ChatViewModel,
+    editorSession: TaskEditorSessionViewModel,
     taskListState: LazyListState,
     initialTaskId: String? = null,
     onInitialTaskHandled: () -> Unit = {},
     onBack: () -> Unit,
-    onOpenConversation: (taskId: String, conversationId: String) -> Unit,
+    onOpenConversation: (conversationId: String) -> Unit,
 ) {
     val tasks by viewModel.tasks.collectAsState()
-    // Seed the navigation target synchronously. In particular, returning from a history
-    // conversation must compose the detail page on the overlay's first visible frame instead of
-    // briefly composing the list and then animating list -> detail from a LaunchedEffect.
-    var openTaskId by remember { mutableStateOf(initialTaskId) }
-    var resolvingInitialTaskId by remember { mutableStateOf(initialTaskId) }
-    var initialTaskSnapshot by remember { mutableStateOf<TaskEntity?>(null) }
-    // A brand-new task only reaches Room once it has a name + prompt, so backing out of an
-    // untouched draft leaves nothing behind. Until then it lives here.
-    var draft by remember { mutableStateOf<TaskEntity?>(null) }
+    // An Activity recreation has no new navigation event, so the in-memory session is the only
+    // source that may reopen an editor. A new process has an empty ViewModel and opens the list.
+    var openTaskId by remember { mutableStateOf(initialTaskId ?: editorSession.activeTaskId) }
+    var resolvingInitialTaskId by remember {
+        mutableStateOf(initialTaskId?.takeUnless { it == editorSession.activeTaskId })
+    }
+    var observedPersistedTaskId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(initialTaskId) {
         val id = initialTaskId ?: return@LaunchedEffect
+        if (editorSession.activeTaskId == id) {
+            resolvingInitialTaskId = null
+            onInitialTaskHandled()
+            return@LaunchedEffect
+        }
         resolvingInitialTaskId = id
         val initialTask = viewModel.getTask(id)
-        initialTaskSnapshot = initialTask
-        if (initialTask != null) {
-            draft = null
-            openTaskId = initialTask.id
-        } else if (openTaskId == id) {
-            openTaskId = null
+        if (shouldApplyInitialTaskResolution(id, openTaskId)) {
+            if (initialTask != null) {
+                editorSession.open(initialTask, isNew = false)
+            } else {
+                editorSession.clear()
+                openTaskId = null
+            }
         }
         resolvingInitialTaskId = null
         onInitialTaskHandled()
     }
 
-    LaunchedEffect(tasks, initialTaskSnapshot?.id) {
-        val snapshotId = initialTaskSnapshot?.id ?: return@LaunchedEffect
-        if (tasks.any { it.id == snapshotId }) {
-            initialTaskSnapshot = null
+    LaunchedEffect(tasks, openTaskId) {
+        val taskId = openTaskId ?: return@LaunchedEffect
+        if (tasks.any { it.id == taskId }) {
+            observedPersistedTaskId = taskId
         }
     }
 
@@ -126,31 +142,63 @@ fun TasksScreen(
                         id = UUID.randomUUID().toString(),
                         name = "", prompt = "", cronExpr = "", nextRunAt = 0L
                     )
-                    draft = newTask
+                    editorSession.open(newTask, isNew = true)
+                    observedPersistedTaskId = null
                     openTaskId = newTask.id
                 },
-                onOpenTask = { draft = null; openTaskId = it.id },
+                onOpenTask = { task ->
+                    editorSession.open(task, isNew = false)
+                    observedPersistedTaskId = task.id
+                    openTaskId = task.id
+                },
             )
         } else {
             val task = tasks.firstOrNull { it.id == taskId }
-                ?: initialTaskSnapshot?.takeIf { it.id == taskId }
-                ?: draft?.takeIf { it.id == taskId }
-            if (task == null) {
-                if (resolvingInitialTaskId == taskId) {
-                    // Hold the overlay background until the initial task is resolved. Rendering
-                    // the list here would expose both navigation destinations during return.
-                    Box(modifier = Modifier.fillMaxSize())
-                } else {
-                    // Deleted (or never persisted) while open — fall back to the list instead of
-                    // rendering an empty editor.
-                    LaunchedEffect(taskId) { openTaskId = null }
+                ?: editorSession.activeTaskSnapshot?.takeIf { snapshot ->
+                    snapshot.id == taskId &&
+                        (editorSession.isNew || observedPersistedTaskId != taskId)
                 }
+            if (task == null) {
+                when {
+                    resolvingInitialTaskId == taskId && openTaskId == taskId -> {
+                        // Hold the overlay background until the active initial task is resolved.
+                        // Rendering the list here would expose both destinations during return.
+                        Box(modifier = Modifier.fillMaxSize())
+                    }
+
+                    shouldClearMissingTaskDestination(
+                        renderedTaskId = taskId,
+                        activeTaskId = openTaskId,
+                        resolvingInitialTaskId = resolvingInitialTaskId,
+                    ) -> {
+                        // GuardedAnimatedContent keeps outgoing destinations composed. Recheck
+                        // ownership before changing navigation so a stale slot cannot cancel a
+                        // newer target.
+                        LaunchedEffect(taskId) {
+                            if (
+                                shouldClearMissingTaskDestination(
+                                    renderedTaskId = taskId,
+                                    activeTaskId = openTaskId,
+                                    resolvingInitialTaskId = resolvingInitialTaskId,
+                                )
+                            ) {
+                                editorSession.clear()
+                                openTaskId = null
+                            }
+                        }
+                    }
+                }
+            } else if (taskId == openTaskId && editorSession.activeTaskId != taskId) {
+                Box(modifier = Modifier.fillMaxSize())
             } else {
                 TaskDetailPage(
                     viewModel = viewModel,
                     task = task,
-                    isNew = draft?.id == taskId,
-                    onBack = { openTaskId = null },
+                    editorSession = editorSession,
+                    onBack = {
+                        openTaskId = null
+                        editorSession.clear()
+                    },
                     onOpenConversation = onOpenConversation,
                 )
             }

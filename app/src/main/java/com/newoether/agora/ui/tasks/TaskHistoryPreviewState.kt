@@ -1,8 +1,5 @@
 package com.newoether.agora.ui.tasks
 
-import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.listSaver
-
 internal enum class TaskHistoryPreviewPhase {
     IDLE,
     VIEWING,
@@ -51,35 +48,3 @@ internal data class TaskHistoryPreviewState(
         val Idle = TaskHistoryPreviewState()
     }
 }
-
-internal val TaskHistoryPreviewStateSaver: Saver<TaskHistoryPreviewState, Any> =
-    listSaver(
-        save = { state ->
-            listOf(
-                state.phase.name,
-                state.taskId.orEmpty(),
-                state.originConversationId.orEmpty(),
-                state.originWasNewChat,
-            )
-        },
-        restore = { values ->
-            val phase = (values.getOrNull(0) as? String)
-                ?.let { saved -> TaskHistoryPreviewPhase.entries.firstOrNull { it.name == saved } }
-                ?: TaskHistoryPreviewPhase.IDLE
-            val taskId = (values.getOrNull(1) as? String)?.takeIf(String::isNotBlank)
-            val originConversationId =
-                (values.getOrNull(2) as? String)?.takeIf(String::isNotBlank)
-            val originWasNewChat = values.getOrNull(3) as? Boolean ?: true
-
-            if (phase == TaskHistoryPreviewPhase.IDLE || taskId == null) {
-                TaskHistoryPreviewState.Idle
-            } else {
-                TaskHistoryPreviewState(
-                    phase = phase,
-                    taskId = taskId,
-                    originConversationId = originConversationId,
-                    originWasNewChat = originWasNewChat || originConversationId == null,
-                )
-            }
-        },
-    )

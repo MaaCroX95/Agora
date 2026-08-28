@@ -244,20 +244,22 @@ class TaskManager(
     }
 
     /** Starts one exclusive manual run. A second tap while queued/running is ignored. */
-    fun runNow(task: TaskEntity) {
+    fun runNow(task: TaskEntity, preservePersistedEnabled: Boolean = true) {
         if (task.name.isBlank() || task.prompt.isBlank() || !reserve(task.id)) return
 
         lateinit var job: Job
         job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 withTaskLock(task.id) {
-                    // Persist the caller's name/prompt/model/cron (the user expects "Run now" to use
-                    // what they see), but NEVER overwrite the enabled flag from the UI snapshot.
-                    // The snapshot may be stale (e.g. the user just toggled the switch off and the
-                    // flow hasn't re-emitted yet); letting runNow re-enable a disabled task would
-                    // silently revive it. The persisted enabled state is authoritative here.
-                    val persistedEnabled = taskRepository.getTask(task.id)?.enabled ?: task.enabled
-                    saveTaskLocked(task.copy(enabled = persistedEnabled))
+                    // List snapshots may be stale immediately after a switch change, so list Run
+                    // Now keeps the persisted enabled state. The editor explicitly opts out because
+                    // its current draft is the configuration the command must save.
+                    val enabledForSave = if (preservePersistedEnabled) {
+                        taskRepository.getTask(task.id)?.enabled ?: task.enabled
+                    } else {
+                        task.enabled
+                    }
+                    saveTaskLocked(task.copy(enabled = enabledForSave))
                     val persisted = taskRepository.getTask(task.id) ?: task
                     executeLocked(
                         task = persisted,

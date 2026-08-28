@@ -394,7 +394,7 @@ class ChatViewModel(
         viewModelScope.launch { taskManager.deleteTask(taskId) }
     }
 
-    fun runTaskNow(task: com.newoether.agora.data.local.TaskEntity) = taskManager.runNow(task)
+    fun runTaskNow(task: com.newoether.agora.data.local.TaskEntity, preservePersistedEnabled: Boolean = true) = taskManager.runNow(task, preservePersistedEnabled)
 
     // ── Auto Backup ───────────────────────────────────────────
 
