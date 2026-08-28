@@ -119,13 +119,17 @@ class DeveloperInspectorExportTest {
             ),
         )
         val snapshot = DiagnosticSnapshot(
+            state = DiagnosticCaptureState.RUNNING,
             session = DiagnosticSession(
                 id = SESSION_ID,
-                mode = DiagnosticCaptureMode.SENSITIVE_CONTENT,
                 startedAtMillis = 1L,
             ),
             events = events,
+            nextSequence = 4L,
+            retainedPayloadBytes = 321L,
             droppedEventCount = 2L,
+            evictedEventCount = 3L,
+            truncatedPayloadCount = 4L,
         )
 
         val raw = DiagnosticBundleExporter.export(
@@ -148,6 +152,12 @@ class DeveloperInspectorExportTest {
         assertTrue(raw.contains("private response"))
         assertTrue(raw.contains("private parsed tool result"))
         assertTrue(raw.contains(providerId))
+        assertTrue(raw.contains("captureState"))
+        assertTrue(raw.contains("RUNNING"))
+        assertTrue(raw.contains("nextSequence"))
+        assertTrue(raw.contains("retainedPayloadBytes"))
+        assertTrue(raw.contains("evictedEventCount"))
+        assertTrue(raw.contains("truncatedPayloadCount"))
         assertFalse(raw.contains("request-secret"))
         assertFalse(raw.contains("query-secret"))
         assertFalse(raw.contains("header-secret"))
