@@ -395,6 +395,7 @@ class TaskManager(
             modelId = task.modelId,
             systemPromptOverride = task.systemPrompt ?: "",
             foregroundServiceManagedExternally = foregroundServiceManagedExternally,
+            requestKind = "task",
         )
         val outcome = when (result) {
             is TaskExecutionEngine.Result.Success -> {

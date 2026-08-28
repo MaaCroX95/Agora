@@ -301,6 +301,33 @@ class ApprovedFeatureSourceContractTest {
     }
 
     @Test
+    fun providerCollectorsBindStableDiagnosticRequestKinds() {
+        val root = sourceRoot()
+        val title = source(root, "com/newoether/agora/viewmodel/ConversationTitleGenerator.kt")
+        val transcription = source(root, "com/newoether/agora/viewmodel/TranscriptionManager.kt")
+        val generation = source(root, "com/newoether/agora/viewmodel/GenerationManager.kt")
+        val providerPass = source(
+            root,
+            "com/newoether/agora/viewmodel/ProviderPassEffectExecutor.kt",
+        )
+
+        assertTrue(title.contains("requestKind = \"title\""))
+        assertTrue(title.contains("HttpClient.withStreamScope(scope = null, requestTrace = requestTrace)"))
+        assertTrue(title.contains("requestTrace.recordParsedEvent(event)"))
+        assertEquals(
+            2,
+            Regex("requestKind = \"transcription\"").findAll(transcription).count(),
+        )
+        assertEquals(
+            2,
+            Regex("requestTrace\\.recordParsedEvent\\(event\\)")
+                .findAll(transcription).count(),
+        )
+        assertTrue(generation.contains("requestKind = \"tool_continuation\""))
+        assertTrue(providerPass.contains("request.requestTrace?.recordParsedEvent(event)"))
+    }
+
+    @Test
     fun toolResultImageTranscriptionFollowsTheGenericDeclaredRule() {
         val root = sourceRoot()
         val toolProvider = source(root, "com/newoether/agora/tool/ToolProvider.kt")

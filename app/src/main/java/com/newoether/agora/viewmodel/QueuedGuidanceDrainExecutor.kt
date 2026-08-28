@@ -270,7 +270,7 @@ internal class QueuedGuidanceDrainExecutor(
                             persistId = persistId,
                             runId = runId,
                             pass = 0,
-                            callerTag = "guidanceBoundary",
+                            requestKind = "queued_guidance",
                         ),
                         state,
                     )

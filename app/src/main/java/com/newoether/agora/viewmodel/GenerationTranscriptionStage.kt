@@ -6,6 +6,8 @@ import kotlinx.coroutines.Job
 
 internal data class GenerationTranscriptionStageRequest(
     val conversationId: String,
+    val runId: String,
+    val pass: Int,
     val parentId: String?,
     val context: GenerationContext,
     val generationJob: Job?,
@@ -50,6 +52,8 @@ internal class GenerationTranscriptionStage(
             val (segments, error) = manager.transcribe(
                 targets,
                 request.conversationId,
+                request.runId,
+                request.pass,
                 context.transcriptionProviderName,
                 context.transcriptionModelId,
                 context.transcriptionApiKey,

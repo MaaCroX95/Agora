@@ -317,7 +317,7 @@ class StandardGenerationContinuationLauncherTest {
                     ),
                     modelMessageId = target.id,
                     replacementMessageId = target.id,
-                    callerTag = "recompact",
+                    requestKind = "compact",
                 ),
                 state,
             ),
@@ -331,7 +331,7 @@ class StandardGenerationContinuationLauncherTest {
         assertEquals("fresh-compact-run", replacementRun.captured.id)
         assertEquals(parent.runId, replacementRun.captured.parentRunId)
         assertEquals(target.timestamp, launchedRequest.captured.startTime)
-        assertEquals("recompact", launchedRequest.captured.callerTag)
+        assertEquals("compact", launchedRequest.captured.requestKind)
         coVerify(exactly = 1) {
             conversations.beginRecompactContextCompact(
                 any(),

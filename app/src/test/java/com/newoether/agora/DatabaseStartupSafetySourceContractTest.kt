@@ -59,6 +59,21 @@ class DatabaseStartupSafetySourceContractTest {
         }
     }
 
+    @Test
+    fun `diagnostic capture restores before the database startup gate`() {
+        val application = File(
+            locateMainSourceRoot(),
+            "com/newoether/agora/AgoraApplication.kt",
+        ).readText()
+        val diagnosticsInitialize = application.indexOf("DeveloperDiagnostics.initialize(")
+        val databaseInitialize = application.indexOf("startupGate.initialize()")
+
+        assertTrue(diagnosticsInitialize >= 0)
+        assertTrue(databaseInitialize > diagnosticsInitialize)
+        assertTrue(application.contains("catch (cancelled: CancellationException)"))
+        assertTrue(application.contains("Diagnostic capture initialization failed closed"))
+    }
+
     private fun locateMainSourceRoot(): File {
         var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
         repeat(8) {

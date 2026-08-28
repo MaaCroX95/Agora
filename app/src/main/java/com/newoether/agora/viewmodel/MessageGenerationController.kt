@@ -525,6 +525,7 @@ internal class MessageGenerationController(
         images: List<String>,
         attachments: List<SelectedAttachment>,
         modelId: String,
+        requestKind: String = "chat",
         onAccepted: suspend (SendAcceptance) -> Unit,
         newConversationSettings: ConversationSettings? = null,
         scrollPolicy: SendScrollPolicy = SendScrollPolicy.FORCE,
@@ -673,6 +674,7 @@ internal class MessageGenerationController(
                 userText = text,
                 payloadLease = payloadLease,
                 modelId = modelId,
+                requestKind = requestKind,
                 newConversationSettings = newConversationSettings,
                 alreadyHoldsLock = alreadyHoldsLock,
                 requestScroll = resolveScrollCallback(scrollPolicy),
@@ -714,6 +716,7 @@ internal class MessageGenerationController(
         genId: String,
         text: String,
         modelId: String,
+        requestKind: String,
     ): AutomationSendOutcome {
         var generationJob: kotlinx.coroutines.Job? = null
         var createdModelMessageId: String? = null
@@ -725,6 +728,7 @@ internal class MessageGenerationController(
             images = emptyList(),
             attachments = emptyList(),
             modelId = modelId,
+            requestKind = requestKind,
             onAccepted = {},
             scrollPolicy = SendScrollPolicy.ATTACHED_ONLY,
             alreadyHoldsLock = true,

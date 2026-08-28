@@ -37,8 +37,8 @@ object DeveloperDiagnostics {
     fun newRequestContext(
         requestId: String,
         conversationId: String,
-        runId: String,
-        pass: Int,
+        runId: String?,
+        pass: Int?,
         provider: String,
         model: String,
         requestKind: String,
@@ -47,7 +47,7 @@ object DeveloperDiagnostics {
         return DiagnosticRequestContext(
             requestId = DiagnosticRedactor.safeIdentifier(requestId).take(MAX_IDENTIFIER_LENGTH),
             conversationIdHash = ConversationRuntimeTrace.hashConversationId(conversationId),
-            runId = DiagnosticRedactor.safeIdentifier(runId).take(MAX_IDENTIFIER_LENGTH),
+            runId = runId?.let(DiagnosticRedactor::safeIdentifier)?.take(MAX_IDENTIFIER_LENGTH),
             pass = pass,
             provider = DiagnosticRedactor.safeIdentifier(provider).take(MAX_IDENTIFIER_LENGTH),
             model = DiagnosticRedactor.safeIdentifier(model).take(MAX_IDENTIFIER_LENGTH),

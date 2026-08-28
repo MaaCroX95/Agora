@@ -1,5 +1,6 @@
 package com.newoether.agora.diagnostics
 
+import com.newoether.agora.api.HttpClient
 import com.newoether.agora.api.StreamEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -106,6 +107,45 @@ class DeveloperDiagnosticsTest {
         assertTrue(parsed.content?.value.orEmpty().contains("visible text"))
         assertFalse(parsed.content?.value.orEmpty().contains("sk-abcdefghijklmnop"))
         assertTrue(parsed.content?.value.orEmpty().contains("[REDACTED_SECRET]"))
+    }
+
+    @Test
+    fun `paused capture ignores events from an existing request context`() {
+        runBlocking { DeveloperDiagnostics.startCapture() }
+        val context = checkNotNull(requestContext())
+        runBlocking { DeveloperDiagnostics.pauseCapture() }
+
+        DeveloperDiagnostics.recordParsedStreamEvent(
+            context,
+            StreamEvent.TextChunk("must not be retained"),
+        )
+
+        val snapshot = runBlocking { DeveloperDiagnostics.flush() }
+        assertFalse(snapshot.isCaptureActive)
+        assertTrue(snapshot.events.isEmpty())
+    }
+
+    @Test
+    fun `child request trace keeps correlation and marks tool continuation`() {
+        runBlocking { DeveloperDiagnostics.startCapture() }
+        val context = checkNotNull(requestContext())
+        val trace = HttpClient.RequestTrace(
+            requestId = "request-id",
+            origin = "chat",
+            diagnosticContext = context,
+        ).child(
+            requestKind = "tool_continuation",
+            requestIdSuffix = "provider-1",
+        )
+
+        trace.recordParsedEvent(StreamEvent.TextChunk("continued"))
+
+        val event = runBlocking { DeveloperDiagnostics.flush() }.events.single()
+        assertEquals("request-id:provider-1", event.context.requestId)
+        assertEquals(context.conversationIdHash, event.context.conversationIdHash)
+        assertEquals("run-id", event.context.runId)
+        assertEquals(3, event.context.pass)
+        assertEquals("tool_continuation", event.context.requestKind)
     }
 
     private fun requestContext() = DeveloperDiagnostics.newRequestContext(

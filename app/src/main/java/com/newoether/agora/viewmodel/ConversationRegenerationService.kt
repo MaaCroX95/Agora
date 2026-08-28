@@ -193,7 +193,7 @@ internal class ConversationRegenerationService(
                             persistId = persistId,
                             runId = runId,
                             pass = 0,
-                            callerTag = "regenerate",
+                            requestKind = "chat",
                         ),
                         state,
                     )

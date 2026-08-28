@@ -34,6 +34,20 @@ object HttpClient {
         @Volatile
         private var currentDiagnosticContext = diagnosticContext
 
+        internal fun child(requestKind: String, requestIdSuffix: String): RequestTrace {
+            require(requestKind.isNotBlank())
+            require(requestIdSuffix.isNotBlank())
+            val childRequestId = "$requestId:$requestIdSuffix"
+            return RequestTrace(
+                requestId = childRequestId,
+                origin = requestKind,
+                diagnosticContext = diagnosticContext?.copy(
+                    requestId = childRequestId,
+                    requestKind = requestKind,
+                ),
+            )
+        }
+
         internal fun beginHttpExchange(): DiagnosticRequestContext? {
             val base = diagnosticContext ?: return null
             val exchange = base.copy(

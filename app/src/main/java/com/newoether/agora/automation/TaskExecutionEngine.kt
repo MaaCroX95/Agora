@@ -2,11 +2,13 @@ package com.newoether.agora.automation
 
 import android.app.Application
 import android.content.Context
+import com.newoether.agora.api.HttpClient
 import com.newoether.agora.api.local.LocalProvider
 import com.newoether.agora.data.MemoryManager
 import com.newoether.agora.data.SkillManager
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.SettingsRepository
+import com.newoether.agora.diagnostics.DeveloperDiagnostics
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
@@ -102,12 +104,22 @@ class TaskExecutionEngine(
      */
     private val foregroundBridgeLock = Any()
     private var foregroundBridgeOwner: Any? = null
-    private var foregroundSendBridge: (suspend (conversationId: String, userText: String, modelId: String) -> BridgeOutcome)? = null
+    private var foregroundSendBridge: (suspend (
+        conversationId: String,
+        userText: String,
+        modelId: String,
+        requestKind: String,
+    ) -> BridgeOutcome)? = null
 
     /** Owner-token binding prevents an older ViewModel's late onCleared from erasing a newer one. */
     fun attachForegroundSendBridge(
         owner: Any,
-        bridge: suspend (conversationId: String, userText: String, modelId: String) -> BridgeOutcome,
+        bridge: suspend (
+            conversationId: String,
+            userText: String,
+            modelId: String,
+            requestKind: String,
+        ) -> BridgeOutcome,
     ) = synchronized(foregroundBridgeLock) {
         foregroundBridgeOwner = owner
         foregroundSendBridge = bridge
@@ -342,6 +354,7 @@ class TaskExecutionEngine(
         systemPromptOverride: String? = null,
         foregroundServiceManagedExternally: Boolean = false,
         precondition: suspend () -> Boolean = { true },
+        requestKind: String = "task",
     ): Result = automationExecutionGate.withExecution {
         executionCoordinator.withAutomationConversationLock(conversationId) {
             runOnceLocked(
@@ -351,6 +364,7 @@ class TaskExecutionEngine(
                 systemPromptOverride = systemPromptOverride,
                 foregroundServiceManagedExternally = foregroundServiceManagedExternally,
                 precondition = precondition,
+                requestKind = requestKind,
             )
         }
     }
@@ -367,6 +381,7 @@ class TaskExecutionEngine(
         systemPromptOverride: String? = null,
         foregroundServiceManagedExternally: Boolean = false,
         precondition: suspend () -> Boolean = { true },
+        requestKind: String = "loop",
     ): Result = runOnceLocked(
         conversationId = conversationId,
         userText = userText,
@@ -374,6 +389,7 @@ class TaskExecutionEngine(
         systemPromptOverride = systemPromptOverride,
         foregroundServiceManagedExternally = foregroundServiceManagedExternally,
         precondition = precondition,
+        requestKind = requestKind,
     )
 
     private suspend fun runOnceLocked(
@@ -383,7 +399,9 @@ class TaskExecutionEngine(
         systemPromptOverride: String?,
         foregroundServiceManagedExternally: Boolean,
         precondition: suspend () -> Boolean,
+        requestKind: String,
     ): Result {
+        require(requestKind.isNotBlank())
         settings.awaitInitialLoad()
         providerRegistry.awaitInitialSync()
         convRepo.ensureRunRecovery()
@@ -402,7 +420,14 @@ class TaskExecutionEngine(
         // actually happened rather than merely "the send was accepted".
         val bridge = currentForegroundSendBridge()
         if (bridge != null) {
-            when (val outcome = bridge(conversationId, userText, effectiveModelId)) {
+            when (
+                val outcome = bridge(
+                    conversationId,
+                    userText,
+                    effectiveModelId,
+                    requestKind,
+                )
+            ) {
                 is BridgeOutcome.Completed ->
                     return Result.Success(outcome.modelMessageId, outcome.text)
                 is BridgeOutcome.Busy -> return Result.Busy(outcome.reason)
@@ -586,6 +611,19 @@ class TaskExecutionEngine(
             generationState.loadingChange(uiToken, true)
             generationState.streamUpdate(uiToken, placeholder)
 
+            val requestTrace = HttpClient.RequestTrace(
+                requestId = modelMessageId,
+                origin = requestKind,
+                diagnosticContext = DeveloperDiagnostics.newRequestContext(
+                    requestId = modelMessageId,
+                    conversationId = conversationId,
+                    runId = runId,
+                    pass = 0,
+                    provider = generationSnapshot.config.providerName,
+                    model = generationSnapshot.selectedModelId,
+                    requestKind = requestKind,
+                ),
+            )
             val baseCallbacks = generationState.callbacksFor(uiToken, persistToken)
             val generationResult = withContext(ownerJob) {
                 generationManager.generate(
@@ -620,6 +658,7 @@ class TaskExecutionEngine(
                     },
                 ),
                 streamScope = generationState.streamScope,
+                requestTrace = requestTrace,
                 )
             }
             val boundaryParentId = generationResult.followUpParentMessageId
@@ -640,7 +679,7 @@ class TaskExecutionEngine(
                             persistId = persistToken,
                             runId = runId,
                             pass = 0,
-                            callerTag = "automation",
+                            requestKind = requestKind,
                         ),
                         parentMessageId = boundaryParentId,
                         config = automaticCompactConfig,

@@ -288,6 +288,7 @@ class LoopManager(
                     latest != null && latest.revision == claimed.revision &&
                         latest.cycleCount == claimed.cycleCount
                 },
+                requestKind = "loop",
             )
         } catch (e: CancellationException) {
             throw e

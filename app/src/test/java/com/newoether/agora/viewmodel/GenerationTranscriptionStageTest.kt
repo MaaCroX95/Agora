@@ -43,6 +43,8 @@ class GenerationTranscriptionStageTest {
             manager.transcribe(
                 listOf(target),
                 "conversation",
+                "run",
+                2,
                 "provider",
                 "model",
                 "key",
@@ -54,7 +56,7 @@ class GenerationTranscriptionStageTest {
                 any(),
             )
         } coAnswers {
-            val progress = arg<suspend (ChatMessage) -> Unit>(10)
+            val progress = arg<suspend (ChatMessage) -> Unit>(12)
             progress(snapshot)
             listOf(transcriptionSegment) to null
         }
@@ -83,6 +85,8 @@ class GenerationTranscriptionStageTest {
             manager.transcribe(
                 listOf(target),
                 "conversation",
+                "run",
+                2,
                 "provider",
                 "model",
                 "key",
@@ -94,7 +98,7 @@ class GenerationTranscriptionStageTest {
                 any(),
             )
         } coAnswers {
-            arg<suspend (ChatMessage) -> Unit>(10)(snapshot)
+            arg<suspend (ChatMessage) -> Unit>(12)(snapshot)
             throw expected
         }
         val execution = GenerationTranscriptionStage(manager).newExecution()
@@ -112,6 +116,8 @@ class GenerationTranscriptionStageTest {
 
     private fun request(context: GenerationContext) = GenerationTranscriptionStageRequest(
         conversationId = "conversation",
+        runId = "run",
+        pass = 2,
         parentId = "user",
         context = context,
         generationJob = null,

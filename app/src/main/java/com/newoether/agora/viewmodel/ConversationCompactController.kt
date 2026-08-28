@@ -157,7 +157,7 @@ internal class ConversationCompactController(
                 snapshot = generationSnapshot,
                 modelMessageId = messageId,
                 replacementMessageId = target?.id,
-                callerTag = if (target == null) "compact" else "recompact",
+                requestKind = "compact",
                 queueDrainRequiresSuccess = true,
                 transformFinalText = transform,
             ),

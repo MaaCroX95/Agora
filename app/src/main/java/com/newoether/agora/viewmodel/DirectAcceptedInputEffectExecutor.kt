@@ -58,6 +58,7 @@ internal data class DirectAcceptedInputRequest(
     val userText: String,
     val payloadLease: PreparedMessagePayloadLease,
     val modelId: String,
+    val requestKind: String,
     val newConversationSettings: ConversationSettings? = null,
     val alreadyHoldsLock: Boolean,
     val requestScroll: (conversationId: String, messageId: String) -> Unit,
@@ -71,6 +72,7 @@ internal data class DirectAcceptedInputRequest(
     init {
         require(inputEffect.identity.pass == 0)
         require(modelId.isNotBlank())
+        require(requestKind.isNotBlank())
         require(newConversation == null || newConversation.id == conversationId)
         require(wasNewChat == (newConversation != null))
     }
@@ -307,7 +309,7 @@ internal class DirectAcceptedInputEffectExecutor(
                         persistId = persistId,
                         runId = request.runId,
                         pass = 0,
-                        callerTag = "sendMessage",
+                        requestKind = request.requestKind,
                     ),
                     state,
                 )

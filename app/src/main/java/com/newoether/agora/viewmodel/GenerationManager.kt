@@ -271,6 +271,8 @@ class GenerationManager(
             val transcription = transcriptionExecution.execute(
                 request = GenerationTranscriptionStageRequest(
                     conversationId = conversationId,
+                    runId = runId,
+                    pass = pass,
                     parentId = parentId,
                     context = ctx,
                     generationJob = generationJob,
@@ -424,6 +426,10 @@ class GenerationManager(
                                         image = image,
                                         ctx = ctx,
                                         generationJob = generationJob,
+                                        conversationId = conversationId,
+                                        runId = runId,
+                                        pass = pass,
+                                        modelMessageId = modelMessageId,
                                         onProgress = onProgress,
                                     )
                                 }
@@ -452,7 +458,6 @@ class GenerationManager(
                 event: StreamEvent,
                 providerAnswerStart: Int,
             ) {
-                requestTrace?.recordParsedEvent(event)
                 when (event) {
                     is StreamEvent.TextChunk -> {
                         val answerText = if (currentStatus == MessageStatus.THINKING) event.text.trimStart() else event.text
@@ -612,12 +617,21 @@ class GenerationManager(
             ): ProviderPassOutcome {
                 val providerAnswerStart = totalText.length
                 tokenUsageAccumulator.beginRequest()
+                val providerRequestIndex = providerRequestOrdinal++
+                val providerRequestTrace = if (providerRequestIndex == 0) {
+                    requestTrace
+                } else {
+                    requestTrace?.child(
+                        requestKind = "tool_continuation",
+                        requestIdSuffix = "provider-$providerRequestIndex",
+                    )
+                }
                 val proposedIdentity = RunEffectIdentity(
                     conversationId = conversationId,
                     ownerToken = ownerToken,
                     runId = runId,
                     pass = pass,
-                    effectId = "provider-$pass-${providerRequestOrdinal++}",
+                    effectId = "provider-$pass-$providerRequestIndex",
                 )
                 try {
                     return providerPassEffects.execute(
@@ -626,6 +640,7 @@ class GenerationManager(
                             provider = provider,
                             messages = messages,
                             config = providerConfig,
+                            requestTrace = providerRequestTrace,
                         ),
                         callbacks = ProviderPassExecutionCallbacks(
                             requestEffect = callbacks.onProviderPassRequested,

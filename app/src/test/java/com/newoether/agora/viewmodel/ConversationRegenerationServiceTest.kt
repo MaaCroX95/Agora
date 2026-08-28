@@ -107,7 +107,7 @@ class ConversationRegenerationServiceTest {
                         it.snapshot === fixture.snapshot &&
                         it.runId == "new-run" &&
                         it.pass == 0 &&
-                        it.callerTag == "regenerate"
+                        it.requestKind == "chat"
                 },
                 state,
             )
@@ -192,7 +192,7 @@ class ConversationRegenerationServiceTest {
             fixture.boundLauncher.launch(
                 match {
                     it.modelMessageId == "new-model" &&
-                        it.callerTag == "regenerate"
+                        it.requestKind == "chat"
                 },
                 state,
             )

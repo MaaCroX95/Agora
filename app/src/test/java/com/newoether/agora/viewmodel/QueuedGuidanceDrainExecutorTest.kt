@@ -90,7 +90,7 @@ class QueuedGuidanceDrainExecutorTest {
                         it.snapshot === fixture.snapshot &&
                         it.runId == "fresh-run" &&
                         it.pass == 0 &&
-                        it.callerTag == "guidanceBoundary"
+                        it.requestKind == "queued_guidance"
                 },
                 state,
             )

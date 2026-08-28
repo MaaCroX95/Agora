@@ -70,7 +70,7 @@ class TaskManagerTest {
         coEvery { conversations.getConversation("execution") } returns null
         coEvery { conversations.upsertConversation(any()) } returns Unit
         coEvery {
-            engine.runOnce("execution", stored.prompt, stored.modelId, "", true, any())
+            engine.runOnce("execution", stored.prompt, stored.modelId, "", true, any(), "task")
         } returns TaskExecutionEngine.Result.Busy()
         val manager = TaskManager(repository, conversations, engine, backgroundScope)
 

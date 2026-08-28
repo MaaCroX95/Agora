@@ -230,7 +230,7 @@ class BoundRunGenerationLauncherTest {
             persistId = 7L,
             runId = "run",
             pass = 3,
-            callerTag = "test",
+            requestKind = "test",
         )
         val launcher: BoundRunGenerationLauncher
 

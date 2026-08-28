@@ -95,7 +95,7 @@ class ConversationEditServiceTest {
                         it.snapshot === fixture.snapshot &&
                         it.runId == "new-run" &&
                         it.pass == 0 &&
-                        it.callerTag == "editMessage"
+                        it.requestKind == "chat"
                 },
                 state,
             )

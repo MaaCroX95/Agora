@@ -24,7 +24,7 @@ internal data class StandardGenerationContinuationRequest(
     val alreadyHoldsConversationLock: Boolean = false,
     val modelMessageId: String? = null,
     val replacementMessageId: String? = null,
-    val callerTag: String = "standardContinuation",
+    val requestKind: String = "chat",
     val queueDrainRequiresSuccess: Boolean = false,
     val transformFinalText: (String, MessageStatus) -> String = { text, _ -> text },
 )
@@ -188,7 +188,7 @@ internal class StandardGenerationContinuationLauncher(
                             persistId = persistId,
                             runId = runId,
                             pass = 0,
-                            callerTag = request.callerTag,
+                            requestKind = request.requestKind,
                             transformFinalText = request.transformFinalText,
                         ),
                         state,

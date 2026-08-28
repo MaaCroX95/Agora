@@ -90,7 +90,7 @@ class DirectAcceptedInputEffectExecutorTest {
                         it.uiToken == effect.identity.ownerToken &&
                         it.persistId > 0 &&
                         it.pass == 0 &&
-                        it.callerTag == "sendMessage" &&
+                        it.requestKind == "chat" &&
                         it.snapshot === fixture.snapshot
                 },
                 state,
@@ -340,6 +340,7 @@ class DirectAcceptedInputEffectExecutorTest {
             userText = "hello",
             payloadLease = payloadLease,
             modelId = "provider:model",
+            requestKind = "chat",
             newConversationSettings = newConversationSettings,
             alreadyHoldsLock = false,
             requestScroll = { _, messageId -> events += "scroll:$messageId" },

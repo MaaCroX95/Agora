@@ -251,7 +251,7 @@ internal class ConversationEditService(
                             persistId = persistId,
                             runId = runId,
                             pass = 0,
-                            callerTag = "editMessage",
+                            requestKind = "chat",
                         ),
                         state,
                     )
