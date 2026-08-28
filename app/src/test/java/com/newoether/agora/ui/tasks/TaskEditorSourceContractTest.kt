@@ -18,6 +18,9 @@ class TaskEditorSourceContractTest {
         assertTrue(detail.contains("viewModel.saveTask(current())\n                    onBack()"))
         assertTrue(detail.contains("viewModel.runTaskNow("))
         assertTrue(detail.contains("preservePersistedEnabled = false"))
+        assertTrue(detail.contains("collectAsState(initial = null)"))
+        assertTrue(detail.contains("if (!executionsLoaded) return@LaunchedEffect"))
+        assertFalse(detail.contains("collectAsState(initial = emptyList())"))
         assertFalse(detail.contains("rememberSaveable"))
     }
 

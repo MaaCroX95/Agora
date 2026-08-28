@@ -97,8 +97,11 @@ internal fun isScheduleDraftValid(mode: ScheduleEditorMode, cronExpr: String): B
         cronExpr.isBlank() || CronExpression.isValid(cronExpr)
     }
 
-internal fun shouldRestoreTaskDetailScroll(totalItemsCount: Int, savedIndex: Int): Boolean =
-    totalItemsCount > savedIndex.coerceAtLeast(0)
+internal fun shouldRestoreTaskDetailScroll(
+    executionsLoaded: Boolean,
+    totalItemsCount: Int,
+    savedIndex: Int,
+): Boolean = executionsLoaded && totalItemsCount > savedIndex.coerceAtLeast(0)
 
 private fun ScheduleType.toEditorMode(): ScheduleEditorMode = when (this) {
     ScheduleType.ONCE -> ScheduleEditorMode.ONCE
@@ -169,7 +172,10 @@ internal fun TaskDetailPage(
     val focusManager = LocalFocusManager.current
 
     val isRunning = task.id in running
-    val executions by viewModel.executionSummariesForTask(task.id).collectAsState(initial = emptyList())
+    val executionSnapshot by viewModel.executionSummariesForTask(task.id)
+        .collectAsState(initial = null)
+    val executions = executionSnapshot.orEmpty()
+    val executionsLoaded = executionSnapshot != null
 
     val cronValid = isScheduleDraftValid(scheduleEditorMode, cronExpr)
     val isComplete = name.isNotBlank() && prompt.isNotBlank() && cronValid
@@ -178,10 +184,21 @@ internal fun TaskDetailPage(
 
     BackHandler { onBack() }
 
-    LaunchedEffect(task.id, listState, savedListIndex, savedListOffset) {
+    LaunchedEffect(
+        task.id,
+        listState,
+        savedListIndex,
+        savedListOffset,
+        executionsLoaded,
+    ) {
+        if (!executionsLoaded) return@LaunchedEffect
         snapshotFlow { listState.layoutInfo.totalItemsCount }
             .first { totalItemsCount ->
-                shouldRestoreTaskDetailScroll(totalItemsCount, savedListIndex)
+                shouldRestoreTaskDetailScroll(
+                    executionsLoaded = true,
+                    totalItemsCount = totalItemsCount,
+                    savedIndex = savedListIndex,
+                )
             }
         listState.scrollToItem(savedListIndex, savedListOffset)
         scrollRestored = true
@@ -296,7 +313,7 @@ internal fun TaskDetailPage(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             )
         }
-        if (executions.isEmpty()) {
+        if (executionsLoaded && executions.isEmpty()) {
             item {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -328,7 +345,7 @@ internal fun TaskDetailPage(
                     )
                 }
             }
-        } else {
+        } else if (executions.isNotEmpty()) {
             itemsIndexed(executions, key = { _, e -> e.conversation.id }) { index, execution ->
                 ExecutionRow(
                     execution = execution,

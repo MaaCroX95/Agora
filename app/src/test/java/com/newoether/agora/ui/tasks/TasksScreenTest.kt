@@ -39,10 +39,28 @@ class TasksScreenTest {
     }
 
     @Test
-    fun scrollRestore_waitsUntilTheSavedIndexExists() {
-        assertFalse(shouldRestoreTaskDetailScroll(totalItemsCount = 0, savedIndex = 0))
-        assertFalse(shouldRestoreTaskDetailScroll(totalItemsCount = 7, savedIndex = 7))
-        assertTrue(shouldRestoreTaskDetailScroll(totalItemsCount = 8, savedIndex = 7))
+    fun scrollRestore_waitsForExecutionDataAndSavedIndex() {
+        assertFalse(
+            shouldRestoreTaskDetailScroll(
+                executionsLoaded = false,
+                totalItemsCount = 7,
+                savedIndex = 4,
+            ),
+        )
+        assertFalse(
+            shouldRestoreTaskDetailScroll(
+                executionsLoaded = true,
+                totalItemsCount = 7,
+                savedIndex = 7,
+            ),
+        )
+        assertTrue(
+            shouldRestoreTaskDetailScroll(
+                executionsLoaded = true,
+                totalItemsCount = 8,
+                savedIndex = 7,
+            ),
+        )
     }
 
     @Test
