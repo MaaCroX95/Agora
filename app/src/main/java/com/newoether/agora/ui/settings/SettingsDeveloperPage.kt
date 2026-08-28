@@ -50,6 +50,7 @@ import com.newoether.agora.diagnostics.DiagnosticBundleExporter
 import com.newoether.agora.diagnostics.DiagnosticCaptureMode
 import com.newoether.agora.diagnostics.DiagnosticEvent
 import com.newoether.agora.diagnostics.DiagnosticEventPayload
+import com.newoether.agora.diagnostics.DiagnosticExportFormat
 import com.newoether.agora.diagnostics.DiagnosticSnapshot
 import com.newoether.agora.diagnostics.forDisplay
 import com.newoether.agora.viewmodel.ChatViewModel
@@ -441,14 +442,12 @@ fun SettingsDeveloperPage(
                         modifier = Modifier.clickable(
                             enabled = hasDiagnostics || conversationInspection != null,
                         ) {
-                            val snapshotForExport = displayDiagnostics
-                            val conversationForExport = conversationInspection
+                            val snapshotForExport = diagnostics
                             coroutineScope.launch {
                                 runCatching {
                                     shareDiagnosticBundle(
                                         context = context,
                                         snapshot = snapshotForExport,
-                                        conversation = conversationForExport,
                                         chooserTitle = exportShareTitle,
                                     )
                                 }.onFailure {
@@ -661,11 +660,13 @@ private fun formatTestResults(results: List<DeveloperTestResult>): String = buil
 private suspend fun shareDiagnosticBundle(
     context: Context,
     snapshot: DiagnosticSnapshot,
-    conversation: DeveloperConversationInspection?,
     chooserTitle: String,
 ) {
     val bundle = withContext(Dispatchers.Default) {
-        DiagnosticBundleExporter.exportRedacted(snapshot, conversation)
+        DiagnosticBundleExporter.export(
+            snapshot = snapshot,
+            format = DiagnosticExportFormat.REDACTED_JSON,
+        )
     }
     val sendIntent = withContext(Dispatchers.IO) {
         val shareDirectory = File(context.cacheDir, "shared").apply { mkdirs() }

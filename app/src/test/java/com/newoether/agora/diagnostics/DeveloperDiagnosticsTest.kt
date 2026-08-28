@@ -74,8 +74,8 @@ class DeveloperDiagnosticsTest {
     }
 
     @Test
-    fun `redacted content mode correlates request wire and parsed views without private text`() {
-        DeveloperDiagnostics.startRedactedContentCapture()
+    fun `raw content capture correlates request wire and parsed views while removing credentials`() {
+        DeveloperDiagnostics.startSensitiveContentCapture()
         val context = checkNotNull(requestContext())
         DeveloperDiagnostics.recordHttpRequest(
             context = context,
@@ -100,10 +100,10 @@ class DeveloperDiagnosticsTest {
         assertFalse(retained.contains("query-secret"))
         assertFalse(retained.contains("header-secret"))
         assertFalse(retained.contains("body-secret"))
-        assertFalse(retained.contains("private request"))
-        assertFalse(retained.contains("private response"))
+        assertTrue(retained.contains("private request"))
+        assertTrue(retained.contains("private response"))
         assertTrue(retained.contains("[REDACTED_SECRET]"))
-        assertTrue(retained.contains("[REDACTED_CONTENT]"))
+        assertFalse(retained.contains("[REDACTED_CONTENT]"))
     }
 
     @Test

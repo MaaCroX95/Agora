@@ -19,38 +19,35 @@ object DeveloperTestLab {
             headers.values.none { it.contains("fixture-secret-token") } &&
                 !url.value.contains("fixture-query-secret")
         },
-        run("redacted_json_shape") {
+        run("raw_json_sanitization") {
             val captured = DiagnosticRedactor.captureJson(
                 """{"model":"fixture","content":"private fixture","api_key":"fixture-secret"}""",
-                DiagnosticCaptureMode.REDACTED_CONTENT,
             )
             captured.value.contains("model") &&
-                captured.value.contains("fixture") &&
-                !captured.value.contains("private fixture") &&
+                captured.value.contains("private fixture") &&
                 !captured.value.contains("fixture-secret")
         },
         run("sse_fixture") {
             val captured = DiagnosticRedactor.captureWireLine(
-                """data: {"text":"private fixture"}""",
-                DiagnosticCaptureMode.REDACTED_CONTENT,
+                """data: {"text":"private fixture","token":"fixture-secret"}""",
             )
             captured.value.startsWith("data:") &&
-                captured.value.contains("[REDACTED_CONTENT]") &&
-                !captured.value.contains("private fixture")
+                captured.value.contains("private fixture") &&
+                !captured.value.contains("fixture-secret")
         },
-        run("invalid_payload_fails_closed") {
+        run("invalid_payload_sanitization") {
             val captured = DiagnosticRedactor.captureJson(
-                "not-json private fixture",
-                DiagnosticCaptureMode.SENSITIVE_CONTENT,
+                "not-json token=fixture-secret private fixture",
             )
-            captured.value == "[UNAVAILABLE_INVALID_JSON]"
+            captured.value.contains("private fixture") &&
+                !captured.value.contains("fixture-secret")
         },
         run("capture_limit") {
             val captured = DiagnosticRedactor.captureContent(
-                "x".repeat(40_000),
-                DiagnosticCaptureMode.SENSITIVE_CONTENT,
+                "x".repeat(DiagnosticCaptureStore.DEFAULT_MAX_PAYLOAD_BYTES + 1),
             )
-            captured.truncated && captured.value.length == 32_768
+            captured.truncated &&
+                captured.value.length == DiagnosticCaptureStore.DEFAULT_MAX_PAYLOAD_BYTES
         },
         run("stable_private_identity") {
             val first = com.newoether.agora.model.ConversationRuntimeTrace

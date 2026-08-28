@@ -70,59 +70,54 @@ class DeveloperInspectorExportTest {
     }
 
     @Test
-    fun `redacted export strips sensitive payload content and exposes omissions`() {
-        val events = (1L..300L).map { sequence ->
+    fun `three export formats share sanitized raw data and apply exact content policy`() {
+        val providerId = "custom-provider-00000000-0000-4000-8000-000000000001"
+        val requestBody = DiagnosticRedactor.captureJson(
+            """{"messages":[{"role":"user","content":"private prompt"}],"api_key":"request-secret","max_tokens":10}""",
+        )
+        val events = listOf(
             DiagnosticEvent(
-                sequence = sequence,
-                timestampMillis = sequence,
+                sequence = 1L,
+                timestampMillis = 10L,
                 context = DiagnosticRequestContext(
                     requestId = REQUEST_ID,
-                    runId = RUN_ID,
+                    provider = providerId,
+                    model = "$providerId:model",
+                    requestKind = "send",
                 ),
-                payload = when (sequence) {
-                    300L -> {
-                        val raw = """{"content":"private export","api_key":"export-secret"}"""
-                        DiagnosticEventPayload.HttpRequest(
-                            method = "POST",
-                            url = CapturedDiagnosticText(
-                                value = "https://example.invalid?key=query-secret",
-                                originalLength = 40,
-                                truncated = false,
-                                redacted = true,
-                            ),
-                            headers = mapOf("Authorization" to "Bearer header-secret"),
-                            body = CapturedDiagnosticText(
-                                value = raw,
-                                originalLength = raw.length,
-                                truncated = false,
-                                redacted = true,
-                            ),
-                        )
-                    }
-                    299L -> DiagnosticEventPayload.RuntimeTransition(
-                        oldState = "Active",
-                        commandType = "StopRequested",
-                        newState = "Stopping",
-                        effectId = EFFECT_ID,
-                        effectTypes = listOf("FinalizeStop"),
-                    )
-                    298L -> DiagnosticEventPayload.ParsedStreamEvent(
-                        eventType = "ToolCallRequest",
-                        attributes = mapOf(
-                            "id" to TOOL_CALL_ID,
-                            "streamKey" to STREAM_KEY,
-                            "name" to "fixture_tool",
-                        ),
-                        content = null,
-                    )
-                    else -> DiagnosticEventPayload.HttpStage(
-                        stage = "stage",
-                        elapsedMillis = sequence,
-                        attributes = emptyMap(),
-                    )
-                },
-            )
-        }
+                payload = DiagnosticEventPayload.HttpRequest(
+                    method = "POST",
+                    url = DiagnosticRedactor.captureUrl(
+                        "https://example.invalid/chat?key=query-secret&model=test",
+                    ),
+                    headers = DiagnosticRedactor.captureHeaders(
+                        mapOf("Authorization" to "Bearer header-secret"),
+                    ),
+                    body = requestBody,
+                ),
+            ),
+            DiagnosticEvent(
+                sequence = 2L,
+                timestampMillis = 11L,
+                context = DiagnosticRequestContext(requestId = REQUEST_ID),
+                payload = DiagnosticEventPayload.WireLine(
+                    lineNumber = 1L,
+                    line = DiagnosticRedactor.captureWireLine(
+                        """data: {"text":"private response","result":"private tool result"}""",
+                    ),
+                ),
+            ),
+            DiagnosticEvent(
+                sequence = 3L,
+                timestampMillis = 12L,
+                context = DiagnosticRequestContext(requestId = REQUEST_ID),
+                payload = DiagnosticEventPayload.ParsedStreamEvent(
+                    eventType = "HostedToolCallUpdate",
+                    attributes = mapOf("name" to "fixture_tool", "resultChars" to "19"),
+                    content = DiagnosticRedactor.captureContent("private parsed tool result"),
+                ),
+            ),
+        )
         val snapshot = DiagnosticSnapshot(
             session = DiagnosticSession(
                 id = SESSION_ID,
@@ -130,34 +125,49 @@ class DeveloperInspectorExportTest {
                 startedAtMillis = 1L,
             ),
             events = events,
+            droppedEventCount = 2L,
         )
 
-        val exported = DiagnosticBundleExporter.exportRedacted(
+        val raw = DiagnosticBundleExporter.export(
             snapshot = snapshot,
-            conversation = null,
-            generatedAtMillis = 2L,
+            format = DiagnosticExportFormat.RAW_JSON,
+            generatedAtMillis = 20L,
+        )
+        val redacted = DiagnosticBundleExporter.export(
+            snapshot = snapshot,
+            format = DiagnosticExportFormat.REDACTED_JSON,
+            generatedAtMillis = 20L,
+        )
+        val summary = DiagnosticBundleExporter.export(
+            snapshot = snapshot,
+            format = DiagnosticExportFormat.SUMMARY_TEXT,
+            generatedAtMillis = 20L,
         )
 
-        assertFalse(exported.contains("private export"))
-        assertFalse(exported.contains("export-secret"))
-        assertFalse(exported.contains("query-secret"))
-        assertFalse(exported.contains("header-secret"))
-        assertFalse(exported.contains(SESSION_ID))
-        assertFalse(exported.contains(REQUEST_ID))
-        assertFalse(exported.contains(RUN_ID))
-        assertFalse(exported.contains(EFFECT_ID))
-        assertFalse(exported.contains(TOOL_CALL_ID))
-        assertFalse(exported.contains(STREAM_KEY))
-        assertTrue(exported.contains("idHash"))
-        assertTrue(exported.contains("requestIdHash"))
-        assertTrue(exported.contains("runIdHash"))
-        assertTrue(exported.contains("effectIdHash"))
-        assertTrue(exported.contains("fixture_tool"))
-        assertTrue(exported.contains("[REDACTED_CONTENT]"))
-        assertTrue(exported.contains("[REDACTED_SECRET]"))
-        assertTrue(exported.contains("omittedEventCount"))
-        assertTrue(exported.contains("44"))
-        assertTrue(exported.contains("redactedExport"))
+        assertTrue(raw.contains("private prompt"))
+        assertTrue(raw.contains("private response"))
+        assertTrue(raw.contains("private parsed tool result"))
+        assertTrue(raw.contains(providerId))
+        assertFalse(raw.contains("request-secret"))
+        assertFalse(raw.contains("query-secret"))
+        assertFalse(raw.contains("header-secret"))
+        assertTrue(raw.contains("[REDACTED_SECRET]"))
+
+        assertFalse(redacted.contains("private prompt"))
+        assertFalse(redacted.contains("private response"))
+        assertFalse(redacted.contains("private tool result"))
+        assertFalse(redacted.contains("private parsed tool result"))
+        assertTrue(redacted.contains("[REDACTED_CONTENT]"))
+        assertTrue(redacted.contains("max_tokens"))
+        assertTrue(redacted.contains("fixture_tool"))
+
+        assertTrue(summary.contains("eventCount=3"))
+        assertTrue(summary.contains("droppedEventCount=2"))
+        assertTrue(summary.contains("type=HttpRequest"))
+        assertTrue(summary.contains("type=ParsedStreamEvent"))
+        assertFalse(summary.contains("private prompt"))
+        assertFalse(summary.contains("private response"))
+        assertFalse(summary.contains("private parsed tool result"))
     }
 
     @Test
@@ -214,14 +224,6 @@ class DeveloperInspectorExportTest {
         assertEquals("Relay Alias:model", displayInspection.model)
         assertFalse(displaySnapshot.toString().contains(providerId))
         assertFalse(displayInspection.toString().contains(providerId))
-
-        val exported = DiagnosticBundleExporter.exportRedacted(
-            snapshot = displaySnapshot,
-            conversation = displayInspection,
-            generatedAtMillis = 2L,
-        )
-        assertFalse(exported.contains(providerId))
-        assertTrue(exported.contains("Relay Alias"))
     }
 
     @Test
@@ -239,8 +241,6 @@ class DeveloperInspectorExportTest {
         const val EFFECT_ID = "raw-effect-id"
         const val SESSION_ID = "raw-session-id"
         const val REQUEST_ID = "raw-request-id"
-        const val TOOL_CALL_ID = "raw-tool-call-id"
-        const val STREAM_KEY = "raw-stream-key"
         const val PRIVATE_TEXT = "private message text"
     }
 }

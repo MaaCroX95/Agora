@@ -115,7 +115,7 @@ object DeveloperDiagnostics {
                     method = method.take(16),
                     url = DiagnosticRedactor.captureUrl(url),
                     headers = DiagnosticRedactor.captureHeaders(headers),
-                    body = DiagnosticRedactor.captureJson(body, mode),
+                    body = DiagnosticRedactor.captureJson(body),
                 ),
             )
         }
@@ -135,7 +135,7 @@ object DeveloperDiagnostics {
                 context = context,
                 payload = DiagnosticEventPayload.HttpResponseBody(
                     code = code,
-                    body = DiagnosticRedactor.captureJson(body, mode),
+                    body = DiagnosticRedactor.captureJson(body),
                 ),
             )
         }
@@ -155,7 +155,7 @@ object DeveloperDiagnostics {
                 context = context,
                 payload = DiagnosticEventPayload.WireLine(
                     lineNumber = lineNumber,
-                    line = DiagnosticRedactor.captureWireLine(line, mode),
+                    line = DiagnosticRedactor.captureWireLine(line),
                 ),
             )
         }
@@ -291,7 +291,7 @@ object DeveloperDiagnostics {
         mode: DiagnosticCaptureMode,
     ): CapturedDiagnosticText? = mode
         .takeUnless { it == DiagnosticCaptureMode.METADATA }
-        ?.let { DiagnosticRedactor.captureContent(content, it) }
+        ?.let { DiagnosticRedactor.captureContent(content) }
 
     private data class ParsedEventDetails(
         val eventType: String,

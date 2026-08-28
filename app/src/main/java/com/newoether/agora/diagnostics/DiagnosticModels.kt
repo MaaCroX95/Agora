@@ -28,6 +28,13 @@ enum class DiagnosticCaptureState {
 }
 
 @Serializable
+enum class DiagnosticExportFormat {
+    RAW_JSON,
+    REDACTED_JSON,
+    SUMMARY_TEXT,
+}
+
+@Serializable
 internal data class DiagnosticCaptureMetadata(
     val schemaVersion: Int = 1,
     val state: DiagnosticCaptureState = DiagnosticCaptureState.IDLE,
