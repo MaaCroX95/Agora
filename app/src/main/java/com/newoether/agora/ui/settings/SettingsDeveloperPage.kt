@@ -16,7 +16,6 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timeline
-import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,7 +46,6 @@ import com.newoether.agora.diagnostics.DeveloperDiagnostics
 import com.newoether.agora.diagnostics.DeveloperTestLab
 import com.newoether.agora.diagnostics.DeveloperTestResult
 import com.newoether.agora.diagnostics.DiagnosticBundleExporter
-import com.newoether.agora.diagnostics.DiagnosticCaptureMode
 import com.newoether.agora.diagnostics.DiagnosticEvent
 import com.newoether.agora.diagnostics.DiagnosticEventPayload
 import com.newoether.agora.diagnostics.DiagnosticExportFormat
@@ -79,7 +77,6 @@ fun SettingsDeveloperPage(
     val totalTokens by viewModel.totalTokens.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     var showDisableDialog by remember { mutableStateOf(false) }
-    var showSensitiveDialog by remember { mutableStateOf(false) }
     var selectedEvent by remember { mutableStateOf<DiagnosticEvent?>(null) }
     var detailDialog by remember { mutableStateOf<Pair<String, String>?>(null) }
     var testResults by remember { mutableStateOf<List<DeveloperTestResult>?>(null) }
@@ -108,7 +105,6 @@ fun SettingsDeveloperPage(
     val exportShareTitle = stringResource(R.string.developer_options_export_share_title)
     val exportFailedMessage = stringResource(R.string.developer_options_export_failed)
     val hasDiagnostics = diagnostics.session != null || diagnostics.events.isNotEmpty()
-    val activeMode = diagnostics.session?.mode?.takeIf { diagnostics.isCaptureActive }
     val visibleEvents = displayDiagnostics.events.takeLast(MAX_VISIBLE_EVENTS)
     val timelineItems: List<@Composable () -> Unit> = if (visibleEvents.isEmpty()) {
         listOf({
@@ -183,35 +179,6 @@ fun SettingsDeveloperPage(
         )
     }
 
-    if (showSensitiveDialog) {
-        AlertDialog(
-            onDismissRequest = { showSensitiveDialog = false },
-            icon = { Icon(Icons.Default.VerifiedUser, contentDescription = null) },
-            title = {
-                Text(
-                    text = stringResource(R.string.developer_options_sensitive_capture_title),
-                    fontWeight = FontWeight.Bold,
-                )
-            },
-            text = { Text(stringResource(R.string.developer_options_sensitive_capture_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showSensitiveDialog = false
-                        DeveloperDiagnostics.startSensitiveContentCapture()
-                    },
-                ) {
-                    Text(stringResource(R.string.developer_options_sensitive_capture_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSensitiveDialog = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-        )
-    }
-
     if (showDisableDialog) {
         AlertDialog(
             onDismissRequest = { showDisableDialog = false },
@@ -227,9 +194,11 @@ fun SettingsDeveloperPage(
                 TextButton(
                     onClick = {
                         showDisableDialog = false
-                        DeveloperDiagnostics.stopAndClear()
-                        viewModel.settings.setDeveloperOptionsEnabled(false)
-                        onDisabled()
+                        coroutineScope.launch {
+                            DeveloperDiagnostics.disableAndClear()
+                            viewModel.settings.setDeveloperOptionsEnabled(false)
+                            onDisabled()
+                        }
                     },
                 ) {
                     Text(stringResource(R.string.developer_options_disable_confirm))
@@ -289,85 +258,23 @@ fun SettingsDeveloperPage(
                             Switch(
                                 checked = diagnostics.isCaptureActive,
                                 onCheckedChange = { active ->
-                                    if (active) {
-                                        DeveloperDiagnostics.startMetadataCapture()
-                                    } else {
-                                        DeveloperDiagnostics.stopCapture()
+                                    coroutineScope.launch {
+                                        if (active) {
+                                            DeveloperDiagnostics.startCapture()
+                                        } else {
+                                            DeveloperDiagnostics.pauseCapture()
+                                        }
                                     }
                                 },
                             )
                         },
                         modifier = Modifier.clickable {
-                            if (diagnostics.isCaptureActive) {
-                                DeveloperDiagnostics.stopCapture()
-                            } else {
-                                DeveloperDiagnostics.startMetadataCapture()
-                            }
-                        },
-                    )
-                }, {
-                    SettingsItem(
-                        headlineContent = {
-                            Text(stringResource(R.string.developer_options_payload_capture))
-                        },
-                        supportingContent = {
-                            Text(stringResource(R.string.developer_options_payload_capture_desc))
-                        },
-                        leadingContent = {
-                            Icon(Icons.Default.Timeline, contentDescription = null)
-                        },
-                        trailingContent = {
-                            Switch(
-                                checked = activeMode == DiagnosticCaptureMode.REDACTED_CONTENT ||
-                                    activeMode == DiagnosticCaptureMode.SENSITIVE_CONTENT,
-                                onCheckedChange = { capturePayloads ->
-                                    if (capturePayloads) {
-                                        DeveloperDiagnostics.startRedactedContentCapture()
-                                    } else {
-                                        DeveloperDiagnostics.startMetadataCapture()
-                                    }
-                                },
-                            )
-                        },
-                        modifier = Modifier.clickable {
-                            if (
-                                activeMode == DiagnosticCaptureMode.REDACTED_CONTENT ||
-                                activeMode == DiagnosticCaptureMode.SENSITIVE_CONTENT
-                            ) {
-                                DeveloperDiagnostics.startMetadataCapture()
-                            } else {
-                                DeveloperDiagnostics.startRedactedContentCapture()
-                            }
-                        },
-                    )
-                }, {
-                    SettingsItem(
-                        headlineContent = {
-                            Text(stringResource(R.string.developer_options_sensitive_capture))
-                        },
-                        supportingContent = {
-                            Text(stringResource(R.string.developer_options_sensitive_capture_desc))
-                        },
-                        leadingContent = {
-                            Icon(Icons.Default.VerifiedUser, contentDescription = null)
-                        },
-                        trailingContent = {
-                            Switch(
-                                checked = activeMode == DiagnosticCaptureMode.SENSITIVE_CONTENT,
-                                onCheckedChange = { sensitive ->
-                                    if (sensitive) {
-                                        showSensitiveDialog = true
-                                    } else {
-                                        DeveloperDiagnostics.startRedactedContentCapture()
-                                    }
-                                },
-                            )
-                        },
-                        modifier = Modifier.clickable {
-                            if (activeMode == DiagnosticCaptureMode.SENSITIVE_CONTENT) {
-                                DeveloperDiagnostics.startRedactedContentCapture()
-                            } else {
-                                showSensitiveDialog = true
+                            coroutineScope.launch {
+                                if (diagnostics.isCaptureActive) {
+                                    DeveloperDiagnostics.pauseCapture()
+                                } else {
+                                    DeveloperDiagnostics.startCapture()
+                                }
                             }
                         },
                     )
@@ -383,7 +290,9 @@ fun SettingsDeveloperPage(
                             Icon(Icons.Default.DeleteSweep, contentDescription = null)
                         },
                         modifier = Modifier.clickable(enabled = hasDiagnostics) {
-                            DeveloperDiagnostics.stopAndClear()
+                            coroutineScope.launch {
+                                DeveloperDiagnostics.clear()
+                            }
                         },
                     )
                 }),
@@ -492,23 +401,13 @@ fun SettingsDeveloperPage(
 
 @Composable
 private fun DiagnosticSnapshot.captureDescription(): String = when {
-    !isCaptureActive && session != null -> stringResource(
-        R.string.developer_options_capture_stopped_desc,
-        events.size,
-        droppedEventCount,
-    )
-    isCaptureActive && session?.mode == DiagnosticCaptureMode.REDACTED_CONTENT -> stringResource(
-        R.string.developer_options_capture_redacted_desc,
-        events.size,
-        droppedEventCount,
-    )
-    isCaptureActive && session?.mode == DiagnosticCaptureMode.SENSITIVE_CONTENT -> stringResource(
+    isCaptureActive -> stringResource(
         R.string.developer_options_capture_sensitive_desc,
         events.size,
         droppedEventCount,
     )
-    isCaptureActive -> stringResource(
-        R.string.developer_options_capture_on_desc,
+    session != null -> stringResource(
+        R.string.developer_options_capture_stopped_desc,
         events.size,
         droppedEventCount,
     )

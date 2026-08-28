@@ -49,15 +49,18 @@ object DiagnosticBundleExporter {
             put("schemaVersion", 1)
             put("generatedAtMillis", generatedAtMillis)
             put("format", format.name)
+            put("captureState", snapshot.state.name)
             put("captureActive", snapshot.isCaptureActive)
+            put("nextSequence", snapshot.nextSequence)
+            put("retainedPayloadBytes", snapshot.retainedPayloadBytes)
             put("droppedEventCount", snapshot.droppedEventCount)
+            put("evictedEventCount", snapshot.evictedEventCount)
+            put("truncatedPayloadCount", snapshot.truncatedPayloadCount)
             put("eventCount", snapshot.events.size)
             snapshot.session?.let { session ->
                 putJsonObject("session") {
                     put("id", session.id)
-                    put("mode", session.mode.name)
                     put("startedAtMillis", session.startedAtMillis)
-                    session.stoppedAtMillis?.let { put("stoppedAtMillis", it) }
                 }
             }
             putJsonArray("events") {
@@ -77,14 +80,18 @@ object DiagnosticBundleExporter {
         appendLine("Agora Diagnostic Capture Summary")
         appendLine("schemaVersion=1")
         appendLine("generatedAtMillis=$generatedAtMillis")
+        appendLine("format=${DiagnosticExportFormat.SUMMARY_TEXT.name}")
+        appendLine("captureState=${snapshot.state.name}")
         appendLine("captureActive=${snapshot.isCaptureActive}")
-        appendLine("captureMode=${snapshot.session?.mode?.name.orEmpty()}")
+        appendLine("nextSequence=${snapshot.nextSequence}")
+        appendLine("retainedPayloadBytes=${snapshot.retainedPayloadBytes}")
         appendLine("eventCount=${snapshot.events.size}")
         appendLine("droppedEventCount=${snapshot.droppedEventCount}")
+        appendLine("evictedEventCount=${snapshot.evictedEventCount}")
+        appendLine("truncatedPayloadCount=${snapshot.truncatedPayloadCount}")
         snapshot.session?.let { session ->
             appendLine("sessionId=${session.id}")
             appendLine("startedAtMillis=${session.startedAtMillis}")
-            session.stoppedAtMillis?.let { appendLine("stoppedAtMillis=$it") }
         }
         snapshot.events.forEach { event ->
             append('#')

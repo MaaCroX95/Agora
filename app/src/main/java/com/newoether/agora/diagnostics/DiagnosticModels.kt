@@ -14,13 +14,6 @@ data class DiagnosticRequestContext(
 )
 
 @Serializable
-enum class DiagnosticCaptureMode {
-    METADATA,
-    REDACTED_CONTENT,
-    SENSITIVE_CONTENT,
-}
-
-@Serializable
 enum class DiagnosticCaptureState {
     IDLE,
     RUNNING,
@@ -49,12 +42,8 @@ internal data class DiagnosticCaptureMetadata(
 @Serializable
 data class DiagnosticSession(
     val id: String,
-    val mode: DiagnosticCaptureMode,
     val startedAtMillis: Long,
-    val stoppedAtMillis: Long? = null,
-) {
-    val isActive: Boolean get() = stoppedAtMillis == null
-}
+)
 
 @Serializable
 data class CapturedDiagnosticText(
@@ -120,9 +109,14 @@ data class DiagnosticEvent(
 )
 
 data class DiagnosticSnapshot(
+    val state: DiagnosticCaptureState = DiagnosticCaptureState.IDLE,
     val session: DiagnosticSession? = null,
     val events: List<DiagnosticEvent> = emptyList(),
-    val droppedEventCount: Long = 0,
+    val nextSequence: Long = 1L,
+    val retainedPayloadBytes: Long = 0L,
+    val droppedEventCount: Long = 0L,
+    val evictedEventCount: Long = 0L,
+    val truncatedPayloadCount: Long = 0L,
 ) {
-    val isCaptureActive: Boolean get() = session?.isActive == true
+    val isCaptureActive: Boolean get() = state == DiagnosticCaptureState.RUNNING
 }
