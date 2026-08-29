@@ -134,7 +134,7 @@ class ConversationSwitchSafetySourceContractTest {
         }
         assertTrue(
             "active MODEL rows must bypass rollout coloring",
-            Regex("""messageIsStreaming\s*\|\|\s*\(\s*!isRetainedRegenerationExit""")
+            Regex("""messageIsStreaming\s*\|\|\s*\(\s*!isRetainedBranchReplacementExit""")
                 .containsMatchIn(messageList),
         )
         assertTrue(
