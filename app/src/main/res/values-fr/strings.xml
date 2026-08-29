@@ -1134,7 +1134,7 @@
     <string name="developer_options_features_group">Fonctionnalités</string>
     <string name="developer_options_debug_model">Modèle de débogage</string>
     <string name="developer_options_mode_description">La désactivation arrête la capture, supprime les diagnostics conservés et désactive le modèle Debug.</string>
-    <string name="developer_options_capture_description">Enregistrez les diagnostics de requête, de flux et d'exécution sans identifiants, puis exportez-les.</string>
+    <string name="developer_options_capture_description">Enregistrez les diagnostics de requête, de flux et d\'exécution sans identifiants, puis exportez-les.</string>
     <string name="developer_options_debug_model_description">Ajoutez le modèle Debug local et déterministe uniquement au sélecteur de modèle du chat.</string>
     <string name="developer_options_capture_summary">Résumé</string>
     <string name="developer_options_capture_raw">Brut</string>
@@ -1142,7 +1142,7 @@
     <string name="developer_options_capture_pause">Suspendre la capture</string>
     <string name="developer_options_capture_jump_latest">Aller au plus récent</string>
     <string name="developer_options_capture_more_actions">Actions de capture</string>
-    <string name="developer_options_capture_clear_message">Effacer les événements et compteurs capturés ? L'état de capture et la session seront conservés.</string>
+    <string name="developer_options_capture_clear_message">Effacer les événements et compteurs capturés ? L\'état de capture et la session seront conservés.</string>
     <string name="developer_options_capture_clear_confirm">Effacer</string>
     <string name="developer_options_capture_export_raw_json">Exporter le JSON brut</string>
     <string name="developer_options_capture_export_redacted_json">Exporter le JSON expurgé</string>
