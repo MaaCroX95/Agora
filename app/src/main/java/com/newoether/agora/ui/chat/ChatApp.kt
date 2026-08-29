@@ -46,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
 import com.newoether.agora.TopLevelPresentation
+import com.newoether.agora.api.DebugProvider
 import com.newoether.agora.data.forDisplay
 import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
 import com.newoether.agora.util.gradientBlur
@@ -66,6 +67,7 @@ import com.newoether.agora.model.StableMessageList
 import com.newoether.agora.model.StableModelAliases
 import com.newoether.agora.viewmodel.AnimatedScrollDestination
 import com.newoether.agora.viewmodel.ChatViewModel
+import com.newoether.agora.viewmodel.validChatModels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -136,7 +138,19 @@ fun ChatApp(
     val generationSnapshot by viewModel.generationSnapshot.collectAsState()
     val selectedModel by viewModel.currentActiveModel.collectAsState()
     val enabledModels by viewModel.settings.enabledModels.collectAsState()
+    val developerOptionsEnabled by viewModel.settings.developerOptionsEnabled.collectAsState()
+    val debugModelEnabled by viewModel.settings.debugModelEnabled.collectAsState()
     val modelAliases by viewModel.settings.modelAliases.collectAsState()
+    val chatEnabledModels = validChatModels(
+        enabledModels,
+        developerOptionsEnabled,
+        debugModelEnabled,
+    )
+    val chatModelAliases = if (DebugProvider.MODEL_ID in chatEnabledModels) {
+        modelAliases + (DebugProvider.MODEL_ID to DebugProvider.PROVIDER_NAME)
+    } else {
+        modelAliases
+    }
     val thoughtExpandedStates = remember(currentConversationId) { mutableStateMapOf<String, Boolean>() }
     val isNewChatMode by viewModel.isNewChatMode.collectAsState()
     val newChatEntryId by viewModel.newChatEntryId.collectAsState()
@@ -905,9 +919,9 @@ fun ChatApp(
                         isLoading = isLoading,
                         isCompacting = isCompacting,
                         isSwitching = isSwitching,
-                        enabledModels = enabledModels,
+                        enabledModels = chatEnabledModels,
                         selectedModel = selectedModel,
-                        modelAliases = modelAliases,
+                        modelAliases = chatModelAliases,
                         customProviders = customProviders,
                         codeExecutionEnabled = codeExecutionEnabled,
                         googleSearchEnabled = googleSearchEnabled,

@@ -111,7 +111,6 @@ internal class MessageGenerationController(
     private val awaitNewChatWorkspace: suspend () -> NewChatWorkspaceSnapshot,
     private val applyCommittedNewConversationState: suspend (String) -> Unit,
     private val clearCommittedNewChatWorkspace: suspend () -> Unit,
-    private val globalDefaultModel: StateFlow<String>,
     private val currentActiveModel: StateFlow<String>,
     private val messages: StateFlow<List<ChatMessage>>,
     // -- Callbacks into ChatViewModel-owned side effects --
@@ -420,14 +419,10 @@ internal class MessageGenerationController(
     ): SendAcceptance? {
 
         val wasNewChat = isNewChatMode.value || currentConversationId.value == null
-        val newChatAdmission = if (wasNewChat) {
-            awaitNewChatWorkspace().toSendAdmission(globalDefaultModel.value)
-        } else {
-            null
-        }
-        val selectedModelId = newChatAdmission?.modelId ?: currentActiveModel.value
-        val capturedNewChatSystemPromptId = newChatAdmission?.systemPromptId
-        val capturedNewConversationSettings = newChatAdmission?.conversationSettings
+        val newChatWorkspace = if (wasNewChat) awaitNewChatWorkspace() else null
+        val selectedModelId = currentActiveModel.value
+        val capturedNewChatSystemPromptId = newChatWorkspace?.systemPromptId
+        val capturedNewConversationSettings = newChatWorkspace?.conversationSettings
         // Pre-flight: a blank model fails fast BEFORE creating a new-chat row or enqueueing, so the
         // Send button never swallows a message into a conversation that can't generate.
         if (selectedModelId.isBlank()) {

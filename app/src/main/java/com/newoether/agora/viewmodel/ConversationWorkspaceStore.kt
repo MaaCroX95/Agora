@@ -40,20 +40,6 @@ internal data class NewChatWorkspaceSnapshot(
     val conversationSettings: ConversationSettings?,
 )
 
-internal data class NewChatSendAdmission(
-    val modelId: String,
-    val systemPromptId: String?,
-    val conversationSettings: ConversationSettings?,
-)
-
-internal fun NewChatWorkspaceSnapshot.toSendAdmission(
-    globalDefaultModel: String,
-): NewChatSendAdmission = NewChatSendAdmission(
-    modelId = modelId ?: globalDefaultModel,
-    systemPromptId = systemPromptId,
-    conversationSettings = conversationSettings,
-)
-
 internal interface ComposerDraftPersistence {
     suspend fun loadDraft(ownerId: String): ConversationWorkspaceDraft
 

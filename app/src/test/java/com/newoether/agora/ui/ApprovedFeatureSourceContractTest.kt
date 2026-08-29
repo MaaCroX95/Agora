@@ -649,6 +649,61 @@ class ApprovedFeatureSourceContractTest {
     }
 
     @Test
+    fun debugVisibilityAndModelFallbackStayOnTheCanonicalChatBoundary() {
+        val root = sourceRoot()
+        val chatApp = source(root, "com/newoether/agora/ui/chat/ChatApp.kt")
+        val selection = source(
+            root,
+            "com/newoether/agora/viewmodel/ConversationSelectionController.kt",
+        )
+        val generation = source(
+            root,
+            "com/newoether/agora/viewmodel/MessageGenerationController.kt",
+        )
+        val workspace = source(
+            root,
+            "com/newoether/agora/viewmodel/ConversationWorkspaceStore.kt",
+        )
+
+        assertTrue(chatApp.contains("viewModel.settings.developerOptionsEnabled.collectAsState()"))
+        assertTrue(chatApp.contains("viewModel.settings.debugModelEnabled.collectAsState()"))
+        assertTrue(chatApp.contains("validChatModels("))
+        assertEquals(1, Regex("enabledModels = chatEnabledModels").findAll(chatApp).count())
+        assertTrue(chatApp.contains("enabledModels = enabledModels"))
+        assertTrue(chatApp.contains("DebugProvider.MODEL_ID to DebugProvider.PROVIDER_NAME"))
+        assertTrue(chatApp.contains("modelAliases = chatModelAliases"))
+
+        listOf(
+            "com/newoether/agora/ui/settings/SettingsModelsPage.kt",
+            "com/newoether/agora/ui/settings/SettingsContextPage.kt",
+            "com/newoether/agora/ui/settings/SettingsTitleGenPage.kt",
+            "com/newoether/agora/ui/settings/SettingsTranscriptionPage.kt",
+            "com/newoether/agora/ui/tasks/TaskEditorPage.kt",
+        ).forEach { path ->
+            val surface = source(root, path)
+            assertFalse("Debug leaked into $path", surface.contains("DebugProvider"))
+            assertFalse("Chat model policy leaked into $path", surface.contains("validChatModels"))
+        }
+
+        assertTrue(selection.contains("awaitInitialLoad()"))
+        assertTrue(selection.contains("StateFlow<Set<String>?>"))
+        assertTrue(selection.contains("resolveValidModel("))
+        assertTrue(selection.contains("workspaces.setModel(\n            NEW_CHAT_WORKSPACE_ID"))
+        assertTrue(selection.contains("workspaces.setModel(conversationId, resolvedModel)"))
+        assertTrue(selection.contains(".stateIn(scope, SharingStarted.Eagerly, \"\")"))
+
+        val newChatAdmission = generation
+            .substringAfter("val wasNewChat =")
+            .substringBefore("// Pre-flight:")
+        assertTrue(newChatAdmission.contains("awaitNewChatWorkspace()"))
+        assertTrue(newChatAdmission.contains("val selectedModelId = currentActiveModel.value"))
+        assertFalse(newChatAdmission.contains("toSendAdmission"))
+        assertFalse(generation.contains("globalDefaultModel"))
+        assertFalse(workspace.contains("NewChatSendAdmission"))
+        assertFalse(workspace.contains("toSendAdmission("))
+    }
+
+    @Test
     fun skillsAreSavedCatalogToolsWithRequestResolvedPromptAndNoActiveSkill() {
         val root = sourceRoot()
         val manager = source(root, "com/newoether/agora/data/SkillManager.kt")

@@ -1,6 +1,8 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.api.DebugProvider
 import com.newoether.agora.data.repository.ConversationRepository
+import com.newoether.agora.data.repository.SettingsRepository
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.util.Constants
 import com.newoether.agora.util.DebugLog
@@ -12,10 +14,45 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
+
+internal fun validChatModels(
+    enabledModels: Set<String>,
+    developerOptionsEnabled: Boolean,
+    debugModelEnabled: Boolean,
+): Set<String> {
+    val ordinaryModels = enabledModels - DebugProvider.MODEL_ID
+    return if (developerOptionsEnabled && debugModelEnabled) {
+        ordinaryModels + DebugProvider.MODEL_ID
+    } else {
+        ordinaryModels
+    }
+}
+
+internal fun SettingsRepository.validChatModels(
+    scope: CoroutineScope,
+): StateFlow<Set<String>?> = flow {
+    awaitInitialLoad()
+    combine(
+        enabledModels,
+        developerOptionsEnabled,
+        debugModelEnabled,
+        ::validChatModels,
+    ).collect { emit(it) }
+}.stateIn(scope, SharingStarted.Eagerly, null)
+
+private fun resolveValidModel(
+    referencedModel: String?,
+    defaultModel: String,
+    validModels: Set<String>,
+): String = referencedModel
+    ?.takeIf(validModels::contains)
+    ?: defaultModel.takeIf(validModels::contains).orEmpty()
 
 /**
  * Owns the open-conversation projection and its mutually superseding transition Job.
@@ -29,6 +66,7 @@ internal class ConversationSelectionController(
     private val conversations: ConversationRepository,
     private val registry: ConversationStateRegistry,
     defaultModel: StateFlow<String>,
+    validModels: StateFlow<Set<String>?>,
     private val scrollRequests: ScrollRequestCoordinator,
     private val renderStore: () -> ConversationRenderStore,
     private val clearConversationGraph: () -> Unit,
@@ -52,9 +90,74 @@ internal class ConversationSelectionController(
         newChatModelId,
         _isNewChatMode,
         defaultModel,
-    ) { active, newChatModel, isNewChat, fallback ->
-        if (isNewChat) active ?: newChatModel ?: fallback else active ?: fallback
-    }.stateIn(scope, SharingStarted.Eagerly, Constants.EXAMPLE_MODEL_ID)
+        validModels,
+    ) { active, newChatModel, isNewChat, fallback, valid ->
+        if (valid == null) {
+            ""
+        } else {
+            val referencedModel = if (isNewChat) active ?: newChatModel else active
+            resolveValidModel(referencedModel, fallback, valid)
+        }
+    }.stateIn(scope, SharingStarted.Eagerly, "")
+
+    init {
+        scope.launch {
+            combine(
+                _activeModelOverride,
+                newChatModelId,
+                _isNewChatMode,
+                defaultModel,
+                validModels,
+            ) { active, stored, isNewChat, fallback, valid ->
+                if (isNewChat && active == null && valid != null) {
+                    reconcileNewChatModel(stored, fallback, valid)
+                }
+            }.collect { }
+        }
+        scope.launch {
+            combine(
+                _activeModelOverride,
+                _currentConversationId,
+                _isNewChatMode,
+                defaultModel,
+                validModels,
+            ) { active, conversationId, isNewChat, fallback, valid ->
+                if (!isNewChat && conversationId != null && valid != null) {
+                    reconcileConversationModel(conversationId, active, fallback, valid)
+                }
+            }.collect { }
+        }
+    }
+
+    private fun reconcileNewChatModel(
+        referencedModel: String?,
+        defaultModel: String,
+        validModels: Set<String>,
+    ) {
+        if (referencedModel == null || referencedModel in validModels) return
+        if (!_isNewChatMode.value || _activeModelOverride.value != null) return
+        if (newChatModelId.value != referencedModel) return
+        workspaces.setModel(
+            NEW_CHAT_WORKSPACE_ID,
+            resolveValidModel(referencedModel, defaultModel, validModels)
+                .takeIf(String::isNotBlank),
+        )
+    }
+
+    private fun reconcileConversationModel(
+        conversationId: String,
+        referencedModel: String?,
+        defaultModel: String,
+        validModels: Set<String>,
+    ) {
+        if (referencedModel == null || referencedModel in validModels) return
+        if (_isNewChatMode.value || _currentConversationId.value != conversationId) return
+        if (_activeModelOverride.value != referencedModel) return
+        val resolvedModel = resolveValidModel(referencedModel, defaultModel, validModels)
+            .takeIf(String::isNotBlank)
+        _activeModelOverride.value = resolvedModel
+        workspaces.setModel(conversationId, resolvedModel)
+    }
 
     private val _newChatEntryId = MutableStateFlow(1L)
     val newChatEntryId: StateFlow<Long> = _newChatEntryId.asStateFlow()

@@ -58,7 +58,7 @@ class ConversationWorkspaceStoreTest {
     }
 
     @Test
-    fun queuedBarrierReturnsOneAuthoritativeAdmissionSnapshot() = runTest {
+    fun queuedBarrierReturnsOneAuthoritativeWorkspaceSnapshot() = runTest {
         val fixture = Fixture(backgroundScope, StandardTestDispatcher(testScheduler))
         val capturedSettings = ConversationSettings(temperature = 0.35f, maxTokens = 768)
         runCurrent()
@@ -72,14 +72,6 @@ class ConversationWorkspaceStoreTest {
         assertEquals("provider:model", snapshot.modelId)
         assertEquals("prompt", snapshot.systemPromptId)
         assertEquals(capturedSettings, snapshot.conversationSettings)
-        assertEquals(
-            NewChatSendAdmission("provider:model", "prompt", capturedSettings),
-            snapshot.toSendAdmission("global:model"),
-        )
-        assertEquals(
-            "global:model",
-            snapshot.copy(modelId = null).toSendAdmission("global:model").modelId,
-        )
     }
 
     @Test
