@@ -4,9 +4,14 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -477,15 +482,8 @@ private fun CaptureEventCard(
     onClick: () -> Unit,
 ) {
     val allowSpatialTransitions = LocalAgoraMotionPolicy.current.allowSpatialTransitions
-    val contentSizeModifier = if (allowSpatialTransitions) {
-        Modifier.animateContentSize(
-            animationSpec = tween(CaptureCrossfadeDurationMillis),
-        )
-    } else {
-        Modifier
-    }
     Surface(
-        modifier = contentSizeModifier
+        modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 8.dp),
         shape = RoundedCornerShape(24.dp),
@@ -495,9 +493,27 @@ private fun CaptureEventCard(
         SettingsItem(
             modifier = Modifier.clickable(onClick = onClick),
             headlineContent = {
-                Crossfade(
+                AnimatedContent(
                     targetState = viewMode,
-                    animationSpec = tween(CaptureCrossfadeDurationMillis),
+                    transitionSpec = {
+                        val fade = fadeIn(
+                            animationSpec = tween(CaptureCrossfadeDurationMillis),
+                        ) togetherWith fadeOut(
+                            animationSpec = tween(CaptureCrossfadeDurationMillis),
+                        )
+                        fade.using(
+                            SizeTransform(
+                                clip = false,
+                                sizeAnimationSpec = { _, _ ->
+                                    if (allowSpatialTransitions) {
+                                        tween(CaptureCrossfadeDurationMillis)
+                                    } else {
+                                        snap()
+                                    }
+                                },
+                            ),
+                        )
+                    },
                     label = "captureEventMode",
                 ) { mode ->
                     CaptureEventContent(event = event, viewMode = mode)

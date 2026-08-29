@@ -492,7 +492,8 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(capture.contains("DeveloperDiagnostics.startCapture()"))
         assertTrue(capture.contains("DeveloperDiagnostics.pauseCapture()"))
         assertTrue(capture.contains("CaptureCrossfadeDurationMillis = 250"))
-        assertEquals(3, Regex("\\bCrossfade\\(").findAll(capture).count())
+        assertEquals(2, Regex("\\bCrossfade\\(").findAll(capture).count())
+        assertEquals(1, Regex("\\bAnimatedContent\\(").findAll(capture).count())
         assertEquals(2, Regex("targetState = viewMode").findAll(capture).count())
         assertTrue(capture.contains("items(snapshot.events, key = DiagnosticEvent::sequence)"))
         assertFalse(capture.contains("snapshot.events.reversed"))
@@ -504,12 +505,18 @@ class ApprovedFeatureSourceContractTest {
                 "LocalAgoraMotionPolicy.current.allowSpatialTransitions",
             ),
         )
+        assertTrue(eventCard.contains("AnimatedContent("))
+        assertTrue(eventCard.contains("targetState = viewMode"))
+        assertTrue(eventCard.contains("fadeIn("))
+        assertTrue(eventCard.contains("fadeOut("))
+        assertTrue(eventCard.contains("SizeTransform("))
+        assertTrue(eventCard.contains("clip = false"))
         assertTrue(eventCard.contains("if (allowSpatialTransitions)"))
-        assertTrue(eventCard.contains("Modifier.animateContentSize("))
         assertTrue(
-            eventCard.contains("animationSpec = tween(CaptureCrossfadeDurationMillis)"),
+            eventCard.contains("tween(CaptureCrossfadeDurationMillis)"),
         )
-        assertTrue(eventCard.contains("} else {\n        Modifier"))
+        assertTrue(eventCard.contains("snap()"))
+        assertFalse(eventCard.contains("Modifier.animateContentSize("))
         assertTrue(eventCard.contains("SettingsItem("))
         assertFalse(eventCard.contains("leadingContent"))
         assertFalse(capture.contains("FontFamily"))
