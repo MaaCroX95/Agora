@@ -109,11 +109,59 @@ internal class DiagnosticEventBuffer(
         channel: Channel<Command>,
     ) {
         var stored = initialState
+        var pendingCommand: Command? = null
         try {
-            for (command in channel) {
+            while (true) {
+                val command = pendingCommand?.also { pendingCommand = null }
+                    ?: channel.receiveCatching().getOrNull()
+                    ?: break
+                val drained = if (command is Command.Record) {
+                    drainRecordBatch(command, channel)
+                } else {
+                    emptyList<Command.Record>() to null
+                }
+                val records = drained.first
+                pendingCommand = drained.second
+                var attemptedRecordSequences = emptyList<Long>()
+                var factoryDropCount = 0L
                 stored = try {
                     var next = persistPendingDrops(store, stored)
-                    next = process(store, next, command)
+                    if (records.isEmpty()) {
+                        next = processControl(store, next, command as ControlCommand)
+                    } else if (next.metadata.state == DiagnosticCaptureState.RUNNING) {
+                        val events = mutableListOf<DiagnosticEvent>()
+                        records.forEach { record ->
+                            val event = try {
+                                record.eventFactory(
+                                    next.metadata.nextSequence + events.size,
+                                    clock(),
+                                )
+                            } catch (_: Exception) {
+                                factoryDropCount++
+                                null
+                            }
+                            if (event != null) events += event
+                        }
+                        attemptedRecordSequences = events.map(DiagnosticEvent::sequence)
+                        if (factoryDropCount > 0L) {
+                            next = next.copy(
+                                metadata = next.metadata.copy(
+                                    droppedEventCount =
+                                        next.metadata.droppedEventCount + factoryDropCount,
+                                ),
+                            )
+                        }
+                        next = when {
+                            events.isNotEmpty() -> store.appendBatch(next, events).also {
+                                attemptedRecordSequences = emptyList()
+                                factoryDropCount = 0L
+                            }
+                            factoryDropCount > 0L -> store.persistMetadata(next).also {
+                                factoryDropCount = 0L
+                            }
+                            else -> next
+                        }
+                    }
                     persistPendingDrops(store, next)
                 } catch (cancelled: CancellationException) {
                     command.fail(cancelled)
@@ -122,51 +170,73 @@ internal class DiagnosticEventBuffer(
                     failClosed(
                         store = store,
                         state = stored,
-                        command = command,
+                        attemptedRecordSequences = attemptedRecordSequences,
+                        factoryDropCount = factoryDropCount,
                     )
                 }
                 publish(stored)
                 command.complete(mutableSnapshot.value)
             }
         } finally {
+            pendingCommand?.fail(CancellationException("Diagnostic capture consumer stopped"))
             channel.cancel(CancellationException("Diagnostic capture consumer stopped"))
         }
     }
 
-    private fun process(
+    private fun drainRecordBatch(
+        first: Command.Record,
+        channel: Channel<Command>,
+    ): Pair<List<Command.Record>, Command?> {
+        val records = mutableListOf(first)
+        var pendingCommand: Command? = null
+        while (records.size < MAX_RECORD_BATCH_SIZE) {
+            val next = channel.tryReceive().getOrNull() ?: break
+            if (next is Command.Record) {
+                records += next
+            } else {
+                pendingCommand = next
+                break
+            }
+        }
+        return records to pendingCommand
+    }
+
+    private fun processControl(
         store: DiagnosticCaptureStore,
         state: DiagnosticStoredState,
-        command: Command,
+        command: ControlCommand,
     ): DiagnosticStoredState = when (command) {
         is Command.Start -> start(store, state)
         is Command.Pause -> pause(store, state)
         is Command.Clear -> store.clear(state)
         is Command.DisableAndClear -> store.deleteAll()
         is Command.Flush -> state
-        is Command.Record -> append(store, state, command.eventFactory)
     }
 
     private fun start(
         store: DiagnosticCaptureStore,
         state: DiagnosticStoredState,
-    ): DiagnosticStoredState = when (state.metadata.state) {
-        DiagnosticCaptureState.RUNNING -> state
-        DiagnosticCaptureState.PAUSED -> store.persistMetadata(
-            state.copy(
-                metadata = state.metadata.copy(state = DiagnosticCaptureState.RUNNING),
-            ),
-        )
-        DiagnosticCaptureState.IDLE -> {
-            val empty = store.deleteAll()
-            store.persistMetadata(
-                empty.copy(
-                    metadata = DiagnosticCaptureMetadata(
-                        state = DiagnosticCaptureState.RUNNING,
-                        sessionId = sessionIdFactory(),
-                        startedAtMillis = clock(),
-                    ),
+    ): DiagnosticStoredState {
+        if (state.metadata.capacityLimitReached) return state
+        return when (state.metadata.state) {
+            DiagnosticCaptureState.RUNNING -> state
+            DiagnosticCaptureState.PAUSED -> store.persistMetadata(
+                state.copy(
+                    metadata = state.metadata.copy(state = DiagnosticCaptureState.RUNNING),
                 ),
             )
+            DiagnosticCaptureState.IDLE -> {
+                val empty = store.deleteAll()
+                store.persistMetadata(
+                    empty.copy(
+                        metadata = DiagnosticCaptureMetadata(
+                            state = DiagnosticCaptureState.RUNNING,
+                            sessionId = sessionIdFactory(),
+                            startedAtMillis = clock(),
+                        ),
+                    ),
+                )
+            }
         }
     }
 
@@ -180,26 +250,6 @@ internal class DiagnosticEventBuffer(
                 metadata = state.metadata.copy(state = DiagnosticCaptureState.PAUSED),
             ),
         )
-    }
-
-    private fun append(
-        store: DiagnosticCaptureStore,
-        state: DiagnosticStoredState,
-        eventFactory: (sequence: Long, timestampMillis: Long) -> DiagnosticEvent,
-    ): DiagnosticStoredState {
-        if (state.metadata.state != DiagnosticCaptureState.RUNNING) return state
-        val event = try {
-            eventFactory(state.metadata.nextSequence, clock())
-        } catch (_: Exception) {
-            return store.persistMetadata(
-                state.copy(
-                    metadata = state.metadata.copy(
-                        droppedEventCount = state.metadata.droppedEventCount + 1L,
-                    ),
-                ),
-            )
-        }
-        return store.append(state, event)
     }
 
     private fun persistPendingDrops(
@@ -222,23 +272,24 @@ internal class DiagnosticEventBuffer(
     private fun failClosed(
         store: DiagnosticCaptureStore,
         state: DiagnosticStoredState,
-        command: Command,
+        attemptedRecordSequences: List<Long>,
+        factoryDropCount: Long,
     ): DiagnosticStoredState {
         val pending = pendingDroppedEvents.getAndSet(0L)
-        val attemptedSequence = if (command is Command.Record) {
-            state.metadata.nextSequence
-        } else {
-            null
-        }
         val reconciled = try {
             store.load()
         } catch (_: Exception) {
             state
         }
-        val recordRecovered = attemptedSequence != null &&
-            reconciled.events.any { event -> event.sequence == attemptedSequence }
+        val recoveredSequences = reconciled.events
+            .asSequence()
+            .map(DiagnosticEvent::sequence)
+            .toHashSet()
+        val unrecoveredRecordCount = attemptedRecordSequences.count { sequence ->
+            sequence !in recoveredSequences
+        }
         val requiredDropped = state.metadata.droppedEventCount + pending +
-            if (command is Command.Record && !recordRecovered) 1L else 0L
+            factoryDropCount + unrecoveredRecordCount
         val fallbackState = if (reconciled.metadata.sessionId == null) {
             DiagnosticCaptureState.IDLE
         } else {
@@ -277,6 +328,7 @@ internal class DiagnosticEventBuffer(
             droppedEventCount = metadata.droppedEventCount,
             evictedEventCount = metadata.evictedEventCount,
             truncatedPayloadCount = metadata.truncatedPayloadCount,
+            capacityLimitReached = metadata.capacityLimitReached,
         )
     }
 
@@ -317,5 +369,6 @@ internal class DiagnosticEventBuffer(
     internal companion object {
         const val DEFAULT_QUEUE_CAPACITY = 128
         const val MAX_QUEUE_CAPACITY = 4_096
+        private const val MAX_RECORD_BATCH_SIZE = 64
     }
 }

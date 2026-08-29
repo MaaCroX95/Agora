@@ -8,6 +8,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.nio.file.Files
 
 class DiagnosticEventBufferTest {
@@ -108,6 +109,99 @@ class DiagnosticEventBufferTest {
         assertEquals(4L, afterClear.nextSequence)
         assertEquals(listOf(3L), restored.events.map(DiagnosticEvent::sequence))
         assertEquals(4L, restored.metadata.nextSequence)
+    }
+
+    @Test
+    fun `flush persists a burst across bounded record batches without drops`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val buffer = DiagnosticEventBuffer(queueCapacity = 128, ioDispatcher = dispatcher)
+        buffer.initialize(DiagnosticCaptureStore(root), backgroundScope)
+        buffer.start()
+
+        repeat(100) {
+            buffer.record(::event)
+        }
+        val snapshot = buffer.flush()
+
+        assertEquals((1L..100L).toList(), snapshot.events.map(DiagnosticEvent::sequence))
+        assertEquals(101L, snapshot.nextSequence)
+        assertEquals(0L, snapshot.droppedEventCount)
+        assertEquals(
+            snapshot.events,
+            DiagnosticCaptureStore(root).load().events,
+        )
+    }
+
+    @Test
+    fun `capacity pause rejects resume until clear then preserves sequence`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val store = DiagnosticCaptureStore(
+            directory = root,
+            maxPayloadBytes = 100,
+            maxRetainedPayloadBytes = 6L,
+        )
+        val buffer = DiagnosticEventBuffer(queueCapacity = 8, ioDispatcher = dispatcher)
+        buffer.initialize(store, backgroundScope)
+        buffer.start()
+
+        buffer.record(::event)
+        buffer.record(::event)
+        val limited = buffer.flush()
+        var invokedWhileLimited = false
+        buffer.record { sequence, timestamp ->
+            invokedWhileLimited = true
+            event(sequence, timestamp)
+        }
+        val rejectedResume = buffer.start()
+        val cleared = buffer.clear()
+        val resumed = buffer.start()
+        buffer.record(::event)
+        val recovered = buffer.flush()
+
+        assertEquals(DiagnosticCaptureState.PAUSED, limited.state)
+        assertEquals(listOf(1L), limited.events.map(DiagnosticEvent::sequence))
+        assertEquals(2L, limited.nextSequence)
+        assertEquals(0L, limited.droppedEventCount)
+        assertTrue(limited.capacityLimitReached)
+        assertFalse(invokedWhileLimited)
+        assertEquals(limited, rejectedResume)
+        assertFalse(cleared.capacityLimitReached)
+        assertTrue(cleared.events.isEmpty())
+        assertEquals(2L, cleared.nextSequence)
+        assertEquals(DiagnosticCaptureState.RUNNING, resumed.state)
+        assertEquals(listOf(2L), recovered.events.map(DiagnosticEvent::sequence))
+        assertEquals(3L, recovered.nextSequence)
+    }
+
+    @Test
+    fun `batch write failure recovers durable prefix and pauses with one drop`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val store = DiagnosticCaptureStore(root)
+        val buffer = DiagnosticEventBuffer(queueCapacity = 8, ioDispatcher = dispatcher)
+        buffer.initialize(store, backgroundScope)
+        buffer.start()
+        File(root, "events/00000000000000000002.json").writeText("corrupt")
+
+        buffer.record(::event)
+        buffer.record(::event)
+        val failed = buffer.flush()
+        val resumed = buffer.start()
+        buffer.record(::event)
+        val recovered = buffer.flush()
+        val restored = store.load()
+
+        assertEquals(DiagnosticCaptureState.PAUSED, failed.state)
+        assertEquals(listOf(1L), failed.events.map(DiagnosticEvent::sequence))
+        assertEquals(2L, failed.nextSequence)
+        assertEquals(1L, failed.droppedEventCount)
+        assertFalse(failed.capacityLimitReached)
+        assertEquals(DiagnosticCaptureState.RUNNING, resumed.state)
+        assertEquals(listOf(1L, 2L), recovered.events.map(DiagnosticEvent::sequence))
+        assertEquals(3L, recovered.nextSequence)
+        assertEquals(1L, recovered.droppedEventCount)
+        assertEquals(recovered.state, restored.metadata.state)
+        assertEquals(recovered.events, restored.events)
+        assertEquals(recovered.droppedEventCount, restored.metadata.droppedEventCount)
     }
 
     @Test

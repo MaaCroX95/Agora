@@ -479,8 +479,8 @@ class ApprovedFeatureSourceContractTest {
             capture.contains("R.string.developer_options_clear_diagnostics_action"),
         )
         assertTrue(capture.contains("R.string.developer_options_clear_diagnostics)"))
-        assertEquals(4, Regex("\\bCaptureExportMenuItem\\(").findAll(capture).count())
-        assertTrue(capture.contains("DiagnosticExportFormat.RAW_JSON"))
+        assertEquals(3, Regex("\\bCaptureExportMenuItem\\(").findAll(capture).count())
+        assertFalse(capture.contains("DiagnosticExportFormat.RAW_JSON"))
         assertTrue(capture.contains("DiagnosticExportFormat.REDACTED_JSON"))
         assertTrue(capture.contains("DiagnosticExportFormat.SUMMARY_TEXT"))
         assertTrue(capture.contains("FloatingActionButton("))

@@ -22,7 +22,6 @@ enum class DiagnosticCaptureState {
 
 @Serializable
 enum class DiagnosticExportFormat {
-    RAW_JSON,
     REDACTED_JSON,
     SUMMARY_TEXT,
 }

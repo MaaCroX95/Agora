@@ -21,17 +21,9 @@ object DiagnosticBundleExporter {
         format: DiagnosticExportFormat,
         generatedAtMillis: Long = System.currentTimeMillis(),
     ): String = when (format) {
-        DiagnosticExportFormat.RAW_JSON -> exportJson(
-            snapshot = snapshot,
-            format = format,
-            generatedAtMillis = generatedAtMillis,
-            redactContent = false,
-        )
         DiagnosticExportFormat.REDACTED_JSON -> exportJson(
             snapshot = snapshot,
-            format = format,
             generatedAtMillis = generatedAtMillis,
-            redactContent = true,
         )
         DiagnosticExportFormat.SUMMARY_TEXT -> exportSummary(
             snapshot = snapshot,
@@ -41,16 +33,16 @@ object DiagnosticBundleExporter {
 
     private fun exportJson(
         snapshot: DiagnosticSnapshot,
-        format: DiagnosticExportFormat,
         generatedAtMillis: Long,
-        redactContent: Boolean,
     ): String {
         val root = buildJsonObject {
             put("schemaVersion", 1)
             put("generatedAtMillis", generatedAtMillis)
-            put("format", format.name)
+            put("format", DiagnosticExportFormat.REDACTED_JSON.name)
             put("captureState", snapshot.state.name)
             put("captureActive", snapshot.isCaptureActive)
+            put("capacityLimitReached", snapshot.capacityLimitReached)
+            put("captureIncompleteDueToCapacity", snapshot.capacityLimitReached)
             put("nextSequence", snapshot.nextSequence)
             put("retainedPayloadBytes", snapshot.retainedPayloadBytes)
             put("droppedEventCount", snapshot.droppedEventCount)
@@ -65,8 +57,12 @@ object DiagnosticBundleExporter {
             }
             putJsonArray("events") {
                 snapshot.events.forEach { event ->
-                    val exported = if (redactContent) event.redactContent() else event
-                    add(json.encodeToJsonElement(DiagnosticEvent.serializer(), exported))
+                    add(
+                        json.encodeToJsonElement(
+                            DiagnosticEvent.serializer(),
+                            event.redactContent(),
+                        ),
+                    )
                 }
             }
         }
@@ -83,6 +79,8 @@ object DiagnosticBundleExporter {
         appendLine("format=${DiagnosticExportFormat.SUMMARY_TEXT.name}")
         appendLine("captureState=${snapshot.state.name}")
         appendLine("captureActive=${snapshot.isCaptureActive}")
+        appendLine("capacityLimitReached=${snapshot.capacityLimitReached}")
+        appendLine("captureIncompleteDueToCapacity=${snapshot.capacityLimitReached}")
         appendLine("nextSequence=${snapshot.nextSequence}")
         appendLine("retainedPayloadBytes=${snapshot.retainedPayloadBytes}")
         appendLine("eventCount=${snapshot.events.size}")

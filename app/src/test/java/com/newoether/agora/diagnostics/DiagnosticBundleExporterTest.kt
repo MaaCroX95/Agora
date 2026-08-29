@@ -1,12 +1,13 @@
 package com.newoether.agora.diagnostics
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiagnosticBundleExporterTest {
     @Test
-    fun `three export formats share sanitized raw data and apply exact content policy`() {
+    fun `exports expose only redacted json and content-free summary with completeness metadata`() {
         val providerId = "custom-provider-00000000-0000-4000-8000-000000000001"
         val requestBody = DiagnosticRedactor.captureJson(
             """{"messages":[{"role":"user","content":"private prompt"}],"api_key":"request-secret","max_tokens":10}""",
@@ -66,13 +67,9 @@ class DiagnosticBundleExporterTest {
             droppedEventCount = 2L,
             evictedEventCount = 3L,
             truncatedPayloadCount = 4L,
+            capacityLimitReached = true,
         )
 
-        val raw = DiagnosticBundleExporter.export(
-            snapshot = snapshot,
-            format = DiagnosticExportFormat.RAW_JSON,
-            generatedAtMillis = 20L,
-        )
         val redacted = DiagnosticBundleExporter.export(
             snapshot = snapshot,
             format = DiagnosticExportFormat.REDACTED_JSON,
@@ -84,31 +81,38 @@ class DiagnosticBundleExporterTest {
             generatedAtMillis = 20L,
         )
 
-        assertTrue(raw.contains("private prompt"))
-        assertTrue(raw.contains("private response"))
-        assertTrue(raw.contains("private parsed tool result"))
-        assertTrue(raw.contains(providerId))
-        assertTrue(raw.contains("captureState"))
-        assertTrue(raw.contains("RUNNING"))
-        assertTrue(raw.contains("nextSequence"))
-        assertTrue(raw.contains("retainedPayloadBytes"))
-        assertTrue(raw.contains("evictedEventCount"))
-        assertTrue(raw.contains("truncatedPayloadCount"))
-        assertFalse(raw.contains("request-secret"))
-        assertFalse(raw.contains("query-secret"))
-        assertFalse(raw.contains("header-secret"))
-        assertTrue(raw.contains("[REDACTED_SECRET]"))
-
+        assertEquals(
+            listOf(
+                DiagnosticExportFormat.REDACTED_JSON,
+                DiagnosticExportFormat.SUMMARY_TEXT,
+            ),
+            DiagnosticExportFormat.entries,
+        )
         assertFalse(redacted.contains("private prompt"))
         assertFalse(redacted.contains("private response"))
         assertFalse(redacted.contains("private tool result"))
         assertFalse(redacted.contains("private parsed tool result"))
+        assertFalse(redacted.contains("request-secret"))
+        assertFalse(redacted.contains("query-secret"))
+        assertFalse(redacted.contains("header-secret"))
         assertTrue(redacted.contains("[REDACTED_CONTENT]"))
+        assertTrue(redacted.contains("[REDACTED_SECRET]"))
         assertTrue(redacted.contains("max_tokens"))
         assertTrue(redacted.contains("fixture_tool"))
+        assertTrue(redacted.contains(providerId))
+        assertTrue(redacted.contains("\"format\": \"REDACTED_JSON\""))
+        assertTrue(redacted.contains("\"captureState\": \"RUNNING\""))
+        assertTrue(redacted.contains("\"nextSequence\": 4"))
+        assertTrue(redacted.contains("\"retainedPayloadBytes\": 321"))
+        assertTrue(redacted.contains("\"evictedEventCount\": 3"))
+        assertTrue(redacted.contains("\"truncatedPayloadCount\": 4"))
+        assertTrue(redacted.contains("\"capacityLimitReached\": true"))
+        assertTrue(redacted.contains("\"captureIncompleteDueToCapacity\": true"))
 
         assertTrue(summary.contains("eventCount=3"))
         assertTrue(summary.contains("droppedEventCount=2"))
+        assertTrue(summary.contains("capacityLimitReached=true"))
+        assertTrue(summary.contains("captureIncompleteDueToCapacity=true"))
         assertTrue(summary.contains("type=HttpRequest"))
         assertTrue(summary.contains("type=ParsedStreamEvent"))
         assertFalse(summary.contains("private prompt"))

@@ -245,23 +245,6 @@ internal fun SettingsDeveloperCapturePage(
                     )
                     CaptureExportMenuItem(
                         label = stringResource(
-                            R.string.developer_options_capture_export_raw_json,
-                        ),
-                        enabled = hasCaptureData,
-                        onClick = {
-                            showActionsMenu = false
-                            scope.launch {
-                                exportCapture(
-                                    context = context,
-                                    format = DiagnosticExportFormat.RAW_JSON,
-                                    chooserTitle = chooserTitle,
-                                    onExportFailed = onExportFailed,
-                                )
-                            }
-                        },
-                    )
-                    CaptureExportMenuItem(
-                        label = stringResource(
                             R.string.developer_options_capture_export_redacted_json,
                         ),
                         enabled = hasCaptureData,
