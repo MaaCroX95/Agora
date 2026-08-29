@@ -108,7 +108,7 @@ class SettingsResourceContractTest {
             "settings_developer" to "Developer Options",
             "developer_options_capture" to "Diagnostic Capture",
             "developer_options_disable_title" to "Turn Off Developer Options?",
-            "developer_options_clear_diagnostics" to "Clear Diagnostic Session",
+            "developer_options_clear_diagnostics" to "Clear Diagnostic Session?",
             "developer_options_export_share_title" to "Share Agora Diagnostic Bundle",
             "skills_empty" to "No Skills Yet",
         )
