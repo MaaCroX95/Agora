@@ -462,40 +462,65 @@ class ApprovedFeatureSourceContractTest {
             .map(String::trim)
             .filter(String::isNotBlank)
             .toList()
-        val toolbar = capture
-            .substringAfter("private fun CaptureToolbar(")
-            .substringBefore("private fun CaptureIconAction(")
+        val eventCard = capture
+            .substringAfter("private fun CaptureEventCard(")
+            .substringBefore("private fun CaptureEventContent(")
 
         assertEquals(listOf("SUMMARY,", "RAW,"), modes)
-        listOf("Start", "Pause", "Clear", "Export").forEach { label ->
-            assertEquals(1, Regex("label = \"$label\"").findAll(toolbar).count())
-        }
-        assertEquals(4, Regex("CaptureIconAction\\(").findAll(toolbar).count())
-        assertEquals(3, Regex("DropdownMenuItem\\(").findAll(toolbar).count())
-        assertTrue(toolbar.contains("DiagnosticExportFormat.RAW_JSON"))
-        assertTrue(toolbar.contains("DiagnosticExportFormat.REDACTED_JSON"))
-        assertTrue(toolbar.contains("DiagnosticExportFormat.SUMMARY_TEXT"))
+        assertTrue(capture.contains("PillTabSwitcher("))
+        assertFalse(capture.contains("SingleChoiceSegmentedButtonRow"))
+        assertFalse(capture.contains("SegmentedButton("))
+        assertTrue(capture.contains("actions = {"))
+        assertTrue(capture.contains("Icons.Default.MoreVert"))
+        assertEquals(4, Regex("\\bCaptureExportMenuItem\\(").findAll(capture).count())
+        assertTrue(capture.contains("DiagnosticExportFormat.RAW_JSON"))
+        assertTrue(capture.contains("DiagnosticExportFormat.REDACTED_JSON"))
+        assertTrue(capture.contains("DiagnosticExportFormat.SUMMARY_TEXT"))
+        assertTrue(capture.contains("FloatingActionButton("))
+        assertTrue(capture.contains("SmallFloatingActionButton("))
+        assertTrue(capture.contains("horizontalArrangement = Arrangement.End"))
+        assertTrue(capture.contains("verticalArrangement = Arrangement.spacedBy(12.dp)"))
+        assertTrue(capture.contains("targetState = captureRunning"))
+        assertTrue(capture.contains("DeveloperDiagnostics.startCapture()"))
+        assertTrue(capture.contains("DeveloperDiagnostics.pauseCapture()"))
+        assertTrue(capture.contains("CaptureCrossfadeDurationMillis = 250"))
+        assertEquals(3, Regex("\\bCrossfade\\(").findAll(capture).count())
+        assertEquals(2, Regex("targetState = viewMode").findAll(capture).count())
         assertTrue(capture.contains("items(snapshot.events, key = DiagnosticEvent::sequence)"))
         assertFalse(capture.contains("snapshot.events.reversed"))
         assertFalse(capture.contains("snapshot.events.asReversed"))
+        assertTrue(eventCard.contains("Surface("))
+        assertTrue(eventCard.contains("shape = RoundedCornerShape(24.dp)"))
+        assertTrue(eventCard.contains("SettingsItem("))
+        assertFalse(eventCard.contains("leadingContent"))
         assertTrue(capture.contains("collectIsDraggedAsState()"))
         assertTrue(capture.contains("isDragged && listState.canScrollForward -> followLatest = false"))
         assertTrue(capture.contains("if (!followLatest && snapshot.events.isNotEmpty())"))
         assertTrue(capture.contains("val targetIndex = eventCount + 1"))
         assertFalse(capture.contains("val targetIndex = eventCount + 2"))
         assertEquals(2, Regex("scrollToLatestCaptureEvent\\(").findAll(capture).count())
-        assertTrue(capture.contains("val eventDetails = remember(event, viewMode)"))
-        assertTrue(capture.contains("val rowDetails = remember(event, viewMode)"))
-        assertTrue(capture.contains("text = eventDetails"))
-        assertTrue(capture.contains("text = checkNotNull(rowDetails)"))
-        assertTrue(capture.contains("CaptureViewMode.SUMMARY -> buildString"))
-        assertTrue(capture.contains("CaptureViewMode.RAW -> rawDetails()"))
+        assertTrue(capture.contains("item(key = \"capture-fab-spacer\")"))
+        assertTrue(capture.contains("Spacer(Modifier.height(80.dp))"))
+        assertTrue(capture.contains("val rawEventDetails = remember(event) { event.rawDetails() }"))
+        assertTrue(capture.contains("CaptureViewMode.RAW -> rawEventDetails"))
         assertTrue(capture.contains("captureEventJson.encodeToString(DiagnosticEvent.serializer(), this)"))
         assertTrue(capture.contains("DeveloperDiagnostics.snapshots.collectAsState()"))
-        assertTrue(capture.contains("DeveloperDiagnostics.startCapture()"))
-        assertTrue(capture.contains("DeveloperDiagnostics.pauseCapture()"))
         assertTrue(capture.contains("DeveloperDiagnostics.clear()"))
         assertTrue(capture.contains("DeveloperDiagnostics.flush()"))
+        assertFalse(capture.contains("CaptureToolbar("))
+        assertFalse(capture.contains("CaptureIconAction("))
+        listOf(
+            "\"Start\"",
+            "\"Pause\"",
+            "\"Clear\"",
+            "\"Export\"",
+            "\"Summary\"",
+            "\"Raw\"",
+            "\"Jump to latest\"",
+            "\"No captured events.\"",
+        ).forEach { hardCodedLabel ->
+            assertFalse("Capture page still contains $hardCodedLabel", capture.contains(hardCodedLabel))
+        }
         assertFalse(capture.contains("DiagnosticCaptureStore"))
         assertFalse(capture.contains("DiagnosticEventBuffer"))
         assertFalse(capture.contains("noBackupFilesDir"))

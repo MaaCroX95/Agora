@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -20,27 +22,27 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TooltipAnchorPosition
@@ -57,8 +59,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -82,6 +84,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
+private const val CaptureCrossfadeDurationMillis = 250
+
 private enum class CaptureViewMode {
     SUMMARY,
     RAW,
@@ -102,9 +106,13 @@ internal fun SettingsDeveloperCapturePage(
     var followLatest by rememberSaveable { mutableStateOf(true) }
     var selectedEvent by remember { mutableStateOf<DiagnosticEvent?>(null) }
     var showClearConfirmation by remember { mutableStateOf(false) }
-    var showExportMenu by remember { mutableStateOf(false) }
+    var showActionsMenu by remember { mutableStateOf(false) }
     val hasCaptureData = snapshot.hasCaptureData()
     val chooserTitle = stringResource(R.string.developer_options_export_share_title)
+    val playLabel = stringResource(R.string.developer_options_capture_play)
+    val pauseLabel = stringResource(R.string.developer_options_capture_pause)
+    val jumpLatestLabel = stringResource(R.string.developer_options_capture_jump_latest)
+    val moreActionsLabel = stringResource(R.string.developer_options_capture_more_actions)
 
     LaunchedEffect(isDragged, listState.canScrollForward) {
         when {
@@ -119,7 +127,7 @@ internal fun SettingsDeveloperCapturePage(
     }
 
     selectedEvent?.let { event ->
-        val eventDetails = remember(event, viewMode) { event.details(viewMode) }
+        val rawEventDetails = remember(event) { event.rawDetails() }
         AlertDialog(
             onDismissRequest = { selectedEvent = null },
             title = {
@@ -131,14 +139,24 @@ internal fun SettingsDeveloperCapturePage(
             },
             text = {
                 SelectionContainer {
-                    Text(
-                        text = eventDetails,
-                        modifier = Modifier
-                            .heightIn(max = 520.dp)
-                            .verticalScroll(rememberScrollState()),
-                        fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    Crossfade(
+                        targetState = viewMode,
+                        animationSpec = tween(CaptureCrossfadeDurationMillis),
+                        label = "captureEventDetailMode",
+                    ) { mode ->
+                        val eventDetails = when (mode) {
+                            CaptureViewMode.SUMMARY -> event.summaryDetails()
+                            CaptureViewMode.RAW -> rawEventDetails
+                        }
+                        Text(
+                            text = eventDetails,
+                            modifier = Modifier
+                                .heightIn(max = 520.dp)
+                                .verticalScroll(rememberScrollState()),
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -152,9 +170,14 @@ internal fun SettingsDeveloperCapturePage(
     if (showClearConfirmation) {
         AlertDialog(
             onDismissRequest = { showClearConfirmation = false },
-            title = { Text(stringResource(R.string.developer_options_clear_diagnostics)) },
+            title = {
+                Text(
+                    text = stringResource(R.string.developer_options_clear_diagnostics),
+                    fontWeight = FontWeight.Bold,
+                )
+            },
             text = {
-                Text("Clear captured events and counters? Capture state and session are preserved.")
+                Text(stringResource(R.string.developer_options_capture_clear_message))
             },
             confirmButton = {
                 TextButton(
@@ -163,7 +186,7 @@ internal fun SettingsDeveloperCapturePage(
                         scope.launch { DeveloperDiagnostics.clear() }
                     },
                 ) {
-                    Text("Clear")
+                    Text(stringResource(R.string.developer_options_capture_clear_confirm))
                 }
             },
             dismissButton = {
@@ -174,170 +197,205 @@ internal fun SettingsDeveloperCapturePage(
         )
     }
 
+    val captureRunning = snapshot.state == DiagnosticCaptureState.RUNNING
+    val captureActionLabel = if (captureRunning) pauseLabel else playLabel
+
     CollapsingSettingsLazyScaffold(
         title = stringResource(R.string.developer_options_capture),
         onBack = onBack,
         listState = listState,
-        contentHorizontalPadding = 0.dp,
+        actions = {
+            Box {
+                CaptureTooltip(label = moreActionsLabel) {
+                    IconButton(onClick = { showActionsMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = moreActionsLabel,
+                        )
+                    }
+                }
+                DropdownMenu(
+                    expanded = showActionsMenu,
+                    onDismissRequest = { showActionsMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(stringResource(R.string.developer_options_clear_diagnostics))
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = null)
+                        },
+                        enabled = hasCaptureData,
+                        onClick = {
+                            showActionsMenu = false
+                            showClearConfirmation = true
+                        },
+                    )
+                    CaptureExportMenuItem(
+                        label = stringResource(
+                            R.string.developer_options_capture_export_raw_json,
+                        ),
+                        enabled = hasCaptureData,
+                        onClick = {
+                            showActionsMenu = false
+                            scope.launch {
+                                exportCapture(
+                                    context = context,
+                                    format = DiagnosticExportFormat.RAW_JSON,
+                                    chooserTitle = chooserTitle,
+                                    onExportFailed = onExportFailed,
+                                )
+                            }
+                        },
+                    )
+                    CaptureExportMenuItem(
+                        label = stringResource(
+                            R.string.developer_options_capture_export_redacted_json,
+                        ),
+                        enabled = hasCaptureData,
+                        onClick = {
+                            showActionsMenu = false
+                            scope.launch {
+                                exportCapture(
+                                    context = context,
+                                    format = DiagnosticExportFormat.REDACTED_JSON,
+                                    chooserTitle = chooserTitle,
+                                    onExportFailed = onExportFailed,
+                                )
+                            }
+                        },
+                    )
+                    CaptureExportMenuItem(
+                        label = stringResource(
+                            R.string.developer_options_capture_export_summary_text,
+                        ),
+                        enabled = hasCaptureData,
+                        onClick = {
+                            showActionsMenu = false
+                            scope.launch {
+                                exportCapture(
+                                    context = context,
+                                    format = DiagnosticExportFormat.SUMMARY_TEXT,
+                                    chooserTitle = chooserTitle,
+                                    onExportFailed = onExportFailed,
+                                )
+                            }
+                        },
+                    )
+                }
+            }
+        },
         floatingActionButton = {
-            if (!followLatest && snapshot.events.isNotEmpty()) {
-                CaptureTooltip(label = "Jump to latest") {
-                    SmallFloatingActionButton(
-                        onClick = { followLatest = true },
-                    ) {
-                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Jump to latest")
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (!followLatest && snapshot.events.isNotEmpty()) {
+                        CaptureTooltip(label = jumpLatestLabel) {
+                            SmallFloatingActionButton(
+                                onClick = { followLatest = true },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowDown,
+                                    contentDescription = jumpLatestLabel,
+                                )
+                            }
+                        }
+                    }
+                    CaptureTooltip(label = captureActionLabel) {
+                        FloatingActionButton(
+                            onClick = {
+                                scope.launch {
+                                    if (captureRunning) {
+                                        DeveloperDiagnostics.pauseCapture()
+                                    } else {
+                                        DeveloperDiagnostics.startCapture()
+                                    }
+                                }
+                            },
+                        ) {
+                            Crossfade(
+                                targetState = captureRunning,
+                                animationSpec = tween(CaptureCrossfadeDurationMillis),
+                                label = "capturePlayPause",
+                            ) { running ->
+                                val label = if (running) pauseLabel else playLabel
+                                Icon(
+                                    imageVector = if (running) {
+                                        Icons.Default.Pause
+                                    } else {
+                                        Icons.Default.PlayArrow
+                                    },
+                                    contentDescription = label,
+                                )
+                            }
+                        }
                     }
                 }
             }
         },
     ) {
-        item(key = "capture-controls") {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                CaptureToolbar(
-                    snapshot = snapshot,
-                    hasCaptureData = hasCaptureData,
-                    exportExpanded = showExportMenu,
-                    onStart = { scope.launch { DeveloperDiagnostics.startCapture() } },
-                    onPause = { scope.launch { DeveloperDiagnostics.pauseCapture() } },
-                    onClear = { showClearConfirmation = true },
-                    onExportMenuChange = { showExportMenu = it },
-                    onExport = { format ->
-                        showExportMenu = false
-                        scope.launch {
-                            try {
-                                val flushed = DeveloperDiagnostics.flush()
-                                shareDiagnosticCapture(
-                                    context = context,
-                                    snapshot = flushed,
-                                    format = format,
-                                    chooserTitle = chooserTitle,
-                                )
-                            } catch (cancelled: CancellationException) {
-                                throw cancelled
-                            } catch (_: Exception) {
-                                onExportFailed()
-                            }
-                        }
+        item(key = "capture-header") {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                PillTabSwitcher(
+                    tabs = listOf(
+                        stringResource(R.string.developer_options_capture_summary),
+                        stringResource(R.string.developer_options_capture_raw),
+                    ),
+                    selectedIndex = viewMode.ordinal,
+                    onSelect = { index ->
+                        CaptureViewMode.entries.getOrNull(index)?.let { viewMode = it }
                     },
                 )
                 Spacer(Modifier.height(8.dp))
-                CaptureViewSelector(
-                    selected = viewMode,
-                    onSelected = { viewMode = it },
-                )
+                CaptureSnapshotSummary(snapshot)
+                Spacer(Modifier.height(12.dp))
             }
-        }
-
-        item(key = "capture-summary") {
-            CaptureSnapshotSummary(snapshot)
         }
 
         if (snapshot.events.isEmpty()) {
             item(key = "capture-empty") {
                 Text(
-                    text = "No captured events.",
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 28.dp),
+                    text = stringResource(R.string.developer_options_capture_empty),
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 20.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
         } else {
             items(snapshot.events, key = DiagnosticEvent::sequence) { event ->
-                CaptureEventRow(
+                CaptureEventCard(
                     event = event,
                     viewMode = viewMode,
                     onClick = { selectedEvent = event },
                 )
             }
         }
-    }
-}
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CaptureToolbar(
-    snapshot: DiagnosticSnapshot,
-    hasCaptureData: Boolean,
-    exportExpanded: Boolean,
-    onStart: () -> Unit,
-    onPause: () -> Unit,
-    onClear: () -> Unit,
-    onExportMenuChange: (Boolean) -> Unit,
-    onExport: (DiagnosticExportFormat) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-    ) {
-        CaptureIconAction(
-            label = "Start",
-            icon = Icons.Default.PlayArrow,
-            enabled = snapshot.state != DiagnosticCaptureState.RUNNING,
-            onClick = onStart,
-        )
-        CaptureIconAction(
-            label = "Pause",
-            icon = Icons.Default.Pause,
-            enabled = snapshot.state == DiagnosticCaptureState.RUNNING,
-            onClick = onPause,
-        )
-        CaptureIconAction(
-            label = "Clear",
-            icon = Icons.Default.DeleteSweep,
-            enabled = hasCaptureData,
-            onClick = onClear,
-        )
-        Box {
-            CaptureIconAction(
-                label = "Export",
-                icon = Icons.Default.FileUpload,
-                enabled = hasCaptureData,
-                onClick = { onExportMenuChange(true) },
-            )
-            DropdownMenu(
-                expanded = exportExpanded,
-                onDismissRequest = { onExportMenuChange(false) },
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Raw JSON") },
-                    onClick = { onExport(DiagnosticExportFormat.RAW_JSON) },
-                )
-                DropdownMenuItem(
-                    text = { Text("Redacted JSON") },
-                    onClick = { onExport(DiagnosticExportFormat.REDACTED_JSON) },
-                )
-                DropdownMenuItem(
-                    text = { Text("Summary Text") },
-                    onClick = { onExport(DiagnosticExportFormat.SUMMARY_TEXT) },
-                )
-            }
+        item(key = "capture-fab-spacer") {
+            Spacer(Modifier.height(80.dp))
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CaptureIconAction(
+private fun CaptureExportMenuItem(
     label: String,
-    icon: ImageVector,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    CaptureTooltip(label) {
-        IconButton(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = Modifier.size(48.dp),
-        ) {
-            Icon(icon, contentDescription = label)
-        }
-    }
+    DropdownMenuItem(
+        text = { Text(label) },
+        leadingIcon = { Icon(Icons.Default.FileUpload, contentDescription = null) },
+        enabled = enabled,
+        onClick = onClick,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -356,85 +414,91 @@ private fun CaptureTooltip(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CaptureViewSelector(
-    selected: CaptureViewMode,
-    onSelected: (CaptureViewMode) -> Unit,
-) {
-    val options = CaptureViewMode.entries
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        options.forEachIndexed { index, option ->
-            SegmentedButton(
-                selected = selected == option,
-                onClick = { onSelected(option) },
-                shape = SegmentedButtonDefaults.itemShape(index, options.size),
-                label = {
-                    Text(
-                        when (option) {
-                            CaptureViewMode.SUMMARY -> "Summary"
-                            CaptureViewMode.RAW -> "Raw"
-                        },
-                    )
-                },
-            )
-        }
-    }
-}
-
 @Composable
 private fun CaptureSnapshotSummary(snapshot: DiagnosticSnapshot) {
+    val stateLabel = stringResource(
+        when (snapshot.state) {
+            DiagnosticCaptureState.IDLE -> R.string.developer_options_capture_state_idle
+            DiagnosticCaptureState.RUNNING -> R.string.developer_options_capture_state_running
+            DiagnosticCaptureState.PAUSED -> R.string.developer_options_capture_state_paused
+        },
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = 4.dp, vertical = 8.dp),
     ) {
         Text(
-            text = buildString {
-                append(snapshot.state.name.lowercase().replaceFirstChar(Char::uppercase))
-                append(" · ")
-                append(snapshot.events.size)
-                append(" events · ")
-                append(formatBytes(snapshot.retainedPayloadBytes))
-            },
+            text = stringResource(
+                R.string.developer_options_capture_status_summary,
+                stateLabel,
+                snapshot.events.size,
+                formatBytes(snapshot.retainedPayloadBytes),
+            ),
             fontWeight = FontWeight.Medium,
         )
         Text(
-            text = "Dropped ${snapshot.droppedEventCount} · " +
-                "Evicted ${snapshot.evictedEventCount} · " +
-                "Truncated ${snapshot.truncatedPayloadCount}",
+            text = stringResource(
+                R.string.developer_options_capture_counters,
+                snapshot.droppedEventCount,
+                snapshot.evictedEventCount,
+                snapshot.truncatedPayloadCount,
+            ),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
         snapshot.session?.let { session ->
             Text(
-                text = "Session ${session.id.take(12)} · next #${snapshot.nextSequence}",
+                text = stringResource(
+                    R.string.developer_options_capture_session,
+                    session.id.take(12),
+                    snapshot.nextSequence,
+                ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
     }
-    HorizontalDivider()
 }
 
 @Composable
-private fun CaptureEventRow(
+private fun CaptureEventCard(
     event: DiagnosticEvent,
     viewMode: CaptureViewMode,
     onClick: () -> Unit,
 ) {
-    val rowDetails = remember(event, viewMode) {
-        if (viewMode == CaptureViewMode.RAW) event.rawDetails() else null
-    }
-    Column(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(bottom = 8.dp),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
     ) {
-        when (viewMode) {
-            CaptureViewMode.SUMMARY -> {
+        SettingsItem(
+            modifier = Modifier.clickable(onClick = onClick),
+            headlineContent = {
+                Crossfade(
+                    targetState = viewMode,
+                    animationSpec = tween(CaptureCrossfadeDurationMillis),
+                    label = "captureEventMode",
+                ) { mode ->
+                    CaptureEventContent(event = event, viewMode = mode)
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun CaptureEventContent(
+    event: DiagnosticEvent,
+    viewMode: CaptureViewMode,
+) {
+    when (viewMode) {
+        CaptureViewMode.SUMMARY -> {
+            Column {
                 Text(
                     text = "#${event.sequence} ${event.payload.summary()}",
                     maxLines = 2,
@@ -453,18 +517,18 @@ private fun CaptureEventRow(
                     )
                 }
             }
-            CaptureViewMode.RAW -> {
-                Text(
-                    text = checkNotNull(rowDetails),
-                    maxLines = 8,
-                    overflow = TextOverflow.Ellipsis,
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
+        }
+        CaptureViewMode.RAW -> {
+            val rawDetails = remember(event) { event.rawDetails() }
+            Text(
+                text = rawDetails,
+                maxLines = 8,
+                overflow = TextOverflow.Ellipsis,
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
-    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
 }
 
 private suspend fun LazyListState.scrollToLatestCaptureEvent(eventCount: Int) {
@@ -478,13 +542,29 @@ private fun DiagnosticSnapshot.hasCaptureData(): Boolean =
     session != null || events.isNotEmpty() || droppedEventCount > 0L ||
         evictedEventCount > 0L || truncatedPayloadCount > 0L
 
+@Composable
 private fun DiagnosticEventPayload.summary(): String = when (this) {
     is DiagnosticEventPayload.RuntimeTransition -> "$commandType · $oldState -> $newState"
     is DiagnosticEventPayload.HttpStage -> "$stage · $elapsedMillis ms"
-    is DiagnosticEventPayload.HttpRequest -> "HTTP $method · bodyChars=${body.originalLength}"
-    is DiagnosticEventPayload.HttpResponseBody -> "HTTP response · code=$code · chars=${body.originalLength}"
-    is DiagnosticEventPayload.WireLine -> "wire line $lineNumber · chars=${line.originalLength}"
-    is DiagnosticEventPayload.ParsedStreamEvent -> "parsed $eventType"
+    is DiagnosticEventPayload.HttpRequest -> stringResource(
+        R.string.developer_options_capture_http_request_summary,
+        method,
+        body.originalLength,
+    )
+    is DiagnosticEventPayload.HttpResponseBody -> stringResource(
+        R.string.developer_options_capture_http_response_summary,
+        code,
+        body.originalLength,
+    )
+    is DiagnosticEventPayload.WireLine -> stringResource(
+        R.string.developer_options_capture_wire_line_summary,
+        lineNumber,
+        line.originalLength,
+    )
+    is DiagnosticEventPayload.ParsedStreamEvent -> stringResource(
+        R.string.developer_options_capture_parsed_event_summary,
+        eventType,
+    )
 }
 
 private fun DiagnosticEventPayload.typeName(): String = when (this) {
@@ -506,13 +586,11 @@ private fun DiagnosticRequestContext.summary(): String = listOfNotNull(
     pass?.let { "pass=$it" },
 ).joinToString(" · ")
 
-private fun DiagnosticEvent.details(viewMode: CaptureViewMode): String = when (viewMode) {
-    CaptureViewMode.SUMMARY -> buildString {
-        appendLine("#$sequence ${payload.summary()}")
-        context.summary().takeIf(String::isNotBlank)?.let(::appendLine)
-        append("timestampMillis=$timestampMillis")
-    }
-    CaptureViewMode.RAW -> rawDetails()
+@Composable
+private fun DiagnosticEvent.summaryDetails(): String = buildString {
+    appendLine("#$sequence ${payload.summary()}")
+    context.summary().takeIf(String::isNotBlank)?.let(::appendLine)
+    append("timestampMillis=$timestampMillis")
 }
 
 private val captureEventJson = Json {
@@ -528,6 +606,27 @@ private fun formatBytes(bytes: Long): String = when {
     bytes < 1024L -> "$bytes B"
     bytes < 1024L * 1024L -> String.format("%.1f KiB", bytes / 1024.0)
     else -> String.format("%.1f MiB", bytes / (1024.0 * 1024.0))
+}
+
+private suspend fun exportCapture(
+    context: Context,
+    format: DiagnosticExportFormat,
+    chooserTitle: String,
+    onExportFailed: () -> Unit,
+) {
+    try {
+        val snapshot = DeveloperDiagnostics.flush()
+        shareDiagnosticCapture(
+            context = context,
+            snapshot = snapshot,
+            format = format,
+            chooserTitle = chooserTitle,
+        )
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        onExportFailed()
+    }
 }
 
 private suspend fun shareDiagnosticCapture(
