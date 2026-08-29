@@ -166,8 +166,9 @@ internal object ToolCallTextParser {
         if (!name.matches(safeWireToolName)) return null
         val idFields = listOf("id", "call_id").filter(obj::containsKey)
         val ids = idFields.map { key -> stringField(obj, key) ?: return null }
-        if (ids.distinct().size > 1) return null
-        val id = ids.singleOrNull()
+        val distinctIds = ids.distinct()
+        if (distinctIds.size > 1) return null
+        val id = distinctIds.singleOrNull()
         if (id != null && !id.matches(safeWireToolCallId)) return null
         val args = obj["arguments"] ?: obj["parameters"]
             ?: function?.get("arguments") ?: function?.get("parameters")

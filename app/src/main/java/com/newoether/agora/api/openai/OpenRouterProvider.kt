@@ -3,7 +3,6 @@ package com.newoether.agora.api.openai
 import com.newoether.agora.api.*
 import com.newoether.agora.model.ThinkingLevels
 import com.newoether.agora.util.Constants
-import com.newoether.agora.api.util.StreamingThinkTagParser
 
 private val BOLD_TITLE_REGEX = Regex("\\*\\*(.*?)\\*\\*")
 private val HEADING_TITLE_REGEX = Regex("(?m)^#+\\s*(.*)$")
@@ -38,7 +37,6 @@ class OpenRouterProvider : BaseOpenAiProvider() {
     override suspend fun parseDeltaContent(
         delta: OpenAiDelta,
         config: ProviderConfig,
-        thinkParser: StreamingThinkTagParser,
         emit: suspend (StreamEvent) -> Unit
     ) {
         delta.reasoningDetails?.forEach { detail ->

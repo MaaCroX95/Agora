@@ -5,7 +5,6 @@ import com.newoether.agora.api.*
 import android.content.Context
 import com.newoether.agora.R
 import com.newoether.agora.util.DebugLog
-import com.newoether.agora.api.util.ThinkingParser
 import com.newoether.agora.data.repository.SettingsRepository
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.Participant
@@ -107,7 +106,6 @@ class LocalProvider(
         var stopped = false
         var rawBuf = ""
         val STOP_PATTERNS = listOf("<|im_end|>", "<|im_start|>")
-        val thinkParser = ThinkingParser()
         try {
             val tokenFlow = if (hasImages) {
                 engine.generateWithImages(
@@ -173,12 +171,7 @@ class LocalProvider(
                         // Strip the stop pattern and anything after it, then stop
                         val cleanEnd = rawBuf.substringBefore(hit)
                         if (cleanEnd.isNotEmpty()) {
-                            thinkParser.feed(
-                                content = cleanEnd,
-                                thinkingEnabled = config.thinkingEnabled,
-                                onText = { emit(StreamEvent.TextChunk(it)) },
-                                onThought = { emit(StreamEvent.ThoughtChunk(it)) }
-                            )
+                            emit(StreamEvent.TextChunk(cleanEnd))
                         }
                         engine.cancel()
                         stopped = true
@@ -189,12 +182,7 @@ class LocalProvider(
                     val maxPatLen = STOP_PATTERNS.maxOf { it.length }
                     if (rawBuf.length > maxPatLen * 2) {
                         val emitPart = rawBuf.substring(0, rawBuf.length - maxPatLen)
-                        thinkParser.feed(
-                            content = emitPart,
-                            thinkingEnabled = config.thinkingEnabled,
-                            onText = { emit(StreamEvent.TextChunk(it)) },
-                            onThought = { emit(StreamEvent.ThoughtChunk(it)) }
-                        )
+                        emit(StreamEvent.TextChunk(emitPart))
                         rawBuf = rawBuf.substring(rawBuf.length - maxPatLen)
                     }
                 }
@@ -206,17 +194,8 @@ class LocalProvider(
             }
             // Flush remaining buffer (no stop pattern found)
             if (!stopped && rawBuf.isNotEmpty()) {
-                thinkParser.feed(
-                    content = rawBuf,
-                    thinkingEnabled = config.thinkingEnabled,
-                    onText = { emit(StreamEvent.TextChunk(it)) },
-                    onThought = { emit(StreamEvent.ThoughtChunk(it)) }
-                )
+                emit(StreamEvent.TextChunk(rawBuf))
             }
-            thinkParser.flush(
-                onText = { emit(StreamEvent.TextChunk(it)) },
-                onThought = { emit(StreamEvent.ThoughtChunk(it)) }
-            )
         } catch (e: kotlinx.coroutines.CancellationException) {
             engine.cancel()
             throw e

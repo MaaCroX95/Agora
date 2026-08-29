@@ -4,6 +4,9 @@ import com.newoether.agora.api.GenerationError
 import com.newoether.agora.api.LlmProvider
 import com.newoether.agora.api.ProviderConfig
 import com.newoether.agora.api.StreamEvent
+import com.newoether.agora.api.ToolDefinition
+import com.newoether.agora.api.ToolFunction
+import com.newoether.agora.api.ToolParameters
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.CitationRecord
 import com.newoether.agora.model.Participant
@@ -80,6 +83,31 @@ class ProviderPassRunnerTest {
             ProviderPassOutcome.CompletedToolCalls(IDENTITY, listOf(first, second)),
             outcome,
         )
+    }
+
+    @Test
+    fun `equivalent text and native calls with the same id keep native authority`() = runTest {
+        val native = StreamEvent.ToolCallRequest(
+            id = "call_1",
+            name = "file_read",
+            arguments = "{ \"path\": \"a.txt\" }",
+            streamKey = "native_stream",
+        )
+        val forwarded = mutableListOf<StreamEvent>()
+
+        val outcome = runner(
+            listOf(
+                StreamEvent.TextChunk(
+                    "<tool_call>{\"id\":\"call_1\",\"name\":\"file_read\"," +
+                        "\"arguments\":{\"path\":\"a.txt\"}}</tool_call>"
+                ),
+                native,
+            )
+        ).run(IDENTITY, messages(), CONFIG, forwarded::add)
+
+        assertEquals(ProviderPassOutcome.CompletedToolCalls(IDENTITY, listOf(native)), outcome)
+        assertEquals(listOf(native), forwarded.filterIsInstance<StreamEvent.ToolCallRequest>())
+        assertTrue(forwarded.none { it is StreamEvent.Error })
     }
 
     @Test
@@ -275,6 +303,18 @@ class ProviderPassRunnerTest {
             pass = 3,
             effectId = "provider-3-0",
         )
-        val CONFIG = ProviderConfig(apiKey = "key", modelId = "model")
+        val CONFIG = ProviderConfig(
+            apiKey = "key",
+            modelId = "model",
+            tools = listOf("file_read", "file_write").map { name ->
+                ToolDefinition(
+                    function = ToolFunction(
+                        name = name,
+                        description = name,
+                        parameters = ToolParameters(properties = emptyMap()),
+                    )
+                )
+            },
+        )
     }
 }

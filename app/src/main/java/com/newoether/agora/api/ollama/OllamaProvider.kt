@@ -3,7 +3,6 @@ package com.newoether.agora.api.ollama
 import com.newoether.agora.api.*
 
 import com.newoether.agora.util.DebugLog
-import com.newoether.agora.api.util.StreamingThinkTagParser
 import com.newoether.agora.api.util.buildToolCallId
 import com.newoether.agora.api.util.RequestFormatException
 import com.newoether.agora.api.util.ProviderRetryPolicy
@@ -288,8 +287,6 @@ class OllamaProvider : LlmProvider {
                 }
                 try {
                     if (handle.code == 200) {
-                        val thinkParser = StreamingThinkTagParser()
-                        var receivedStructuredThinking = false
                         var producedContent = false
                         var sawDone = false
                         var doneReason: String? = null
@@ -331,7 +328,6 @@ class OllamaProvider : LlmProvider {
                                     msg.thinking?.let { thinking ->
                                         if (thinking.isNotEmpty() && config.thinkingEnabled) {
                                             emitTracked(StreamEvent.ThoughtChunk(thinking, null))
-                                            receivedStructuredThinking = true
                                         }
                                     }
 
@@ -389,19 +385,10 @@ class OllamaProvider : LlmProvider {
                                         }
                                     }
 
-                                    // 3. Handle content: if structured thinking was received, emit
-                                    // content directly. Otherwise parse inline tags for old models.
+                                    // 3. Compatibility parsing of inline thinking markers is
+                                    // centralized after the native Ollama decoder.
                                     if (msg.content.isNotEmpty()) {
-                                        if (receivedStructuredThinking) {
-                                            emitTracked(StreamEvent.TextChunk(msg.content))
-                                        } else {
-                                            thinkParser.feed(
-                                                content = msg.content,
-                                                thinkingEnabled = config.thinkingEnabled,
-                                                onText = { emitTracked(StreamEvent.TextChunk(it)) },
-                                                onThought = { emitTracked(StreamEvent.ThoughtChunk(it)) },
-                                            )
-                                        }
+                                        emitTracked(StreamEvent.TextChunk(msg.content))
                                     }
                                 }
                                 if (response.done) {
@@ -422,11 +409,6 @@ class OllamaProvider : LlmProvider {
                                 break
                             }
                         }
-                        thinkParser.flush(
-                            onText = { emitTracked(StreamEvent.TextChunk(it)) },
-                            onThought = { emitTracked(StreamEvent.ThoughtChunk(it)) },
-                            thinkingEnabled = config.thinkingEnabled,
-                        )
                         if (!currentCoroutineContext().isActive) {
                             throw kotlinx.coroutines.CancellationException("Stream cancelled")
                         }

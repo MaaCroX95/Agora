@@ -218,7 +218,7 @@ class BaseOpenAiProviderTerminationTest {
     }
 
     @Test
-    fun taggedTextToolCall_streamsIntoOneSegmentWithoutFlashingMarkupAsAnswer() = withServer(
+    fun taggedTextToolCall_isForwardedAsRawTextForDownstreamNormalization() = withServer(
         terminalGraceMillis = 100L,
         response = { socket, release ->
             socket.writeContentSse("prefix <tool_")
@@ -235,23 +235,16 @@ class BaseOpenAiProviderTerminationTest {
         }
 
         assertEquals(
-            "prefix ",
+            "prefix <tool_call>{\"name\":\"file_edit\",\"arguments\":{\"path\":\"a.txt\"}}</tool_call>",
             events.filterIsInstance<StreamEvent.TextChunk>().joinToString("") { it.text },
         )
-        val updates = events.filterIsInstance<StreamEvent.ToolCallUpdate>()
-        assertTrue(updates.size >= 2)
-        assertEquals(1, updates.map { it.streamKey }.distinct().size)
-        assertEquals("", updates.first().name)
-        assertEquals("", updates.first().arguments)
-        assertEquals("file_edit", updates.last().name)
-        val call = events.filterIsInstance<StreamEvent.ToolCallRequest>().single()
-        assertEquals("file_edit", call.name)
-        assertEquals("""{"path":"a.txt"}""", call.arguments)
-        assertEquals(updates.first().streamKey, call.streamKey)
+        assertTrue(events.none { it is StreamEvent.ToolCallUpdate })
+        assertTrue(events.none { it is StreamEvent.ToolCallRequest })
+        assertTrue(events.none { it is StreamEvent.Error })
     }
 
     @Test
-    fun incompleteTextToolCall_isDisplayedButNeverExecutedOrLeakedAsAnswer() = withServer(
+    fun incompleteTextToolCall_isForwardedAsRawTextForDownstreamNormalization() = withServer(
         terminalGraceMillis = 100L,
         response = { socket, release ->
             socket.writeContentSse("<tool_call>")
@@ -266,16 +259,17 @@ class BaseOpenAiProviderTerminationTest {
             }
         }
 
-        val updates = events.filterIsInstance<StreamEvent.ToolCallUpdate>()
-        assertTrue(updates.isNotEmpty())
-        assertEquals("", updates.first().name)
+        assertEquals(
+            "<tool_call>{\"name\":\"file_edit\",\"arguments\":{\"path\":\"unfinished",
+            events.filterIsInstance<StreamEvent.TextChunk>().joinToString("") { it.text },
+        )
+        assertTrue(events.none { it is StreamEvent.ToolCallUpdate })
         assertTrue(events.none { it is StreamEvent.ToolCallRequest })
-        assertTrue(events.none { it is StreamEvent.TextChunk })
-        assertEquals(1, events.filterIsInstance<StreamEvent.Error>().size)
+        assertTrue(events.none { it is StreamEvent.Error })
     }
 
     @Test
-    fun bareJsonTextToolCall_streamsArgumentsAndNeverBecomesAnswerText() = withServer(
+    fun bareJsonTextToolCall_isForwardedAsRawTextForDownstreamNormalization() = withServer(
         terminalGraceMillis = 100L,
         response = { socket, release ->
             socket.writeContentSse("{\"name\":\"file_read\",\"arguments\":{\"path\":\"")
@@ -289,13 +283,13 @@ class BaseOpenAiProviderTerminationTest {
             }
         }
 
-        assertTrue(events.none { it is StreamEvent.TextChunk })
-        val updates = events.filterIsInstance<StreamEvent.ToolCallUpdate>()
-        assertTrue(updates.isNotEmpty())
-        val call = events.filterIsInstance<StreamEvent.ToolCallRequest>().single()
-        assertEquals("file_read", call.name)
-        assertEquals("""{"path":"a.txt"}""", call.arguments)
-        assertEquals(updates.first().streamKey, call.streamKey)
+        assertEquals(
+            "{\"name\":\"file_read\",\"arguments\":{\"path\":\"a.txt\"}}",
+            events.filterIsInstance<StreamEvent.TextChunk>().joinToString("") { it.text },
+        )
+        assertTrue(events.none { it is StreamEvent.ToolCallUpdate })
+        assertTrue(events.none { it is StreamEvent.ToolCallRequest })
+        assertTrue(events.none { it is StreamEvent.Error })
     }
 
     @Test

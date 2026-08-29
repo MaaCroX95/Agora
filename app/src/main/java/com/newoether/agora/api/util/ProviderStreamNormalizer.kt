@@ -42,6 +42,7 @@ internal class ProviderStreamNormalizer(
     private val textToolCandidates = mutableListOf<TextToolCandidate>()
     private val nativeFingerprints = mutableSetOf<ToolFingerprint>()
     private val nativeCallIds = mutableSetOf<String>()
+    private val nativeFingerprintsById = mutableMapOf<String, ToolFingerprint?>()
     private val inlineThought = StringBuilder()
     private val nativeThought = StringBuilder()
     private var inlineVisibleProjection = ""
@@ -333,17 +334,26 @@ internal class ProviderStreamNormalizer(
                 reportMalformed("Tool name was not offered in this request", downstream)
                 return
             }
-            val id = candidate.id ?: "call_text_${UUID.randomUUID()}"
-            if (!id.matches(safeWireToolCallId) || !seenIds.add(id)) {
-                reportMalformed("Text tool payload contained an invalid or duplicate id", downstream)
-                return
-            }
             val fingerprint = fingerprint(candidate.name, candidate.arguments)
             if (fingerprint == null) {
                 reportMalformed("Tool arguments were not a complete JSON object", downstream)
                 return
             }
+            val id = candidate.id ?: "call_text_${UUID.randomUUID()}"
+            if (!id.matches(safeWireToolCallId)) {
+                reportMalformed("Text tool payload contained an invalid or duplicate id", downstream)
+                return
+            }
+            if (candidate.id in nativeCallIds) {
+                if (nativeFingerprintsById[candidate.id] == fingerprint) continue
+                reportMalformed("Text tool payload contained an invalid or duplicate id", downstream)
+                return
+            }
             if (fingerprint in nativeFingerprints) continue
+            if (!seenIds.add(id)) {
+                reportMalformed("Text tool payload contained an invalid or duplicate id", downstream)
+                return
+            }
             calls += StreamEvent.ToolCallRequest(
                 id = id,
                 name = candidate.name,
@@ -357,7 +367,9 @@ internal class ProviderStreamNormalizer(
 
     private fun recordNativeCall(call: StreamEvent.ToolCallRequest) {
         nativeCallIds += call.id
-        fingerprint(call.name, call.arguments)?.let(nativeFingerprints::add)
+        val fingerprint = fingerprint(call.name, call.arguments)
+        nativeFingerprintsById[call.id] = fingerprint
+        fingerprint?.let(nativeFingerprints::add)
     }
 
     private fun fingerprint(name: String, arguments: String): ToolFingerprint? {

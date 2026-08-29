@@ -96,6 +96,54 @@ class ToolCallTextParserTest {
     }
 
     @Test
+    fun parsesIdAliasesAndRejectsConflicts() {
+        val id = ToolCallTextParser.parse(
+            """{"id":"call_1","name":"file_read","arguments":{}}"""
+        ).single()
+        val callId = ToolCallTextParser.parse(
+            """{"call_id":"call_2","name":"file_read","arguments":{}}"""
+        ).single()
+        val matchingAliases = ToolCallTextParser.parse(
+            """{"id":"call_3","call_id":"call_3","name":"file_read","arguments":{}}"""
+        ).single()
+
+        assertEquals("call_1", id.id)
+        assertEquals("call_2", callId.id)
+        assertEquals("call_3", matchingAliases.id)
+        assertTrue(
+            ToolCallTextParser.parse(
+                """{"id":"call_1","call_id":"call_2","name":"file_read","arguments":{}}"""
+            ).isEmpty()
+        )
+    }
+
+    @Test
+    fun rejectsNonStringAndUnsafeIds() {
+        listOf(
+            """{"id":7,"name":"file_read","arguments":{}}""",
+            """{"call_id":false,"name":"file_read","arguments":{}}""",
+            """{"id":"bad id","name":"file_read","arguments":{}}""",
+        ).forEach { content ->
+            assertTrue(ToolCallTextParser.parse(content).isEmpty())
+        }
+    }
+
+    @Test
+    fun parsesNestedFunctionArgumentsAndParameters() {
+        val arguments = ToolCallTextParser.parse(
+            """{"id":"call_1","function":{"name":"file_read","arguments":{"path":"a.txt"}}}"""
+        ).single()
+        val parameters = ToolCallTextParser.parse(
+            """{"call_id":"call_2","function":{"name":"file_write","parameters":"{\"path\":\"b.txt\",\"content\":\"x\"}"}}"""
+        ).single()
+
+        assertEquals("file_read", arguments.name)
+        assertEquals("a.txt", Json.parseToJsonElement(arguments.arguments).jsonObject["path"]?.jsonPrimitive?.content)
+        assertEquals("file_write", parameters.name)
+        assertEquals("b.txt", Json.parseToJsonElement(parameters.arguments).jsonObject["path"]?.jsonPrimitive?.content)
+    }
+
+    @Test
     fun malformedMemberRejectsWholeJsonBatch() {
         val parsed = ToolCallTextParser.parse(
             """[{"name":"file_read","arguments":{"path":"a"}},{"name":"file_write","arguments":"broken"}]"""
