@@ -175,6 +175,7 @@ class ChatViewModel(
         settingsManager = settingsManager,
         memoryManager = memoryManager,
         skillManager = skillManager,
+        conversationSettingsTransfers = conversationSettingsTransfers,
         scope = viewModelScope,
         emitSnackbar = { _snackbarMessage.emit(it) },
         onDataChanged = dataControl::refreshCounts,

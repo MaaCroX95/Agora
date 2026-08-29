@@ -8,6 +8,7 @@ import com.newoether.agora.data.local.ChatDatabase
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.local.LoopEntity
 import com.newoether.agora.data.local.TaskEntity
+import com.newoether.agora.data.repository.ConversationSettingsTransferCoordinator
 import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -79,6 +80,7 @@ class DataImporter(
     private val settingsManager: SettingsManager,
     private val memoryManager: MemoryManager,
     private val skillManager: SkillManager,
+    private val conversationSettingsTransfers: ConversationSettingsTransferCoordinator,
 ) {
     enum class ImportStrategy { MERGE, REPLACE, SKIP }
 
@@ -91,7 +93,6 @@ class DataImporter(
     private val conversationGraphImporter = NativeConversationGraphImporter(
         database = database,
         chatDao = chatDao,
-        settingsManager = settingsManager,
         importJson = importJson,
         mediaRestorer = conversationMediaRestorer,
     )
@@ -375,7 +376,9 @@ class DataImporter(
                 val convDecision = decisions[DataExporter.ExportCategory.CONVERSATIONS]
                 if (convDecision != null && convDecision != ImportStrategy.SKIP) {
                     var restoredMedia: NativeConversationMediaRestorer.RestoredMedia? = null
+                    var graphCommitted = false
                     try {
+                        conversationSettingsTransfers.completePendingImport()
                         val media = conversationMediaRestorer.restoreConversationMedia(opened)
                         restoredMedia = media
                         val headers = opened.stream(NativeBackupFormat.CONVERSATIONS_ENTRY)
@@ -388,18 +391,34 @@ class DataImporter(
                                 )
                             }
                             ?: error("${NativeBackupFormat.CONVERSATIONS_ENTRY} is missing")
-                        conversationGraphImporter.importConversationGraph(
+                        val settingsTransferId = conversationGraphImporter.importConversationGraph(
                             archive = opened,
                             strategy = convDecision,
                             headers = headers,
                             restoredMedia = media,
                             archiveVersion = manifest.version,
                         )
+                        graphCommitted = true
                         conversationsImported = headers.conversations.size
                         tasksImported = headers.tasks.size
                         loopsImported = headers.loops.size
+                        try {
+                            conversationSettingsTransfers.completeImport(settingsTransferId)
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            errors += "Conversation settings: " +
+                                (error.localizedMessage ?: "Deferred until next startup")
+                        }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        if (!graphCommitted) {
+                            restoredMedia?.createdFiles?.forEach { runCatching { it.delete() } }
+                        }
+                        throw cancelled
                     } catch (error: Exception) {
-                        restoredMedia?.createdFiles?.forEach { runCatching { it.delete() } }
+                        if (!graphCommitted) {
+                            restoredMedia?.createdFiles?.forEach { runCatching { it.delete() } }
+                        }
                         errors += "Conversations: ${error.localizedMessage ?: "Unknown error"}"
                     }
                     step()

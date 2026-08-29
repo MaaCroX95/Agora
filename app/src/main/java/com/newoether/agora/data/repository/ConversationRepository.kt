@@ -5,6 +5,7 @@ import com.newoether.agora.data.local.ChatDao
 import com.newoether.agora.data.local.ChatDatabase
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.local.ConversationDraftAttachmentReference
+import com.newoether.agora.data.local.ConversationSettingsImportTransferEntity
 import com.newoether.agora.data.local.ConversationSettingsTransferEntity
 import com.newoether.agora.data.local.EmbeddingEntity
 import com.newoether.agora.data.local.EmbeddingModelCount
@@ -154,6 +155,12 @@ class ConversationRepository(
 
     suspend fun deleteConversationSettingsTransfer(conversationId: String): Boolean =
         chatDao.deleteConversationSettingsTransfer(conversationId) > 0
+
+    suspend fun getConversationSettingsImportTransfer(): ConversationSettingsImportTransferEntity? =
+        chatDao.getConversationSettingsImportTransfer()
+
+    suspend fun deleteConversationSettingsImportTransfer(transferId: String): Boolean =
+        chatDao.deleteConversationSettingsImportTransfer(transferId) > 0
 
     /** Executions spawned by [taskId], newest first — the task's execution log. */
     fun getExecutionsForTask(taskId: String): Flow<List<ChatConversation>> =

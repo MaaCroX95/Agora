@@ -40,6 +40,25 @@ internal class ConversationSettingsState {
         )
     }
 
+    fun applyImport(
+        imported: Map<String, ConversationSettings>,
+        replace: Boolean,
+    ): Map<String, ConversationSettings> = synchronized(lock) {
+        val normalized = imported.filterValues { !it.isAllNull() }
+        if (replace) {
+            pendingVersions.clear()
+        } else {
+            imported.keys.forEach(pendingVersions::remove)
+        }
+        val updated = if (replace) {
+            normalized
+        } else {
+            mutableState.value - imported.keys + normalized
+        }
+        mutableState.value = updated
+        updated
+    }
+
     fun isLatest(write: ConversationSettingsWrite): Boolean = synchronized(lock) {
         pendingVersions[write.conversationId] == write.version
     }

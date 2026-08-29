@@ -30,6 +30,7 @@ import com.newoether.agora.util.Constants
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +41,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * Repository wrapping DataStore-backed SettingsManager.
@@ -514,6 +516,29 @@ class SettingsRepository(
         persistConversationSettingsWrite(conversationSettingsState.set(convId, settings))
     }
 
+    suspend fun applyConversationSettingsImportAndAwait(
+        imported: Map<String, ConversationSettings>,
+        replace: Boolean,
+    ) {
+        conversationSettingsWriteMutex.withLock {
+            val updated = conversationSettingsState.applyImport(imported, replace)
+            try {
+                settingsManager.saveConversationSettingsMap(updated)
+                conversationSettingsState.acceptPersisted(updated)
+            } catch (cancelled: CancellationException) {
+                val persisted = withContext(NonCancellable) {
+                    runCatching { settingsManager.conversationSettings.first() }.getOrNull()
+                }
+                persisted?.let(conversationSettingsState::acceptPersisted)
+                throw cancelled
+            } catch (error: Exception) {
+                runCatching { settingsManager.conversationSettings.first() }
+                    .getOrNull()
+                    ?.let(conversationSettingsState::acceptPersisted)
+                throw error
+            }
+        }
+    }
     fun updateConversationSettings(
         convId: String,
         update: (ConversationSettings) -> ConversationSettings,

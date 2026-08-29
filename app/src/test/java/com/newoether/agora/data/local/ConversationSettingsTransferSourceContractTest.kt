@@ -30,6 +30,66 @@ class ConversationSettingsTransferSourceContractTest {
     }
 
     @Test
+    fun nativeImportCommitsTheBatchOutboxWithTheGraphAndReconcilesAfterCommit() {
+        val graphImporter = sourceFile(
+            "app/src/main/java/com/newoether/agora/data/NativeConversationGraphImporter.kt",
+        ).replace("\r\n", "\n")
+        val importGraph = graphImporter.substringAfter("suspend fun importConversationGraph(")
+            .substringBefore("// Internal data classes")
+        val transaction = importGraph.indexOf("database.withTransaction {")
+        val writeOutbox = importGraph.indexOf(
+            "chatDao.upsertConversationSettingsImportTransfer(settingsTransfer)",
+        )
+        val returnTransfer = importGraph.indexOf("return settingsTransfer.transferId")
+        assertTrue(transaction >= 0)
+        assertTrue(writeOutbox > transaction)
+        assertTrue(returnTransfer > writeOutbox)
+
+        val dataImporter = sourceFile(
+            "app/src/main/java/com/newoether/agora/data/DataImporter.kt",
+        ).replace("\r\n", "\n")
+        val conversations = dataImporter.substringAfter(
+            "val convDecision = decisions[DataExporter.ExportCategory.CONVERSATIONS]",
+        ).substringBefore("val memDecision = decisions[DataExporter.ExportCategory.MEMORIES]")
+        val finishPrevious = conversations.indexOf(
+            "conversationSettingsTransfers.completePendingImport()",
+        )
+        val restoreMedia = conversations.indexOf(
+            "conversationMediaRestorer.restoreConversationMedia(opened)",
+        )
+        val importGraphCall = conversations.indexOf(
+            "conversationGraphImporter.importConversationGraph(",
+        )
+        val markCommitted = conversations.indexOf("graphCommitted = true")
+        val completeSettings = conversations.indexOf(
+            "conversationSettingsTransfers.completeImport(settingsTransferId)",
+        )
+        assertTrue(finishPrevious >= 0)
+        assertTrue(restoreMedia > finishPrevious)
+        assertTrue(importGraphCall > restoreMedia)
+        assertTrue(markCommitted > importGraphCall)
+        assertTrue(completeSettings > markCommitted)
+        assertTrue(conversations.contains("if (!graphCommitted)"))
+    }
+
+    @Test
+    fun cancelledBatchSettingsWriteRestoresPersistedStateBeforeRethrow() {
+        val settings = sourceFile(
+            "app/src/main/java/com/newoether/agora/data/repository/SettingsRepository.kt",
+        ).replace("\r\n", "\n")
+        val importWrite = settings.substringAfter(
+            "suspend fun applyConversationSettingsImportAndAwait(",
+        ).substringBefore("fun updateConversationSettings(")
+        val cancellation = importWrite.substringAfter("catch (cancelled: CancellationException)")
+            .substringBefore("catch (error: Exception)")
+
+        assertTrue(cancellation.contains("withContext(NonCancellable)"))
+        assertTrue(cancellation.contains("settingsManager.conversationSettings.first()"))
+        assertTrue(cancellation.contains("conversationSettingsState::acceptPersisted"))
+        assertTrue(cancellation.indexOf("acceptPersisted") < cancellation.indexOf("throw cancelled"))
+    }
+
+    @Test
     fun processStartupReplaysTheOutboxBeforeRecoveryAndScheduling() {
         val container = sourceFile("app/src/main/java/com/newoether/agora/di/AppContainer.kt")
             .replace("\r\n", "\n")
