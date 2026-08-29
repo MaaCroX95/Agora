@@ -86,7 +86,8 @@ layout, states, density, or interaction design has been approved.
   16 dp tonal elevation, and a 12 dp rounded shape.
 - Summary/Raw event-card height changes use a 250 ms tween when spatial
   transitions are allowed and snap when Reduced Motion disables them.
-- Both lower-right floating action buttons are explicitly circular.
+- Both lower-right floating action buttons are explicitly circular. Their stack
+  uses 24 dp end and bottom outer margins with a 12 dp gap between buttons.
 - Page text inherits the application Material typography. Do not apply a
   page-local monospace family to capture summaries, context, or raw details.
 

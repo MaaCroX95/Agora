@@ -301,7 +301,7 @@ internal fun SettingsDeveloperCapturePage(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                    .padding(end = 24.dp, bottom = 24.dp),
                 horizontalArrangement = Arrangement.End,
             ) {
                 Column(

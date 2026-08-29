@@ -487,6 +487,8 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(capture.contains("SmallFloatingActionButton("))
         assertEquals(2, Regex("shape = CircleShape").findAll(capture).count())
         assertTrue(capture.contains("horizontalArrangement = Arrangement.End"))
+        assertTrue(capture.contains(".padding(end = 24.dp, bottom = 24.dp)"))
+        assertFalse(capture.contains(".padding(horizontal = 16.dp)"))
         assertTrue(capture.contains("verticalArrangement = Arrangement.spacedBy(12.dp)"))
         assertTrue(capture.contains("targetState = captureRunning"))
         assertTrue(capture.contains("DeveloperDiagnostics.startCapture()"))
