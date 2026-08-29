@@ -251,18 +251,42 @@ class ExperimentalGenerationUiSourceContractTest {
     }
 
     @Test
-    fun `Sources summary opens without haptics and uses the reduced external left margin`() {
-        val assistant = source(locateMainSourceRoot(), "message/AssistantMessageContent.kt")
+    fun `Sources summary uses one anchored measured host without haptics`() {
+        val root = locateMainSourceRoot()
+        val assistant = source(root, "message/AssistantMessageContent.kt")
+        val transitionHost = source(root, "message/CitationTerminalProjectionHost.kt")
         val summaryGate = assistant
-            .substringBefore("CitationSourcesSummaryCapsule(")
+            .substringBefore("CitationSourcesSummaryHost(")
             .takeLast(200)
-        val summary = assistant.substringAfter("CitationSourcesSummaryCapsule(")
-        val summaryClick = summary.substringBefore("modifier = Modifier")
-        assertTrue(summaryGate.contains("if (sourcesSummaryVisible)"))
+        val summary = assistant.substringAfter("CitationSourcesSummaryHost(")
+        val summaryClick = summary.substringBefore("modifier = Modifier.padding(top = 12.dp)")
+        val measuredHost = transitionHost
+            .substringAfter("internal fun CitationSourcesSummaryHost(")
+            .substringBefore("internal fun CitationTerminalProjectionHost(")
+
+        assertFalse(summaryGate.contains("if (sourcesSummaryVisible)"))
         assertFalse(summaryGate.contains("if (citations.isNotEmpty())"))
+        assertTrue(summary.contains("visible = sourcesSummaryVisible"))
+        assertTrue(summary.contains("citations = citations"))
+        assertTrue(summary.contains("onLayoutMutationStarted = onLayoutMutationStarted"))
+        assertTrue(summary.contains("onLayoutMutationSettled = onLayoutMutationSettled"))
         assertTrue(summaryClick.contains("showCitationSources = true"))
         assertFalse(summaryClick.contains("haptics."))
-        assertTrue(summary.contains(".offset(x = (-AUXILIARY_CARD_START_EXTENSION_DP).dp)"))
+        assertTrue(summary.contains(".offset("))
+        assertTrue(summary.contains("x = (-AUXILIARY_CARD_START_EXTENSION_DP).dp"))
+        assertTrue(measuredHost.contains("MutableTransitionState(visible)"))
+        assertTrue(measuredHost.contains("presentedCitations"))
+        assertTrue(measuredHost.contains("currentLayoutMutationStarted(mutationKey)"))
+        assertTrue(measuredHost.contains("withFrameNanos { }"))
+        assertTrue(measuredHost.contains("AnimatedVisibility("))
+        assertTrue(measuredHost.contains("expandVertically("))
+        assertTrue(measuredHost.contains("shrinkVertically("))
+        assertTrue(measuredHost.contains("visibilityState.isIdle"))
+        assertTrue(measuredHost.contains("CITATION_SOURCES_SUMMARY_SIZE_DURATION_MS"))
+        assertTrue(measuredHost.contains("allowSpatialTransitions"))
+        assertTrue(measuredHost.contains("snap<IntSize>()"))
+        assertFalse(measuredHost.contains("delay("))
+        assertFalse(measuredHost.contains("FALLBACK"))
     }
 
     @Test

@@ -145,12 +145,16 @@ ordinary Unicode text or standard Markdown links.
   edge extends 4 dp into the message list's 8 dp inset, matching the compact Thinking card's 4 dp
   screen-side margin without changing the capsule's internal padding or right-side geometry.
 - Inline/group, summary, numbered-source containers, and bottom-sheet source rows own a draw-only fade
-  from alpha `0f` to `1f` over 320 ms with `LinearEasing`. The fade adds no scale, translation, delayed
-  data, hidden click target, remeasurement, or message-height change. Stable message/source/group
-  identity prevents ordinary recomposition or count-label updates from replaying it; genuinely
-  new/reappearing capsules and false-to-true summary visibility transitions replay it. Opacity-only
-  fade remains enabled when spatial motion is reduced. A valid Gemini citation first visible around
-  answer terminalization must start at zero draw alpha and fade in rather than flash at full opacity.
+  from alpha `0f` to `1f` over 320 ms with `LinearEasing`. The opacity layer adds no scale,
+  translation, delayed data, hidden click target, or remeasurement. The Sources summary separately
+  owns one stable measured-height slot: it arms the message-list mutation anchor before a visibility
+  commit, retains the last visible sources through exit, and interpolates the slot between zero and
+  final height over the same 320 ms with `LinearEasing`. Reduced Motion snaps that spatial change
+  while preserving the opacity fade. Stable message/source/group identity prevents ordinary
+  recomposition or count-label updates from replaying either transition; genuinely new/reappearing
+  capsules and false-to-true summary visibility transitions replay the opacity fade. A valid Gemini
+  citation first visible around answer terminalization must start at zero draw alpha and fade in
+  rather than flash at full opacity.
 - Primary inline/group, summary, and numbered-source containers use the thinking-card palette: the
   theme surface color at 2 dp tonal elevation with `primary.copy(alpha = 0.7f)` foreground text.
   Each complete source row in either Sources sheet is transparent at rest. It retains
@@ -258,11 +262,12 @@ Changes touching citations must prove:
    object-replacement glyph, domain/file-label capsules without parenthesized domains, maximal
    adjacent-run grouping with non-ellipsized `+N`, separated-run isolation, content-measured single
    capsules with no absent-suffix reservation, exact action-control lifecycle matching, a 36 dp
-   left-aligned dynamic-count summary capsule, thinking-card capsule colors, 320 ms draw-only fade for
-   initial/reappearing/late-Gemini capsules, unconditional `N Sources` titles with thinking-sheet
-   typography, grouped subset-sheet reuse, full-list summary-sheet preservation, complete ordered
-   bottom-sheet contents, transparent rows with pill-clipped ripple, safe click/detail behavior,
-   selection fallback, Copy output, and accessibility labels.
+   left-aligned dynamic-count summary capsule, thinking-card capsule colors, 320 ms draw-only opacity
+   fade for initial/reappearing/late-Gemini capsules, one mutation-anchored 320 ms measured-height
+   summary visibility host with Reduced Motion spatial snap, unconditional `N Sources` titles with
+   thinking-sheet typography, grouped subset-sheet reuse, full-list summary-sheet preservation,
+   complete ordered bottom-sheet contents, transparent rows with pill-clipped ripple, safe
+   click/detail behavior, selection fallback, Copy output, and accessibility labels.
 7. Citation-title global search uses stable primary-key keyset pages and a bounded newest-first
    top-K accumulator. It preserves limit/title-only semantics, handles equal timestamps without
    gaps or duplicates, and never loads or decodes the whole citation corpus at once. A no-match

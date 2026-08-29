@@ -706,10 +706,19 @@ internal fun AssistantMessageContent(
                         MaterialTheme.colorScheme.error.copy(
                             alpha = if (actionAvailability.terminalEnabled) 1f else 0.38f
                         )
-                    if (sourcesSummaryVisible) {
+                    CitationSourcesSummaryHost(
+                        animationKey = "${message.id}:citation-summary",
+                        visible = sourcesSummaryVisible,
+                        citations = citations,
+                        onLayoutMutationStarted = onLayoutMutationStarted,
+                        onLayoutMutationSettled = onLayoutMutationSettled,
+                        modifier = Modifier.offset(
+                            x = (-AUXILIARY_CARD_START_EXTENSION_DP).dp,
+                        ),
+                    ) { presentedCitations ->
                         CitationSourcesSummaryCapsule(
                             messageId = message.id,
-                            citations = citations,
+                            citations = presentedCitations,
                             searchSpec = searchHighlight,
                             visible = sourcesSummaryVisible,
                             enabled = sourcesSummaryVisible,
@@ -717,9 +726,7 @@ internal fun AssistantMessageContent(
                                 groupedCitationSources = null
                                 showCitationSources = true
                             },
-                            modifier = Modifier
-                                .offset(x = (-AUXILIARY_CARD_START_EXTENSION_DP).dp)
-                                .padding(top = 12.dp),
+                            modifier = Modifier.padding(top = 12.dp),
                         )
                     }
                     val answerTailVisible = shouldShowStreamingTailIndicator(isStreaming, isStopping, message)

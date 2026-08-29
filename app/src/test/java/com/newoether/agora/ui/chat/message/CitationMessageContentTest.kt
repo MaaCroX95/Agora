@@ -550,6 +550,16 @@ class CitationMessageContentTest {
     }
 
     @Test
+    fun sourceSummaryMeasuredTransitionFollowsVisibilityBoundaryAndCitationTiming() {
+        assertFalse(citationSummaryRequiresMeasuredTransition(false, false))
+        assertFalse(citationSummaryRequiresMeasuredTransition(true, true))
+        assertTrue(citationSummaryRequiresMeasuredTransition(false, true))
+        assertTrue(citationSummaryRequiresMeasuredTransition(true, false))
+        assertEquals(CITATION_CAPSULE_FADE_DURATION_MS, CITATION_SOURCES_SUMMARY_SIZE_DURATION_MS)
+        assertEquals(320, CITATION_SOURCES_SUMMARY_SIZE_DURATION_MS)
+    }
+
+    @Test
     fun timelineSliceShiftsAnchorsWithoutRenumberingSources() {
         val answer = "First. Second."
         val first = citation(
