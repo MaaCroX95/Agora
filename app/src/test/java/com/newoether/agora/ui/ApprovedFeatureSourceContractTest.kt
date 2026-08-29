@@ -519,19 +519,25 @@ class ApprovedFeatureSourceContractTest {
                 "title = stringResource(R.string.developer_options_features_group)",
             ),
         )
-        assertTrue(
-            page.contains(
-                "Text(stringResource(R.string.developer_options_debug_model))",
-            ),
-        )
+        assertTrue(page.contains("R.string.developer_options_debug_model,"))
         assertFalse(page.contains("Text(\"Debug Model\")"))
         assertEquals(3, Regex("\\bSettingsItem\\(").findAll(page).count())
+        assertEquals(3, Regex("supportingContent =").findAll(page).count())
         assertEquals(2, Regex("\\bSwitch\\(").findAll(page).count())
         assertEquals(1, Regex("\\bSettingsGroup\\(").findAll(page).count())
         assertTrue(page.contains("var showCapturePage by rememberSaveable"))
         assertTrue(page.contains("BackHandler(enabled = showCapturePage)"))
+        assertTrue(page.contains("GuardedAnimatedContent("))
+        assertTrue(page.contains("targetState = showCapturePage"))
+        assertTrue(page.contains("forward = showCapturePage"))
         assertTrue(page.contains("SettingsDeveloperCapturePage("))
         assertTrue(page.contains("onBack = { showCapturePage = false }"))
+        assertTrue(page.contains("R.string.developer_options_mode_description"))
+        assertTrue(page.contains("R.string.developer_options_capture_description"))
+        assertTrue(page.contains("R.string.developer_options_debug_model_description"))
+        assertFalse(page.contains("KeyboardArrowRight"))
+        assertFalse(page.contains("ChevronRight"))
+        assertFalse(page.contains("if (showCapturePage)"))
         assertTrue(page.contains("viewModel.settings.debugModelEnabled.collectAsState()"))
         assertTrue(page.contains("viewModel.settings::setDebugModelEnabled"))
 
@@ -574,8 +580,32 @@ class ApprovedFeatureSourceContractTest {
         val expectedKeys = setOf(
             "developer_options_already_enabled_message",
             "developer_options_capture",
+            "developer_options_capture_clear_confirm",
+            "developer_options_capture_clear_message",
+            "developer_options_capture_counters",
+            "developer_options_capture_description",
+            "developer_options_capture_empty",
+            "developer_options_capture_export_raw_json",
+            "developer_options_capture_export_redacted_json",
+            "developer_options_capture_export_summary_text",
+            "developer_options_capture_http_request_summary",
+            "developer_options_capture_http_response_summary",
+            "developer_options_capture_jump_latest",
+            "developer_options_capture_more_actions",
+            "developer_options_capture_parsed_event_summary",
+            "developer_options_capture_pause",
+            "developer_options_capture_play",
+            "developer_options_capture_raw",
+            "developer_options_capture_session",
+            "developer_options_capture_state_idle",
+            "developer_options_capture_state_paused",
+            "developer_options_capture_state_running",
+            "developer_options_capture_status_summary",
+            "developer_options_capture_summary",
+            "developer_options_capture_wire_line_summary",
             "developer_options_clear_diagnostics",
             "developer_options_debug_model",
+            "developer_options_debug_model_description",
             "developer_options_disable_confirm",
             "developer_options_disable_message",
             "developer_options_disable_title",
@@ -583,6 +613,7 @@ class ApprovedFeatureSourceContractTest {
             "developer_options_export_failed",
             "developer_options_export_share_title",
             "developer_options_features_group",
+            "developer_options_mode_description",
             "developer_options_taps_remaining",
             "developer_options_title",
         )

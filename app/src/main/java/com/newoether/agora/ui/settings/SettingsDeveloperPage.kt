@@ -3,7 +3,6 @@ package com.newoether.agora.ui.settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Visibility
@@ -43,14 +42,6 @@ fun SettingsDeveloperPage(
         showCapturePage = false
     }
 
-    if (showCapturePage) {
-        SettingsDeveloperCapturePage(
-            onBack = { showCapturePage = false },
-            onExportFailed = { viewModel.emitSnackbar(exportFailedMessage) },
-        )
-        return
-    }
-
     if (showDisableDialog) {
         AlertDialog(
             onDismissRequest = { showDisableDialog = false },
@@ -81,78 +72,109 @@ fun SettingsDeveloperPage(
         )
     }
 
-    CollapsingSettingsScaffold(
-        title = stringResource(R.string.developer_options_title),
-        onBack = onBack,
-    ) {
-        SettingsGroupColumn {
-            SettingsGroup(
-                title = stringResource(R.string.developer_options_features_group),
-                items = listOf(
-                    {
-                        SettingsItem(
-                            modifier = Modifier.clickable(enabled = developerModeEnabled) {
-                                showDisableDialog = true
-                            },
-                            headlineContent = {
-                                Text(stringResource(R.string.settings_developer))
-                            },
-                            leadingContent = {
-                                Icon(Icons.Default.BugReport, contentDescription = null)
-                            },
-                            trailingContent = {
-                                Switch(
-                                    checked = developerModeEnabled,
-                                    onCheckedChange = { checked ->
-                                        if (!checked) {
-                                            showDisableDialog = true
-                                        }
+    GuardedAnimatedContent(
+        targetState = showCapturePage,
+        forward = showCapturePage,
+    ) { captureVisible ->
+        if (captureVisible) {
+            SettingsDeveloperCapturePage(
+                onBack = { showCapturePage = false },
+                onExportFailed = { viewModel.emitSnackbar(exportFailedMessage) },
+            )
+        } else {
+            CollapsingSettingsScaffold(
+                title = stringResource(R.string.developer_options_title),
+                onBack = onBack,
+            ) {
+                SettingsGroupColumn {
+                    SettingsGroup(
+                        title = stringResource(R.string.developer_options_features_group),
+                        items = listOf(
+                            {
+                                SettingsItem(
+                                    modifier = Modifier.clickable(enabled = developerModeEnabled) {
+                                        showDisableDialog = true
+                                    },
+                                    headlineContent = {
+                                        Text(stringResource(R.string.settings_developer))
+                                    },
+                                    supportingContent = {
+                                        Text(
+                                            stringResource(
+                                                R.string.developer_options_mode_description,
+                                            ),
+                                        )
+                                    },
+                                    leadingContent = {
+                                        Icon(Icons.Default.BugReport, contentDescription = null)
+                                    },
+                                    trailingContent = {
+                                        Switch(
+                                            checked = developerModeEnabled,
+                                            onCheckedChange = { checked ->
+                                                if (!checked) {
+                                                    showDisableDialog = true
+                                                }
+                                            },
+                                        )
                                     },
                                 )
                             },
-                        )
-                    },
-                    {
-                        SettingsItem(
-                            modifier = Modifier.clickable {
-                                showCapturePage = true
-                            },
-                            headlineContent = {
-                                Text(stringResource(R.string.developer_options_capture))
-                            },
-                            leadingContent = {
-                                Icon(Icons.Default.Visibility, contentDescription = null)
-                            },
-                            trailingContent = {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                    contentDescription = null,
+                            {
+                                SettingsItem(
+                                    modifier = Modifier.clickable {
+                                        showCapturePage = true
+                                    },
+                                    headlineContent = {
+                                        Text(stringResource(R.string.developer_options_capture))
+                                    },
+                                    supportingContent = {
+                                        Text(
+                                            stringResource(
+                                                R.string.developer_options_capture_description,
+                                            ),
+                                        )
+                                    },
+                                    leadingContent = {
+                                        Icon(Icons.Default.Visibility, contentDescription = null)
+                                    },
                                 )
                             },
-                        )
-                    },
-                    {
-                        SettingsItem(
-                            modifier = Modifier.clickable(enabled = developerModeEnabled) {
-                                viewModel.settings.setDebugModelEnabled(!debugModelEnabled)
-                            },
-                            headlineContent = {
-                                Text(stringResource(R.string.developer_options_debug_model))
-                            },
-                            leadingContent = {
-                                Icon(Icons.Default.Science, contentDescription = null)
-                            },
-                            trailingContent = {
-                                Switch(
-                                    checked = debugModelEnabled,
-                                    enabled = developerModeEnabled,
-                                    onCheckedChange = viewModel.settings::setDebugModelEnabled,
+                            {
+                                SettingsItem(
+                                    modifier = Modifier.clickable(enabled = developerModeEnabled) {
+                                        viewModel.settings.setDebugModelEnabled(!debugModelEnabled)
+                                    },
+                                    headlineContent = {
+                                        Text(
+                                            stringResource(
+                                                R.string.developer_options_debug_model,
+                                            ),
+                                        )
+                                    },
+                                    supportingContent = {
+                                        Text(
+                                            stringResource(
+                                                R.string.developer_options_debug_model_description,
+                                            ),
+                                        )
+                                    },
+                                    leadingContent = {
+                                        Icon(Icons.Default.Science, contentDescription = null)
+                                    },
+                                    trailingContent = {
+                                        Switch(
+                                            checked = debugModelEnabled,
+                                            enabled = developerModeEnabled,
+                                            onCheckedChange = viewModel.settings::setDebugModelEnabled,
+                                        )
+                                    },
                                 )
                             },
-                        )
-                    },
-                ),
-            )
+                        ),
+                    )
+                }
+            }
         }
     }
 }
