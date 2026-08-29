@@ -71,6 +71,22 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
     @Query("DELETE FROM conversation_settings_transfer WHERE conversationId = :conversationId")
     suspend fun deleteConversationSettingsTransfer(conversationId: String): Int
 
+    @Query("SELECT * FROM conversation_settings_import_transfer WHERE id = 0")
+    suspend fun getConversationSettingsImportTransfer(): ConversationSettingsImportTransferEntity?
+
+    @Upsert
+    suspend fun upsertConversationSettingsImportTransfer(
+        entity: ConversationSettingsImportTransferEntity,
+    )
+
+    @Query(
+        """
+        DELETE FROM conversation_settings_import_transfer
+        WHERE id = 0 AND transferId = :transferId
+        """
+    )
+    suspend fun deleteConversationSettingsImportTransfer(transferId: String): Int
+
     @Query("SELECT * FROM messages WHERE id = :messageId")
     fun observeMessage(messageId: String): Flow<MessageEntity?>
 
