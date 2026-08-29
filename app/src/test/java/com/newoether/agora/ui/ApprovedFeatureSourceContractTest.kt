@@ -502,6 +502,53 @@ class ApprovedFeatureSourceContractTest {
     }
 
     @Test
+    fun developerPageContainsOnlyApprovedHierarchyAndLocalCaptureRoute() {
+        val page = source(
+            sourceRoot(),
+            "com/newoether/agora/ui/settings/SettingsDeveloperPage.kt",
+        )
+        val developerIndex = page.indexOf("R.string.settings_developer")
+        val captureIndex = page.indexOf("R.string.developer_options_capture")
+        val debugIndex = page.indexOf("Text(\"Debug Model\")")
+
+        assertTrue(developerIndex >= 0)
+        assertTrue(captureIndex > developerIndex)
+        assertTrue(debugIndex > captureIndex)
+        assertEquals(3, Regex("\\bSettingsItem\\(").findAll(page).count())
+        assertEquals(2, Regex("\\bSwitch\\(").findAll(page).count())
+        assertEquals(1, Regex("\\bSettingsGroup\\(").findAll(page).count())
+        assertTrue(page.contains("var showCapturePage by rememberSaveable"))
+        assertTrue(page.contains("BackHandler(enabled = showCapturePage)"))
+        assertTrue(page.contains("SettingsDeveloperCapturePage("))
+        assertTrue(page.contains("onBack = { showCapturePage = false }"))
+        assertTrue(page.contains("viewModel.settings.debugModelEnabled.collectAsState()"))
+        assertTrue(page.contains("viewModel.settings::setDebugModelEnabled"))
+
+        val disableBody = page
+            .substringAfter("DeveloperDiagnostics.disableAndClear()")
+            .substringBefore("onDisabled()")
+        assertTrue(disableBody.contains("setDeveloperOptionsEnabled(false)"))
+        assertTrue(disableBody.contains(".join()"))
+
+        listOf(
+            "DeveloperConversationInspector",
+            "DeveloperTestLab",
+            "DiagnosticBundleExporter",
+            "FileProvider",
+            "DiagnosticTimelineItem",
+            "shareDiagnosticBundle",
+            "developer_options_timeline_group",
+            "developer_options_inspector",
+            "developer_options_test_lab",
+            "DeveloperDiagnostics.startCapture()",
+            "DeveloperDiagnostics.pauseCapture()",
+            "DeveloperDiagnostics.clear()",
+        ).forEach { obsolete ->
+            assertFalse("Developer page still contains $obsolete", page.contains(obsolete))
+        }
+    }
+
+    @Test
     fun skillsAreSavedCatalogToolsWithRequestResolvedPromptAndNoActiveSkill() {
         val root = sourceRoot()
         val manager = source(root, "com/newoether/agora/data/SkillManager.kt")

@@ -115,8 +115,9 @@ internal val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed"
 internal val RATING_PROMPT_SUBMITTED = booleanPreferencesKey("rating_prompt_submitted")
 internal val RATING_PROMPT_DISMISSED = booleanPreferencesKey("rating_prompt_dismissed")
 internal val SHOW_DOCUMENTATION_FAB = booleanPreferencesKey("show_documentation_fab")
-/** Device-local release feature gate. Intentionally excluded from portable settings archives. */
+/** Device-local Developer feature gates. Intentionally excluded from portable settings archives. */
 internal val DEVELOPER_OPTIONS_ENABLED = booleanPreferencesKey("developer_options_enabled")
+internal val DEBUG_MODEL_ENABLED = booleanPreferencesKey("debug_model_enabled")
 internal val TOTAL_MESSAGES_SENT = intPreferencesKey("total_messages_sent")
 internal val DEFAULT_TEMPERATURE = stringPreferencesKey("default_temperature")
 internal val DEFAULT_MAX_TOKENS = intPreferencesKey("default_max_tokens")

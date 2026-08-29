@@ -195,6 +195,10 @@ class SettingsManager(private val context: Context) {
     /** Release-build feature gate kept local to this installation. */
     val developerOptionsEnabled: Flow<Boolean> =
         context.dataStore.data.map { it[DEVELOPER_OPTIONS_ENABLED] ?: false }
+    val debugModelEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        (preferences[DEVELOPER_OPTIONS_ENABLED] ?: false) &&
+            (preferences[DEBUG_MODEL_ENABLED] ?: false)
+    }
 
     val shellEnabled: Flow<Boolean> = context.dataStore.data.map { it[SHELL_ENABLED] ?: true }
     val automationToolsEnabled: Flow<Boolean> = context.dataStore.data.map { it[AUTOMATION_TOOLS_ENABLED] ?: false }
@@ -700,7 +704,18 @@ class SettingsManager(private val context: Context) {
         context.dataStore.edit { it[SHOW_DOCUMENTATION_FAB] = enabled }
     }
     suspend fun saveDeveloperOptionsEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[DEVELOPER_OPTIONS_ENABLED] = enabled }
+        context.dataStore.edit {
+            it[DEVELOPER_OPTIONS_ENABLED] = enabled
+            if (!enabled) {
+                it[DEBUG_MODEL_ENABLED] = false
+            }
+        }
+    }
+    suspend fun saveDebugModelEnabled(enabled: Boolean) {
+        context.dataStore.edit {
+            it[DEBUG_MODEL_ENABLED] =
+                enabled && (it[DEVELOPER_OPTIONS_ENABLED] ?: false)
+        }
     }
     suspend fun saveShellEnabled(enabled: Boolean) {
         context.dataStore.edit { it[SHELL_ENABLED] = enabled }
