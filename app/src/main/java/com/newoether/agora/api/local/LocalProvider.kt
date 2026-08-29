@@ -1,6 +1,7 @@
 package com.newoether.agora.api.local
 
 import com.newoether.agora.api.*
+import com.newoether.agora.api.util.buildToolCallId
 
 import android.content.Context
 import com.newoether.agora.R
@@ -16,6 +17,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import com.newoether.agora.viewmodel.GenerationCancelHandle
 import kotlin.coroutines.coroutineContext
 
@@ -27,6 +30,10 @@ class LocalProvider(
     companion object {
         private const val TAG = "LocalProvider"
         private const val CONTEXT_EXCEEDED_PREFIX = "LOCAL_CONTEXT_EXCEEDED:"
+        private val TEMPLATE_JSON = Json {
+            encodeDefaults = true
+            explicitNulls = false
+        }
     }
 
     override val name: String = Constants.PROVIDER_LOCAL
@@ -80,18 +87,35 @@ class LocalProvider(
 
         // Template ownership stays with the model. A generic fallback can silently apply the
         // wrong role/control-token protocol, so an incompatible model fails closed.
-        val prompt = engine.applyTemplate(
-            templateMessages,
+        val templateTools = config.tools.orEmpty().map { tool ->
+            ChatTemplateTool(
+                name = tool.function.name,
+                description = tool.function.description,
+                parameters = TEMPLATE_JSON.encodeToString(tool.function.parameters),
+            )
+        }
+        val requiresToolCapableTemplate = templateTools.isNotEmpty() || templateMessages.any { message ->
+            message.toolCalls.isNotEmpty() || message.role == "tool"
+        }
+        val template = engine.applyTemplate(
+            messages = templateMessages,
+            tools = templateTools,
             addAss = true,
             enableThinking = config.thinkingEnabled,
         )
-        if (prompt == null) {
+        if (template == null) {
             emit(StreamEvent.Error(GenerationError.LocalModel(
                 "The local model does not provide a compatible chat template."
             )))
             return@runChat
         }
-        val promptLength = prompt.length
+        if (requiresToolCapableTemplate && !template.supportsTools) {
+            emit(StreamEvent.Error(GenerationError.LocalModel(
+                "The local model chat template does not support tool calling."
+            )))
+            return@runChat
+        }
+        val promptLength = template.prompt.length
         val imageCount = imagePaths.size
         if (hasImages) {
             DebugLog.d(TAG, "Generated multimodal prompt ($promptLength chars, $imageCount images)")
@@ -109,7 +133,7 @@ class LocalProvider(
         try {
             val tokenFlow = if (hasImages) {
                 engine.generateWithImages(
-                    prompt = prompt,
+                    template = template,
                     imagePaths = imagePaths,
                     temperature = config.temperature ?: modelConfig.temperature,
                     topP = config.topP ?: modelConfig.topP,
@@ -119,7 +143,7 @@ class LocalProvider(
                 )
             } else {
                 engine.generate(
-                    prompt = prompt,
+                    template = template,
                     temperature = config.temperature ?: modelConfig.temperature,
                     topP = config.topP ?: modelConfig.topP,
                     frequencyPenalty = config.frequencyPenalty ?: 0f,
@@ -251,40 +275,73 @@ class LocalProvider(
         for (msg in messages) {
             if (msg.participant == Participant.ERROR) continue
 
-            // Tool call messages: treat as assistant
+            // Tool call messages are one assistant turn, including parallel calls.
             if (msg.id.startsWith(Constants.TOOL_MSG_PREFIX)) {
                 val toolSegs = msg.segments?.filter { it.type == "tool" }
-                if (!toolSegs.isNullOrEmpty()) {
-                    for (seg in toolSegs) {
-                        result.add(ChatTemplateMessage(
-                            role = "assistant",
-                            content = "Tool call: ${seg.toolName}\nArguments: ${seg.toolArgs}"
-                        ))
+                val toolCalls = if (!toolSegs.isNullOrEmpty()) {
+                    toolSegs.map { seg ->
+                        val name = seg.toolName.orEmpty()
+                        val arguments = seg.toolArgs ?: "{}"
+                        ChatTemplateToolCall(
+                            id = seg.toolCallId?.takeIf(String::isNotBlank)
+                                ?: buildToolCallId(name, arguments),
+                            name = name,
+                            arguments = arguments,
+                        )
                     }
-                } else if (msg.toolCall != null) {
-                    result.add(ChatTemplateMessage(
-                        role = "assistant",
-                        content = "Tool call: ${msg.toolCall.toolName}\nArguments: ${msg.toolCall.arguments}"
-                    ))
+                } else {
+                    msg.toolCall?.let { toolCall ->
+                        listOf(
+                            ChatTemplateToolCall(
+                                id = toolCall.toolCallId?.takeIf(String::isNotBlank)
+                                    ?: buildToolCallId(toolCall.toolName, toolCall.arguments),
+                                name = toolCall.toolName,
+                                arguments = toolCall.arguments,
+                            )
+                        )
+                    }.orEmpty()
+                }
+                if (toolCalls.isNotEmpty()) {
+                    result.add(
+                        ChatTemplateMessage(
+                            role = "assistant",
+                            content = "",
+                            toolCalls = toolCalls.toTypedArray(),
+                        )
+                    )
                 }
                 continue
             }
 
-            // Tool result messages: treat as user (tool results)
+            // Tool result messages preserve the call identity expected by native templates.
             if (msg.id.startsWith(Constants.RESULT_MSG_PREFIX)) {
                 val toolSegs = msg.segments?.filter { it.type == "tool" }
                 if (!toolSegs.isNullOrEmpty()) {
                     for (seg in toolSegs) {
-                        result.add(ChatTemplateMessage(
-                            role = "user",
-                            content = "Tool result: ${seg.toolResult ?: ""}"
-                        ))
+                        val name = seg.toolName.orEmpty()
+                        val arguments = seg.toolArgs ?: "{}"
+                        result.add(
+                            ChatTemplateMessage(
+                                role = "tool",
+                                content = seg.toolResult.orEmpty(),
+                                toolName = name,
+                                toolCallId = seg.toolCallId?.takeIf(String::isNotBlank)
+                                    ?: buildToolCallId(name, arguments),
+                            )
+                        )
                     }
-                } else if (msg.toolCall != null) {
-                    result.add(ChatTemplateMessage(
-                        role = "user",
-                        content = "Tool result: ${msg.toolCall.result}"
-                    ))
+                } else {
+                    msg.toolCall?.let { toolCall ->
+                        result.add(
+                            ChatTemplateMessage(
+                                role = "tool",
+                                content = toolCall.result,
+                                toolName = toolCall.toolName,
+                                toolCallId = toolCall.toolCallId?.takeIf(String::isNotBlank)
+                                    ?: buildToolCallId(toolCall.toolName, toolCall.arguments),
+                            )
+                        )
+                    }
                 }
                 continue
             }

@@ -53,7 +53,7 @@ class LocalLlamaOwnershipSourceContractTest {
     }
 
     @Test
-    fun `chat templates use the official Jinja owner and receive thinking control`() {
+    fun `chat templates use the official structured tool owner and fail closed by capability`() {
         val cmake = mainCppSource("CMakeLists.txt")
         val native = mainCppSource("llama_chat_jni.cpp")
         val engine = mainSource("com/newoether/agora/api/LlamaChatEngine.kt")
@@ -65,17 +65,39 @@ class LocalLlamaOwnershipSourceContractTest {
         assertTrue(native.contains("common_chat_templates_init(handle->model"))
         assertTrue(native.contains("common_chat_templates_was_explicit"))
         assertTrue(native.contains("common_chat_templates_apply("))
-        assertTrue(native.contains("inputs.enable_thinking = enable_thinking"))
+        assertTrue(native.contains("inputs.enable_thinking ="))
+        assertTrue(native.contains("inputs.tool_choice = COMMON_CHAT_TOOL_CHOICE_AUTO"))
+        assertTrue(native.contains("inputs.parallel_tool_calls = true"))
+        assertTrue(native.contains("supports(\"supports_tools\")"))
+        assertTrue(native.contains("supports(\"supports_tool_calls\")"))
+        assertTrue(native.contains("!inputs.tools.empty() || has_tool_history"))
         assertFalse(native.contains("llama_chat_apply_template("))
-        assertTrue(engine.contains("enableThinking: Boolean"))
+
+        assertTrue(engine.contains("class LlamaChatTemplateRequest("))
+        assertTrue(engine.contains("class LlamaChatTemplateResult("))
+        assertTrue(engine.contains("class ChatTemplateToolCall("))
+        assertTrue(engine.contains("class ChatTemplateTool("))
+        assertTrue(provider.contains("TEMPLATE_JSON.encodeToString(tool.function.parameters)"))
+        assertTrue(provider.contains("message.toolCalls.isNotEmpty() || message.role == \"tool\""))
+        assertTrue(provider.contains("if (requiresToolCapableTemplate && !template.supportsTools)"))
+        assertTrue(provider.contains("role = \"assistant\""))
+        assertTrue(provider.contains("toolCalls = toolCalls.toTypedArray()"))
+        assertTrue(provider.contains("role = \"tool\""))
+        assertTrue(provider.contains("toolName = name"))
+        assertTrue(provider.contains("toolCallId ="))
+        assertFalse(provider.contains("Tool call:"))
+        assertFalse(provider.contains("Tool result:"))
         assertTrue(provider.contains("enableThinking = config.thinkingEnabled"))
     }
 
     @Test
-    fun `frequency and presence penalties reach both native sampler chains`() {
+    fun `template grammar and penalties reach the shared native sampler`() {
         val provider = mainSource("com/newoether/agora/api/local/LocalProvider.kt")
         val engine = mainSource("com/newoether/agora/api/LlamaChatEngine.kt")
         val native = mainCppSource("llama_chat_jni.cpp")
+        val sampler = native
+            .substringAfter("static common_sampler * init_chat_sampler(")
+            .substringBefore("static bool is_preserved_token(")
 
         assertEquals(2, Regex("frequencyPenalty = config\\.frequencyPenalty \\?: 0f")
             .findAll(provider).count())
@@ -84,38 +106,53 @@ class LocalLlamaOwnershipSourceContractTest {
         assertEquals(4, Regex("frequencyPenalty: Float").findAll(engine).count())
         assertEquals(4, Regex("presencePenalty: Float").findAll(engine).count())
         assertTrue(native.contains("static constexpr int32_t PENALTY_LAST_N = 64;"))
-        listOf("nativeChatGenerate", "nativeChatGenerateWithImages").forEach { functionName ->
-            val function = nativeFunctionSection(native, functionName)
-            val penalties = function.indexOf("llama_sampler_init_penalties(")
-            val truncation = function.indexOf("llama_sampler_init_min_p(")
-
-            assertTrue(function.contains(
-                "PENALTY_LAST_N, 1.0f, frequency_penalty, presence_penalty"
-            ))
-            assertTrue(penalties >= 0 && penalties < truncation)
-        }
+        assertEquals(2, Regex("common_sampler \\* smpl = init_chat_sampler\\(")
+            .findAll(native).count())
+        assertTrue(sampler.contains("params.grammar = { COMMON_GRAMMAR_TYPE_TOOL_CALLS"))
+        assertTrue(sampler.contains("params.grammar_lazy = metadata.grammar_lazy"))
+        assertTrue(sampler.contains("params.generation_prompt = metadata.generation_prompt"))
+        assertTrue(sampler.contains("common_tokenize(handle->vocab, value, false, true)"))
+        assertTrue(sampler.contains("COMMON_GRAMMAR_TRIGGER_TYPE_WORD"))
+        assertTrue(sampler.contains("COMMON_GRAMMAR_TRIGGER_TYPE_TOKEN"))
+        assertTrue(sampler.contains("Grammar trigger token is not preserved"))
+        assertTrue(sampler.contains("Lazy grammar requires at least one trigger"))
+        val penalties = sampler.indexOf("COMMON_SAMPLER_TYPE_PENALTIES")
+        val minP = sampler.indexOf("COMMON_SAMPLER_TYPE_MIN_P")
+        val topP = sampler.indexOf("COMMON_SAMPLER_TYPE_TOP_P")
+        val temperature = sampler.indexOf("COMMON_SAMPLER_TYPE_TEMPERATURE")
+        assertTrue(penalties >= 0 && penalties < minP)
+        assertTrue(minP < topP && topP < temperature)
+        assertFalse(native.contains("llama_sampler_init_penalties("))
+        assertFalse(native.contains("llama_sampler_chain_init("))
     }
 
     @Test
-    fun `text and multimodal loops decode before lossless dynamic delivery`() {
+    fun `text and multimodal loops accept template sampling before lossless delivery`() {
         val native = mainCppSource("llama_chat_jni.cpp")
 
         assertTrue(native.contains("CALLBACK_TOKEN_BATCH = 4"))
         assertTrue(native.contains("CALLBACK_BYTE_BATCH = 64"))
         listOf("nativeChatGenerate", "nativeChatGenerateWithImages").forEach { functionName ->
-            val loop = nativeFunctionSection(native, functionName)
-                .substringAfter("while (generated < generation_limit)")
+            val function = nativeFunctionSection(native, functionName)
+            val loop = function.substringAfter("while (generated < generation_limit)")
             val cancellation = loop.indexOf("cancelled.load")
-            val sample = loop.indexOf("llama_sampler_sample")
+            val sample = loop.indexOf("common_sampler_sample")
+            val accept = loop.indexOf("common_sampler_accept")
+            val eog = loop.indexOf("llama_vocab_is_eog")
+            val piece = loop.indexOf("token_to_piece(handle->vocab")
             val decode = loop.indexOf("llama_decode")
             val count = loop.indexOf("generated++")
             val deliver = loop.indexOf("report_token")
 
-            assertTrue(loop.contains("token_to_piece(handle->vocab"))
             assertTrue(cancellation >= 0 && cancellation < sample)
-            assertTrue(decode >= 0)
-            assertTrue(count > decode)
-            assertTrue(deliver > count)
+            assertTrue(sample >= 0 && sample < accept)
+            assertTrue(accept < eog)
+            assertTrue(eog < piece)
+            assertTrue(loop.contains("!is_preserved_token(metadata, new_token_id)"))
+            assertTrue(piece >= 0 && piece < decode)
+            assertTrue(decode < count)
+            assertTrue(count < deliver)
+            assertTrue(function.contains("common_sampler_free(smpl);"))
             assertTrue(loop.contains("callback_tokens >= CALLBACK_TOKEN_BATCH"))
             assertTrue(loop.contains("callback_buffer.size() >= CALLBACK_BYTE_BATCH"))
             assertTrue(loop.contains("std::min(callback_buffer.size(), CALLBACK_BYTE_BATCH)"))
@@ -127,6 +164,8 @@ class LocalLlamaOwnershipSourceContractTest {
             assertFalse(loop.contains("llama_synchronize"))
             assertFalse(loop.contains("char piece[256]"))
         }
+        assertFalse(native.contains("llama_sampler_sample("))
+        assertFalse(native.contains("llama_sampler_free("))
     }
 
     @Test

@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <set>
 #include <string>
 #include <vector>
 #include <cstring>
@@ -10,6 +11,7 @@
 #include <android/log.h>
 #include "llama.h"
 #include "chat.h"
+#include "sampling.h"
 #include "mtmd.h"
 #include "mtmd-helper.h"
 
@@ -198,6 +200,281 @@ static bool token_to_piece(
     return true;
 }
 
+struct TemplateSamplingMetadata {
+    std::string prompt;
+    std::string grammar;
+    bool grammar_lazy = false;
+    std::string generation_prompt;
+    std::vector<common_grammar_trigger> grammar_triggers;
+    std::vector<std::string> preserved_tokens;
+    std::set<llama_token> preserved_token_ids;
+};
+
+static bool read_java_string(JNIEnv * env, jstring value, std::string & result) {
+    if (!value) {
+        result.clear();
+        return true;
+    }
+    const char * chars = env->GetStringUTFChars(value, nullptr);
+    if (!chars) return false;
+    result.assign(chars);
+    env->ReleaseStringUTFChars(value, chars);
+    return true;
+}
+
+static bool read_string_field(
+    JNIEnv * env,
+    jobject object,
+    jclass object_class,
+    const char * name,
+    std::string & result
+) {
+    jfieldID field = env->GetFieldID(object_class, name, "Ljava/lang/String;");
+    if (!field) return false;
+    jstring value = static_cast<jstring>(env->GetObjectField(object, field));
+    const bool ok = read_java_string(env, value, result);
+    if (value) env->DeleteLocalRef(value);
+    return ok;
+}
+
+static jobject make_template_result(
+    JNIEnv * env,
+    const common_chat_params & params,
+    bool supports_tools
+) {
+    jclass trigger_class = env->FindClass(
+        "com/newoether/agora/api/ChatTemplateGrammarTrigger"
+    );
+    jclass result_class = env->FindClass(
+        "com/newoether/agora/api/LlamaChatTemplateResult"
+    );
+    jclass string_class = env->FindClass("java/lang/String");
+    if (!trigger_class || !result_class || !string_class) return nullptr;
+
+    jmethodID trigger_ctor = env->GetMethodID(trigger_class, "<init>", "(ILjava/lang/String;I)V");
+    jmethodID result_ctor = env->GetMethodID(
+        result_class,
+        "<init>",
+        "(Ljava/lang/String;ZLjava/lang/String;ZLjava/lang/String;"
+        "[Lcom/newoether/agora/api/ChatTemplateGrammarTrigger;[Ljava/lang/String;)V"
+    );
+    if (!trigger_ctor || !result_ctor) return nullptr;
+
+    jobjectArray triggers = env->NewObjectArray(
+        static_cast<jsize>(params.grammar_triggers.size()), trigger_class, nullptr
+    );
+    jobjectArray preserved = env->NewObjectArray(
+        static_cast<jsize>(params.preserved_tokens.size()), string_class, nullptr
+    );
+    if (!triggers || !preserved) return nullptr;
+
+    for (jsize i = 0; i < static_cast<jsize>(params.grammar_triggers.size()); ++i) {
+        const auto & trigger = params.grammar_triggers[static_cast<size_t>(i)];
+        jstring value = utf8_to_jstring(env, trigger.value.data(), trigger.value.size());
+        jobject item = env->NewObject(
+            trigger_class, trigger_ctor,
+            static_cast<jint>(trigger.type), value, static_cast<jint>(trigger.token)
+        );
+        env->SetObjectArrayElement(triggers, i, item);
+        env->DeleteLocalRef(item);
+        env->DeleteLocalRef(value);
+    }
+    for (jsize i = 0; i < static_cast<jsize>(params.preserved_tokens.size()); ++i) {
+        const auto & token = params.preserved_tokens[static_cast<size_t>(i)];
+        jstring value = utf8_to_jstring(env, token.data(), token.size());
+        env->SetObjectArrayElement(preserved, i, value);
+        env->DeleteLocalRef(value);
+    }
+
+    jstring prompt = utf8_to_jstring(env, params.prompt.data(), params.prompt.size());
+    jstring grammar = utf8_to_jstring(env, params.grammar.data(), params.grammar.size());
+    jstring generation_prompt = utf8_to_jstring(
+        env, params.generation_prompt.data(), params.generation_prompt.size()
+    );
+    jobject result = env->NewObject(
+        result_class, result_ctor,
+        prompt, supports_tools ? JNI_TRUE : JNI_FALSE,
+        grammar, params.grammar_lazy ? JNI_TRUE : JNI_FALSE,
+        generation_prompt, triggers, preserved
+    );
+    env->DeleteLocalRef(prompt);
+    env->DeleteLocalRef(grammar);
+    env->DeleteLocalRef(generation_prompt);
+    env->DeleteLocalRef(triggers);
+    env->DeleteLocalRef(preserved);
+    env->DeleteLocalRef(trigger_class);
+    env->DeleteLocalRef(result_class);
+    env->DeleteLocalRef(string_class);
+    return result;
+}
+
+static bool read_template_metadata(
+    JNIEnv * env,
+    jobject template_result,
+    TemplateSamplingMetadata & metadata
+) {
+    if (!template_result) return false;
+    jclass result_class = env->GetObjectClass(template_result);
+    if (!result_class) return false;
+    const bool strings_ok =
+        read_string_field(env, template_result, result_class, "prompt", metadata.prompt) &&
+        read_string_field(env, template_result, result_class, "grammar", metadata.grammar) &&
+        read_string_field(
+            env, template_result, result_class, "generationPrompt", metadata.generation_prompt
+        );
+    jfieldID lazy_field = env->GetFieldID(result_class, "grammarLazy", "Z");
+    jfieldID triggers_field = env->GetFieldID(
+        result_class, "grammarTriggers",
+        "[Lcom/newoether/agora/api/ChatTemplateGrammarTrigger;"
+    );
+    jfieldID preserved_field = env->GetFieldID(
+        result_class, "preservedTokens", "[Ljava/lang/String;"
+    );
+    if (!strings_ok || !lazy_field || !triggers_field || !preserved_field) {
+        env->DeleteLocalRef(result_class);
+        return false;
+    }
+    metadata.grammar_lazy = env->GetBooleanField(template_result, lazy_field) == JNI_TRUE;
+    jobjectArray triggers = static_cast<jobjectArray>(
+        env->GetObjectField(template_result, triggers_field)
+    );
+    jobjectArray preserved = static_cast<jobjectArray>(
+        env->GetObjectField(template_result, preserved_field)
+    );
+    if (!triggers || !preserved) {
+        env->DeleteLocalRef(result_class);
+        return false;
+    }
+
+    const jsize trigger_count = env->GetArrayLength(triggers);
+    metadata.grammar_triggers.reserve(static_cast<size_t>(trigger_count));
+    for (jsize i = 0; i < trigger_count; ++i) {
+        jobject trigger = env->GetObjectArrayElement(triggers, i);
+        jclass trigger_class = env->GetObjectClass(trigger);
+        jfieldID type_field = env->GetFieldID(trigger_class, "type", "I");
+        jfieldID value_field = env->GetFieldID(trigger_class, "value", "Ljava/lang/String;");
+        jfieldID token_field = env->GetFieldID(trigger_class, "token", "I");
+        if (!type_field || !value_field || !token_field) return false;
+        const jint type = env->GetIntField(trigger, type_field);
+        if (type < COMMON_GRAMMAR_TRIGGER_TYPE_TOKEN ||
+            type > COMMON_GRAMMAR_TRIGGER_TYPE_PATTERN_FULL) return false;
+        jstring value = static_cast<jstring>(env->GetObjectField(trigger, value_field));
+        std::string trigger_value;
+        if (!read_java_string(env, value, trigger_value)) return false;
+        metadata.grammar_triggers.push_back({
+            static_cast<common_grammar_trigger_type>(type),
+            std::move(trigger_value),
+            static_cast<llama_token>(env->GetIntField(trigger, token_field)),
+        });
+        if (value) env->DeleteLocalRef(value);
+        env->DeleteLocalRef(trigger_class);
+        env->DeleteLocalRef(trigger);
+    }
+
+    const jsize preserved_count = env->GetArrayLength(preserved);
+    metadata.preserved_tokens.reserve(static_cast<size_t>(preserved_count));
+    for (jsize i = 0; i < preserved_count; ++i) {
+        jstring value = static_cast<jstring>(env->GetObjectArrayElement(preserved, i));
+        std::string token;
+        if (!read_java_string(env, value, token)) return false;
+        metadata.preserved_tokens.push_back(std::move(token));
+        if (value) env->DeleteLocalRef(value);
+    }
+    env->DeleteLocalRef(triggers);
+    env->DeleteLocalRef(preserved);
+    env->DeleteLocalRef(result_class);
+    return true;
+}
+
+static common_sampler * init_chat_sampler(
+    ChatHandle * handle,
+    TemplateSamplingMetadata & metadata,
+    float temperature,
+    float top_p,
+    float frequency_penalty,
+    float presence_penalty,
+    std::string & error
+) {
+    common_params_sampling params;
+    params.samplers = {
+        COMMON_SAMPLER_TYPE_PENALTIES,
+        COMMON_SAMPLER_TYPE_MIN_P,
+        COMMON_SAMPLER_TYPE_TOP_P,
+        COMMON_SAMPLER_TYPE_TEMPERATURE,
+    };
+    params.penalty_last_n = PENALTY_LAST_N;
+    params.penalty_repeat = 1.0f;
+    params.penalty_freq = frequency_penalty;
+    params.penalty_present = presence_penalty;
+    params.min_p = 0.05f;
+    params.min_keep = 1;
+    params.top_p = top_p;
+    params.temp = temperature;
+    if (!metadata.grammar.empty()) {
+        params.grammar = { COMMON_GRAMMAR_TYPE_TOOL_CALLS, metadata.grammar };
+    }
+    params.grammar_lazy = metadata.grammar_lazy;
+    params.generation_prompt = metadata.generation_prompt;
+    for (const auto & value : metadata.preserved_tokens) {
+        const auto tokens = common_tokenize(handle->vocab, value, false, true);
+        if (tokens.size() == 1) {
+            params.preserved_tokens.insert(tokens.front());
+            metadata.preserved_token_ids.insert(tokens.front());
+        }
+    }
+    for (const auto & source : metadata.grammar_triggers) {
+        common_grammar_trigger trigger = source;
+        switch (trigger.type) {
+            case COMMON_GRAMMAR_TRIGGER_TYPE_WORD: {
+                const auto tokens = common_tokenize(handle->vocab, trigger.value, false, true);
+                if (tokens.size() == 1) {
+                    if (metadata.preserved_token_ids.find(tokens.front()) ==
+                        metadata.preserved_token_ids.end()) {
+                        error = "Grammar trigger word is not a preserved token";
+                        return nullptr;
+                    }
+                    trigger.type = COMMON_GRAMMAR_TRIGGER_TYPE_TOKEN;
+                    trigger.token = tokens.front();
+                }
+                break;
+            }
+            case COMMON_GRAMMAR_TRIGGER_TYPE_TOKEN:
+                if (metadata.preserved_token_ids.find(trigger.token) ==
+                    metadata.preserved_token_ids.end()) {
+                    error = "Grammar trigger token is not preserved";
+                    return nullptr;
+                }
+                break;
+            case COMMON_GRAMMAR_TRIGGER_TYPE_PATTERN:
+            case COMMON_GRAMMAR_TRIGGER_TYPE_PATTERN_FULL:
+                break;
+            default:
+                error = "Unknown grammar trigger type";
+                return nullptr;
+        }
+        params.grammar_triggers.push_back(std::move(trigger));
+    }
+    if (params.grammar_lazy && params.grammar_triggers.empty()) {
+        error = "Lazy grammar requires at least one trigger";
+        return nullptr;
+    }
+    try {
+        common_sampler * sampler = common_sampler_init(handle->model, params);
+        if (!sampler) error = "Unable to initialize chat sampler";
+        return sampler;
+    } catch (const std::exception & exception) {
+        error = exception.what();
+        return nullptr;
+    }
+}
+
+static bool is_preserved_token(
+    const TemplateSamplingMetadata & metadata,
+    llama_token token
+) {
+    return metadata.preserved_token_ids.find(token) != metadata.preserved_token_ids.end();
+}
+
 extern "C" {
 
 JNIEXPORT jlong JNICALL
@@ -292,53 +569,132 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGetTemplate(
     return utf8_to_jstring(env, tmpl, strlen(tmpl));
 }
 
-JNIEXPORT jstring JNICALL
+JNIEXPORT jobject JNICALL
 Java_com_newoether_agora_api_LlamaChatEngine_nativeChatApplyTemplate(
-    JNIEnv * env, jclass /*clazz*/, jlong handle_ptr,
-    jobjectArray messages, jboolean add_ass, jboolean enable_thinking) {
+    JNIEnv * env, jclass /*clazz*/, jlong handle_ptr, jobject request) {
 
-    if (!handle_ptr) return nullptr;
+    if (!handle_ptr || !request) return nullptr;
     ChatHandle * handle = reinterpret_cast<ChatHandle *>(handle_ptr);
     if (!handle->model || !handle->chat_templates) return nullptr;
 
-    jint n_msg = env->GetArrayLength(messages);
+    jclass request_class = env->GetObjectClass(request);
+    jfieldID messages_field = env->GetFieldID(
+        request_class, "messages", "[Lcom/newoether/agora/api/ChatTemplateMessage;"
+    );
+    jfieldID tools_field = env->GetFieldID(
+        request_class, "tools", "[Lcom/newoether/agora/api/ChatTemplateTool;"
+    );
+    jfieldID add_generation_field = env->GetFieldID(
+        request_class, "addGenerationPrompt", "Z"
+    );
+    jfieldID thinking_field = env->GetFieldID(request_class, "enableThinking", "Z");
+    if (!messages_field || !tools_field || !add_generation_field || !thinking_field) {
+        env->DeleteLocalRef(request_class);
+        return nullptr;
+    }
+
+    jobjectArray messages = static_cast<jobjectArray>(env->GetObjectField(request, messages_field));
+    jobjectArray tools = static_cast<jobjectArray>(env->GetObjectField(request, tools_field));
+    if (!messages || !tools) {
+        env->DeleteLocalRef(request_class);
+        return nullptr;
+    }
 
     common_chat_templates_inputs inputs;
-    inputs.messages.reserve(n_msg);
-    inputs.add_generation_prompt = add_ass;
-    inputs.enable_thinking = enable_thinking;
+    const jint message_count = env->GetArrayLength(messages);
+    const jint tool_count = env->GetArrayLength(tools);
+    inputs.messages.reserve(static_cast<size_t>(message_count));
+    inputs.tools.reserve(static_cast<size_t>(tool_count));
+    inputs.add_generation_prompt =
+        env->GetBooleanField(request, add_generation_field) == JNI_TRUE;
+    inputs.enable_thinking = env->GetBooleanField(request, thinking_field) == JNI_TRUE;
+    inputs.tool_choice = COMMON_CHAT_TOOL_CHOICE_AUTO;
+    inputs.parallel_tool_calls = true;
     inputs.use_jinja = true;
+    bool has_tool_history = false;
 
-    for (jint i = 0; i < n_msg; i++) {
-        jobject msg = env->GetObjectArrayElement(messages, i);
-        jclass msg_class = env->GetObjectClass(msg);
+    for (jint i = 0; i < message_count; ++i) {
+        jobject message = env->GetObjectArrayElement(messages, i);
+        jclass message_class = env->GetObjectClass(message);
+        common_chat_msg chat_message;
+        if (!read_string_field(env, message, message_class, "role", chat_message.role) ||
+            !read_string_field(env, message, message_class, "content", chat_message.content) ||
+            !read_string_field(env, message, message_class, "toolName", chat_message.tool_name) ||
+            !read_string_field(
+                env, message, message_class, "toolCallId", chat_message.tool_call_id
+            )) {
+            env->DeleteLocalRef(message_class);
+            env->DeleteLocalRef(message);
+            env->DeleteLocalRef(messages);
+            env->DeleteLocalRef(tools);
+            env->DeleteLocalRef(request_class);
+            return nullptr;
+        }
+        jfieldID calls_field = env->GetFieldID(
+            message_class, "toolCalls",
+            "[Lcom/newoether/agora/api/ChatTemplateToolCall;"
+        );
+        jobjectArray calls = static_cast<jobjectArray>(
+            env->GetObjectField(message, calls_field)
+        );
+        const jsize call_count = calls ? env->GetArrayLength(calls) : 0;
+        chat_message.tool_calls.reserve(static_cast<size_t>(call_count));
+        for (jsize call_index = 0; call_index < call_count; ++call_index) {
+            jobject call = env->GetObjectArrayElement(calls, call_index);
+            jclass call_class = env->GetObjectClass(call);
+            common_chat_tool_call tool_call;
+            const bool ok =
+                read_string_field(env, call, call_class, "id", tool_call.id) &&
+                read_string_field(env, call, call_class, "name", tool_call.name) &&
+                read_string_field(
+                    env, call, call_class, "arguments", tool_call.arguments
+                );
+            env->DeleteLocalRef(call_class);
+            env->DeleteLocalRef(call);
+            if (!ok) return nullptr;
+            chat_message.tool_calls.push_back(std::move(tool_call));
+        }
+        if (calls) env->DeleteLocalRef(calls);
+        has_tool_history = has_tool_history || !chat_message.tool_calls.empty() ||
+            chat_message.role == "tool";
+        inputs.messages.push_back(std::move(chat_message));
+        env->DeleteLocalRef(message_class);
+        env->DeleteLocalRef(message);
+    }
 
-        jfieldID role_field = env->GetFieldID(msg_class, "role", "Ljava/lang/String;");
-        jfieldID content_field = env->GetFieldID(msg_class, "content", "Ljava/lang/String;");
+    for (jint i = 0; i < tool_count; ++i) {
+        jobject tool = env->GetObjectArrayElement(tools, i);
+        jclass tool_class = env->GetObjectClass(tool);
+        common_chat_tool chat_tool;
+        const bool ok =
+            read_string_field(env, tool, tool_class, "name", chat_tool.name) &&
+            read_string_field(env, tool, tool_class, "description", chat_tool.description) &&
+            read_string_field(env, tool, tool_class, "parameters", chat_tool.parameters);
+        env->DeleteLocalRef(tool_class);
+        env->DeleteLocalRef(tool);
+        if (!ok) return nullptr;
+        inputs.tools.push_back(std::move(chat_tool));
+    }
 
-        jstring role_jstr = (jstring)env->GetObjectField(msg, role_field);
-        jstring content_jstr = (jstring)env->GetObjectField(msg, content_field);
+    env->DeleteLocalRef(messages);
+    env->DeleteLocalRef(tools);
+    env->DeleteLocalRef(request_class);
 
-        const char * role_cstr = env->GetStringUTFChars(role_jstr, nullptr);
-        const char * content_cstr = env->GetStringUTFChars(content_jstr, nullptr);
-
-        common_chat_msg chat_msg;
-        chat_msg.role = role_cstr ? role_cstr : "user";
-        chat_msg.content = content_cstr ? content_cstr : "";
-        inputs.messages.push_back(std::move(chat_msg));
-
-        if (role_cstr) env->ReleaseStringUTFChars(role_jstr, role_cstr);
-        if (content_cstr) env->ReleaseStringUTFChars(content_jstr, content_cstr);
-
-        env->DeleteLocalRef(msg_class);
-        env->DeleteLocalRef(msg);
+    const auto caps = common_chat_templates_get_caps(handle->chat_templates.get());
+    const auto supports = [&](const char * name) {
+        const auto found = caps.find(name);
+        return found != caps.end() && found->second;
+    };
+    const bool supports_tools = supports("supports_tools") && supports("supports_tool_calls");
+    if ((!inputs.tools.empty() || has_tool_history) && !supports_tools) {
+        return make_template_result(env, common_chat_params{}, false);
     }
 
     try {
         const common_chat_params params = common_chat_templates_apply(
             handle->chat_templates.get(), inputs
         );
-        return utf8_to_jstring(env, params.prompt.data(), params.prompt.size());
+        return make_template_result(env, params, supports_tools);
     } catch (const std::exception &) {
         LOGE("Failed to apply model chat template");
         return nullptr;
@@ -348,7 +704,7 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatApplyTemplate(
 JNIEXPORT jint JNICALL
 Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerate(
     JNIEnv * env, jclass /*clazz*/, jlong handle_ptr,
-    jstring prompt, jfloat temperature, jfloat top_p,
+    jobject template_result, jfloat temperature, jfloat top_p,
     jfloat frequency_penalty, jfloat presence_penalty, jint max_tokens,
     jobject callback) {
 
@@ -363,13 +719,11 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerate(
     handle->cancelled.store(false, std::memory_order_relaxed);
     const auto request_started = std::chrono::steady_clock::now();
 
-    const char * prompt_str = env->GetStringUTFChars(prompt, nullptr);
-    if (!prompt_str) {
-        return report_error(env, callback, callbacks, "Unable to read prompt", 0, 0);
+    TemplateSamplingMetadata metadata;
+    if (!read_template_metadata(env, template_result, metadata)) {
+        return report_error(env, callback, callbacks, "Unable to read chat template", 0, 0);
     }
-
-    std::string prompt_text(prompt_str);
-    env->ReleaseStringUTFChars(prompt, prompt_str);
+    const std::string & prompt_text = metadata.prompt;
 
     if (prompt_text.empty()) {
         return report_error(env, callback, callbacks, "Prompt is empty", 0, 0);
@@ -406,20 +760,22 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerate(
     LOGD("Generating: prompt_len=%zu, n_tokens=%d, max_tokens=%d",
          prompt_text.size(), n_tokens, max_tokens);
 
-    auto sparams = llama_sampler_chain_default_params();
-    llama_sampler * smpl = llama_sampler_chain_init(sparams);
-    llama_sampler_chain_add(smpl, llama_sampler_init_penalties(
-        PENALTY_LAST_N, 1.0f, frequency_penalty, presence_penalty
-    ));
-    llama_sampler_chain_add(smpl, llama_sampler_init_min_p(0.05f, 1));
-    llama_sampler_chain_add(smpl, llama_sampler_init_top_p(top_p, 1));
-    llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
-    llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    std::string sampler_error;
+    common_sampler * smpl = init_chat_sampler(
+        handle, metadata, temperature, top_p,
+        frequency_penalty, presence_penalty, sampler_error
+    );
+    if (!smpl) {
+        const char * message = sampler_error.empty()
+            ? "Unable to initialize chat sampler"
+            : sampler_error.c_str();
+        return report_error(env, callback, callbacks, message, 0, 0);
+    }
 
     int32_t n_ctx_used = llama_memory_seq_pos_max(llama_get_memory(handle->ctx), 0) + 1;
     if (n_ctx_used + n_tokens > n_ctx) {
         LOGE("Context size exceeded: used=%d + prompt=%d > ctx=%d", n_ctx_used, n_tokens, n_ctx);
-        llama_sampler_free(smpl);
+        common_sampler_free(smpl);
         return report_error(env, callback, callbacks, "Context size exceeded", 0, 0);
     }
 
@@ -429,14 +785,14 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerate(
     for (int32_t off = 0; off < n_tokens; off += n_batch) {
         if (handle->cancelled.load(std::memory_order_relaxed)) {
             LOGD("Cancelled during prefill at %d/%d tokens", off, n_tokens);
-            llama_sampler_free(smpl);
+            common_sampler_free(smpl);
             return report_done(env, callback, callbacks, "cancelled", input_tokens, 0);
         }
         const int32_t chunk = std::min(n_batch, n_tokens - off);
         llama_batch batch = llama_batch_get_one(tokens.data() + off, chunk);
         if (llama_decode(handle->ctx, batch) != 0) {
             LOGE("Prefill decode failed at offset %d (chunk=%d)", off, chunk);
-            llama_sampler_free(smpl);
+            common_sampler_free(smpl);
             return report_error(
                 env, callback, callbacks, "Prefill decode failed", input_tokens, 0
             );
@@ -478,9 +834,11 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerate(
             break;
         }
 
-        llama_token new_token_id = llama_sampler_sample(smpl, handle->ctx, -1);
+        llama_token new_token_id = common_sampler_sample(smpl, handle->ctx, -1);
+        common_sampler_accept(smpl, new_token_id, true);
 
-        if (llama_vocab_is_eog(handle->vocab, new_token_id)) {
+        if (llama_vocab_is_eog(handle->vocab, new_token_id) &&
+            !is_preserved_token(metadata, new_token_id)) {
             LOGD("EOG token %d at position %d", new_token_id, generated);
             stop_reason = "eog";
             break;
@@ -558,7 +916,7 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerate(
          failure ? "error" : stop_reason);
     LOGD("Text request: input_tokens=%d, output_tokens=%d, total_ms=%lld",
          input_tokens, generated, (long long)request_ms);
-    llama_sampler_free(smpl);
+    common_sampler_free(smpl);
     if (failure) {
         return report_error(env, callback, callbacks, failure, input_tokens, generated);
     }
@@ -639,7 +997,7 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatHasMmproj(
 JNIEXPORT jint JNICALL
 Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerateWithImages(
     JNIEnv * env, jclass /*clazz*/, jlong handle_ptr,
-    jstring prompt, jobjectArray image_paths,
+    jobject template_result, jobjectArray image_paths,
     jfloat temperature, jfloat top_p,
     jfloat frequency_penalty, jfloat presence_penalty, jint max_tokens,
     jobject callback) {
@@ -663,12 +1021,11 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerateWithImages(
     handle->cancelled.store(false, std::memory_order_relaxed);
     const auto request_started = std::chrono::steady_clock::now();
 
-    const char * prompt_str = env->GetStringUTFChars(prompt, nullptr);
-    if (!prompt_str) {
-        return report_error(env, callback, callbacks, "Unable to read prompt", 0, 0);
+    TemplateSamplingMetadata metadata;
+    if (!read_template_metadata(env, template_result, metadata)) {
+        return report_error(env, callback, callbacks, "Unable to read chat template", 0, 0);
     }
-    std::string prompt_text(prompt_str);
-    env->ReleaseStringUTFChars(prompt, prompt_str);
+    const std::string & prompt_text = metadata.prompt;
     if (prompt_text.empty()) {
         return report_error(env, callback, callbacks, "Prompt is empty", 0, 0);
     }
@@ -781,15 +1138,19 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerateWithImages(
          (long long)n_past, n_images, (long long)prefill_ms);
 
     // --- Generation loop (same as text-only path) ---
-    auto sparams = llama_sampler_chain_default_params();
-    llama_sampler * smpl = llama_sampler_chain_init(sparams);
-    llama_sampler_chain_add(smpl, llama_sampler_init_penalties(
-        PENALTY_LAST_N, 1.0f, frequency_penalty, presence_penalty
-    ));
-    llama_sampler_chain_add(smpl, llama_sampler_init_min_p(0.05f, 1));
-    llama_sampler_chain_add(smpl, llama_sampler_init_top_p(top_p, 1));
-    llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
-    llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    std::string sampler_error;
+    common_sampler * smpl = init_chat_sampler(
+        handle, metadata, temperature, top_p,
+        frequency_penalty, presence_penalty, sampler_error
+    );
+    if (!smpl) {
+        const char * message = sampler_error.empty()
+            ? "Unable to initialize chat sampler"
+            : sampler_error.c_str();
+        return report_error(
+            env, callback, callbacks, message, static_cast<int32_t>(n_past), 0
+        );
+    }
 
     const int32_t context_after_prefill =
         llama_memory_seq_pos_max(llama_get_memory(handle->ctx), 0) + 1;
@@ -817,9 +1178,11 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerateWithImages(
             break;
         }
 
-        llama_token new_token_id = llama_sampler_sample(smpl, handle->ctx, -1);
+        llama_token new_token_id = common_sampler_sample(smpl, handle->ctx, -1);
+        common_sampler_accept(smpl, new_token_id, true);
 
-        if (llama_vocab_is_eog(handle->vocab, new_token_id)) {
+        if (llama_vocab_is_eog(handle->vocab, new_token_id) &&
+            !is_preserved_token(metadata, new_token_id)) {
             stop_reason = "eog";
             break;
         }
@@ -894,7 +1257,7 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerateWithImages(
          failure ? "error" : stop_reason);
     LOGD("Multimodal request: input_tokens=%lld, output_tokens=%d, total_ms=%lld",
          (long long)n_past, generated, (long long)request_ms);
-    llama_sampler_free(smpl);
+    common_sampler_free(smpl);
     const int32_t input_tokens = static_cast<int32_t>(n_past);
     if (failure) {
         return report_error(env, callback, callbacks, failure, input_tokens, generated);
