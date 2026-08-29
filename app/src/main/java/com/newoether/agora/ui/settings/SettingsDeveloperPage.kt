@@ -87,7 +87,7 @@ fun SettingsDeveloperPage(
     ) {
         SettingsGroupColumn {
             SettingsGroup(
-                title = stringResource(R.string.developer_options_title),
+                title = stringResource(R.string.developer_options_features_group),
                 items = listOf(
                     {
                         SettingsItem(
@@ -136,7 +136,9 @@ fun SettingsDeveloperPage(
                             modifier = Modifier.clickable(enabled = developerModeEnabled) {
                                 viewModel.settings.setDebugModelEnabled(!debugModelEnabled)
                             },
-                            headlineContent = { Text("Debug Model") },
+                            headlineContent = {
+                                Text(stringResource(R.string.developer_options_debug_model))
+                            },
                             leadingContent = {
                                 Icon(Icons.Default.Science, contentDescription = null)
                             },

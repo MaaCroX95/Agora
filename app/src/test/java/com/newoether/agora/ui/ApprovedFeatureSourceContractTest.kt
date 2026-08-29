@@ -509,11 +509,22 @@ class ApprovedFeatureSourceContractTest {
         )
         val developerIndex = page.indexOf("R.string.settings_developer")
         val captureIndex = page.indexOf("R.string.developer_options_capture")
-        val debugIndex = page.indexOf("Text(\"Debug Model\")")
+        val debugIndex = page.indexOf("R.string.developer_options_debug_model")
 
         assertTrue(developerIndex >= 0)
         assertTrue(captureIndex > developerIndex)
         assertTrue(debugIndex > captureIndex)
+        assertTrue(
+            page.contains(
+                "title = stringResource(R.string.developer_options_features_group)",
+            ),
+        )
+        assertTrue(
+            page.contains(
+                "Text(stringResource(R.string.developer_options_debug_model))",
+            ),
+        )
+        assertFalse(page.contains("Text(\"Debug Model\")"))
         assertEquals(3, Regex("\\bSettingsItem\\(").findAll(page).count())
         assertEquals(2, Regex("\\bSwitch\\(").findAll(page).count())
         assertEquals(1, Regex("\\bSettingsGroup\\(").findAll(page).count())
@@ -545,6 +556,53 @@ class ApprovedFeatureSourceContractTest {
             "DeveloperDiagnostics.clear()",
         ).forEach { obsolete ->
             assertFalse("Developer page still contains $obsolete", page.contains(obsolete))
+        }
+    }
+
+    @Test
+    fun developerResourcesExposeOnlyFinalLocalizedKeySet() {
+        val resourceRoot = File(sourceRoot().parentFile, "res")
+        val localeFiles = resourceRoot.listFiles()
+            ?.filter { directory ->
+                directory.isDirectory &&
+                    (directory.name == "values" || directory.name.startsWith("values-"))
+            }
+            ?.map { directory -> File(directory, "strings.xml") }
+            ?.filter(File::isFile)
+            ?.sortedBy { file -> file.parentFile.name }
+            .orEmpty()
+        val expectedKeys = setOf(
+            "developer_options_already_enabled_message",
+            "developer_options_capture",
+            "developer_options_clear_diagnostics",
+            "developer_options_debug_model",
+            "developer_options_disable_confirm",
+            "developer_options_disable_message",
+            "developer_options_disable_title",
+            "developer_options_enabled_message",
+            "developer_options_export_failed",
+            "developer_options_export_share_title",
+            "developer_options_features_group",
+            "developer_options_taps_remaining",
+            "developer_options_title",
+        )
+        val developerKey = Regex("""<string name="(developer_options_[^"]+)"""")
+
+        assertEquals(12, localeFiles.size)
+        localeFiles.forEach { file ->
+            val keys = developerKey.findAll(file.readText())
+                .map { match -> match.groupValues[1] }
+                .toList()
+            assertEquals(
+                "${file.parentFile.name} contains duplicate Developer keys",
+                keys.size,
+                keys.toSet().size,
+            )
+            assertEquals(
+                "${file.parentFile.name} has an unexpected Developer key set",
+                expectedKeys,
+                keys.toSet(),
+            )
         }
     }
 
