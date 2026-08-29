@@ -37,7 +37,6 @@ import com.newoether.agora.util.noOpBringIntoView
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.ui.chat.AttachmentThumbnailItem
 import com.newoether.agora.ui.chat.ThumbnailClickHandlers
-import com.newoether.agora.ui.chat.findMetaForIndex
 import com.newoether.agora.ui.chat.resolveAttachmentType
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
@@ -161,33 +160,26 @@ internal fun UserMessageBubble(
                         val meta = remember(message.attachmentMeta) {
                             message.attachmentMeta
                         }
-                        // Build display items: skip non-first video/PDF frames, add meta-only items
+                        // Metadata owns attachment order. Images not claimed by metadata are legacy
+                        // entries and are appended in their stored order.
                         val displayItems = remember(message.images, meta) {
-                            val skipIndices = mutableSetOf<Int>()
-                            if (meta != null) {
-                                for (item in meta.items) {
-                                    val count = item.pageCount ?: 1
-                                    if (item.imageIndex != null && count > 1 && (item.type == "video" || item.type == "pdf")) {
-                                        for (i in item.imageIndex + 1 until item.imageIndex + count) {
-                                            skipIndices.add(i)
-                                        }
-                                    }
+                            val claimedImageIndices = mutableSetOf<Int>()
+                            val metadataItems = meta?.items.orEmpty().map { item ->
+                                val start = item.imageIndex
+                                if (start != null) {
+                                    val count = item.pageCount?.coerceAtLeast(1) ?: 1
+                                    claimedImageIndices += start until start + count
                                 }
+                                Triple(
+                                    start ?: -1,
+                                    start?.let(message.images::getOrNull).orEmpty(),
+                                    item,
+                                )
                             }
-                            // Image-backed items
-                            val imageItems = message.images.mapIndexedNotNull { index, path ->
-                                if (index in skipIndices) null
-                                else {
-                                    val item = findMetaForIndex(meta, index)
-                                    Triple(index, path, item)
-                                }
+                            val legacyItems = message.images.mapIndexedNotNull { index, path ->
+                                if (index in claimedImageIndices) null else Triple(index, path, null)
                             }
-                            // Meta-only items (file/PDF without image representation)
-                            val metaOnlyItems = meta?.items
-                                ?.filter { it.imageIndex == null && (it.type == "file" || it.type == "pdf" || it.type == "image") }
-                                ?.map { Triple(-1, "", it) }
-                                ?: emptyList()
-                            imageItems + metaOnlyItems
+                            metadataItems + legacyItems
                         }
 
                         // Collect all image/video URLs for the pager
@@ -195,8 +187,12 @@ internal fun UserMessageBubble(
                             displayItems.mapNotNull { (_, imagePath, metaItem) ->
                                 val t = resolveAttachmentType(imagePath, metaItem)
                                 when (t) {
-                                    "image" -> if (imagePath.isNotEmpty()) imagePath else null
-                                    "video" -> metaItem?.originalUri
+                                    "image" -> imagePath.takeIf {
+                                        it.isNotEmpty() && metaItem?.unavailable != true
+                                    }
+                                    "video" -> metaItem
+                                        ?.takeUnless { it.unavailable }
+                                        ?.originalUri
                                     else -> null
                                 }
                             }
@@ -206,13 +202,11 @@ internal fun UserMessageBubble(
                             modifier = Modifier.padding(bottom = if (message.text.isNotEmpty()) 8.dp else 0.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            itemsIndexed(displayItems) { itemIdx, (index, imagePath, metaItem) ->
+                            itemsIndexed(displayItems) { _, (_, imagePath, metaItem) ->
                                 val type = remember(imagePath, metaItem?.type) {
                                     resolveAttachmentType(imagePath, metaItem)
                                 }
-                                val isVideo = type == "video"
                                 val isPdf = type == "pdf"
-                                val isFileType = type == "file"
 
                                 val fileName = metaItem?.fileName ?: imagePath.substringAfterLast("/")
                                 val pdfPages = if (type == "pdf") {
@@ -236,6 +230,7 @@ internal fun UserMessageBubble(
                                     fileName = fileName,
                                     originalUri = metaItem?.originalUri,
                                     textContent = metaItem?.textContent,
+                                    unavailable = metaItem?.unavailable == true,
                                     pdfPages = pdfPages,
                                     allMediaUrls = allMediaUrls,
                                     mediaIndex = mediaIndex,

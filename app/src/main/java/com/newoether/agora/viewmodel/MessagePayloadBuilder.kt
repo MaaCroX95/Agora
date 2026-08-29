@@ -52,6 +52,18 @@ class MessagePayloadBuilder(
 
         // Process new SelectedAttachment list
         for (att in attachments) {
+            if (att.unavailable) {
+                metaItems.add(
+                    AttachmentItem(
+                        type = att.type,
+                        fileName = att.fileName,
+                        mimeType = att.mimeType,
+                        fileSize = att.fileSize,
+                        unavailable = true,
+                    ),
+                )
+                continue
+            }
             when (att.type) {
                 "image" -> {
                     mediaUris.add(att.localPath ?: att.uri)

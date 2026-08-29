@@ -879,6 +879,9 @@
     <string name="export_button">Export</string>
     <string name="exporting_label">Exporting…</string>
     <string name="export_success">Data exported successfully.</string>
+    <string name="attachment_unavailable">Attachment unavailable</string>
+    <string name="export_success_missing_resources">Data exported successfully, but %1$d resources were unavailable.</string>
+    <string name="auto_backup_missing_resources">Backup completed, but %1$d resources were unavailable.</string>
 
     <string name="export_failed">Export failed: %1$s</string>
     <string name="import_preview_title">Import Data</string>

@@ -165,11 +165,22 @@ class ImportExportManager(
         scope.launch(Dispatchers.IO) {
             try {
                 val exporter = DataExporter(app, chatDao, settingsManager, memoryManager, skillManager)
-                exporter.export(uri, categories, includeApiKeys) { progress ->
+                val result = exporter.export(uri, categories, includeApiKeys) { progress ->
                     _exportProgress.value = progress
                 }
                 _exportProgress.value = null
-                emitSnackbar(SnackbarEvent(app.getString(R.string.export_success)))
+                emitSnackbar(
+                    SnackbarEvent(
+                        if (result.missingResourceCount > 0) {
+                            app.getString(
+                                R.string.export_success_missing_resources,
+                                result.missingResourceCount,
+                            )
+                        } else {
+                            app.getString(R.string.export_success)
+                        },
+                    ),
+                )
             } catch (e: Exception) {
                 _exportProgress.value = null
                 emitSnackbar(SnackbarEvent(

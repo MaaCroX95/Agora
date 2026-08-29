@@ -824,6 +824,9 @@
     <string name="export_button">Exportar</string>
     <string name="exporting_label">Exportando…</string>
     <string name="export_success">Datos exportados correctamente.</string>
+    <string name="attachment_unavailable">Adjunto no disponible</string>
+    <string name="export_success_missing_resources">Los datos se exportaron, pero %1$d recursos no estaban disponibles.</string>
+    <string name="auto_backup_missing_resources">La copia de seguridad finalizó, pero %1$d recursos no estaban disponibles.</string>
 
     <string name="export_failed">Error al exportar: %1$s</string>
     <string name="import_preview_title">Importar datos</string>

@@ -824,6 +824,9 @@
     <string name="export_button">تصدير</string>
     <string name="exporting_label">جارٍ التصدير…</string>
     <string name="export_success">تم تصدير البيانات بنجاح.</string>
+    <string name="attachment_unavailable">المرفق غير متاح</string>
+    <string name="export_success_missing_resources">تم تصدير البيانات، لكن %1$d من الموارد لم تكن متاحة.</string>
+    <string name="auto_backup_missing_resources">اكتمل النسخ الاحتياطي، لكن %1$d من الموارد لم تكن متاحة.</string>
 
     <string name="export_failed">فشل التصدير: %1$s</string>
     <string name="import_preview_title">استيراد البيانات</string>

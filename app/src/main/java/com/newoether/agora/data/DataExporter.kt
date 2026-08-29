@@ -147,7 +147,8 @@ class DataExporter(
     )
 
     data class ExportResult(
-        val imagesExported: Int = 0
+        val imagesExported: Int = 0,
+        val missingResourceCount: Int = 0,
     )
 
     private data class MediaExportPlan(
@@ -156,6 +157,7 @@ class DataExporter(
         val draftAttachments: Map<String, String?>,
         val sourceToArchiveEntry: Map<String, String>,
         val copiedImageCount: Int,
+        val missingResourceCount: Int,
     )
 
     private fun openImageStream(imgUri: String): java.io.InputStream? {
@@ -266,6 +268,7 @@ class DataExporter(
         val draftAttachments = mutableMapOf<String, String?>()
         val sourceToArchiveEntry = mutableMapOf<String, String>()
         var copiedImageCount = 0
+        var missingResourceCount = 0
 
         fun copySource(source: String, prefix: String): String? {
             if (source.isBlank()) return null
@@ -303,7 +306,7 @@ class DataExporter(
                 }
                 meta?.items
                     ?.asSequence()
-                    ?.filter { it.type == "video" }
+                    ?.filter { it.type == "video" && !it.unavailable }
                     ?.mapNotNull { it.originalUri }
                     ?.forEach { source ->
                         copySource(source, NativeBackupFormat.VIDEO_MEDIA_PREFIX)
@@ -311,10 +314,12 @@ class DataExporter(
                 messageAttachmentMeta[message.id] =
                     NativeBackupMediaPolicy.rewriteAttachmentMetaForExport(
                     raw = message.attachmentMeta,
+                    originalImageSources = message.images,
                     oldToNewImageIndex = oldToNewImageIndex,
                     archiveEntryForSource = { source ->
                         sourceToArchiveEntry[mediaSourceKey(source)]
                     },
+                    onMissingResource = { missingResourceCount++ },
                 )
             }
         }
@@ -333,27 +338,13 @@ class DataExporter(
             val attachments = conversation.draftAttachments?.let { raw ->
                 runCatching { Json.decodeFromString<List<SelectedAttachment>>(raw) }.getOrNull()
             } ?: return@forEach
-            val archived = NativeBackupMediaPolicy.exportableDraftAttachments(attachments)
-                .mapNotNull { attachment ->
-                    val primarySource = listOfNotNull(
-                        attachment.localPath,
-                        attachment.uri.takeIf(String::isNotBlank),
-                    ).firstNotNullOfOrNull { source ->
-                        copySource(source, NativeBackupFormat.DRAFT_MEDIA_PREFIX)
-                    } ?: return@mapNotNull null
-                    val processedFrames = attachment.processedFrames
-                        ?.mapNotNull { copySource(it, NativeBackupFormat.DRAFT_MEDIA_PREFIX) }
-                        ?.takeIf(List<String>::isNotEmpty)
-                    val preRenderedPaths = attachment.preRenderedPaths
-                        ?.mapNotNull { copySource(it, NativeBackupFormat.DRAFT_MEDIA_PREFIX) }
-                        ?.takeIf(List<String>::isNotEmpty)
-                    attachment.copy(
-                        uri = primarySource,
-                        localPath = primarySource,
-                        processedFrames = processedFrames,
-                        preRenderedPaths = preRenderedPaths,
-                    )
-                }
+            val archived = NativeBackupMediaPolicy.rewriteDraftAttachmentsForExport(
+                attachments = attachments,
+                archiveEntryForSource = { source ->
+                    copySource(source, NativeBackupFormat.DRAFT_MEDIA_PREFIX)
+                },
+                onMissingResource = { missingResourceCount++ },
+            )
             draftAttachments[conversation.id] = archived
                 .takeIf(List<SelectedAttachment>::isNotEmpty)
                 ?.let { Json.encodeToString(it) }
@@ -365,6 +356,7 @@ class DataExporter(
             draftAttachments = draftAttachments,
             sourceToArchiveEntry = sourceToArchiveEntry,
             copiedImageCount = copiedImageCount,
+            missingResourceCount = missingResourceCount,
         )
     }
 
@@ -538,6 +530,7 @@ class DataExporter(
         )
 
         var imagesExportedTotal = 0
+        var missingResourceCount = 0
         val totalSteps = categories.size + 1 // +1 for manifest
         var completed = 0
         fun step() { completed++; onProgress(completed.toFloat() / totalSteps) }
@@ -558,6 +551,7 @@ class DataExporter(
                 val conversations = chatDao.getAllConversationsList()
                 val mediaPlan = buildMediaExportPlan(zip, conversations)
                 imagesExportedTotal += mediaPlan.copiedImageCount
+                missingResourceCount += mediaPlan.missingResourceCount
                 writeConversationArchive(
                     zip = zip,
                     conversations = conversations,
@@ -645,6 +639,9 @@ class DataExporter(
         }
 
         onProgress(1f)
-        ExportResult(imagesExported = imagesExportedTotal)
+        ExportResult(
+            imagesExported = imagesExportedTotal,
+            missingResourceCount = missingResourceCount,
+        )
     }
 }

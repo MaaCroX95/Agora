@@ -53,6 +53,7 @@ data class AttachmentItem(
     val storage: AttachmentStorage = AttachmentStorage.APP_PRIVATE,
     @SerialName("sandbox_path") val sandboxPath: String? = null,
     @SerialName("file_size") val fileSize: Long? = null,
+    val unavailable: Boolean = false,
 )
 
 /** Used for passing attachment metadata from ChatBottomBar to ViewModel. */
@@ -76,4 +77,5 @@ data class SelectedAttachment(
     val localPath: String? = null,  // copied into storage owned by [storage] at pick time
     val storage: AttachmentStorage = AttachmentStorage.APP_PRIVATE,
     val sandboxPath: String? = null,
+    val unavailable: Boolean = false,
 )

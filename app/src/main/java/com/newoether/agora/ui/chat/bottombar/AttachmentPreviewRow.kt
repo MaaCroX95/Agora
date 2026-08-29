@@ -57,7 +57,7 @@ internal fun AttachmentPreviewRow(
     val haptics = LocalAgoraHaptics.current
     val scope = rememberCoroutineScope()
     val allMediaUrls = composer.selectedAttachments.filter {
-        it.type == "image" || it.type == "video"
+        !it.unavailable && (it.type == "image" || it.type == "video")
     }.map { it.uri }
     LazyRow(
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp, start = 8.dp, end = 8.dp),
@@ -84,8 +84,8 @@ internal fun AttachmentPreviewRow(
             )
 
             var videoThumb by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-            LaunchedEffect(uriStr, isVideo) {
-                if (isVideo && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            LaunchedEffect(uriStr, isVideo, attachment.unavailable) {
+                if (!attachment.unavailable && isVideo && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     try {
                         videoThumb = withContext(Dispatchers.IO) {
                             context.contentResolver.loadThumbnail(
@@ -102,6 +102,7 @@ internal fun AttachmentPreviewRow(
             ) {
                 Box {
                     val clickableMod = when {
+                        attachment.unavailable -> Modifier
                         isFile -> {
                             if (!attachment.storage.canPreview) {
                                 Modifier
@@ -151,6 +152,15 @@ internal fun AttachmentPreviewRow(
                         .then(clickableMod)
 
                     when {
+                        attachment.unavailable -> {
+                            FileThumbnail(
+                                fileName = attachment.fileName,
+                                isPdf = isPdf,
+                                modifier = thumbModifier,
+                                fallbackLabel = attachment.type.uppercase().take(4)
+                                    .ifEmpty { "FILE" },
+                            )
+                        }
                         isVideo && videoThumb != null -> {
                             Image(
                                 bitmap = videoThumb!!.asImageBitmap(),
@@ -245,14 +255,31 @@ internal fun AttachmentPreviewRow(
                     )
                 }
                 }
-                if ((isFile || isPdf) && attachment.fileName != null) {
+                if (attachment.unavailable && attachment.fileName != null) {
                     Text(
                         text = attachment.fileName,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp)
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                } else if ((isFile || isPdf) && attachment.fileName != null) {
+                    Text(
+                        text = attachment.fileName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                if (attachment.unavailable) {
+                    Text(
+                        text = stringResource(R.string.attachment_unavailable),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 1,
                     )
                 }
             }

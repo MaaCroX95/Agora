@@ -17,6 +17,9 @@ the exact development boundary. Current explicit user requirements override olde
 - `NativeBackupSecretsPolicy` is the only owner of opt-in secret capture and restoration.
 - Conversation, attachment, Memory, Skill, System Prompt, and custom-font owners retain their normal
   persistence and conflict rules during transport; import/export does not create shadow stores.
+- Unreadable conversation or draft image, video, PDF, and file references remain in their original
+  attachment order as typed unavailable placeholders. Placeholders retain the filename when known,
+  carry no device URI/path, and are never exposed as readable or previewable content.
 
 Adding a DataStore key does not make it portable. A setting enters an archive only after this
 contract, export, restore, Replace reset, and focused compatibility tests are updated together.
@@ -145,6 +148,9 @@ imported conversations will remain.
   reused. Active references are accepted only when their target survives import.
 - A category failure is reported with its category and does not convert malformed input into a
   successful default. Temporary custom-font files are deleted when installation fails.
+- Missing individual attachment resources do not fail an otherwise valid export or automatic backup.
+  The successful result reports the total unavailable-resource count, and restore keeps each durable
+  placeholder disabled with its type, filename, and relative attachment order intact.
 - Import must never delete or overwrite data outside the selected category and strategy boundary.
 
 ## 8. Required verification
@@ -160,7 +166,9 @@ Focused tests for any archive or setting change must prove:
 7. archive category selection cannot mutate an unselected category;
 8. conversation media, Memory/Skill files, System Prompts, and custom fonts keep their owner-specific
    conflict, cleanup, and rollback behavior;
-9. the default and every maintained public manual remain consistent with this contract.
+9. unreadable attachment resources preserve order, type, and filename as disabled placeholders, and
+   successful manual and automatic backups report the complete unavailable-resource count;
+10. the default and every maintained public manual remain consistent with this contract.
 
 The project full build remains required after implementation changes. Build success alone does not
 prove SAF access, large-archive streaming, device storage, or user-visible conflict handling.

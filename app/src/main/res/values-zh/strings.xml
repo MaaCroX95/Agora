@@ -1001,6 +1001,9 @@
     <string name="export_button">导出</string>
     <string name="exporting_label">导出中…</string>
     <string name="export_success">数据导出成功。</string>
+    <string name="attachment_unavailable">附件不可用</string>
+    <string name="export_success_missing_resources">数据已导出，但有 %1$d 个资源不可用。</string>
+    <string name="auto_backup_missing_resources">备份已完成，但有 %1$d 个资源不可用。</string>
     <string name="export_failed">导出失败: %1$s</string>
     <string name="import_preview_title">导入数据</string>
     <string name="import_from">导出时间 %1$s\n来自 Agora v%2$s</string>

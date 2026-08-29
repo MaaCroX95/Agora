@@ -283,10 +283,26 @@ internal class NativeConversationGraphImporter(
         } catch (_: Exception) {
             MessageStatus.SUCCESS
         }
+        val oldToNewImageIndex = mutableMapOf<Int, Int>()
         val restoredImages = if (archiveVersion >= 4) {
-            images.mapNotNull { restoredMedia.archiveFiles[it]?.uri }
+            buildList {
+                images.forEachIndexed { oldIndex, entry ->
+                    restoredMedia.archiveFiles[entry]?.uri?.let { uri ->
+                        oldToNewImageIndex[oldIndex] = size
+                        add(uri)
+                    }
+                }
+            }
         } else {
-            restoredMedia.legacyImagesByMessage[id].orEmpty()
+            buildList {
+                restoredMedia.legacyImagesByMessage[id]
+                    .orEmpty()
+                    .toSortedMap()
+                    .forEach { (oldIndex, uri) ->
+                        oldToNewImageIndex[oldIndex] = size
+                        add(uri)
+                    }
+            }
         }
         return MessageEntity(
             id = id,
@@ -327,6 +343,7 @@ internal class NativeConversationGraphImporter(
             attachmentMeta = NativeBackupMediaPolicy.restoreAttachmentMeta(
                 raw = attachmentMeta,
                 archiveVersion = archiveVersion,
+                oldToNewImageIndex = oldToNewImageIndex,
                 legacyVideoUris = restoredMedia.legacyVideosByMessage[id].orEmpty(),
                 restoredUriForArchiveEntry = { entry ->
                     restoredMedia.archiveFiles[entry]?.uri

@@ -824,6 +824,9 @@
     <string name="export_button">Экспорт</string>
     <string name="exporting_label">Экспорт…</string>
     <string name="export_success">Данные успешно экспортированы.</string>
+    <string name="attachment_unavailable">Вложение недоступно</string>
+    <string name="export_success_missing_resources">Данные экспортированы, но %1$d ресурсов недоступны.</string>
+    <string name="auto_backup_missing_resources">Резервное копирование завершено, но %1$d ресурсов недоступны.</string>
 
     <string name="export_failed">Не удалось экспортировать: %1$s</string>
     <string name="import_preview_title">Импорт данных</string>

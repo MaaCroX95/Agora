@@ -824,6 +824,9 @@
     <string name="export_button">내보내기</string>
     <string name="exporting_label">내보내는 중…</string>
     <string name="export_success">데이터를 성공적으로 내보냈습니다.</string>
+    <string name="attachment_unavailable">첨부 파일을 사용할 수 없음</string>
+    <string name="export_success_missing_resources">데이터를 내보냈지만 리소스 %1$d개를 사용할 수 없었습니다.</string>
+    <string name="auto_backup_missing_resources">백업이 완료되었지만 리소스 %1$d개를 사용할 수 없었습니다.</string>
 
     <string name="export_failed">내보내기 실패: %1$s</string>
     <string name="import_preview_title">데이터 가져오기</string>

@@ -824,6 +824,9 @@
     <string name="export_button">エクスポート</string>
     <string name="exporting_label">エクスポート中…</string>
     <string name="export_success">データを正常にエクスポートしました。</string>
+    <string name="attachment_unavailable">添付ファイルを利用できません</string>
+    <string name="export_success_missing_resources">データをエクスポートしましたが、%1$d 件のリソースを利用できませんでした。</string>
+    <string name="auto_backup_missing_resources">バックアップは完了しましたが、%1$d 件のリソースを利用できませんでした。</string>
 
     <string name="export_failed">エクスポートに失敗しました: %1$s</string>
     <string name="import_preview_title">データをインポート</string>

@@ -827,6 +827,9 @@
     <string name="export_button">Xuất</string>
     <string name="exporting_label">Đang xuất…</string>
     <string name="export_success">Xuất dữ liệu thành công.</string>
+    <string name="attachment_unavailable">Tệp đính kèm không khả dụng</string>
+    <string name="export_success_missing_resources">Đã xuất dữ liệu, nhưng không thể sử dụng %1$d tài nguyên.</string>
+    <string name="auto_backup_missing_resources">Đã sao lưu xong, nhưng không thể sử dụng %1$d tài nguyên.</string>
     <string name="export_failed">Xuất thất bại: %1$s</string>
     <string name="import_preview_title">Nhập dữ liệu</string>
     <string name="import_from">Xuất ngày %1$s\nTừ Agora v%2$s</string>

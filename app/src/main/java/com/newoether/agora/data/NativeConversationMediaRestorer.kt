@@ -37,7 +37,7 @@ internal class NativeConversationMediaRestorer(
 
     data class RestoredMedia(
         val archiveFiles: Map<String, RestoredMediaFile>,
-        val legacyImagesByMessage: Map<String, List<String>>,
+        val legacyImagesByMessage: Map<String, Map<Int, String>>,
         val legacyVideosByMessage: Map<String, Map<Int, String>>,
         val createdFiles: List<File>,
     )
@@ -45,7 +45,7 @@ internal class NativeConversationMediaRestorer(
     fun restoreConversationMedia(archive: NativeBackupArchive): RestoredMedia {
         val archiveFiles = mutableMapOf<String, RestoredMediaFile>()
         val legacyImagesByMessage =
-            mutableMapOf<String, MutableList<Pair<Int, String>>>()
+            mutableMapOf<String, MutableMap<Int, String>>()
         val legacyVideosByMessage =
             mutableMapOf<String, MutableMap<Int, String>>()
         val createdFiles = mutableListOf<File>()
@@ -120,8 +120,7 @@ internal class NativeConversationMediaRestorer(
                 val index = parts[1].toIntOrNull() ?: return@forEach
                 restoreEntry(path, "image")?.let { restored ->
                     legacyImagesByMessage
-                        .getOrPut(parts[0]) { mutableListOf() }
-                        .add(index to restored.uri)
+                        .getOrPut(parts[0]) { mutableMapOf() }[index] = restored.uri
                 }
             }
 
@@ -142,7 +141,7 @@ internal class NativeConversationMediaRestorer(
         return RestoredMedia(
             archiveFiles = archiveFiles,
             legacyImagesByMessage = legacyImagesByMessage.mapValues { (_, indexed) ->
-                indexed.sortedBy { it.first }.map { it.second }
+                indexed.toMap()
             },
             legacyVideosByMessage = legacyVideosByMessage,
             createdFiles = createdFiles,
@@ -157,21 +156,18 @@ internal class NativeConversationMediaRestorer(
         val attachments = runCatching {
             importJson.decodeFromString<List<SelectedAttachment>>(raw)
         }.getOrNull() ?: return null
-        val restored = attachments.mapNotNull { attachment ->
-            val primary = restoredMedia.archiveFiles[attachment.localPath]
-                ?: restoredMedia.archiveFiles[attachment.uri]
-                ?: return@mapNotNull null
-            attachment.copy(
-                uri = primary.uri,
-                localPath = primary.absolutePath,
-                processedFrames = attachment.processedFrames
-                    ?.mapNotNull { restoredMedia.archiveFiles[it]?.absolutePath }
-                    ?.takeIf { it.isNotEmpty() },
-                preRenderedPaths = attachment.preRenderedPaths
-                    ?.mapNotNull { restoredMedia.archiveFiles[it]?.absolutePath }
-                    ?.takeIf { it.isNotEmpty() },
-            )
-        }
-        return restored.takeIf { it.isNotEmpty() }?.let(importJson::encodeToString)
+        val restored = NativeBackupMediaPolicy.restoreDraftAttachments(
+            attachments = attachments,
+            restoredPrimaryForArchiveEntry = { entry ->
+                restoredMedia.archiveFiles[entry]?.let { restoredFile ->
+                    restoredFile.absolutePath to restoredFile.uri
+                }
+            },
+            restoredPathForArchiveEntry = { entry ->
+                restoredMedia.archiveFiles[entry]?.absolutePath
+            },
+        )
+        return restored.takeIf(List<SelectedAttachment>::isNotEmpty)
+            ?.let(importJson::encodeToString)
     }
 }

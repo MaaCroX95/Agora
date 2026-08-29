@@ -68,10 +68,14 @@ class AutoBackupManager(
             val freshLastBackup = settingsManager.lastBackupTimestamp.safeRead(0L)
             if (now - freshLastBackup < periodMs) return BackupResult.NOT_DUE
 
-            val file = performBackup()
-            if (file != null) {
+            val backup = performBackup()
+            if (backup != null) {
+                val missingResourceCount = backup.second.missingResourceCount
                 runCatching { settingsManager.saveLastBackupTimestamp(now) }
                 cleanupOldBackups()
+                if (missingResourceCount > 0) {
+                    sendMissingResourceNotification(missingResourceCount)
+                }
                 return BackupResult.SUCCESS
             }
             return BackupResult.FAILED
@@ -87,7 +91,8 @@ class AutoBackupManager(
 
     // ── Private ───────────────────────────────────────────────
 
-    private suspend fun performBackup(): File? = withContext(Dispatchers.IO) {
+    private suspend fun performBackup(): Pair<File, DataExporter.ExportResult>? =
+        withContext(Dispatchers.IO) {
         try {
             val dir = resolveBackupDir() ?: return@withContext null
             if (!dir.exists() && !dir.mkdirs()) return@withContext null
@@ -111,7 +116,7 @@ class AutoBackupManager(
             val includeApiKeys = DataExporter.ExportCategory.API_KEYS in categories
 
             val exporter = DataExporter(context, chatDao, settingsManager, memoryManager, skillManager)
-            exporter.export(
+            val exportResult = exporter.export(
                 uri = Uri.fromFile(tmpFile),
                 categories = categories,
                 includeApiKeys = includeApiKeys,
@@ -121,7 +126,7 @@ class AutoBackupManager(
             // Atomic: rename temp to final
             if (tmpFile.renameTo(file)) {
                 DebugLog.d("AutoBackup", "Backup created")
-                file
+                file to exportResult
             } else {
                 // renameTo may fail across filesystems — try direct write as fallback
                 tmpFile.delete()
@@ -192,6 +197,20 @@ class AutoBackupManager(
     }
 
     private fun sendFailureNotification(message: String) {
+        sendNotification(
+            title = "Auto backup failed",
+            message = message,
+        )
+    }
+
+    private fun sendMissingResourceNotification(count: Int) {
+        sendNotification(
+            title = context.getString(R.string.auto_backup_title),
+            message = context.getString(R.string.auto_backup_missing_resources, count),
+        )
+    }
+
+    private fun sendNotification(title: String, message: String) {
         try {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -216,7 +235,7 @@ class AutoBackupManager(
                 NOTIFICATION_ID,
                 NotificationCompat.Builder(context, CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_notification)
-                    .setContentTitle("Auto backup failed")
+                    .setContentTitle(title)
                     .setContentText(message)
                     .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                     .setAutoCancel(true)

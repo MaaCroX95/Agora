@@ -824,6 +824,9 @@
     <string name="export_button">Exporter</string>
     <string name="exporting_label">Exportation…</string>
     <string name="export_success">Données exportées avec succès.</string>
+    <string name="attachment_unavailable">Pièce jointe indisponible</string>
+    <string name="export_success_missing_resources">Les données ont été exportées, mais %1$d ressources étaient indisponibles.</string>
+    <string name="auto_backup_missing_resources">La sauvegarde est terminée, mais %1$d ressources étaient indisponibles.</string>
 
     <string name="export_failed">Échec de l\'export : %1$s</string>
     <string name="import_preview_title">Importer les données</string>

@@ -93,6 +93,66 @@ class DataControlImportStrategySourceContractTest {
     }
 
     @Test
+    fun unavailableResourcesUseDisabledLocalizedRenderingAndSuccessReporting() {
+        val manager = sourceFile(
+            "app/src/main/java/com/newoether/agora/viewmodel/ImportExportManager.kt",
+        ).readText().normalizeLines()
+        val autoBackup = sourceFile(
+            "app/src/main/java/com/newoether/agora/data/AutoBackupManager.kt",
+        ).readText().normalizeLines()
+        val thumbnail = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/chat/AttachmentThumbnail.kt",
+        ).readText().normalizeLines()
+        val preview = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/chat/bottombar/AttachmentPreviewRow.kt",
+        ).readText().normalizeLines()
+        val bubble = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/chat/message/UserMessageBubble.kt",
+        ).readText().normalizeLines()
+
+        assertTrue(manager.contains("val result = exporter.export"))
+        assertTrue(manager.contains("result.missingResourceCount > 0"))
+        assertTrue(manager.contains("R.string.export_success_missing_resources"))
+        assertTrue(autoBackup.contains("backup.second.missingResourceCount"))
+        assertTrue(autoBackup.contains("sendMissingResourceNotification(missingResourceCount)"))
+        assertTrue(autoBackup.contains("file to exportResult"))
+        val warningBranch = autoBackup
+            .substringAfter("if (missingResourceCount > 0)")
+            .substringBefore("return BackupResult.SUCCESS")
+        assertFalse(warningBranch.contains("sendFailureNotification"))
+        assertTrue(thumbnail.contains("if (unavailable)"))
+        assertTrue(thumbnail.contains("R.string.attachment_unavailable"))
+        assertTrue(preview.contains("attachment.unavailable -> Modifier"))
+        assertTrue(bubble.contains("metadataItems + legacyItems"))
+        assertTrue(bubble.contains("unavailable = metaItem?.unavailable == true"))
+    }
+
+    @Test
+    fun unavailableResourceStringsHaveSupportedLocaleParity() {
+        val keys = listOf(
+            "attachment_unavailable",
+            "export_success_missing_resources",
+            "auto_backup_missing_resources",
+        )
+        val directories = listOf(
+            "values", "values-ar", "values-de", "values-es", "values-fr", "values-ja",
+            "values-ko", "values-pt-rBR", "values-ru", "values-vi", "values-zh",
+            "values-zh-rTW",
+        )
+
+        directories.forEach { directory ->
+            val strings = sourceFile("app/src/main/res/$directory/strings.xml").readText()
+            keys.forEach { key ->
+                assertEquals(
+                    "$directory must contain exactly one $key",
+                    1,
+                    Regex("""name="$key"""").findAll(strings).count(),
+                )
+            }
+        }
+    }
+
+    @Test
     fun legacyClaudePageAndStrategyTypeAreRemoved() {
         val mainRoot = sourceFile("app/src/main/java")
         val legacyPage = File(
