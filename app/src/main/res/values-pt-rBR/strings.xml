@@ -1129,10 +1129,35 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">Desenvolvedor</string>
     <string name="settings_developer">Opções do desenvolvedor</string>
-    <string name="settings_developer_desc">Diagnósticos, inspetores de protocolo e ferramentas de teste</string>
+    <string name="settings_developer_desc">Captura de diagnóstico e controles do modelo Debug local</string>
     <string name="developer_options_title">Opções do desenvolvedor</string>
     <string name="developer_options_features_group">Recursos</string>
     <string name="developer_options_debug_model">Modelo de depuração</string>
+    <string name="developer_options_mode_description">Ao desativar, a captura é interrompida, os diagnósticos retidos são excluídos e o modelo Debug é desativado.</string>
+    <string name="developer_options_capture_description">Registre diagnósticos de solicitação, streaming e execução sem credenciais e depois exporte-os.</string>
+    <string name="developer_options_debug_model_description">Adicione o modelo Debug local e determinístico apenas ao seletor de modelos do chat.</string>
+    <string name="developer_options_capture_summary">Resumo</string>
+    <string name="developer_options_capture_raw">Bruto</string>
+    <string name="developer_options_capture_play">Iniciar ou retomar captura</string>
+    <string name="developer_options_capture_pause">Pausar captura</string>
+    <string name="developer_options_capture_jump_latest">Ir para o mais recente</string>
+    <string name="developer_options_capture_more_actions">Ações de captura</string>
+    <string name="developer_options_capture_clear_message">Limpar eventos e contadores capturados? O estado da captura e a sessão serão preservados.</string>
+    <string name="developer_options_capture_clear_confirm">Limpar</string>
+    <string name="developer_options_capture_export_raw_json">Exportar JSON bruto</string>
+    <string name="developer_options_capture_export_redacted_json">Exportar JSON editado</string>
+    <string name="developer_options_capture_export_summary_text">Exportar texto de resumo</string>
+    <string name="developer_options_capture_empty">Nenhum evento capturado</string>
+    <string name="developer_options_capture_state_idle">Inativa</string>
+    <string name="developer_options_capture_state_running">Em execução</string>
+    <string name="developer_options_capture_state_paused">Pausada</string>
+    <string name="developer_options_capture_status_summary">%1$s · %2$d eventos · %3$s</string>
+    <string name="developer_options_capture_counters">Descartados %1$d · Removidos %2$d · Truncados %3$d</string>
+    <string name="developer_options_capture_session">Sessão %1$s · próximo #%2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · caracteres do corpo=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">Resposta HTTP · código=%1$d · caracteres=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">Linha de rede %1$d · caracteres=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">%1$s analisado</string>
     <string name="developer_options_taps_remaining">Toque mais %1$d vezes para ativar as opções do desenvolvedor.</string>
     <string name="developer_options_enabled_message">As opções do desenvolvedor foram ativadas.</string>
     <string name="developer_options_already_enabled_message">As opções do desenvolvedor já estão ativadas.</string>
@@ -1141,7 +1166,7 @@
     <string name="developer_options_disable_title">Desativar as opções do desenvolvedor?</string>
     <string name="developer_options_disable_message">Isso interrompe a captura, exclui os dados de diagnóstico e desativa o modelo de depuração.</string>
     <string name="developer_options_disable_confirm">Desativar</string>
-    <string name="developer_options_clear_diagnostics">Limpar sessão de diagnóstico</string>
+    <string name="developer_options_clear_diagnostics">Limpar a sessão de diagnóstico?</string>
     <string name="developer_options_export_share_title">Compartilhar pacote de diagnóstico do Agora</string>
     <string name="developer_options_export_failed">Não foi possível criar o pacote de diagnóstico.</string>
     <string name="responses_api">Responses API</string>

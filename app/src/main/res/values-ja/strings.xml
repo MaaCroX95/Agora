@@ -1129,10 +1129,35 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">開発者</string>
     <string name="settings_developer">開発者向けオプション</string>
-    <string name="settings_developer_desc">診断、プロトコル検査、テストツール</string>
+    <string name="settings_developer_desc">診断キャプチャとローカル Debug モデルの制御</string>
     <string name="developer_options_title">開発者向けオプション</string>
     <string name="developer_options_features_group">機能</string>
     <string name="developer_options_debug_model">デバッグモデル</string>
+    <string name="developer_options_mode_description">オフにするとキャプチャを停止し、保存済み診断データを削除して Debug モデルを無効にします。</string>
+    <string name="developer_options_capture_description">認証情報を除去したリクエスト、ストリーム、実行時診断を記録してエクスポートします。</string>
+    <string name="developer_options_debug_model_description">ローカルの決定論的 Debug モデルをチャットのモデル選択にのみ追加します。</string>
+    <string name="developer_options_capture_summary">概要</string>
+    <string name="developer_options_capture_raw">生データ</string>
+    <string name="developer_options_capture_play">キャプチャを開始または再開</string>
+    <string name="developer_options_capture_pause">キャプチャを一時停止</string>
+    <string name="developer_options_capture_jump_latest">最新へ移動</string>
+    <string name="developer_options_capture_more_actions">キャプチャ操作</string>
+    <string name="developer_options_capture_clear_message">キャプチャしたイベントとカウンターを消去しますか？キャプチャ状態とセッションは保持されます。</string>
+    <string name="developer_options_capture_clear_confirm">消去</string>
+    <string name="developer_options_capture_export_raw_json">生の JSON をエクスポート</string>
+    <string name="developer_options_capture_export_redacted_json">編集済み JSON をエクスポート</string>
+    <string name="developer_options_capture_export_summary_text">概要テキストをエクスポート</string>
+    <string name="developer_options_capture_empty">キャプチャ済みイベントはありません</string>
+    <string name="developer_options_capture_state_idle">待機中</string>
+    <string name="developer_options_capture_state_running">実行中</string>
+    <string name="developer_options_capture_state_paused">一時停止中</string>
+    <string name="developer_options_capture_status_summary">%1$s · %2$d 件 · %3$s</string>
+    <string name="developer_options_capture_counters">破棄 %1$d · 削除 %2$d · 切り詰め %3$d</string>
+    <string name="developer_options_capture_session">セッション %1$s · 次は #%2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · 本文文字数=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">HTTP 応答 · コード=%1$d · 文字数=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">通信行 %1$d · 文字数=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">%1$s を解析</string>
     <string name="developer_options_taps_remaining">あと%1$d回タップすると開発者向けオプションが有効になります。</string>
     <string name="developer_options_enabled_message">開発者向けオプションが有効になりました。</string>
     <string name="developer_options_already_enabled_message">開発者向けオプションはすでに有効です。</string>
@@ -1141,7 +1166,7 @@
     <string name="developer_options_disable_title">開発者向けオプションをオフにしますか？</string>
     <string name="developer_options_disable_message">これにより、キャプチャが停止し、診断データが削除され、デバッグモデルがオフになります。</string>
     <string name="developer_options_disable_confirm">オフにする</string>
-    <string name="developer_options_clear_diagnostics">診断セッションを消去</string>
+    <string name="developer_options_clear_diagnostics">診断セッションを消去しますか？</string>
     <string name="developer_options_export_share_title">Agora診断バンドルを共有</string>
     <string name="developer_options_export_failed">診断バンドルを作成できませんでした。</string>
     <string name="responses_api">Responses API</string>

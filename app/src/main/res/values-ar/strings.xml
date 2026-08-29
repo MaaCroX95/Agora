@@ -1129,10 +1129,35 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">المطوّر</string>
     <string name="settings_developer">خيارات المطوّر</string>
-    <string name="settings_developer_desc">أدوات التشخيص وفحص البروتوكولات والاختبار</string>
+    <string name="settings_developer_desc">التقاط التشخيصات وعناصر تحكم نموذج Debug المحلي</string>
     <string name="developer_options_title">خيارات المطوّر</string>
     <string name="developer_options_features_group">الميزات</string>
     <string name="developer_options_debug_model">نموذج تصحيح الأخطاء</string>
+    <string name="developer_options_mode_description">يؤدي إيقاف هذا الخيار إلى إيقاف الالتقاط وحذف التشخيصات المحفوظة وتعطيل نموذج Debug.</string>
+    <string name="developer_options_capture_description">سجّل تشخيصات الطلب والبث ووقت التشغيل بعد إزالة بيانات الاعتماد، ثم صدّرها.</string>
+    <string name="developer_options_debug_model_description">أضف نموذج Debug المحلي والحتمي إلى منتقي نماذج الدردشة فقط.</string>
+    <string name="developer_options_capture_summary">الملخص</string>
+    <string name="developer_options_capture_raw">خام</string>
+    <string name="developer_options_capture_play">بدء الالتقاط أو استئنافه</string>
+    <string name="developer_options_capture_pause">إيقاف الالتقاط مؤقتًا</string>
+    <string name="developer_options_capture_jump_latest">الانتقال إلى الأحدث</string>
+    <string name="developer_options_capture_more_actions">إجراءات الالتقاط</string>
+    <string name="developer_options_capture_clear_message">هل تريد مسح الأحداث والعدادات الملتقطة؟ سيتم الاحتفاظ بحالة الالتقاط والجلسة.</string>
+    <string name="developer_options_capture_clear_confirm">مسح</string>
+    <string name="developer_options_capture_export_raw_json">تصدير JSON الخام</string>
+    <string name="developer_options_capture_export_redacted_json">تصدير JSON المنقح</string>
+    <string name="developer_options_capture_export_summary_text">تصدير نص الملخص</string>
+    <string name="developer_options_capture_empty">لا توجد أحداث ملتقطة</string>
+    <string name="developer_options_capture_state_idle">خامل</string>
+    <string name="developer_options_capture_state_running">قيد التشغيل</string>
+    <string name="developer_options_capture_state_paused">متوقف مؤقتًا</string>
+    <string name="developer_options_capture_status_summary">%1$s · %2$d أحداث · %3$s</string>
+    <string name="developer_options_capture_counters">مُسقطة %1$d · مُزالة %2$d · مبتورة %3$d</string>
+    <string name="developer_options_capture_session">الجلسة %1$s · التالي #%2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · أحرف النص=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">استجابة HTTP · الرمز=%1$d · الأحرف=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">سطر الشبكة %1$d · الأحرف=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">تم تحليل %1$s</string>
     <string name="developer_options_taps_remaining">تبقّى %1$d من النقرات لتفعيل خيارات المطوّر.</string>
     <string name="developer_options_enabled_message">تم تفعيل خيارات المطوّر.</string>
     <string name="developer_options_already_enabled_message">خيارات المطوّر مفعّلة بالفعل.</string>
@@ -1141,7 +1166,7 @@
     <string name="developer_options_disable_title">إيقاف خيارات المطوّر؟</string>
     <string name="developer_options_disable_message">يؤدي هذا إلى إيقاف الالتقاط وحذف بيانات التشخيص وإيقاف نموذج تصحيح الأخطاء.</string>
     <string name="developer_options_disable_confirm">إيقاف</string>
-    <string name="developer_options_clear_diagnostics">مسح جلسة التشخيص</string>
+    <string name="developer_options_clear_diagnostics">مسح جلسة التشخيص؟</string>
     <string name="developer_options_export_share_title">مشاركة حزمة تشخيص Agora</string>
     <string name="developer_options_export_failed">تعذر إنشاء حزمة التشخيص.</string>
     <string name="responses_api">Responses API</string>

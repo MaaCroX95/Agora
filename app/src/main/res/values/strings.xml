@@ -1131,10 +1131,35 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">Developer</string>
     <string name="settings_developer">Developer Options</string>
-    <string name="settings_developer_desc">Diagnostics, protocol inspectors, and test tools</string>
+    <string name="settings_developer_desc">Diagnostic capture and local Debug Model controls</string>
     <string name="developer_options_title">Developer Options</string>
     <string name="developer_options_features_group">Features</string>
     <string name="developer_options_debug_model">Debug Model</string>
+    <string name="developer_options_mode_description">Turning this off stops capture, deletes retained diagnostics, and disables Debug Model.</string>
+    <string name="developer_options_capture_description">Record credential-sanitized request, stream, and runtime diagnostics, then export them.</string>
+    <string name="developer_options_debug_model_description">Add the local deterministic Debug model only to the Chat model picker.</string>
+    <string name="developer_options_capture_summary">Summary</string>
+    <string name="developer_options_capture_raw">Raw</string>
+    <string name="developer_options_capture_play">Start or resume capture</string>
+    <string name="developer_options_capture_pause">Pause capture</string>
+    <string name="developer_options_capture_jump_latest">Jump to latest</string>
+    <string name="developer_options_capture_more_actions">Capture actions</string>
+    <string name="developer_options_capture_clear_message">Clear captured events and counters? Capture state and session will be preserved.</string>
+    <string name="developer_options_capture_clear_confirm">Clear</string>
+    <string name="developer_options_capture_export_raw_json">Export Raw JSON</string>
+    <string name="developer_options_capture_export_redacted_json">Export Redacted JSON</string>
+    <string name="developer_options_capture_export_summary_text">Export Summary Text</string>
+    <string name="developer_options_capture_empty">No captured events</string>
+    <string name="developer_options_capture_state_idle">Idle</string>
+    <string name="developer_options_capture_state_running">Running</string>
+    <string name="developer_options_capture_state_paused">Paused</string>
+    <string name="developer_options_capture_status_summary">%1$s · %2$d events · %3$s</string>
+    <string name="developer_options_capture_counters">Dropped %1$d · Evicted %2$d · Truncated %3$d</string>
+    <string name="developer_options_capture_session">Session %1$s · next #%2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · body chars=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">HTTP response · code=%1$d · chars=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">Wire line %1$d · chars=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">Parsed %1$s</string>
     <string name="developer_options_taps_remaining">%1$d more taps to enable developer options.</string>
     <string name="developer_options_enabled_message">Developer options are now enabled.</string>
     <string name="developer_options_already_enabled_message">Developer options are already enabled.</string>
@@ -1143,7 +1168,7 @@
     <string name="developer_options_disable_title">Turn Off Developer Options?</string>
     <string name="developer_options_disable_message">This stops capture, deletes diagnostic data, and turns off Debug Model.</string>
     <string name="developer_options_disable_confirm">Turn off</string>
-    <string name="developer_options_clear_diagnostics">Clear Diagnostic Session</string>
+    <string name="developer_options_clear_diagnostics">Clear Diagnostic Session?</string>
     <string name="developer_options_export_share_title">Share Agora Diagnostic Bundle</string>
     <string name="developer_options_export_failed">Could not create the diagnostic bundle.</string>
     <string name="responses_api">Responses API</string>

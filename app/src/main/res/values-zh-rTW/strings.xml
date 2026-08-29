@@ -1137,10 +1137,35 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">開發人員</string>
     <string name="settings_developer">開發人員選項</string>
-    <string name="settings_developer_desc">診斷、通訊協定檢查器與測試工具</string>
+    <string name="settings_developer_desc">診斷擷取與本機偵錯模型控制</string>
     <string name="developer_options_title">開發人員選項</string>
     <string name="developer_options_features_group">功能</string>
     <string name="developer_options_debug_model">偵錯模型</string>
+    <string name="developer_options_mode_description">關閉後會停止擷取、刪除保留的診斷資料，並關閉偵錯模型。</string>
+    <string name="developer_options_capture_description">記錄已移除憑證的請求、串流與執行階段診斷，並可匯出。</string>
+    <string name="developer_options_debug_model_description">僅在聊天模型選擇器中加入本機確定性偵錯模型。</string>
+    <string name="developer_options_capture_summary">摘要</string>
+    <string name="developer_options_capture_raw">原始</string>
+    <string name="developer_options_capture_play">開始或繼續擷取</string>
+    <string name="developer_options_capture_pause">暫停擷取</string>
+    <string name="developer_options_capture_jump_latest">跳到最新</string>
+    <string name="developer_options_capture_more_actions">擷取操作</string>
+    <string name="developer_options_capture_clear_message">清除已擷取的事件與計數器？擷取狀態與工作階段將保留。</string>
+    <string name="developer_options_capture_clear_confirm">清除</string>
+    <string name="developer_options_capture_export_raw_json">匯出原始 JSON</string>
+    <string name="developer_options_capture_export_redacted_json">匯出遮蔽 JSON</string>
+    <string name="developer_options_capture_export_summary_text">匯出摘要文字</string>
+    <string name="developer_options_capture_empty">沒有已擷取的事件</string>
+    <string name="developer_options_capture_state_idle">閒置</string>
+    <string name="developer_options_capture_state_running">擷取中</string>
+    <string name="developer_options_capture_state_paused">已暫停</string>
+    <string name="developer_options_capture_status_summary">%1$s · %2$d 個事件 · %3$s</string>
+    <string name="developer_options_capture_counters">捨棄 %1$d · 淘汰 %2$d · 截斷 %3$d</string>
+    <string name="developer_options_capture_session">工作階段 %1$s · 下一個 #%2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · 本文字元=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">HTTP 回應 · 狀態碼=%1$d · 字元=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">傳輸行 %1$d · 字元=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">已剖析 %1$s</string>
     <string name="developer_options_taps_remaining">再輕觸 %1$d 次即可啟用開發人員選項。</string>
     <string name="developer_options_enabled_message">開發人員選項現已啟用。</string>
     <string name="developer_options_already_enabled_message">開發人員選項已經啟用。</string>
@@ -1149,7 +1174,7 @@
     <string name="developer_options_disable_title">關閉開發人員選項？</string>
     <string name="developer_options_disable_message">這會停止擷取、刪除診斷資料並關閉偵錯模型。</string>
     <string name="developer_options_disable_confirm">關閉</string>
-    <string name="developer_options_clear_diagnostics">清除診斷工作階段</string>
+    <string name="developer_options_clear_diagnostics">清除診斷工作階段？</string>
     <string name="developer_options_export_share_title">分享 Agora 診斷套件</string>
     <string name="developer_options_export_failed">無法建立診斷套件。</string>
     <string name="responses_api">Responses API</string>

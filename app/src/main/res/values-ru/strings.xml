@@ -1129,10 +1129,35 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">Для разработчиков</string>
     <string name="settings_developer">Параметры разработчика</string>
-    <string name="settings_developer_desc">Диагностика, инспекторы протоколов и тестовые инструменты</string>
+    <string name="settings_developer_desc">Сбор диагностики и управление локальной моделью Debug</string>
     <string name="developer_options_title">Параметры разработчика</string>
     <string name="developer_options_features_group">Возможности</string>
     <string name="developer_options_debug_model">Отладочная модель</string>
+    <string name="developer_options_mode_description">При отключении сбор останавливается, сохранённая диагностика удаляется, а модель Debug выключается.</string>
+    <string name="developer_options_capture_description">Записывайте данные запросов, потоков и выполнения с удалёнными учётными данными, а затем экспортируйте их.</string>
+    <string name="developer_options_debug_model_description">Добавьте локальную детерминированную модель Debug только в выбор модели чата.</string>
+    <string name="developer_options_capture_summary">Сводка</string>
+    <string name="developer_options_capture_raw">Исходные данные</string>
+    <string name="developer_options_capture_play">Начать или продолжить сбор</string>
+    <string name="developer_options_capture_pause">Приостановить сбор</string>
+    <string name="developer_options_capture_jump_latest">К последнему событию</string>
+    <string name="developer_options_capture_more_actions">Действия со сбором</string>
+    <string name="developer_options_capture_clear_message">Очистить собранные события и счётчики? Состояние сбора и сеанс сохранятся.</string>
+    <string name="developer_options_capture_clear_confirm">Очистить</string>
+    <string name="developer_options_capture_export_raw_json">Экспортировать исходный JSON</string>
+    <string name="developer_options_capture_export_redacted_json">Экспортировать очищенный JSON</string>
+    <string name="developer_options_capture_export_summary_text">Экспортировать текст сводки</string>
+    <string name="developer_options_capture_empty">Нет собранных событий</string>
+    <string name="developer_options_capture_state_idle">Ожидание</string>
+    <string name="developer_options_capture_state_running">Выполняется</string>
+    <string name="developer_options_capture_state_paused">Приостановлено</string>
+    <string name="developer_options_capture_status_summary">%1$s · событий: %2$d · %3$s</string>
+    <string name="developer_options_capture_counters">Пропущено %1$d · Удалено %2$d · Обрезано %3$d</string>
+    <string name="developer_options_capture_session">Сеанс %1$s · далее #%2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · символов в теле=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">Ответ HTTP · код=%1$d · символов=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">Строка потока %1$d · символов=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">Обработано: %1$s</string>
     <string name="developer_options_taps_remaining">Нажмите ещё %1$d раз, чтобы включить параметры разработчика.</string>
     <string name="developer_options_enabled_message">Параметры разработчика включены.</string>
     <string name="developer_options_already_enabled_message">Параметры разработчика уже включены.</string>
@@ -1141,7 +1166,7 @@
     <string name="developer_options_disable_title">Отключить параметры разработчика?</string>
     <string name="developer_options_disable_message">Сбор будет остановлен, диагностические данные удалены, а отладочная модель отключена.</string>
     <string name="developer_options_disable_confirm">Отключить</string>
-    <string name="developer_options_clear_diagnostics">Очистить сеанс диагностики</string>
+    <string name="developer_options_clear_diagnostics">Очистить сеанс диагностики?</string>
     <string name="developer_options_export_share_title">Поделиться пакетом диагностики Agora</string>
     <string name="developer_options_export_failed">Не удалось создать пакет диагностики.</string>
     <string name="responses_api">Responses API</string>

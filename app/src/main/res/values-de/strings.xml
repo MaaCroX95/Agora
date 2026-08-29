@@ -1129,10 +1129,35 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">Entwickler</string>
     <string name="settings_developer">Entwickleroptionen</string>
-    <string name="settings_developer_desc">Diagnosen, Protokollinspektoren und Testwerkzeuge</string>
+    <string name="settings_developer_desc">Diagnoseaufzeichnung und Steuerung des lokalen Debug-Modells</string>
     <string name="developer_options_title">Entwickleroptionen</string>
     <string name="developer_options_features_group">Funktionen</string>
     <string name="developer_options_debug_model">Debug-Modell</string>
+    <string name="developer_options_mode_description">Beim Ausschalten wird die Aufzeichnung beendet, gespeicherte Diagnose wird gelöscht und das Debug-Modell deaktiviert.</string>
+    <string name="developer_options_capture_description">Anfrage-, Stream- und Laufzeitdiagnose ohne Zugangsdaten aufzeichnen und anschließend exportieren.</string>
+    <string name="developer_options_debug_model_description">Das lokale deterministische Debug-Modell nur zur Modellauswahl im Chat hinzufügen.</string>
+    <string name="developer_options_capture_summary">Zusammenfassung</string>
+    <string name="developer_options_capture_raw">Rohdaten</string>
+    <string name="developer_options_capture_play">Aufzeichnung starten oder fortsetzen</string>
+    <string name="developer_options_capture_pause">Aufzeichnung pausieren</string>
+    <string name="developer_options_capture_jump_latest">Zum neuesten Eintrag</string>
+    <string name="developer_options_capture_more_actions">Aufzeichnungsaktionen</string>
+    <string name="developer_options_capture_clear_message">Aufgezeichnete Ereignisse und Zähler löschen? Aufzeichnungsstatus und Sitzung bleiben erhalten.</string>
+    <string name="developer_options_capture_clear_confirm">Löschen</string>
+    <string name="developer_options_capture_export_raw_json">Roh-JSON exportieren</string>
+    <string name="developer_options_capture_export_redacted_json">Bereinigtes JSON exportieren</string>
+    <string name="developer_options_capture_export_summary_text">Zusammenfassungstext exportieren</string>
+    <string name="developer_options_capture_empty">Keine aufgezeichneten Ereignisse</string>
+    <string name="developer_options_capture_state_idle">Inaktiv</string>
+    <string name="developer_options_capture_state_running">Läuft</string>
+    <string name="developer_options_capture_state_paused">Pausiert</string>
+    <string name="developer_options_capture_status_summary">%1$s · %2$d Ereignisse · %3$s</string>
+    <string name="developer_options_capture_counters">Verworfen %1$d · Entfernt %2$d · Gekürzt %3$d</string>
+    <string name="developer_options_capture_session">Sitzung %1$s · nächste Nr. %2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · Textzeichen=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">HTTP-Antwort · Code=%1$d · Zeichen=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">Übertragungszeile %1$d · Zeichen=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">%1$s verarbeitet</string>
     <string name="developer_options_taps_remaining">Noch %1$d-mal tippen, um die Entwickleroptionen zu aktivieren.</string>
     <string name="developer_options_enabled_message">Entwickleroptionen wurden aktiviert.</string>
     <string name="developer_options_already_enabled_message">Entwickleroptionen sind bereits aktiviert.</string>
@@ -1141,7 +1166,7 @@
     <string name="developer_options_disable_title">Entwickleroptionen ausschalten?</string>
     <string name="developer_options_disable_message">Dadurch wird die Aufzeichnung beendet, die Diagnosedaten werden gelöscht und das Debug-Modell wird deaktiviert.</string>
     <string name="developer_options_disable_confirm">Ausschalten</string>
-    <string name="developer_options_clear_diagnostics">Diagnosesitzung löschen</string>
+    <string name="developer_options_clear_diagnostics">Diagnosesitzung löschen?</string>
     <string name="developer_options_export_share_title">Agora-Diagnosepaket teilen</string>
     <string name="developer_options_export_failed">Das Diagnosepaket konnte nicht erstellt werden.</string>
     <string name="responses_api">Responses API</string>

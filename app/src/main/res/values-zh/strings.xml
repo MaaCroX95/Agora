@@ -1229,10 +1229,35 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">开发者</string>
     <string name="settings_developer">开发者选项</string>
-    <string name="settings_developer_desc">诊断、协议检查器和测试工具</string>
+    <string name="settings_developer_desc">诊断采集与本地调试模型控制</string>
     <string name="developer_options_title">开发者选项</string>
     <string name="developer_options_features_group">功能</string>
     <string name="developer_options_debug_model">调试模型</string>
+    <string name="developer_options_mode_description">关闭后将停止采集、删除保留的诊断数据，并关闭调试模型。</string>
+    <string name="developer_options_capture_description">记录已清除凭据的请求、流式与运行时诊断，并可导出。</string>
+    <string name="developer_options_debug_model_description">仅在聊天模型选择器中加入本地确定性调试模型。</string>
+    <string name="developer_options_capture_summary">摘要</string>
+    <string name="developer_options_capture_raw">原始</string>
+    <string name="developer_options_capture_play">开始或继续采集</string>
+    <string name="developer_options_capture_pause">暂停采集</string>
+    <string name="developer_options_capture_jump_latest">跳到最新</string>
+    <string name="developer_options_capture_more_actions">采集操作</string>
+    <string name="developer_options_capture_clear_message">清除已采集的事件和计数器？采集状态和会话将保留。</string>
+    <string name="developer_options_capture_clear_confirm">清除</string>
+    <string name="developer_options_capture_export_raw_json">导出原始 JSON</string>
+    <string name="developer_options_capture_export_redacted_json">导出脱敏 JSON</string>
+    <string name="developer_options_capture_export_summary_text">导出摘要文本</string>
+    <string name="developer_options_capture_empty">暂无采集事件</string>
+    <string name="developer_options_capture_state_idle">空闲</string>
+    <string name="developer_options_capture_state_running">采集中</string>
+    <string name="developer_options_capture_state_paused">已暂停</string>
+    <string name="developer_options_capture_status_summary">%1$s · %2$d 个事件 · %3$s</string>
+    <string name="developer_options_capture_counters">丢弃 %1$d · 淘汰 %2$d · 截断 %3$d</string>
+    <string name="developer_options_capture_session">会话 %1$s · 下一个 #%2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · 正文字符=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">HTTP 响应 · 状态码=%1$d · 字符=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">传输行 %1$d · 字符=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">已解析 %1$s</string>
     <string name="developer_options_taps_remaining">再点按 %1$d 次即可启用开发者选项。</string>
     <string name="developer_options_enabled_message">开发者选项现已启用。</string>
     <string name="developer_options_already_enabled_message">开发者选项已经启用。</string>
@@ -1241,7 +1266,7 @@
     <string name="developer_options_disable_title">关闭开发者选项？</string>
     <string name="developer_options_disable_message">这会停止采集、删除诊断数据并关闭调试模型。</string>
     <string name="developer_options_disable_confirm">关闭</string>
-    <string name="developer_options_clear_diagnostics">清除诊断会话</string>
+    <string name="developer_options_clear_diagnostics">清除诊断会话？</string>
     <string name="developer_options_export_share_title">分享 Agora 诊断包</string>
     <string name="developer_options_export_failed">无法创建诊断包。</string>
     <string name="responses_api">Responses API</string>

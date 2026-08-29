@@ -1129,10 +1129,35 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">개발자</string>
     <string name="settings_developer">개발자 옵션</string>
-    <string name="settings_developer_desc">진단, 프로토콜 검사기 및 테스트 도구</string>
+    <string name="settings_developer_desc">진단 캡처 및 로컬 Debug 모델 제어</string>
     <string name="developer_options_title">개발자 옵션</string>
     <string name="developer_options_features_group">기능</string>
     <string name="developer_options_debug_model">디버그 모델</string>
+    <string name="developer_options_mode_description">끄면 캡처를 중지하고 보관된 진단 데이터를 삭제하며 Debug 모델을 비활성화합니다.</string>
+    <string name="developer_options_capture_description">자격 증명을 제거한 요청, 스트림 및 런타임 진단을 기록하고 내보냅니다.</string>
+    <string name="developer_options_debug_model_description">로컬 결정론적 Debug 모델을 채팅 모델 선택기에만 추가합니다.</string>
+    <string name="developer_options_capture_summary">요약</string>
+    <string name="developer_options_capture_raw">원본</string>
+    <string name="developer_options_capture_play">캡처 시작 또는 재개</string>
+    <string name="developer_options_capture_pause">캡처 일시중지</string>
+    <string name="developer_options_capture_jump_latest">최신 항목으로 이동</string>
+    <string name="developer_options_capture_more_actions">캡처 작업</string>
+    <string name="developer_options_capture_clear_message">캡처된 이벤트와 카운터를 지울까요? 캡처 상태와 세션은 유지됩니다.</string>
+    <string name="developer_options_capture_clear_confirm">지우기</string>
+    <string name="developer_options_capture_export_raw_json">원본 JSON 내보내기</string>
+    <string name="developer_options_capture_export_redacted_json">편집된 JSON 내보내기</string>
+    <string name="developer_options_capture_export_summary_text">요약 텍스트 내보내기</string>
+    <string name="developer_options_capture_empty">캡처된 이벤트 없음</string>
+    <string name="developer_options_capture_state_idle">대기 중</string>
+    <string name="developer_options_capture_state_running">실행 중</string>
+    <string name="developer_options_capture_state_paused">일시중지됨</string>
+    <string name="developer_options_capture_status_summary">%1$s · 이벤트 %2$d개 · %3$s</string>
+    <string name="developer_options_capture_counters">삭제됨 %1$d · 축출됨 %2$d · 잘림 %3$d</string>
+    <string name="developer_options_capture_session">세션 %1$s · 다음 #%2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · 본문 문자=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">HTTP 응답 · 코드=%1$d · 문자=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">전송 줄 %1$d · 문자=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">%1$s 파싱됨</string>
     <string name="developer_options_taps_remaining">개발자 옵션을 사용하려면 %1$d번 더 탭하세요.</string>
     <string name="developer_options_enabled_message">개발자 옵션이 활성화되었습니다.</string>
     <string name="developer_options_already_enabled_message">개발자 옵션이 이미 활성화되어 있습니다.</string>
@@ -1141,7 +1166,7 @@
     <string name="developer_options_disable_title">개발자 옵션을 끄시겠습니까?</string>
     <string name="developer_options_disable_message">캡처를 중지하고 진단 데이터를 삭제하며 디버그 모델을 끕니다.</string>
     <string name="developer_options_disable_confirm">끄기</string>
-    <string name="developer_options_clear_diagnostics">진단 세션 지우기</string>
+    <string name="developer_options_clear_diagnostics">진단 세션을 지울까요?</string>
     <string name="developer_options_export_share_title">Agora 진단 번들 공유</string>
     <string name="developer_options_export_failed">진단 번들을 만들 수 없습니다.</string>
     <string name="responses_api">Responses API</string>
