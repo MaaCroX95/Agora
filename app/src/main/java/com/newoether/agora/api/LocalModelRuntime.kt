@@ -113,7 +113,6 @@ internal object LocalModelRuntime {
         val identity = LocalModelIdentity.Chat(canonicalize(modelPath), nCtx)
         val current = resident
         val engine = if (current is Resident.Chat && current.identity == identity) {
-            current.engine.resetContext()
             current.engine
         } else {
             unloadResident()

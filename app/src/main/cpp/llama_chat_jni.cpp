@@ -37,12 +37,55 @@ struct ChatHandle {
     std::string path;
     int32_t n_ctx = 0;
     std::atomic<bool> cancelled{false};
+    std::vector<llama_token> decoded_tokens;
     mtmd_context * mtmd_ctx = nullptr;  // multimodal context (for vision models)
 };
 
 static bool abort_callback(void * data) {
     ChatHandle * handle = (ChatHandle *)data;
     return handle->cancelled.load(std::memory_order_relaxed);
+}
+
+static void clear_text_cache(ChatHandle * handle) {
+    if (handle->ctx) {
+        llama_memory_clear(llama_get_memory(handle->ctx), true);
+    }
+    handle->decoded_tokens.clear();
+}
+
+static size_t prepare_text_cache(
+    ChatHandle * handle,
+    const std::vector<llama_token> & prompt_tokens
+) {
+    size_t retained_prefix = 0;
+    const size_t comparable = std::min(
+        handle->decoded_tokens.size(), prompt_tokens.size()
+    );
+    while (retained_prefix < comparable &&
+           handle->decoded_tokens[retained_prefix] == prompt_tokens[retained_prefix]) {
+        retained_prefix++;
+    }
+
+    // Sampling needs logits from this request, so an exact prompt match must replay one token.
+    if (retained_prefix == prompt_tokens.size() && retained_prefix > 0) {
+        retained_prefix--;
+    }
+
+    llama_memory_t memory = llama_get_memory(handle->ctx);
+    const bool removed = llama_memory_seq_rm(
+        memory, 0, static_cast<llama_pos>(retained_prefix), -1
+    );
+    const llama_pos pos_min = llama_memory_seq_pos_min(memory, 0);
+    const llama_pos pos_max = llama_memory_seq_pos_max(memory, 0);
+    const bool memory_matches = retained_prefix == 0
+        ? pos_max == -1
+        : pos_min == 0 && pos_max + 1 == static_cast<llama_pos>(retained_prefix);
+    if (!removed || !memory_matches) {
+        clear_text_cache(handle);
+        return 0;
+    }
+    handle->decoded_tokens.resize(retained_prefix);
+    return retained_prefix;
 }
 
 // Returns the byte length of the largest prefix of `text` that ends on a
@@ -941,17 +984,11 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerate(
         return report_error(env, callback, callbacks, message, 0, 0);
     }
 
-    int32_t n_ctx_used = llama_memory_seq_pos_max(llama_get_memory(handle->ctx), 0) + 1;
-    if (n_ctx_used + n_tokens > n_ctx) {
-        LOGE("Context size exceeded: used=%d + prompt=%d > ctx=%d", n_ctx_used, n_tokens, n_ctx);
-        common_sampler_free(smpl);
-        return report_error(env, callback, callbacks, "Context size exceeded", 0, 0);
-    }
-
+    const int32_t cached_tokens = static_cast<int32_t>(prepare_text_cache(handle, tokens));
     const int32_t n_batch = static_cast<int32_t>(llama_n_batch(handle->ctx));
-    int32_t input_tokens = 0;
+    int32_t input_tokens = cached_tokens;
     const auto prefill_started = std::chrono::steady_clock::now();
-    for (int32_t off = 0; off < n_tokens; off += n_batch) {
+    for (int32_t off = cached_tokens; off < n_tokens; off += n_batch) {
         if (handle->cancelled.load(std::memory_order_relaxed)) {
             LOGD("Cancelled during prefill at %d/%d tokens", off, n_tokens);
             common_sampler_free(smpl);
@@ -959,21 +996,35 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerate(
         }
         const int32_t chunk = std::min(n_batch, n_tokens - off);
         llama_batch batch = llama_batch_get_one(tokens.data() + off, chunk);
-        if (llama_decode(handle->ctx, batch) != 0) {
-            LOGE("Prefill decode failed at offset %d (chunk=%d)", off, chunk);
+        const int32_t decode_result = llama_decode(handle->ctx, batch);
+        if (decode_result != 0) {
+            const bool was_cancelled =
+                handle->cancelled.load(std::memory_order_relaxed);
+            LOGE("Prefill decode failed at offset %d (chunk=%d, code=%d)",
+                 off, chunk, decode_result);
+            clear_text_cache(handle);
             common_sampler_free(smpl);
+            if (was_cancelled) {
+                return report_done(
+                    env, callback, callbacks, "cancelled", input_tokens, 0
+                );
+            }
             return report_error(
                 env, callback, callbacks, "Prefill decode failed", input_tokens, 0
             );
         }
+        handle->decoded_tokens.insert(
+            handle->decoded_tokens.end(), tokens.begin() + off, tokens.begin() + off + chunk
+        );
         input_tokens += chunk;
     }
     const auto prefill_finished = std::chrono::steady_clock::now();
     const auto prefill_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         prefill_finished - prefill_started
     ).count();
-    LOGD("Text prefill: input_tokens=%d, duration_ms=%lld",
-         input_tokens, (long long)prefill_ms);
+    LOGD("Text prefill: input_tokens=%d, cached_tokens=%d, processed_tokens=%d, duration_ms=%lld",
+         input_tokens, cached_tokens, input_tokens - cached_tokens,
+         (long long)prefill_ms);
 
     const int32_t context_after_prefill =
         llama_memory_seq_pos_max(llama_get_memory(handle->ctx), 0) + 1;
@@ -1022,11 +1073,17 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerate(
         }
 
         llama_batch single = llama_batch_get_one(&new_token_id, 1);
-        if (llama_decode(handle->ctx, single) != 0) {
-            LOGE("Decode failed at token %d", generated + 1);
-            failure = "Decode failed";
+        const int32_t decode_result = llama_decode(handle->ctx, single);
+        if (decode_result != 0) {
+            const bool was_cancelled =
+                handle->cancelled.load(std::memory_order_relaxed);
+            LOGE("Decode failed at token %d (code=%d)", generated + 1, decode_result);
+            clear_text_cache(handle);
+            if (was_cancelled) stop_reason = "cancelled";
+            else failure = "Decode failed";
             break;
         }
+        handle->decoded_tokens.push_back(new_token_id);
         generated++;
 
         utf8_pending.append(piece);
@@ -1103,18 +1160,6 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerate(
     return report_done(
         env, callback, callbacks, stop_reason, input_tokens, generated
     );
-}
-
-JNIEXPORT void JNICALL
-Java_com_newoether_agora_api_LlamaChatEngine_nativeChatReset(
-    JNIEnv * /*env*/, jclass /*clazz*/, jlong handle_ptr) {
-
-    if (!handle_ptr) return;
-    ChatHandle * handle = reinterpret_cast<ChatHandle *>(handle_ptr);
-    if (handle->ctx) {
-        llama_memory_clear(llama_get_memory(handle->ctx), true);
-        LOGD("KV cache cleared");
-    }
 }
 
 JNIEXPORT jboolean JNICALL
@@ -1289,6 +1334,7 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerateWithImages(
     }
     // The 6th argument is the helper's BATCH size, not the context size: passing n_ctx made it
     // build batches larger than the context's n_batch, which llama_decode rejects.
+    clear_text_cache(handle);
     int32_t eval_ret = mtmd_helper_eval_chunks(handle->mtmd_ctx, handle->ctx,
                                                 chunks, n_past, 0,
                                                 static_cast<int32_t>(llama_n_batch(handle->ctx)),
@@ -1299,12 +1345,14 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerateWithImages(
 
     if (eval_ret != 0) {
         LOGE("mtmd_helper_eval_chunks failed with code %d", eval_ret);
+        clear_text_cache(handle);
         return report_error(
             env, callback, callbacks, "Multimodal prefill failed.",
             static_cast<int32_t>(n_past), 0
         );
     }
     if (handle->cancelled.load(std::memory_order_relaxed)) {
+        clear_text_cache(handle);
         return report_done(
             env, callback, callbacks, "cancelled", static_cast<int32_t>(n_past), 0
         );
@@ -1327,6 +1375,7 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerateWithImages(
         const char * message = sampler_error.empty()
             ? "Unable to initialize chat sampler"
             : sampler_error.c_str();
+        clear_text_cache(handle);
         return report_error(
             env, callback, callbacks, message, static_cast<int32_t>(n_past), 0
         );
@@ -1448,6 +1497,7 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerateWithImages(
          (long long)n_past, generated, (long long)request_ms);
     common_sampler_free(smpl);
     const int32_t input_tokens = static_cast<int32_t>(n_past);
+    clear_text_cache(handle);
     if (!failure.empty()) {
         return report_error(
             env, callback, callbacks, failure.c_str(), input_tokens, generated

@@ -35,9 +35,11 @@ class LocalLlamaOwnershipSourceContractTest {
     fun `native mutation is exclusive while cancellation remains concurrent`() {
         val source = mainSource("com/newoether/agora/api/LlamaChatEngine.kt")
 
-        listOf("loadMmproj", "unloadMmproj", "resetContext").forEach { functionName ->
+        listOf("loadMmproj", "unloadMmproj").forEach { functionName ->
             assertTrue(functionSection(source, functionName).contains("lock.writeLock().lock()"))
         }
+        assertFalse(source.contains("resetContext"))
+        assertFalse(source.contains("nativeChatReset"))
         assertTrue(functionSection(source, "cancel").contains("lock.readLock().lock()"))
     }
 
@@ -280,6 +282,64 @@ class LocalLlamaOwnershipSourceContractTest {
         assertTrue(embeddingNative.contains(
             "llama_memory_clear(llama_get_memory(handle->ctx), true);"
         ))
+    }
+
+    @Test
+    fun `same chat identity reuses only proven native token prefixes`() {
+        val runtime = mainSource("com/newoether/agora/api/LocalModelRuntime.kt")
+        val native = mainCppSource("llama_chat_jni.cpp")
+        val text = nativeFunctionSection(native, "nativeChatGenerate")
+        val prepare = native
+            .substringAfter("static size_t prepare_text_cache(")
+            .substringBefore("// Returns the byte length")
+
+        val sameIdentity = runtime
+            .substringAfter("current is Resident.Chat && current.identity == identity")
+            .substringBefore("} else {")
+        assertTrue(sameIdentity.contains("current.engine"))
+        assertFalse(sameIdentity.contains("resetContext"))
+
+        assertTrue(native.contains("std::vector<llama_token> decoded_tokens;"))
+        assertTrue(prepare.contains("handle->decoded_tokens[retained_prefix] =="))
+        assertTrue(prepare.contains("retained_prefix == prompt_tokens.size()"))
+        assertTrue(prepare.contains("retained_prefix--;"))
+        assertTrue(prepare.contains("llama_memory_seq_rm("))
+        assertTrue(prepare.contains("llama_memory_seq_pos_min(memory, 0)"))
+        assertTrue(prepare.contains("llama_memory_seq_pos_max(memory, 0)"))
+        assertTrue(prepare.contains("pos_min == 0 && pos_max + 1 =="))
+        assertTrue(prepare.contains("clear_text_cache(handle);"))
+        assertTrue(prepare.contains("handle->decoded_tokens.resize(retained_prefix);"))
+
+        val capacityCheck = text.indexOf("n_tokens + min_generation_room > n_ctx")
+        val cacheMutation = text.indexOf("prepare_text_cache(handle, tokens)")
+        assertTrue(capacityCheck >= 0 && cacheMutation > capacityCheck)
+        assertTrue(text.contains("for (int32_t off = cached_tokens; off < n_tokens"))
+        assertTrue(text.contains("handle->decoded_tokens.insert("))
+        assertTrue(text.contains("handle->decoded_tokens.push_back(new_token_id);"))
+        assertEquals(2, Regex("const int32_t decode_result = llama_decode")
+            .findAll(text).count())
+        assertEquals(2, Regex("clear_text_cache\\(handle\\);")
+            .findAll(text).count())
+        val prefillDecode = text.indexOf("llama_decode(handle->ctx, batch)")
+        val prefillLedger = text.indexOf("handle->decoded_tokens.insert(")
+        val generatedDecode = text.indexOf("llama_decode(handle->ctx, single)")
+        val generatedLedger = text.indexOf("handle->decoded_tokens.push_back(new_token_id)")
+        assertTrue(prefillDecode >= 0 && prefillLedger > prefillDecode)
+        assertTrue(generatedDecode >= 0 && generatedLedger > generatedDecode)
+    }
+
+    @Test
+    fun `multimodal evaluation invalidates text cache on every terminal path`() {
+        val native = mainCppSource("llama_chat_jni.cpp")
+        val multimodal = nativeFunctionSection(native, "nativeChatGenerateWithImages")
+        val evaluation = multimodal.indexOf("mtmd_helper_eval_chunks(")
+        val invalidation = multimodal.lastIndexOf("clear_text_cache(handle);", evaluation)
+
+        assertTrue(invalidation >= 0 && invalidation < evaluation)
+        assertTrue(multimodal.indexOf("Unable to read chat template") < invalidation)
+        assertTrue(multimodal.indexOf("Failed to tokenize multimodal prompt") < invalidation)
+        assertTrue(Regex("clear_text_cache\\(handle\\);")
+            .findAll(multimodal).count() >= 5)
     }
 
     @Test

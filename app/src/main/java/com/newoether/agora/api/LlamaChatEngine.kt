@@ -141,7 +141,6 @@ class LlamaChatEngine(
         frequencyPenalty: Float, presencePenalty: Float, maxTokens: Int,
         callback: NativeChatCallback,
     ): Int
-    private external fun nativeChatReset(handle: Long)
     private external fun nativeChatFreeModel(handle: Long)
     private external fun nativeChatCancel(handle: Long)
 
@@ -485,17 +484,6 @@ class LlamaChatEngine(
             }
         } finally {
             lock.readLock().unlock()
-        }
-    }
-
-    fun resetContext() {
-        lock.writeLock().lock()
-        try {
-            if (nativeHandle != 0L) {
-                nativeChatReset(nativeHandle)
-            }
-        } finally {
-            lock.writeLock().unlock()
         }
     }
 

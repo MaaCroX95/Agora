@@ -36,15 +36,36 @@ New Local Chat model records created through Settings or onboarding default to `
 `maxTokens=1024`. Existing records are not migrated: the serialized `LocalChatModelConfig` fallback
 for a missing legacy `nCtx` remains 2048, and an explicitly stored context size remains unchanged.
 
-A task requesting the current identity reuses its resident model. Reused Chat identity clears its
-context before the new request; reused Embedding identity clears per-input context memory through
-the native Embedding path. A different path, mode, or Chat `nCtx` closes the old resident completely
-before the replacement load begins. If replacement loading fails, no model remains resident and the
-request fails through its ordinary Local error path.
+A task requesting the current identity reuses its resident model. Reused Chat identity also retains
+the native context's proven text KV prefix. Reused Embedding identity clears per-input context memory
+through the native Embedding path. A different path, mode, or Chat `nCtx` closes the old resident
+completely before the replacement load begins. If replacement loading fails, no model remains
+resident and the request fails through its ordinary Local error path.
 
 The multimodal projector is replaceable Chat substate rather than process identity. It is loaded only
 for an image request, reused only for the same projector path, replaced when that path changes, and
 never permits concurrent mutation of the resident Chat engine.
+
+### Text KV prefix ownership
+
+The resident native `ChatHandle` owns both its llama.cpp context memory and a ledger containing only
+token IDs whose decode completed successfully in that context. A new text prompt reuses their token
+longest-common-prefix, removes memory positions at and after the divergence, and decodes only the
+uncached suffix. A complete prompt match retains all but the final token so that this request decodes
+at least one token and obtains current sampling logits.
+
+The complete newly rendered prompt must fit `nCtx` before the resident cache is modified. A token or
+batch enters the ledger only after its corresponding `llama_decode` succeeds. Cancellation between
+successful batches may therefore retain the known prefix. Any nonzero decode result can leave a
+partially processed ubatch, so it clears both native memory and the ledger. If partial sequence
+removal is unsupported, fails, or leaves memory inconsistent with the retained prefix, the same full
+clear occurs before decoding the prompt from zero.
+
+Image embeddings cannot be represented by the text token ledger. Template, image-read, allocation,
+and multimodal tokenization failures that occur before native evaluation leave the prior text cache
+untouched. Immediately before mtmd evaluation, the runtime clears the text cache; every terminal path
+after evaluation starts clears native memory and the ledger again. The next text request after an
+image request therefore starts with an empty context.
 
 ## 3. Chat templates and thinking
 
@@ -140,6 +161,9 @@ Chat-template verification must cover explicit-template enforcement, official Ji
 request-level thinking control, UTF-8-safe prompt transfer, and absence of generic fallbacks.
 Native-streaming verification must cover both generation loops, exact batch bounds, UTF-8 boundary
 safety, terminal flushing, callback rejection, per-token cancellation, and content-free telemetry.
+Text-cache verification must cover same-identity reuse, token LCP divergence, exact-match one-token
+replay, prompt-capacity validation before mutation, failed truncation, decode failure, cancellation
+between successful batches, generated-token ledger ordering, and multimodal invalidation.
 
 Settings tests must cover the exact presets/default/normalization, DataStore read/write, one
 AppContainer binding, Local Advanced placement and slider commit behavior, locale key/placeholder
