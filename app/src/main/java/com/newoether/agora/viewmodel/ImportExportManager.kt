@@ -197,8 +197,7 @@ class ImportExportManager(
                     return@launch
                 }
                 val preview = importer.preview(uri)
-                if (!preview.hasConversationGraph && preview.memoryCount == 0 &&
-                    preview.systemPromptCount == 0 && !preview.settingsPresent) {
+                if (!preview.hasImportableData) {
                     emitSnackbar(SnackbarEvent(app.getString(R.string.import_no_data)))
                     return@launch
                 }

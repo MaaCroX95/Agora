@@ -12,9 +12,8 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.decodeFromStream
 import java.io.BufferedInputStream
 import java.io.InputStream
-import java.text.SimpleDateFormat
+import java.time.Instant
 import java.util.zip.ZipInputStream
-import java.util.Locale
 
 class ClaudeChatImporter {
 
@@ -296,15 +295,9 @@ class ClaudeChatImporter {
         }
     }
 
-    private fun iso8601ToMillis(iso8601: String): Long {
-        return try {
-            val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'", Locale.US)
-            dateFormat.timeZone = java.util.TimeZone.getTimeZone("UTC")
-            dateFormat.parse(iso8601)?.time ?: System.currentTimeMillis()
-        } catch (e: Exception) {
-            System.currentTimeMillis()
-        }
-    }
+    private fun iso8601ToMillis(iso8601: String): Long =
+        runCatching { Instant.parse(iso8601).toEpochMilli() }
+            .getOrElse { System.currentTimeMillis() }
 
     @Serializable
     data class ClaudeConversations(

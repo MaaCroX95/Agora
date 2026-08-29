@@ -145,6 +145,37 @@ class ExternalCitationImporterTest {
         assertTrue(message.thoughts == "hidden")
     }
 
+    @Test
+    fun claudeIsoTimestampsPreserveStandardAndMicrosecondPrecision() {
+        val importer = ClaudeChatImporter()
+        val imported = importer.toImportFormat(
+            ClaudeChatImporter.ClaudeConversations(
+                conversations = listOf(
+                    ClaudeChatImporter.ClaudeConversation(
+                        uuid = "conversation",
+                        updatedAt = "2024-01-02T03:04:05.123456Z",
+                        chatMessages = listOf(
+                            ClaudeChatImporter.ClaudeMessage(
+                                uuid = "standard",
+                                sender = "human",
+                                createdAt = "2024-01-02T03:04:05Z",
+                            ),
+                            ClaudeChatImporter.ClaudeMessage(
+                                uuid = "microseconds",
+                                sender = "assistant",
+                                createdAt = "2024-01-02T03:04:05.123456Z",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(1_704_164_645_123L, imported.conversations.single().lastUpdated)
+        assertEquals(1_704_164_645_000L, imported.messages[0].timestamp)
+        assertEquals(1_704_164_645_123L, imported.messages[1].timestamp)
+    }
+
     private fun decodeCitations(
         message: ClaudeChatImporter.ImportMessageEntity,
     ) = Json.decodeFromString<List<MessageSegment>>(checkNotNull(message.toolCallJson))

@@ -118,6 +118,9 @@ class DataImporter(
     ) {
         val hasConversationGraph: Boolean
             get() = conversationCount > 0 || taskCount > 0 || loopCount > 0
+        val hasImportableData: Boolean
+            get() = hasConversationGraph || memoryCount > 0 || systemPromptCount > 0 ||
+                settingsPresent || apiKeysPresent
         val isSupportedVersion: Boolean
             get() = NativeBackupFormat.isSupported(manifest.version)
     }
