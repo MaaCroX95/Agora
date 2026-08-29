@@ -32,7 +32,7 @@ internal class ConversationRegenerationService(
     private val conversations: ConversationRepository,
     private val requestBuilder: GenerationRequestBuilder,
     private val executionCoordinator: ConversationExecutionCoordinator,
-    private val transitions: RegenerationTransitionCoordinator,
+    private val transitions: BranchReplacementTransitionCoordinator,
     private val terminalSettlement: GenerationTerminalSettlementController,
     private val boundRunGenerationLauncher: BoundRunGenerationLauncher,
     private val guidanceDrain: QueuedGuidanceDrainExecutor,

@@ -45,27 +45,28 @@ internal data class MessageListTurn(
     val messages: List<ChatMessage>,
 )
 
-internal fun regenerationExitMessageIds(
+internal fun branchReplacementExitMessageIds(
     messages: List<ChatMessage>,
-    oldMessageId: String,
-): Set<String> = regenerationExitMessages(messages, oldMessageId)
+    oldMessageId: String?,
+): Set<String> = branchReplacementExitMessages(messages, oldMessageId)
     .mapTo(linkedSetOf()) { message -> message.id }
 
-internal fun regenerationExitMessages(
+internal fun branchReplacementExitMessages(
     messages: List<ChatMessage>,
-    oldMessageId: String,
+    oldMessageId: String?,
 ): List<ChatMessage> {
+    oldMessageId ?: return emptyList()
     val firstExitIndex = messages.indexOfFirst { message -> message.id == oldMessageId }
     if (firstExitIndex < 0) return emptyList()
     return messages.subList(firstExitIndex, messages.size).toList()
 }
 
 /**
- * Keeps the faded branch composed after the selected graph path switches to the replacement.
+ * Keeps a faded branch composed after the selected graph path switches to its replacement.
  * Current-path messages are ordered first so SENDING appears directly below its USER anchor;
  * retained messages keep their original stable keys after it and contribute layout height only.
  */
-internal fun mergeRegenerationPresentationMessages(
+internal fun mergeBranchReplacementPresentationMessages(
     activeMessages: List<ChatMessage>,
     retainedExitMessages: List<ChatMessage>,
 ): List<ChatMessage> {
@@ -79,25 +80,16 @@ internal fun mergeRegenerationPresentationMessages(
     }
 }
 
-internal data class PendingEditVisualReplacement(
-    val sourceMessageId: String,
-    val sourceParentId: String?,
-    val submittedText: String,
-    val stableVisualKey: String,
-)
-
-internal fun resolvePendingEditReplacement(
-    messages: List<ChatMessage>,
-    pending: PendingEditVisualReplacement?,
-): ChatMessage? {
-    pending ?: return null
-    if (messages.any { message -> message.id == pending.sourceMessageId }) return null
-    return messages.lastOrNull { message ->
-        MessageGenerationBoundaryResolver.isRealUser(message) &&
-            message.id != pending.sourceMessageId &&
-            message.parentId == pending.sourceParentId &&
-            message.text == pending.submittedText
+internal fun branchReplacementVisualKey(
+    messageId: String,
+    sourceUserMessageId: String?,
+    targetUserMessageId: String?,
+    aliases: Map<String, String>,
+): String {
+    if (messageId != targetUserMessageId || sourceUserMessageId == null) {
+        return aliases[messageId] ?: messageId
     }
+    return aliases[sourceUserMessageId] ?: sourceUserMessageId
 }
 
 /**

@@ -39,8 +39,8 @@ import com.newoether.agora.util.DebugLog
 import com.newoether.agora.viewmodel.AnimatedScrollDestination
 import com.newoether.agora.viewmodel.AnimatedScrollRequest
 import com.newoether.agora.viewmodel.ChatViewModel
-import com.newoether.agora.viewmodel.RegenerationTransitionRequest
-import com.newoether.agora.viewmodel.RegenerationTransitionStage
+import com.newoether.agora.viewmodel.BranchReplacementTransitionRequest
+import com.newoether.agora.viewmodel.BranchReplacementTransitionStage
 import com.newoether.agora.viewmodel.SwitchingRequestKind
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -348,7 +348,7 @@ internal class ChatScrollCoordinator internal constructor(
         isSwitching: Boolean,
         conversationSearchActive: Boolean,
         shareSelectionActive: Boolean,
-        regenerationTransition: RegenerationTransitionRequest?,
+        regenerationTransition: BranchReplacementTransitionRequest?,
         animatedScrollRequest: AnimatedScrollRequest?,
         messages: State<List<ChatMessage>>,
         density: Density,
@@ -455,17 +455,25 @@ internal class ChatScrollCoordinator internal constructor(
                 )
             }
         }
-        LaunchedEffect(regenerationTransition?.id, currentConversationId) {
+        LaunchedEffect(
+            regenerationTransition?.id,
+            regenerationTransition?.targetUserMessageId,
+            currentConversationId,
+        ) {
             val request = regenerationTransition ?: return@LaunchedEffect
             if (request.scrollFinished) return@LaunchedEffect
+            val targetUserMessageId = request.targetUserMessageId ?: return@LaunchedEffect
             if (request.conversationId != currentConversationId) {
                 viewModel.acknowledgeRegenerationScroll(request.id, success = false)
                 return@LaunchedEffect
             }
             try {
+                val committedMessages = snapshotFlow { messages.value }.first { path ->
+                    path.any { message -> message.id == targetUserMessageId }
+                }
                 val success = animateToUserMessage(
-                    messages = messages.value,
-                    targetMessageId = request.targetUserMessageId,
+                    messages = committedMessages,
+                    targetMessageId = targetUserMessageId,
                     easing = SCROLL_EASING,
                     density = density,
                     motionPolicy = motionPolicy,
@@ -484,12 +492,13 @@ internal class ChatScrollCoordinator internal constructor(
         ) {
             val request = regenerationTransition
                 ?.takeIf {
-                    it.stage == RegenerationTransitionStage.COMMITTED && it.scrollFinished
+                    it.stage == BranchReplacementTransitionStage.COMMITTED && it.scrollFinished
                 }
                 ?: return@LaunchedEffect
-            if (request.conversationId == currentConversationId) {
+            val oldMessageId = request.oldMessageId
+            if (request.conversationId == currentConversationId && oldMessageId != null) {
                 snapshotFlow {
-                    messages.value.none { message -> message.id == request.oldMessageId }
+                    messages.value.none { message -> message.id == oldMessageId }
                 }.first { oldPathRemoved -> oldPathRemoved }
                 withFrameNanos { }
             }

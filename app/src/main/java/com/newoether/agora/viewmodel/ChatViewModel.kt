@@ -604,8 +604,8 @@ class ChatViewModel(
 
     val isSwitching: StateFlow<Boolean> get() = selectionController.isSwitching
 
-    private val regenerationTransitions = RegenerationTransitionCoordinator()
-    internal val regenerationTransition: StateFlow<RegenerationTransitionRequest?> =
+    private val regenerationTransitions = BranchReplacementTransitionCoordinator()
+    internal val regenerationTransition: StateFlow<BranchReplacementTransitionRequest?> =
         regenerationTransitions.request
 
     fun acknowledgeRegenerationFade(requestId: Long) {

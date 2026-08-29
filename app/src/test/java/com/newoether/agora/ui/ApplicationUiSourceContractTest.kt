@@ -357,6 +357,20 @@ class ApplicationUiSourceContractTest {
     }
 
     @Test
+    fun `user edit size owner includes the branch selector`() {
+        val user = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/chat/message/UserMessageBubble.kt",
+        )
+        val stableBlock = user
+            .substringAfter("Column(\n        horizontalAlignment = Alignment.End,")
+            .substringBefore("DropdownMenu(")
+
+        assertEquals(1, Regex("Modifier\\.animateContentSize").findAll(user).count())
+        assertTrue(stableBlock.contains("Modifier.animateContentSize"))
+        assertTrue(user.substringAfter(stableBlock).contains("if (showBranchSelector"))
+    }
+
+    @Test
     fun `both fork entry points require the shared confirmation dialog`() {
         val source = sourceFile("app/src/main/java/com/newoether/agora/ui/chat/ChatApp.kt")
         val dialogs = sourceFile("app/src/main/java/com/newoether/agora/ui/chat/ChatDialogs.kt")

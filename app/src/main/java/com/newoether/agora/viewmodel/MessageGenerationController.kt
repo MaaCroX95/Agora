@@ -144,7 +144,7 @@ internal class MessageGenerationController(
     private val onTreeMutationSettling: (requestId: Long?, targetMessageId: String?) -> Unit =
         { _, _ -> },
     private val onTreeMutationFailed: (requestId: Long?) -> Unit = {},
-    private val regenerationTransitions: RegenerationTransitionCoordinator,
+    private val regenerationTransitions: BranchReplacementTransitionCoordinator,
     private val pauseConversationTasks: suspend (String) -> Unit = {},
 ) {
     private val titleGenerator = ConversationTitleGenerator(convRepo, settings, providerRegistry)
@@ -215,32 +215,6 @@ internal class MessageGenerationController(
         onUserMessagePersisted = onUserMessagePersisted,
         onGenerateTitle = ::generateTitle,
     )
-    private val editService = ConversationEditService(
-        conversations = convRepo,
-        requestBuilder = requestBuilder,
-        executionCoordinator = executionCoordinator,
-        inputCloner = EditedRunInputCloner(
-            java.io.File(application.filesDir, "run-inputs"),
-        ),
-        terminalSettlement = terminalSettlement,
-        boundRunGenerationLauncher = boundRunGenerationLauncher,
-        toUiMessage = { it.toUiChatMessage(appContext) },
-        isConversationOpen = { currentConversationId.value == it },
-        projectGraph = { _, committedMessages, selectedChildren, streamingMessage ->
-            renderStore.commitGraph(
-                committedMessages = committedMessages,
-                selectedChildren = selectedChildren,
-                streamingMessage = streamingMessage,
-            )
-        },
-        awaitProjectedPath = { conversationId, messageId ->
-            combine(messages, currentConversationId) { path, openConversationId ->
-                openConversationId != conversationId || path.any { it.id == messageId }
-            }.first { projectedOrClosed -> projectedOrClosed }
-        },
-        onUserMessagePersisted = onUserMessagePersisted,
-        onScrollToMessage = { onScrollToMessage(it) },
-    )
     private val queuedGuidanceDrainExecutor = QueuedGuidanceDrainExecutor(
         conversations = convRepo,
         settings = settings,
@@ -258,6 +232,33 @@ internal class MessageGenerationController(
             )
         },
         onScrollToAbsoluteBottomAfter = onScrollToAbsoluteBottomAfter,
+        onUserMessagePersisted = onUserMessagePersisted,
+    )
+    private val editService = ConversationEditService(
+        conversations = convRepo,
+        requestBuilder = requestBuilder,
+        executionCoordinator = executionCoordinator,
+        transitions = regenerationTransitions,
+        inputCloner = EditedRunInputCloner(
+            java.io.File(application.filesDir, "run-inputs"),
+        ),
+        terminalSettlement = terminalSettlement,
+        boundRunGenerationLauncher = boundRunGenerationLauncher,
+        guidanceDrain = queuedGuidanceDrainExecutor,
+        toUiMessage = { it.toUiChatMessage(appContext) },
+        isConversationOpen = { currentConversationId.value == it },
+        projectGraph = { _, committedMessages, selectedChildren, streamingMessage ->
+            renderStore.commitGraph(
+                committedMessages = committedMessages,
+                selectedChildren = selectedChildren,
+                streamingMessage = streamingMessage,
+            )
+        },
+        awaitProjectedPath = { conversationId, messageId ->
+            combine(messages, currentConversationId) { path, openConversationId ->
+                openConversationId != conversationId || path.any { it.id == messageId }
+            }.first { projectedOrClosed -> projectedOrClosed }
+        },
         onUserMessagePersisted = onUserMessagePersisted,
     )
     private val regenerationService = ConversationRegenerationService(

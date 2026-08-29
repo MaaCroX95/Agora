@@ -889,54 +889,36 @@ class MessageListLayoutTest {
     }
 
     @Test
-    fun editReplacementResolvesOnlyAfterTheSourceLeavesTheVisiblePath() {
-        val source = message("source", Participant.USER).copy(
-            parentId = "parent",
-            text = "old",
-        )
-        val pending = PendingEditVisualReplacement(
-            sourceMessageId = source.id,
-            sourceParentId = source.parentId,
-            submittedText = "edited",
-            stableVisualKey = source.id,
-        )
-        val replacement = message("replacement", Participant.USER).copy(
-            parentId = "parent",
-            text = "edited",
-        )
-
-        assertNull(
-            resolvePendingEditReplacement(
-                messages = listOf(source, replacement),
-                pending = pending,
+    fun editTargetReusesTheSourceVisualKeyWithoutTextMatching() {
+        assertEquals(
+            "source",
+            branchReplacementVisualKey(
+                messageId = "replacement",
+                sourceUserMessageId = "source",
+                targetUserMessageId = "replacement",
+                aliases = emptyMap(),
             ),
         )
         assertEquals(
-            replacement,
-            resolvePendingEditReplacement(
-                messages = listOf(replacement),
-                pending = pending,
+            "unrelated",
+            branchReplacementVisualKey(
+                messageId = "unrelated",
+                sourceUserMessageId = "source",
+                targetUserMessageId = "replacement",
+                aliases = emptyMap(),
             ),
         )
     }
 
     @Test
-    fun editReplacementRejectsAnUnrelatedUserWithTheSameText() {
-        val pending = PendingEditVisualReplacement(
-            sourceMessageId = "source",
-            sourceParentId = "parent",
-            submittedText = "edited",
-            stableVisualKey = "source",
-        )
-        val unrelated = message("unrelated", Participant.USER).copy(
-            parentId = "different-parent",
-            text = "edited",
-        )
-
-        assertNull(
-            resolvePendingEditReplacement(
-                messages = listOf(unrelated),
-                pending = pending,
+    fun chainedEditKeepsTheOriginalVisualKey() {
+        assertEquals(
+            "source",
+            branchReplacementVisualKey(
+                messageId = "second-replacement",
+                sourceUserMessageId = "first-replacement",
+                targetUserMessageId = "second-replacement",
+                aliases = mapOf("first-replacement" to "source"),
             ),
         )
     }
@@ -952,7 +934,7 @@ class MessageListLayoutTest {
 
         assertEquals(
             linkedSetOf("answer-1", "user-2", "answer-2"),
-            regenerationExitMessageIds(messages, oldMessageId = "answer-1"),
+            branchReplacementExitMessageIds(messages, oldMessageId = "answer-1"),
         )
     }
 
@@ -963,21 +945,21 @@ class MessageListLayoutTest {
         val downstreamUser = message("user-2", Participant.USER)
         val downstreamAnswer = message("answer-2", Participant.MODEL)
         val oldPath = listOf(user, oldAnswer, downstreamUser, downstreamAnswer)
-        val retained = regenerationExitMessages(oldPath, oldAnswer.id)
+        val retained = branchReplacementExitMessages(oldPath, oldAnswer.id)
         val sending = message("answer-new", Participant.MODEL).copy(
             status = MessageStatus.SENDING,
         )
 
         assertEquals(
             listOf("user-1", "answer-new", "answer-old", "user-2", "answer-2"),
-            mergeRegenerationPresentationMessages(
+            mergeBranchReplacementPresentationMessages(
                 activeMessages = listOf(user, sending),
                 retainedExitMessages = retained,
             ).map { message -> message.id },
         )
         assertEquals(
             oldPath,
-            mergeRegenerationPresentationMessages(
+            mergeBranchReplacementPresentationMessages(
                 activeMessages = oldPath,
                 retainedExitMessages = retained,
             ),

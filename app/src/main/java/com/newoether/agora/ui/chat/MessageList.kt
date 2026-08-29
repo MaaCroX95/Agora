@@ -60,7 +60,7 @@ import com.newoether.agora.ui.chat.message.REGENERATION_ABORT_RESTORE_DURATION_M
 import com.newoether.agora.ui.chat.message.REGENERATION_EXIT_DURATION_MS
 import com.newoether.agora.ui.chat.message.SegmentAppearanceRegistry
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
-import com.newoether.agora.viewmodel.RegenerationTransitionRequest
+import com.newoether.agora.viewmodel.BranchReplacementTransitionRequest
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
@@ -93,7 +93,7 @@ internal fun MessageList(
     streamingTailWithinAttachThreshold: Boolean = false,
     programmaticScrollActive: Boolean = false,
     streamingTailController: StreamingTailController = rememberStreamingTailController(),
-    regenerationTransition: RegenerationTransitionRequest? = null,
+    regenerationTransition: BranchReplacementTransitionRequest? = null,
     onRegenerationFadeOutFinished: (Long) -> Unit = {},
     visualizeContextRollout: Boolean = false,
     toolCallDisplayMode: String = ToolCallDisplayModes.DEFAULT,
@@ -139,23 +139,20 @@ internal fun MessageList(
     }
     var editingMessageId by remember(conversationId) { mutableStateOf<String?>(null) }
     var pendingEditMessageId by remember { mutableStateOf<String?>(null) }
-    var pendingEditVisualReplacement by remember(conversationId) {
-        mutableStateOf<PendingEditVisualReplacement?>(null)
-    }
     val editVisualKeyAliases = remember(conversationId) {
         mutableStateMapOf<String, String>()
     }
-    var regenerationExitIds by remember(conversationId) {
+    var branchReplacementExitIds by remember(conversationId) {
         mutableStateOf<Set<String>>(emptySet())
     }
-    var retainedRegenerationExitMessages by remember(conversationId) {
+    var retainedBranchReplacementExitMessages by remember(conversationId) {
         mutableStateOf<List<ChatMessage>>(emptyList())
     }
-    var retainedRegenerationPresentations by remember(conversationId) {
+    var retainedBranchReplacementPresentations by remember(conversationId) {
         mutableStateOf<Map<String, RunMessagePresentation>>(emptyMap())
     }
-    val regenerationExitAlpha = remember(conversationId) { Animatable(1f) }
-    val latestRegenerationFadeFinished by rememberUpdatedState(onRegenerationFadeOutFinished)
+    val branchReplacementExitAlpha = remember(conversationId) { Animatable(1f) }
+    val latestBranchReplacementFadeFinished by rememberUpdatedState(onRegenerationFadeOutFinished)
     val mutationAnchorLock = remember(state) { MessageListMutationAnchorLock() }
     val mutationScope = rememberCoroutineScope()
     val pendingMutationSettles = remember(state) { mutableMapOf<String, Job>() }
@@ -244,10 +241,10 @@ internal fun MessageList(
     val activeMessageIds = remember(messages) {
         messages.list.mapTo(hashSetOf()) { message -> message.id }
     }
-    val presentationMessages = remember(messages, retainedRegenerationExitMessages) {
-        mergeRegenerationPresentationMessages(
+    val presentationMessages = remember(messages, retainedBranchReplacementExitMessages) {
+        mergeBranchReplacementPresentationMessages(
             activeMessages = messages.list,
-            retainedExitMessages = retainedRegenerationExitMessages,
+            retainedExitMessages = retainedBranchReplacementExitMessages,
         )
     }
     val turnCache = remember { MessageListTurnCache() }
@@ -309,42 +306,31 @@ internal fun MessageList(
 
     val lastUserMessage =
         messages.list.lastOrNull(MessageGenerationBoundaryResolver::isRealUser)
-    val resolvedEditReplacement = remember(messages, pendingEditVisualReplacement) {
-        resolvePendingEditReplacement(
-            messages = messages.list,
-            pending = pendingEditVisualReplacement,
-        )
-    }
-    val pendingReplacementVisualKey =
-        pendingEditVisualReplacement
-            ?.takeIf { resolvedEditReplacement != null }
-            ?.stableVisualKey
 
-    fun stableVisualKey(messageId: String): String =
-        editVisualKeyAliases[messageId]
-            ?: if (resolvedEditReplacement?.id == messageId) {
-                pendingReplacementVisualKey ?: messageId
-            } else {
-                messageId
-            }
+    fun stableVisualKey(messageId: String): String = branchReplacementVisualKey(
+        messageId = messageId,
+        sourceUserMessageId = regenerationTransition?.sourceUserMessageId,
+        targetUserMessageId = regenerationTransition?.targetUserMessageId,
+        aliases = editVisualKeyAliases,
+    )
 
     SideEffect {
-        val replacement = resolvedEditReplacement
-        val stableKey = pendingReplacementVisualKey
-        if (replacement != null && stableKey != null) {
-            editVisualKeyAliases[replacement.id] = stableKey
-            pendingEditVisualReplacement = null
+        val sourceUserMessageId = regenerationTransition?.sourceUserMessageId
+        val targetUserMessageId = regenerationTransition?.targetUserMessageId
+        if (sourceUserMessageId != null && targetUserMessageId != null) {
+            editVisualKeyAliases[targetUserMessageId] =
+                editVisualKeyAliases[sourceUserMessageId] ?: sourceUserMessageId
         }
     }
 
     LaunchedEffect(regenerationTransition?.id) {
         val transition = regenerationTransition
         if (transition == null) {
-            if (regenerationExitIds.any { exitId ->
+            if (branchReplacementExitIds.any { exitId ->
                     messages.list.any { message -> message.id == exitId }
                 }
             ) {
-                regenerationExitAlpha.animateTo(
+                branchReplacementExitAlpha.animateTo(
                     targetValue = 1f,
                     animationSpec = tween(
                         durationMillis = REGENERATION_ABORT_RESTORE_DURATION_MS,
@@ -352,36 +338,41 @@ internal fun MessageList(
                     ),
                 )
             } else {
-                regenerationExitAlpha.snapTo(1f)
+                branchReplacementExitAlpha.snapTo(1f)
             }
-            retainedRegenerationExitMessages = emptyList()
-            retainedRegenerationPresentations = emptyMap()
-            regenerationExitIds = emptySet()
+            retainedBranchReplacementExitMessages = emptyList()
+            retainedBranchReplacementPresentations = emptyMap()
+            branchReplacementExitIds = emptySet()
             return@LaunchedEffect
         }
 
-        retainedRegenerationExitMessages = regenerationExitMessages(
+        retainedBranchReplacementExitMessages = branchReplacementExitMessages(
             messages = messages.list.map { message -> hydratedPayloads[message.id] ?: message },
             oldMessageId = transition.oldMessageId,
         )
-        regenerationExitIds =
-            retainedRegenerationExitMessages.mapTo(linkedSetOf()) { message -> message.id }
-        retainedRegenerationPresentations =
+        branchReplacementExitIds =
+            retainedBranchReplacementExitMessages.mapTo(linkedSetOf()) { message -> message.id }
+        retainedBranchReplacementPresentations =
             RunUiProjection.project(messages.list, allMessages.list)
-                .filterKeys(regenerationExitIds::contains)
-        if (transition.stage != com.newoether.agora.viewmodel.RegenerationTransitionStage.ANIMATING) {
-            regenerationExitAlpha.snapTo(0f)
+                .filterKeys(branchReplacementExitIds::contains)
+        if (retainedBranchReplacementExitMessages.isEmpty()) {
+            branchReplacementExitAlpha.snapTo(1f)
+            latestBranchReplacementFadeFinished(transition.id)
             return@LaunchedEffect
         }
-        regenerationExitAlpha.snapTo(1f)
-        regenerationExitAlpha.animateTo(
+        if (transition.stage != com.newoether.agora.viewmodel.BranchReplacementTransitionStage.ANIMATING) {
+            branchReplacementExitAlpha.snapTo(0f)
+            return@LaunchedEffect
+        }
+        branchReplacementExitAlpha.snapTo(1f)
+        branchReplacementExitAlpha.animateTo(
             targetValue = 0f,
             animationSpec = tween(
                 durationMillis = REGENERATION_EXIT_DURATION_MS,
                 easing = LinearEasing,
             ),
         )
-        latestRegenerationFadeFinished(transition.id)
+        latestBranchReplacementFadeFinished(transition.id)
     }
 
     LaunchedEffect(
@@ -697,8 +688,8 @@ internal fun MessageList(
             onDispose { mutationAnchorLock.finish(hydrationMutationKey) }
         }
 
-        val isRetainedRegenerationExit =
-            message.id in regenerationExitIds && message.id !in activeMessageIds
+        val isRetainedBranchReplacementExit =
+            message.id in branchReplacementExitIds && message.id !in activeMessageIds
         val messageIsStreaming = isStreamingOverlay &&
             message.participant == Participant.MODEL &&
             message.status in setOf(
@@ -709,16 +700,16 @@ internal fun MessageList(
             )
         val isInContext =
             messageIsStreaming ||
-                (!isRetainedRegenerationExit && message.id in inContextIds)
+                (!isRetainedBranchReplacementExit && message.id in inContextIds)
         // Once the new branch commits, the active Run projection no longer contains the
-        // transparent old answer. Retain its exact presentation until the regeneration handoff
-        // releases that composition, otherwise the action row is conditionally removed instead
+        // transparent old answer. Retain its exact presentation until the branch-replacement
+        // handoff releases that composition, otherwise the action row is conditionally removed instead
         // of participating in the fade.
         val presentation =
-            runPresentation[message.id] ?: retainedRegenerationPresentations[message.id]
+            runPresentation[message.id] ?: retainedBranchReplacementPresentations[message.id]
         val animateLifecycleEntrance =
-            !isRetainedRegenerationExit &&
-            message.id != resolvedEditReplacement?.id &&
+            !isRetainedBranchReplacementExit &&
+            message.id != regenerationTransition?.targetUserMessageId &&
                 shouldAnimateMessageLifecycleEntrance(
                     message = message,
                     isKnown = lifecycleAppearanceRegistry.isKnown(message.id),
@@ -745,25 +736,16 @@ internal fun MessageList(
         MessageItem(
             message = message,
             segmentAppearanceRegistry = segmentAppearanceRegistry,
-            modifier = (if (message.id in regenerationExitIds) {
+            modifier = (if (message.id in branchReplacementExitIds) {
                 Modifier.graphicsLayer {
-                    alpha = regenerationExitAlpha.value
+                    alpha = branchReplacementExitAlpha.value
                 }
             } else {
                 Modifier
             }).then(hydrationHeightModifier),
             animateEntrance = animateLifecycleEntrance,
             onEdit = { id, text ->
-                if (!isRetainedRegenerationExit && pendingEditMessageId == null) {
-                    val source = messages.list.firstOrNull { message -> message.id == id }
-                    pendingEditVisualReplacement = source?.let { message ->
-                        PendingEditVisualReplacement(
-                            sourceMessageId = message.id,
-                            sourceParentId = message.parentId,
-                            submittedText = text,
-                            stableVisualKey = stableVisualKey(message.id),
-                        )
-                    }
+                if (!isRetainedBranchReplacementExit && pendingEditMessageId == null) {
                     pendingEditMessageId = id
                     mutationScope.launch {
                         val accepted = try {
@@ -778,11 +760,6 @@ internal fun MessageList(
                         }
                         if (pendingEditMessageId == id) {
                             pendingEditMessageId = null
-                        }
-                        if (!accepted &&
-                            pendingEditVisualReplacement?.sourceMessageId == id
-                        ) {
-                            pendingEditVisualReplacement = null
                         }
                     }
                 }
@@ -802,8 +779,8 @@ internal fun MessageList(
                 isStopping = isStopping,
                 isCompacting = isCompacting,
             ),
-            isRegenerationExiting = message.id in regenerationExitIds,
-            isEditingAllowed = !isRetainedRegenerationExit &&
+            isRegenerationExiting = message.id in branchReplacementExitIds,
+            isEditingAllowed = !isRetainedBranchReplacementExit &&
                 !selectionMode &&
                 (editingMessageId == null || editingMessageId == message.id) &&
                 !isLoading,
@@ -822,7 +799,7 @@ internal fun MessageList(
             groupedSegmentAutoExpansionController =
                 groupedSegmentAutoExpansionController,
             onStartEdit = {
-                if (!isRetainedRegenerationExit) editingMessageId = message.id
+                if (!isRetainedBranchReplacementExit) editingMessageId = message.id
             },
             onCancelEdit = { editingMessageId = null },
             showActions = !selectionMode && presentation?.showActions == true,
@@ -878,9 +855,9 @@ internal fun MessageList(
                 )
             },
             selectionMode = selectionMode,
-            selected = !isRetainedRegenerationExit && message.id in selectedMessageIds,
+            selected = !isRetainedBranchReplacementExit && message.id in selectedMessageIds,
             onToggleSelection = {
-                if (!isRetainedRegenerationExit) onToggleMessageSelection(message.id)
+                if (!isRetainedBranchReplacementExit) onToggleMessageSelection(message.id)
             },
             onHeightChanged = { height ->
                 if (height > 0 && messageHeights[message.id] != height) {

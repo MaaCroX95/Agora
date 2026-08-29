@@ -92,7 +92,16 @@ internal fun UserMessageBubble(
         if (isEditing) editFocusRequester.requestFocus()
     }
 
-    Column(horizontalAlignment = Alignment.End) {
+    Column(
+        horizontalAlignment = Alignment.End,
+        modifier = Modifier.then(
+            if (userBubbleSizeAnimationEnabled(sizeAnimationReady, allowSpatialTransitions)) {
+                Modifier.animateContentSize(animationSpec = tween(durationMillis = 500))
+            } else {
+                Modifier
+            },
+        ),
+    ) {
         Box {
             Surface(
             shape = shape,
@@ -108,18 +117,6 @@ internal fun UserMessageBubble(
                     onLongClick = {
                         haptics.longPress()
                         showMenu = true
-                    },
-                )
-                // Keep size interpolation local to the stable user-bubble surface. Initial
-                // measurement is immediate; subsequent editor enter/exit changes animate
-                // without involving the message row or assistant streaming layout.
-                .then(
-                    if (userBubbleSizeAnimationEnabled(sizeAnimationReady, allowSpatialTransitions)) {
-                        Modifier.animateContentSize(
-                            animationSpec = tween(durationMillis = 500),
-                        )
-                    } else {
-                        Modifier
                     },
                 )
         ) {
