@@ -49,7 +49,11 @@ private fun extractResponsesThoughtTitle(content: String): String? =
  */
 internal object ToolCallTextParser {
 
-    data class ParsedCall(val name: String, val arguments: String)
+    data class ParsedCall(
+        val id: String?,
+        val name: String,
+        val arguments: String,
+    )
 
     // Split so the bare tag literals never appear as a contiguous substring in source tooling.
     private const val OPEN_TAG = "<tool_" + "call>"
@@ -60,6 +64,14 @@ internal object ToolCallTextParser {
     )
     private val XML_PARAMETER = Regex(
         """<(?:(?:antml):)?parameter\s+name\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)</(?:(?:antml):)?parameter\s*>""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val XML_ID_ATTRIBUTE_NAME = Regex(
+        """\b(?:id|call_id)\s*=""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val XML_ID_ATTRIBUTE = Regex(
+        """\b(?:id|call_id)\s*=\s*(["'])([^"']+)\1""",
         RegexOption.IGNORE_CASE,
     )
 
@@ -118,6 +130,12 @@ internal object ToolCallTextParser {
         val name = decodeXml(match.groupValues[1]).trim()
             .takeIf { it.matches(safeWireToolName) }
             ?: return null
+        val openingTag = match.value.substringBefore('>')
+        val idAttributePresent = XML_ID_ATTRIBUTE_NAME.containsMatchIn(openingTag)
+        val id = XML_ID_ATTRIBUTE.find(openingTag)?.groupValues?.getOrNull(2)
+            ?.let(::decodeXml)
+            ?.trim()
+        if (idAttributePresent && (id == null || !id.matches(safeWireToolCallId))) return null
         val body = match.groupValues[2]
         val entries = linkedMapOf<String, JsonElement>()
         XML_PARAMETER.findAll(body).forEach { parameter ->
@@ -129,7 +147,7 @@ internal object ToolCallTextParser {
                 entries[key] = JsonPrimitive(value)
             }
         }
-        return ParsedCall(name, JsonObject(entries).toString())
+        return ParsedCall(id, name, JsonObject(entries).toString())
     }
 
     private fun decodeXml(value: String): String = value
@@ -141,13 +159,20 @@ internal object ToolCallTextParser {
 
     private fun parseCallJson(jsonStr: String): ParsedCall? {
         val obj = try { Json.parseToJsonElement(jsonStr).jsonObject } catch (_: Exception) { return null }
+        val function = obj["function"] as? JsonObject
         val name = stringField(obj, "name")
-            ?: (obj["function"] as? JsonObject)?.let { stringField(it, "name") }
+            ?: function?.let { stringField(it, "name") }
             ?: return null
         if (!name.matches(safeWireToolName)) return null
+        val idFields = listOf("id", "call_id").filter(obj::containsKey)
+        val ids = idFields.map { key -> stringField(obj, key) ?: return null }
+        if (ids.distinct().size > 1) return null
+        val id = ids.singleOrNull()
+        if (id != null && !id.matches(safeWireToolCallId)) return null
         val args = obj["arguments"] ?: obj["parameters"]
+            ?: function?.get("arguments") ?: function?.get("parameters")
         val arguments = args?.let { normalizeArguments(it) ?: return null } ?: "{}"
-        return ParsedCall(name, arguments)
+        return ParsedCall(id, name, arguments)
     }
 
     private fun stringField(obj: JsonObject, key: String): String? =
@@ -613,6 +638,7 @@ internal class StreamingTextToolCallParser {
 
     data class CompletedCall(
         val streamKey: String,
+        val id: String?,
         val name: String,
         val arguments: String,
     )
@@ -737,7 +763,7 @@ internal class StreamingTextToolCallParser {
                     if (parsed != null) {
                         val key = checkNotNull(streamKey)
                         emitSnapshot(key, parsed.name, parsed.arguments, onUpdate)
-                        onComplete(CompletedCall(key, parsed.name, parsed.arguments))
+                        onComplete(CompletedCall(key, parsed.id, parsed.name, parsed.arguments))
                     } else {
                         announcePartial(body, onUpdate)
                         onMalformed("Tagged tool call was not valid complete JSON")
@@ -770,7 +796,7 @@ internal class StreamingTextToolCallParser {
                     newStreamKey()
                 }
                 emitSnapshot(key, call.name, call.arguments, onUpdate)
-                onComplete(CompletedCall(key, call.name, call.arguments))
+                onComplete(CompletedCall(key, call.id, call.name, call.arguments))
             }
             return
         }
