@@ -124,10 +124,13 @@ internal class ProviderStreamNormalizer(
         }
 
         var emittedThought = false
+        val pendingText = mutableListOf<String>()
         structuredThinking.feed(
             content = event.thought,
             thinkingEnabled = true,
-            onText = { routeRawText(it, downstream) },
+            onText = { text ->
+                if (text.isNotEmpty()) pendingText += text
+            },
             onThought = { thought ->
                 emittedThought = true
                 emitNativeThought(thought, event.title, event.signature, downstream)
@@ -136,6 +139,7 @@ internal class ProviderStreamNormalizer(
         if (!emittedThought && wasInThinking && (event.title != null || event.signature != null)) {
             emitNativeThought("", event.title, event.signature, downstream)
         }
+        pendingText.forEach { text -> routeRawText(text, downstream) }
     }
 
     private suspend fun flushThinking(downstream: suspend (StreamEvent) -> Unit) {
