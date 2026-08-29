@@ -85,6 +85,7 @@ internal fun TasksScreen(
     viewModel: ChatViewModel,
     editorSession: TaskEditorSessionViewModel,
     taskListState: LazyListState,
+    backHandlingEnabled: Boolean,
     initialTaskId: String? = null,
     onInitialTaskHandled: () -> Unit = {},
     onBack: () -> Unit,
@@ -136,6 +137,7 @@ internal fun TasksScreen(
                 viewModel = viewModel,
                 tasks = tasks,
                 listState = taskListState,
+                backHandlingEnabled = backHandlingEnabled,
                 onBack = onBack,
                 onNewTask = {
                     val newTask = TaskEntity(
@@ -195,6 +197,7 @@ internal fun TasksScreen(
                     viewModel = viewModel,
                     task = task,
                     editorSession = editorSession,
+                    backHandlingEnabled = backHandlingEnabled,
                     onBack = {
                         openTaskId = null
                         editorSession.clear()
@@ -213,6 +216,7 @@ private fun TasksListPage(
     viewModel: ChatViewModel,
     tasks: List<TaskEntity>,
     listState: LazyListState,
+    backHandlingEnabled: Boolean,
     onBack: () -> Unit,
     onNewTask: () -> Unit,
     onOpenTask: (TaskEntity) -> Unit,
@@ -220,7 +224,7 @@ private fun TasksListPage(
     val running by viewModel.runningTaskIds.collectAsState()
     var pendingDelete by remember { mutableStateOf<TaskEntity?>(null) }
 
-    BackHandler { onBack() }
+    BackHandler(enabled = backHandlingEnabled) { onBack() }
 
     CollapsingSettingsLazyScaffold(
         title = stringResource(R.string.tasks),

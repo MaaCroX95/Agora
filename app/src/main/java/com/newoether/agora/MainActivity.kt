@@ -824,6 +824,7 @@ fun MainNavigation(
                     viewModel = viewModel,
                     editorSession = taskEditorSession,
                     taskListState = tasksListState,
+                    backHandlingEnabled = showTasks,
                     initialTaskId = taskToOpen,
                     onInitialTaskHandled = { taskToOpen = null },
                     onBack = {

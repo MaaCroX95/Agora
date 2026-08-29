@@ -147,6 +147,7 @@ internal fun TaskDetailPage(
     viewModel: ChatViewModel,
     task: TaskEntity,
     editorSession: TaskEditorSessionViewModel,
+    backHandlingEnabled: Boolean,
     onBack: () -> Unit,
     onOpenConversation: (conversationId: String) -> Unit,
 ) {
@@ -182,7 +183,7 @@ internal fun TaskDetailPage(
 
     fun current() = checkNotNull(editorSession.current(task))
 
-    BackHandler { onBack() }
+    BackHandler(enabled = backHandlingEnabled) { onBack() }
 
     LaunchedEffect(
         task.id,

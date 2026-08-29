@@ -13,7 +13,8 @@ class TaskEditorSourceContractTest {
             .substringAfter("internal fun TaskDetailPage(")
             .substringBefore("/** A group row")
 
-        assertTrue(detail.contains("BackHandler { onBack() }"))
+        assertTrue(detail.contains("BackHandler(enabled = backHandlingEnabled) { onBack() }"))
+        assertFalse(detail.contains("BackHandler { onBack() }"))
         assertFalse(detail.contains("fun leave()"))
         assertTrue(detail.contains("viewModel.saveTask(current())\n                    onBack()"))
         assertTrue(detail.contains("viewModel.runTaskNow("))
@@ -22,6 +23,31 @@ class TaskEditorSourceContractTest {
         assertTrue(detail.contains("if (!executionsLoaded) return@LaunchedEffect"))
         assertFalse(detail.contains("collectAsState(initial = emptyList())"))
         assertFalse(detail.contains("rememberSaveable"))
+    }
+
+    @Test
+    fun taskOverlayBackHandlersOnlyOwnBackWhileOverlayIsVisible() {
+        val activity = source("MainActivity.kt")
+        val tasks = source("ui/tasks/TasksScreen.kt")
+        val editor = source("ui/tasks/TaskEditorPage.kt")
+        val detail = editor
+            .substringAfter("internal fun TaskDetailPage(")
+            .substringBefore("/** A group row")
+        val listCall = tasks
+            .substringAfter("TasksListPage(")
+            .substringBefore("onNewTask =")
+        val detailCall = tasks
+            .substringAfter("TaskDetailPage(")
+            .substringBefore("onBack = {")
+
+        assertTrue(activity.contains("backHandlingEnabled = showTasks"))
+        assertTrue(tasks.contains("backHandlingEnabled: Boolean"))
+        assertTrue(listCall.contains("backHandlingEnabled = backHandlingEnabled"))
+        assertTrue(detailCall.contains("backHandlingEnabled = backHandlingEnabled"))
+        assertTrue(tasks.contains("BackHandler(enabled = backHandlingEnabled) { onBack() }"))
+        assertTrue(detail.contains("BackHandler(enabled = backHandlingEnabled) { onBack() }"))
+        assertFalse(tasks.contains("BackHandler { onBack() }"))
+        assertFalse(detail.contains("BackHandler { onBack() }"))
     }
 
     @Test
