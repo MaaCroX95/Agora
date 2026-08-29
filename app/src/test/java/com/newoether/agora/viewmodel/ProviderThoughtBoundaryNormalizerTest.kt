@@ -178,6 +178,22 @@ class ProviderThoughtBoundaryNormalizerTest {
     }
 
     @Test
+    fun `native parser authority preserves classified text without compatibility recovery`() = runTest {
+        val content = "<think>literal</think><tool_call>{\"name\":\"file_read\",\"arguments\":{}}</tool_call>"
+        val events = mutableListOf<StreamEvent>()
+        val normalizer = ProviderStreamNormalizer(
+            tools = TOOLS,
+            nativeTextParsingAuthoritative = true,
+        )
+
+        normalizer.emit(StreamEvent.TextChunk(content), events::add)
+        normalizer.finish(events::add)
+
+        assertEquals(listOf(StreamEvent.TextChunk(content)), events)
+        assertTrue(events.none { it is StreamEvent.ThoughtChunk || it is StreamEvent.ToolCallRequest })
+    }
+
+    @Test
     fun `text tool candidates stay private until stream completion`() = runTest {
         val events = mutableListOf<StreamEvent>()
         val normalizer = ProviderStreamNormalizer(TOOLS)

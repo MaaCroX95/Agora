@@ -66,7 +66,11 @@ internal class ProviderPassRunner(
         val openToolStreams = linkedSetOf<String>()
         var providerError: GenerationError? = null
         var sawEmptyToolBatch = false
-        val streamNormalizer = ProviderStreamNormalizer(config.tools, json)
+        val streamNormalizer = ProviderStreamNormalizer(
+            tools = config.tools,
+            json = json,
+            nativeTextParsingAuthoritative = provider.nativeTextParsingAuthoritative,
+        )
 
         suspend fun acceptEvent(event: StreamEvent) {
             when (event) {

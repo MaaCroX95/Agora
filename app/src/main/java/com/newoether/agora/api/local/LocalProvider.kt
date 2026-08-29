@@ -38,6 +38,7 @@ class LocalProvider(
 
     override val name: String = Constants.PROVIDER_LOCAL
     override val defaultBaseUrl: String = ""
+    override val nativeTextParsingAuthoritative: Boolean = true
 
     override fun generateResponse(
         messages: List<ChatMessage>,
@@ -123,13 +124,10 @@ class LocalProvider(
             DebugLog.d(TAG, "Generated prompt ($promptLength chars)")
         }
 
-        // Generate tokens with unified thinking parsing
+        // Native template parsing owns text, thinking, and tool-call boundaries.
         var inputTokenCount = 0
         var outputTokenCount = 0
         var terminalError: GenerationError? = null
-        var stopped = false
-        var rawBuf = ""
-        val STOP_PATTERNS = listOf("<|im_end|>", "<|im_start|>")
         try {
             val tokenFlow = if (hasImages) {
                 engine.generateWithImages(
@@ -162,52 +160,67 @@ class LocalProvider(
                         engine.cancel()
                         return@collect
                     }
-                    if (event is LlamaGenerationEvent.Completed) {
-                        inputTokenCount = event.inputTokenCount
-                        outputTokenCount = event.outputTokenCount
-                        terminalError = when (event.reason) {
-                            LlamaGenerationStopReason.EOG -> null
-                            LlamaGenerationStopReason.MAX_TOKENS ->
-                                GenerationError.OutputTruncated(name, "max_tokens")
-                            LlamaGenerationStopReason.CONTEXT_FULL -> GenerationError.LocalModel(
-                                "Local context window was exhausted before generation completed."
+                    when (event) {
+                        is LlamaGenerationEvent.Text -> {
+                            if (event.value.isNotEmpty()) emit(StreamEvent.TextChunk(event.value))
+                        }
+                        is LlamaGenerationEvent.Thought -> {
+                            if (event.value.isNotEmpty()) emit(StreamEvent.ThoughtChunk(event.value))
+                        }
+                        is LlamaGenerationEvent.ToolCallUpdate -> {
+                            val call = event.call
+                            emit(
+                                StreamEvent.ToolCallUpdate(
+                                    streamKey = "local_tool_${call.index}",
+                                    id = call.id,
+                                    name = call.name,
+                                    arguments = call.arguments,
+                                )
                             )
-                            LlamaGenerationStopReason.CANCELLED ->
-                                if (stopped) null else GenerationError.Cancelled
                         }
-                        return@collect
-                    }
-                    if (event is LlamaGenerationEvent.Failed) {
-                        inputTokenCount = event.inputTokenCount
-                        outputTokenCount = event.outputTokenCount
-                        terminalError = GenerationError.LocalModel(
-                            formatGenerationError(IllegalStateException(event.message), modelConfig)
-                        )
-                        return@collect
-                    }
-                    if (stopped) return@collect
-                    val token = (event as LlamaGenerationEvent.Text).value
-
-                    // Check for stop patterns in the rolling buffer
-                    rawBuf += token
-                    val hit = STOP_PATTERNS.firstOrNull { p -> rawBuf.contains(p) }
-                    if (hit != null) {
-                        // Strip the stop pattern and anything after it, then stop
-                        val cleanEnd = rawBuf.substringBefore(hit)
-                        if (cleanEnd.isNotEmpty()) {
-                            emit(StreamEvent.TextChunk(cleanEnd))
+                        is LlamaGenerationEvent.ToolCallsCompleted -> {
+                            val calls = event.calls.map { call ->
+                                val arguments = call.arguments.ifBlank { "{}" }
+                                StreamEvent.ToolCallRequest(
+                                    id = call.id?.takeIf(String::isNotBlank)
+                                        ?: buildToolCallId(
+                                            "${call.name}:${call.index}",
+                                            arguments,
+                                        ),
+                                    name = call.name,
+                                    arguments = arguments,
+                                    streamKey = "local_tool_${call.index}",
+                                )
+                            }
+                            if (calls.size == 1) {
+                                emit(calls.single())
+                            } else if (calls.isNotEmpty()) {
+                                emit(StreamEvent.ToolCallsRequest(calls))
+                            }
                         }
-                        engine.cancel()
-                        stopped = true
-                        return@collect
-                    }
-
-                    // Keep buffer bounded — only as much as longest stop pattern
-                    val maxPatLen = STOP_PATTERNS.maxOf { it.length }
-                    if (rawBuf.length > maxPatLen * 2) {
-                        val emitPart = rawBuf.substring(0, rawBuf.length - maxPatLen)
-                        emit(StreamEvent.TextChunk(emitPart))
-                        rawBuf = rawBuf.substring(rawBuf.length - maxPatLen)
+                        is LlamaGenerationEvent.Completed -> {
+                            inputTokenCount = event.inputTokenCount
+                            outputTokenCount = event.outputTokenCount
+                            terminalError = when (event.reason) {
+                                LlamaGenerationStopReason.EOG -> null
+                                LlamaGenerationStopReason.MAX_TOKENS ->
+                                    GenerationError.OutputTruncated(name, "max_tokens")
+                                LlamaGenerationStopReason.CONTEXT_FULL -> GenerationError.LocalModel(
+                                    "Local context window was exhausted before generation completed."
+                                )
+                                LlamaGenerationStopReason.CANCELLED -> GenerationError.Cancelled
+                            }
+                        }
+                        is LlamaGenerationEvent.Failed -> {
+                            inputTokenCount = event.inputTokenCount
+                            outputTokenCount = event.outputTokenCount
+                            terminalError = GenerationError.LocalModel(
+                                formatGenerationError(
+                                    IllegalStateException(event.message),
+                                    modelConfig,
+                                )
+                            )
+                        }
                     }
                 }
             } finally {
@@ -215,10 +228,6 @@ class LocalProvider(
             }
             if (terminalError === GenerationError.Cancelled) {
                 throw kotlinx.coroutines.CancellationException("Native generation cancelled")
-            }
-            // Flush remaining buffer (no stop pattern found)
-            if (!stopped && rawBuf.isNotEmpty()) {
-                emit(StreamEvent.TextChunk(rawBuf))
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             engine.cancel()

@@ -12,6 +12,7 @@
 #include "llama.h"
 #include "chat.h"
 #include "sampling.h"
+#include "nlohmann/json.hpp"
 #include "mtmd.h"
 #include "mtmd-helper.h"
 
@@ -103,7 +104,10 @@ static jstring utf8_to_jstring(JNIEnv * env, const char * data, size_t len) {
 
 struct NativeChatCallbacks {
     jclass clazz = nullptr;
-    jmethodID on_token = nullptr;
+    jmethodID on_text = nullptr;
+    jmethodID on_thought = nullptr;
+    jmethodID on_tool_call = nullptr;
+    jmethodID on_tool_calls_complete = nullptr;
     jmethodID on_done = nullptr;
     jmethodID on_error = nullptr;
 };
@@ -111,10 +115,21 @@ struct NativeChatCallbacks {
 static bool init_callbacks(JNIEnv * env, jobject callback, NativeChatCallbacks & methods) {
     methods.clazz = env->GetObjectClass(callback);
     if (!methods.clazz) return false;
-    methods.on_token = env->GetMethodID(methods.clazz, "onToken", "(Ljava/lang/String;)Z");
+    methods.on_text = env->GetMethodID(methods.clazz, "onText", "(Ljava/lang/String;)Z");
+    methods.on_thought = env->GetMethodID(
+        methods.clazz, "onThought", "(Ljava/lang/String;)Z"
+    );
+    methods.on_tool_call = env->GetMethodID(
+        methods.clazz, "onToolCall",
+        "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z"
+    );
+    methods.on_tool_calls_complete = env->GetMethodID(
+        methods.clazz, "onToolCallsComplete", "()Z"
+    );
     methods.on_done = env->GetMethodID(methods.clazz, "onDone", "(Ljava/lang/String;II)V");
     methods.on_error = env->GetMethodID(methods.clazz, "onError", "(Ljava/lang/String;II)V");
-    if (methods.on_token && methods.on_done && methods.on_error) return true;
+    if (methods.on_text && methods.on_thought && methods.on_tool_call &&
+        methods.on_tool_calls_complete && methods.on_done && methods.on_error) return true;
     if (env->ExceptionCheck()) env->ExceptionClear();
     env->DeleteLocalRef(methods.clazz);
     methods.clazz = nullptr;
@@ -161,16 +176,53 @@ static jint report_done(
     return output_tokens;
 }
 
-static bool report_token(
+static bool report_string(
+    JNIEnv * env,
+    jobject callback,
+    jmethodID method,
+    const std::string & value
+) {
+    jstring jvalue = utf8_to_jstring(env, value.data(), value.size());
+    jboolean accepted = env->CallBooleanMethod(callback, method, jvalue);
+    env->DeleteLocalRef(jvalue);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return false;
+    }
+    return accepted == JNI_TRUE;
+}
+
+static bool report_tool_call(
     JNIEnv * env,
     jobject callback,
     const NativeChatCallbacks & methods,
-    const char * data,
-    size_t length
+    size_t index,
+    const common_chat_tool_call & call
 ) {
-    jstring jtoken = utf8_to_jstring(env, data, length);
-    jboolean accepted = env->CallBooleanMethod(callback, methods.on_token, jtoken);
-    env->DeleteLocalRef(jtoken);
+    jstring jid = utf8_to_jstring(env, call.id.data(), call.id.size());
+    jstring jname = utf8_to_jstring(env, call.name.data(), call.name.size());
+    jstring jarguments = utf8_to_jstring(
+        env, call.arguments.data(), call.arguments.size()
+    );
+    jboolean accepted = env->CallBooleanMethod(
+        callback, methods.on_tool_call, static_cast<jint>(index), jid, jname, jarguments
+    );
+    env->DeleteLocalRef(jid);
+    env->DeleteLocalRef(jname);
+    env->DeleteLocalRef(jarguments);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return false;
+    }
+    return accepted == JNI_TRUE;
+}
+
+static bool report_tool_calls_complete(
+    JNIEnv * env,
+    jobject callback,
+    const NativeChatCallbacks & methods
+) {
+    jboolean accepted = env->CallBooleanMethod(callback, methods.on_tool_calls_complete);
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
         return false;
@@ -208,6 +260,8 @@ struct TemplateSamplingMetadata {
     std::vector<common_grammar_trigger> grammar_triggers;
     std::vector<std::string> preserved_tokens;
     std::set<llama_token> preserved_token_ids;
+    common_chat_format format = COMMON_CHAT_FORMAT_CONTENT_ONLY;
+    std::string parser;
 };
 
 static bool read_java_string(JNIEnv * env, jstring value, std::string & result) {
@@ -256,7 +310,8 @@ static jobject make_template_result(
         result_class,
         "<init>",
         "(Ljava/lang/String;ZLjava/lang/String;ZLjava/lang/String;"
-        "[Lcom/newoether/agora/api/ChatTemplateGrammarTrigger;[Ljava/lang/String;)V"
+        "[Lcom/newoether/agora/api/ChatTemplateGrammarTrigger;[Ljava/lang/String;I"
+        "Ljava/lang/String;)V"
     );
     if (!trigger_ctor || !result_ctor) return nullptr;
 
@@ -291,15 +346,18 @@ static jobject make_template_result(
     jstring generation_prompt = utf8_to_jstring(
         env, params.generation_prompt.data(), params.generation_prompt.size()
     );
+    jstring parser = utf8_to_jstring(env, params.parser.data(), params.parser.size());
     jobject result = env->NewObject(
         result_class, result_ctor,
         prompt, supports_tools ? JNI_TRUE : JNI_FALSE,
         grammar, params.grammar_lazy ? JNI_TRUE : JNI_FALSE,
-        generation_prompt, triggers, preserved
+        generation_prompt, triggers, preserved,
+        static_cast<jint>(params.format), parser
     );
     env->DeleteLocalRef(prompt);
     env->DeleteLocalRef(grammar);
     env->DeleteLocalRef(generation_prompt);
+    env->DeleteLocalRef(parser);
     env->DeleteLocalRef(triggers);
     env->DeleteLocalRef(preserved);
     env->DeleteLocalRef(trigger_class);
@@ -321,8 +379,10 @@ static bool read_template_metadata(
         read_string_field(env, template_result, result_class, "grammar", metadata.grammar) &&
         read_string_field(
             env, template_result, result_class, "generationPrompt", metadata.generation_prompt
-        );
+        ) &&
+        read_string_field(env, template_result, result_class, "parser", metadata.parser);
     jfieldID lazy_field = env->GetFieldID(result_class, "grammarLazy", "Z");
+    jfieldID format_field = env->GetFieldID(result_class, "format", "I");
     jfieldID triggers_field = env->GetFieldID(
         result_class, "grammarTriggers",
         "[Lcom/newoether/agora/api/ChatTemplateGrammarTrigger;"
@@ -330,10 +390,16 @@ static bool read_template_metadata(
     jfieldID preserved_field = env->GetFieldID(
         result_class, "preservedTokens", "[Ljava/lang/String;"
     );
-    if (!strings_ok || !lazy_field || !triggers_field || !preserved_field) {
+    if (!strings_ok || !lazy_field || !format_field || !triggers_field || !preserved_field) {
         env->DeleteLocalRef(result_class);
         return false;
     }
+    const jint format = env->GetIntField(template_result, format_field);
+    if (format < COMMON_CHAT_FORMAT_CONTENT_ONLY || format >= COMMON_CHAT_FORMAT_COUNT) {
+        env->DeleteLocalRef(result_class);
+        return false;
+    }
+    metadata.format = static_cast<common_chat_format>(format);
     metadata.grammar_lazy = env->GetBooleanField(template_result, lazy_field) == JNI_TRUE;
     jobjectArray triggers = static_cast<jobjectArray>(
         env->GetObjectField(template_result, triggers_field)
@@ -385,6 +451,109 @@ static bool read_template_metadata(
     env->DeleteLocalRef(result_class);
     return true;
 }
+
+struct NativeChatParser {
+    common_chat_parser_params params;
+    common_chat_msg message;
+    std::string generated_text;
+    std::string initialization_error;
+
+    explicit NativeChatParser(const TemplateSamplingMetadata & metadata) {
+        params.format = metadata.format;
+        params.generation_prompt = metadata.generation_prompt;
+        params.parse_tool_calls = true;
+        if (metadata.parser.empty()) {
+            if (metadata.format != COMMON_CHAT_FORMAT_CONTENT_ONLY) {
+                initialization_error = "Chat template parser metadata is missing";
+            }
+            return;
+        }
+        try {
+            params.parser.load(metadata.parser);
+        } catch (const std::exception & exception) {
+            initialization_error = exception.what();
+        }
+    }
+
+    bool update(
+        JNIEnv * env,
+        jobject callback,
+        const NativeChatCallbacks & methods,
+        const char * data,
+        size_t length,
+        bool is_partial,
+        std::string & error
+    ) {
+        if (!initialization_error.empty()) {
+            error = initialization_error;
+            return false;
+        }
+        generated_text.append(data, length);
+        try {
+            common_chat_msg next = common_chat_parse(generated_text, is_partial, params);
+            if (next.empty()) {
+                if (!is_partial) message = {};
+                return true;
+            }
+            const auto diffs = common_chat_msg_diff::compute_diffs(message, next);
+            message = std::move(next);
+            for (const auto & diff : diffs) {
+                if (!diff.reasoning_content_delta.empty() && !report_string(
+                        env, callback, methods.on_thought,
+                        diff.reasoning_content_delta
+                    )) return false;
+                if (!diff.content_delta.empty() && !report_string(
+                        env, callback, methods.on_text, diff.content_delta
+                    )) return false;
+                if (diff.tool_call_index != std::string::npos) {
+                    if (diff.tool_call_index >= message.tool_calls.size()) {
+                        error = "Parsed tool call index is out of range";
+                        return false;
+                    }
+                    if (!report_tool_call(
+                            env, callback, methods,
+                            diff.tool_call_index,
+                            message.tool_calls[diff.tool_call_index]
+                        )) return false;
+                }
+            }
+            return true;
+        } catch (const std::exception & exception) {
+            error = exception.what();
+            return false;
+        }
+    }
+
+    bool finish(
+        JNIEnv * env,
+        jobject callback,
+        const NativeChatCallbacks & methods,
+        std::string & error
+    ) {
+        if (!update(env, callback, methods, "", 0, false, error)) return false;
+        if (message.tool_calls.empty()) return true;
+        for (const auto & call : message.tool_calls) {
+            if (call.name.empty()) {
+                error = "Parsed tool call is missing a name";
+                return false;
+            }
+            try {
+                const auto arguments = nlohmann::ordered_json::parse(
+                    call.arguments.empty() ? "{}" : call.arguments
+                );
+                if (!arguments.is_object()) {
+                    error = "Parsed tool call arguments are not a JSON object";
+                    return false;
+                }
+            } catch (const std::exception & exception) {
+                error = std::string("Parsed tool call arguments are incomplete: ") +
+                    exception.what();
+                return false;
+            }
+        }
+        return report_tool_calls_complete(env, callback, methods);
+    }
+};
 
 static common_sampler * init_chat_sampler(
     ChatHandle * handle,
@@ -816,8 +985,9 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerate(
     int32_t callback_tokens = 0;
     std::string utf8_pending;
     std::string callback_buffer;
+    NativeChatParser parser(metadata);
     const char * stop_reason = nullptr;
-    const char * failure = nullptr;
+    std::string failure;
     bool consumer_closed = false;
     const auto decode_started = std::chrono::steady_clock::now();
     while (generated < generation_limit) {
@@ -874,11 +1044,11 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerate(
                    (static_cast<unsigned char>(callback_buffer[emit_len]) & 0xC0) == 0x80) {
                 emit_len--;
             }
-            if (!report_token(
+            if (!parser.update(
                     env, callback, callbacks,
-                    callback_buffer.data(), emit_len
+                    callback_buffer.data(), emit_len, true, failure
                 )) {
-                failure = "Stream consumer closed";
+                if (failure.empty()) failure = "Stream consumer closed";
                 consumer_closed = true;
                 break;
             }
@@ -888,19 +1058,27 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerate(
         if (consumer_closed) break;
     }
 
-    if (!failure && !stop_reason) {
+    if (failure.empty() && !stop_reason) {
         stop_reason = context_limited ? "context_full" : "max_tokens";
     }
     if (!consumer_closed && !callback_buffer.empty()) {
-        if (!report_token(
+        if (!parser.update(
                 env, callback, callbacks,
-                callback_buffer.data(), callback_buffer.size()
+                callback_buffer.data(), callback_buffer.size(), true, failure
             )) {
-            failure = "Stream consumer closed";
+            if (failure.empty()) failure = "Stream consumer closed";
             consumer_closed = true;
         }
     }
-    if (!failure && !utf8_pending.empty()) failure = "Generated incomplete UTF-8 output";
+    if (failure.empty() && !utf8_pending.empty()) {
+        failure = "Generated incomplete UTF-8 output";
+    }
+    if (failure.empty() && !consumer_closed && stop_reason &&
+        std::strcmp(stop_reason, "cancelled") != 0 &&
+        !parser.finish(env, callback, callbacks, failure)) {
+        if (failure.empty()) failure = "Stream consumer closed";
+        consumer_closed = true;
+    }
     const auto decode_finished = std::chrono::steady_clock::now();
     const auto decode_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         decode_finished - decode_started
@@ -913,12 +1091,14 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerate(
         : 0.0;
     LOGD("Text decode: output_tokens=%d, duration_ms=%lld, tokens_per_second=%.2f, terminal=%s",
          generated, (long long)decode_ms, tokens_per_second,
-         failure ? "error" : stop_reason);
+         failure.empty() ? stop_reason : "error");
     LOGD("Text request: input_tokens=%d, output_tokens=%d, total_ms=%lld",
          input_tokens, generated, (long long)request_ms);
     common_sampler_free(smpl);
-    if (failure) {
-        return report_error(env, callback, callbacks, failure, input_tokens, generated);
+    if (!failure.empty()) {
+        return report_error(
+            env, callback, callbacks, failure.c_str(), input_tokens, generated
+        );
     }
     return report_done(
         env, callback, callbacks, stop_reason, input_tokens, generated
@@ -1162,8 +1342,9 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerateWithImages(
     int32_t callback_tokens = 0;
     std::string utf8_pending;
     std::string callback_buffer;
+    NativeChatParser parser(metadata);
     const char * stop_reason = nullptr;
-    const char * failure = nullptr;
+    std::string failure;
     bool consumer_closed = false;
     const auto decode_started = std::chrono::steady_clock::now();
     while (generated < generation_limit) {
@@ -1215,11 +1396,11 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerateWithImages(
                    (static_cast<unsigned char>(callback_buffer[emit_len]) & 0xC0) == 0x80) {
                 emit_len--;
             }
-            if (!report_token(
+            if (!parser.update(
                     env, callback, callbacks,
-                    callback_buffer.data(), emit_len
+                    callback_buffer.data(), emit_len, true, failure
                 )) {
-                failure = "Stream consumer closed";
+                if (failure.empty()) failure = "Stream consumer closed";
                 consumer_closed = true;
                 break;
             }
@@ -1229,19 +1410,27 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerateWithImages(
         if (consumer_closed) break;
     }
 
-    if (!failure && !stop_reason) {
+    if (failure.empty() && !stop_reason) {
         stop_reason = context_limited ? "context_full" : "max_tokens";
     }
     if (!consumer_closed && !callback_buffer.empty()) {
-        if (!report_token(
+        if (!parser.update(
                 env, callback, callbacks,
-                callback_buffer.data(), callback_buffer.size()
+                callback_buffer.data(), callback_buffer.size(), true, failure
             )) {
-            failure = "Stream consumer closed";
+            if (failure.empty()) failure = "Stream consumer closed";
             consumer_closed = true;
         }
     }
-    if (!failure && !utf8_pending.empty()) failure = "Generated incomplete UTF-8 output";
+    if (failure.empty() && !utf8_pending.empty()) {
+        failure = "Generated incomplete UTF-8 output";
+    }
+    if (failure.empty() && !consumer_closed && stop_reason &&
+        std::strcmp(stop_reason, "cancelled") != 0 &&
+        !parser.finish(env, callback, callbacks, failure)) {
+        if (failure.empty()) failure = "Stream consumer closed";
+        consumer_closed = true;
+    }
     const auto decode_finished = std::chrono::steady_clock::now();
     const auto decode_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         decode_finished - decode_started
@@ -1254,13 +1443,15 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerateWithImages(
         : 0.0;
     LOGD("Multimodal decode: output_tokens=%d, duration_ms=%lld, tokens_per_second=%.2f, terminal=%s",
          generated, (long long)decode_ms, tokens_per_second,
-         failure ? "error" : stop_reason);
+         failure.empty() ? stop_reason : "error");
     LOGD("Multimodal request: input_tokens=%lld, output_tokens=%d, total_ms=%lld",
          (long long)n_past, generated, (long long)request_ms);
     common_sampler_free(smpl);
     const int32_t input_tokens = static_cast<int32_t>(n_past);
-    if (failure) {
-        return report_error(env, callback, callbacks, failure, input_tokens, generated);
+    if (!failure.empty()) {
+        return report_error(
+            env, callback, callbacks, failure.c_str(), input_tokens, generated
+        );
     }
     return report_done(
         env, callback, callbacks, stop_reason, input_tokens, generated

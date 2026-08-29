@@ -46,7 +46,9 @@ class LocalLlamaOwnershipSourceContractTest {
         val engine = mainSource("com/newoether/agora/api/LlamaChatEngine.kt")
         val native = mainCppSource("llama_chat_jni.cpp")
 
-        assertTrue(engine.contains("trySendBlocking(LlamaGenerationEvent.Text(token)).isSuccess"))
+        assertTrue(engine.contains("trySendBlocking(LlamaGenerationEvent.Text(text)).isSuccess"))
+        assertTrue(engine.contains("trySendBlocking(LlamaGenerationEvent.Thought(thought)).isSuccess"))
+        assertTrue(engine.contains("trySendBlocking(LlamaGenerationEvent.ToolCallUpdate(call)).isSuccess"))
         assertFalse(engine.contains("trySend(token)"))
         assertTrue(native.contains("std::atomic<bool> cancelled"))
         assertFalse(native.contains("volatile bool cancelled"))
@@ -142,7 +144,7 @@ class LocalLlamaOwnershipSourceContractTest {
             val piece = loop.indexOf("token_to_piece(handle->vocab")
             val decode = loop.indexOf("llama_decode")
             val count = loop.indexOf("generated++")
-            val deliver = loop.indexOf("report_token")
+            val parse = loop.indexOf("parser.update(")
 
             assertTrue(cancellation >= 0 && cancellation < sample)
             assertTrue(sample >= 0 && sample < accept)
@@ -151,7 +153,7 @@ class LocalLlamaOwnershipSourceContractTest {
             assertTrue(loop.contains("!is_preserved_token(metadata, new_token_id)"))
             assertTrue(piece >= 0 && piece < decode)
             assertTrue(decode < count)
-            assertTrue(count < deliver)
+            assertTrue(count < parse)
             assertTrue(function.contains("common_sampler_free(smpl);"))
             assertTrue(loop.contains("callback_tokens >= CALLBACK_TOKEN_BATCH"))
             assertTrue(loop.contains("callback_buffer.size() >= CALLBACK_BYTE_BATCH"))
@@ -166,6 +168,64 @@ class LocalLlamaOwnershipSourceContractTest {
         }
         assertFalse(native.contains("llama_sampler_sample("))
         assertFalse(native.contains("llama_sampler_free("))
+    }
+
+    @Test
+    fun `local output uses the template parser as the typed stream authority`() {
+        val native = mainCppSource("llama_chat_jni.cpp")
+        val engine = mainSource("com/newoether/agora/api/LlamaChatEngine.kt")
+        val providerContract = mainSource("com/newoether/agora/api/LlmProvider.kt")
+        val provider = mainSource("com/newoether/agora/api/local/LocalProvider.kt")
+        val normalizer = mainSource("com/newoether/agora/api/util/ProviderStreamNormalizer.kt")
+        val runner = mainSource("com/newoether/agora/viewmodel/ProviderPassRunner.kt")
+        val parser = native
+            .substringAfter("struct NativeChatParser {")
+            .substringBefore("static common_sampler * init_chat_sampler(")
+
+        assertTrue(engine.contains("val format: Int = 0"))
+        assertTrue(engine.contains("val parser: String = \"\""))
+        assertTrue(engine.contains("fun onText(text: String): Boolean"))
+        assertTrue(engine.contains("fun onThought(thought: String): Boolean"))
+        assertTrue(engine.contains("fun onToolCall(index: Int, id: String, name: String, arguments: String): Boolean"))
+        assertTrue(engine.contains("fun onToolCallsComplete(): Boolean"))
+        assertTrue(engine.contains("id = id.takeIf(String::isNotBlank) ?: previous?.id"))
+        assertTrue(engine.contains("name = name.takeIf(String::isNotBlank) ?: previous?.name.orEmpty()"))
+        assertTrue(engine.contains("toolCalls.toSortedMap().values.toList()"))
+        assertFalse(engine.contains("fun onToken("))
+
+        assertTrue(native.contains("params.format = metadata.format"))
+        assertTrue(native.contains("params.generation_prompt = metadata.generation_prompt"))
+        assertTrue(native.contains("params.parser.load(metadata.parser)"))
+        assertTrue(parser.contains("common_chat_parse(generated_text, is_partial, params)"))
+        assertTrue(parser.contains("common_chat_msg_diff::compute_diffs(message, next)"))
+        assertTrue(parser.contains("message.tool_calls[diff.tool_call_index]"))
+        assertTrue(parser.contains("if (!is_partial) message = {}"))
+        assertTrue(parser.contains("nlohmann::ordered_json::parse("))
+        assertTrue(parser.contains("if (!arguments.is_object())"))
+        assertTrue(parser.contains("report_tool_calls_complete(env, callback, methods)"))
+        assertEquals(2, Regex("NativeChatParser parser\\(metadata\\)")
+            .findAll(native).count())
+        assertEquals(2, Regex("std::strcmp\\(stop_reason, \\\"cancelled\\\"\\) != 0")
+            .findAll(native).count())
+        assertEquals(2, Regex("parser\\.finish\\(env, callback, callbacks, failure\\)")
+            .findAll(native).count())
+        assertFalse(native.contains("report_token("))
+        assertFalse(native.contains("\"onToken\""))
+
+        assertTrue(providerContract.contains("val nativeTextParsingAuthoritative: Boolean"))
+        assertTrue(providerContract.contains("get() = false"))
+        assertTrue(provider.contains("override val nativeTextParsingAuthoritative: Boolean = true"))
+        assertTrue(runner.contains("nativeTextParsingAuthoritative = provider.nativeTextParsingAuthoritative"))
+        assertTrue(normalizer.contains("if (nativeTextParsingAuthoritative)"))
+        assertTrue(provider.contains("is LlamaGenerationEvent.Thought ->"))
+        assertTrue(provider.contains("StreamEvent.ThoughtChunk(event.value)"))
+        assertTrue(provider.contains("is LlamaGenerationEvent.ToolCallUpdate ->"))
+        assertTrue(provider.contains("StreamEvent.ToolCallUpdate("))
+        assertTrue(provider.contains("is LlamaGenerationEvent.ToolCallsCompleted ->"))
+        assertTrue(provider.contains("StreamEvent.ToolCallsRequest(calls)"))
+        assertTrue(provider.contains("\"${'$'}{call.name}:${'$'}{call.index}\""))
+        assertFalse(provider.contains("STOP_PATTERNS"))
+        assertFalse(provider.contains("rawBuf"))
     }
 
     @Test

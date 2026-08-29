@@ -24,8 +24,18 @@ internal enum class LlamaGenerationStopReason(val nativeValue: String) {
     }
 }
 
+internal data class LlamaToolCall(
+    val index: Int,
+    val id: String?,
+    val name: String,
+    val arguments: String,
+)
+
 internal sealed interface LlamaGenerationEvent {
     data class Text(val value: String) : LlamaGenerationEvent
+    data class Thought(val value: String) : LlamaGenerationEvent
+    data class ToolCallUpdate(val call: LlamaToolCall) : LlamaGenerationEvent
+    data class ToolCallsCompleted(val calls: List<LlamaToolCall>) : LlamaGenerationEvent
     data class Completed(
         val reason: LlamaGenerationStopReason,
         val inputTokenCount: Int,
@@ -40,7 +50,10 @@ internal sealed interface LlamaGenerationEvent {
 }
 
 interface NativeChatCallback {
-    fun onToken(token: String): Boolean
+    fun onText(text: String): Boolean
+    fun onThought(thought: String): Boolean
+    fun onToolCall(index: Int, id: String, name: String, arguments: String): Boolean
+    fun onToolCallsComplete(): Boolean
     fun onDone(reason: String, inputTokenCount: Int, outputTokenCount: Int)
     fun onError(message: String, inputTokenCount: Int, outputTokenCount: Int)
 }
@@ -86,6 +99,8 @@ class LlamaChatTemplateResult(
     val generationPrompt: String = "",
     val grammarTriggers: Array<ChatTemplateGrammarTrigger> = emptyArray(),
     val preservedTokens: Array<String> = emptyArray(),
+    val format: Int = 0,
+    val parser: String = "",
 )
 
 class LlamaChatEngine(
@@ -201,10 +216,42 @@ class LlamaChatEngine(
         }
 
         val terminalSignalled = AtomicBoolean(false)
+        val toolCalls = linkedMapOf<Int, LlamaToolCall>()
         val callback = object : NativeChatCallback {
-            override fun onToken(token: String): Boolean =
-                !terminalSignalled.get() &&
-                    trySendBlocking(LlamaGenerationEvent.Text(token)).isSuccess
+            override fun onText(text: String): Boolean =
+                !terminalSignalled.get() && text.isNotEmpty() &&
+                    trySendBlocking(LlamaGenerationEvent.Text(text)).isSuccess
+
+            override fun onThought(thought: String): Boolean =
+                !terminalSignalled.get() && thought.isNotEmpty() &&
+                    trySendBlocking(LlamaGenerationEvent.Thought(thought)).isSuccess
+
+            override fun onToolCall(
+                index: Int,
+                id: String,
+                name: String,
+                arguments: String,
+            ): Boolean {
+                if (terminalSignalled.get() || index < 0) return false
+                val previous = toolCalls[index]
+                val call = LlamaToolCall(
+                    index = index,
+                    id = id.takeIf(String::isNotBlank) ?: previous?.id,
+                    name = name.takeIf(String::isNotBlank) ?: previous?.name.orEmpty(),
+                    arguments = arguments.takeIf(String::isNotEmpty)
+                        ?: previous?.arguments.orEmpty(),
+                )
+                toolCalls[index] = call
+                return trySendBlocking(LlamaGenerationEvent.ToolCallUpdate(call)).isSuccess
+            }
+
+            override fun onToolCallsComplete(): Boolean {
+                if (terminalSignalled.get()) return false
+                if (toolCalls.isEmpty()) return true
+                return trySendBlocking(
+                    LlamaGenerationEvent.ToolCallsCompleted(toolCalls.toSortedMap().values.toList())
+                ).isSuccess
+            }
 
             override fun onDone(reason: String, inputTokenCount: Int, outputTokenCount: Int) {
                 if (!terminalSignalled.compareAndSet(false, true)) return
@@ -329,10 +376,42 @@ class LlamaChatEngine(
         }
 
         val terminalSignalled = AtomicBoolean(false)
+        val toolCalls = linkedMapOf<Int, LlamaToolCall>()
         val callback = object : NativeChatCallback {
-            override fun onToken(token: String): Boolean =
-                !terminalSignalled.get() &&
-                    trySendBlocking(LlamaGenerationEvent.Text(token)).isSuccess
+            override fun onText(text: String): Boolean =
+                !terminalSignalled.get() && text.isNotEmpty() &&
+                    trySendBlocking(LlamaGenerationEvent.Text(text)).isSuccess
+
+            override fun onThought(thought: String): Boolean =
+                !terminalSignalled.get() && thought.isNotEmpty() &&
+                    trySendBlocking(LlamaGenerationEvent.Thought(thought)).isSuccess
+
+            override fun onToolCall(
+                index: Int,
+                id: String,
+                name: String,
+                arguments: String,
+            ): Boolean {
+                if (terminalSignalled.get() || index < 0) return false
+                val previous = toolCalls[index]
+                val call = LlamaToolCall(
+                    index = index,
+                    id = id.takeIf(String::isNotBlank) ?: previous?.id,
+                    name = name.takeIf(String::isNotBlank) ?: previous?.name.orEmpty(),
+                    arguments = arguments.takeIf(String::isNotEmpty)
+                        ?: previous?.arguments.orEmpty(),
+                )
+                toolCalls[index] = call
+                return trySendBlocking(LlamaGenerationEvent.ToolCallUpdate(call)).isSuccess
+            }
+
+            override fun onToolCallsComplete(): Boolean {
+                if (terminalSignalled.get()) return false
+                if (toolCalls.isEmpty()) return true
+                return trySendBlocking(
+                    LlamaGenerationEvent.ToolCallsCompleted(toolCalls.toSortedMap().values.toList())
+                ).isSuccess
+            }
 
             override fun onDone(reason: String, inputTokenCount: Int, outputTokenCount: Int) {
                 if (!terminalSignalled.compareAndSet(false, true)) return

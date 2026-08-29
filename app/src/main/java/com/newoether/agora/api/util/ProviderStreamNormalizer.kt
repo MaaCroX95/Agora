@@ -19,6 +19,7 @@ import java.util.UUID
 internal class ProviderStreamNormalizer(
     tools: List<ToolDefinition>?,
     private val json: Json = Json,
+    private val nativeTextParsingAuthoritative: Boolean = false,
 ) {
     private data class ThoughtMetadata(val title: String?, val signature: String?)
     private data class ToolFingerprint(val name: String, val arguments: String)
@@ -35,7 +36,7 @@ internal class ProviderStreamNormalizer(
     private val inlineThinking = IncrementalThinkingParser()
     private val structuredThinking = IncrementalThinkingParser(startInThinking = true)
     private val textToolParser = StreamingTextToolCallParser().takeIf {
-        offeredToolNames.isNotEmpty()
+        offeredToolNames.isNotEmpty() && !nativeTextParsingAuthoritative
     }
     private val toolProbeBuffer = StringBuilder()
     private val taggedResidualText = StringBuilder()
@@ -57,7 +58,7 @@ internal class ProviderStreamNormalizer(
         when (event) {
             is StreamEvent.TextChunk -> {
                 flushStructuredThinking(downstream)
-                routeRawText(event.text, downstream)
+                routeProviderText(event.text, downstream)
             }
             is StreamEvent.ThoughtChunk -> {
                 flushInlineThinking(downstream)
@@ -97,6 +98,17 @@ internal class ProviderStreamNormalizer(
             flushAbortedText(downstream)
         }
         finished = true
+    }
+
+    private suspend fun routeProviderText(
+        content: String,
+        downstream: suspend (StreamEvent) -> Unit,
+    ) {
+        if (nativeTextParsingAuthoritative) {
+            if (content.isNotEmpty()) downstream(StreamEvent.TextChunk(content))
+            return
+        }
+        routeRawText(content, downstream)
     }
 
     private suspend fun routeRawText(
@@ -140,7 +152,7 @@ internal class ProviderStreamNormalizer(
         if (!emittedThought && wasInThinking && (event.title != null || event.signature != null)) {
             emitNativeThought("", event.title, event.signature, downstream)
         }
-        pendingText.forEach { text -> routeRawText(text, downstream) }
+        pendingText.forEach { text -> routeProviderText(text, downstream) }
     }
 
     private suspend fun flushThinking(downstream: suspend (StreamEvent) -> Unit) {
@@ -151,7 +163,7 @@ internal class ProviderStreamNormalizer(
     private suspend fun flushStructuredThinking(downstream: suspend (StreamEvent) -> Unit) {
         structuredThinking.flush(
             thinkingEnabled = true,
-            onText = { routeRawText(it, downstream) },
+            onText = { routeProviderText(it, downstream) },
             onThought = {
                 emitNativeThought(
                     it,
