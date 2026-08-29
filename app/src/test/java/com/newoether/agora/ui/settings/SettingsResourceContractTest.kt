@@ -109,11 +109,6 @@ class SettingsResourceContractTest {
             "developer_options_capture" to "Diagnostic Capture",
             "developer_options_disable_title" to "Turn Off Developer Options?",
             "developer_options_clear_diagnostics" to "Clear Diagnostic Session",
-            "developer_options_timeline_group" to "Metadata Timeline",
-            "developer_options_payload_capture" to "Protocol Payload Capture",
-            "developer_options_sensitive_capture" to "Sensitive Content",
-            "developer_options_sensitive_capture_title" to "Capture Sensitive Content?",
-            "developer_options_export" to "Export Diagnostic Bundle",
             "developer_options_export_share_title" to "Share Agora Diagnostic Bundle",
             "skills_empty" to "No Skills Yet",
         )
