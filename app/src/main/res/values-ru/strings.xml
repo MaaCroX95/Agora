@@ -1167,6 +1167,7 @@
     <string name="developer_options_disable_message">Сбор будет остановлен, диагностические данные удалены, а отладочная модель отключена.</string>
     <string name="developer_options_disable_confirm">Отключить</string>
     <string name="developer_options_clear_diagnostics">Очистить сеанс диагностики?</string>
+    <string name="developer_options_clear_diagnostics_action">Очистить сеанс диагностики</string>
     <string name="developer_options_export_share_title">Поделиться пакетом диагностики Agora</string>
     <string name="developer_options_export_failed">Не удалось создать пакет диагностики.</string>
     <string name="responses_api">Responses API</string>

@@ -1167,6 +1167,7 @@
     <string name="developer_options_disable_message">Cela arrête la capture, supprime les données de diagnostic et désactive le modèle de débogage.</string>
     <string name="developer_options_disable_confirm">Désactiver</string>
     <string name="developer_options_clear_diagnostics">Effacer la session de diagnostic ?</string>
+    <string name="developer_options_clear_diagnostics_action">Effacer la session de diagnostic</string>
     <string name="developer_options_export_share_title">Partager le paquet de diagnostic Agora</string>
     <string name="developer_options_export_failed">Impossible de créer le paquet de diagnostic.</string>
     <string name="responses_api">Responses API</string>

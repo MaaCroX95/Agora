@@ -1169,6 +1169,7 @@
     <string name="developer_options_disable_message">This stops capture, deletes diagnostic data, and turns off Debug Model.</string>
     <string name="developer_options_disable_confirm">Turn off</string>
     <string name="developer_options_clear_diagnostics">Clear Diagnostic Session?</string>
+    <string name="developer_options_clear_diagnostics_action">Clear Diagnostic Session</string>
     <string name="developer_options_export_share_title">Share Agora Diagnostic Bundle</string>
     <string name="developer_options_export_failed">Could not create the diagnostic bundle.</string>
     <string name="responses_api">Responses API</string>

@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -22,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -63,7 +65,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -76,6 +77,7 @@ import com.newoether.agora.diagnostics.DiagnosticEventPayload
 import com.newoether.agora.diagnostics.DiagnosticExportFormat
 import com.newoether.agora.diagnostics.DiagnosticRequestContext
 import com.newoether.agora.diagnostics.DiagnosticSnapshot
+import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -133,7 +135,6 @@ internal fun SettingsDeveloperCapturePage(
             title = {
                 Text(
                     text = "#${event.sequence} ${event.payload.typeName()}",
-                    fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                 )
             },
@@ -153,7 +154,6 @@ internal fun SettingsDeveloperCapturePage(
                             modifier = Modifier
                                 .heightIn(max = 520.dp)
                                 .verticalScroll(rememberScrollState()),
-                            fontFamily = FontFamily.Monospace,
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -217,10 +217,17 @@ internal fun SettingsDeveloperCapturePage(
                 DropdownMenu(
                     expanded = showActionsMenu,
                     onDismissRequest = { showActionsMenu = false },
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    tonalElevation = 16.dp,
+                    shape = RoundedCornerShape(12.dp),
                 ) {
                     DropdownMenuItem(
                         text = {
-                            Text(stringResource(R.string.developer_options_clear_diagnostics))
+                            Text(
+                                stringResource(
+                                    R.string.developer_options_clear_diagnostics_action,
+                                ),
+                            )
                         },
                         leadingIcon = {
                             Icon(Icons.Default.DeleteSweep, contentDescription = null)
@@ -300,6 +307,7 @@ internal fun SettingsDeveloperCapturePage(
                         CaptureTooltip(label = jumpLatestLabel) {
                             SmallFloatingActionButton(
                                 onClick = { followLatest = true },
+                                shape = CircleShape,
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.KeyboardArrowDown,
@@ -319,6 +327,7 @@ internal fun SettingsDeveloperCapturePage(
                                     }
                                 }
                             },
+                            shape = CircleShape,
                         ) {
                             Crossfade(
                                 targetState = captureRunning,
@@ -455,7 +464,6 @@ private fun CaptureSnapshotSummary(snapshot: DiagnosticSnapshot) {
                     snapshot.nextSequence,
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -468,8 +476,16 @@ private fun CaptureEventCard(
     viewMode: CaptureViewMode,
     onClick: () -> Unit,
 ) {
+    val allowSpatialTransitions = LocalAgoraMotionPolicy.current.allowSpatialTransitions
+    val contentSizeModifier = if (allowSpatialTransitions) {
+        Modifier.animateContentSize(
+            animationSpec = tween(CaptureCrossfadeDurationMillis),
+        )
+    } else {
+        Modifier
+    }
     Surface(
-        modifier = Modifier
+        modifier = contentSizeModifier
             .fillMaxWidth()
             .padding(bottom = 8.dp),
         shape = RoundedCornerShape(24.dp),
@@ -503,7 +519,6 @@ private fun CaptureEventContent(
                     text = "#${event.sequence} ${event.payload.summary()}",
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    fontFamily = FontFamily.Monospace,
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 event.context.summary().takeIf(String::isNotBlank)?.let { context ->
@@ -512,7 +527,6 @@ private fun CaptureEventContent(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontFamily = FontFamily.Monospace,
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -524,7 +538,6 @@ private fun CaptureEventContent(
                 text = rawDetails,
                 maxLines = 8,
                 overflow = TextOverflow.Ellipsis,
-                fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.bodySmall,
             )
         }

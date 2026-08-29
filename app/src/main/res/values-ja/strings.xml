@@ -1167,6 +1167,7 @@
     <string name="developer_options_disable_message">これにより、キャプチャが停止し、診断データが削除され、デバッグモデルがオフになります。</string>
     <string name="developer_options_disable_confirm">オフにする</string>
     <string name="developer_options_clear_diagnostics">診断セッションを消去しますか？</string>
+    <string name="developer_options_clear_diagnostics_action">診断セッションを消去</string>
     <string name="developer_options_export_share_title">Agora診断バンドルを共有</string>
     <string name="developer_options_export_failed">診断バンドルを作成できませんでした。</string>
     <string name="responses_api">Responses API</string>

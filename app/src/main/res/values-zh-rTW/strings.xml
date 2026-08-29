@@ -1175,6 +1175,7 @@
     <string name="developer_options_disable_message">這會停止擷取、刪除診斷資料並關閉偵錯模型。</string>
     <string name="developer_options_disable_confirm">關閉</string>
     <string name="developer_options_clear_diagnostics">清除診斷工作階段？</string>
+    <string name="developer_options_clear_diagnostics_action">清除診斷工作階段</string>
     <string name="developer_options_export_share_title">分享 Agora 診斷套件</string>
     <string name="developer_options_export_failed">無法建立診斷套件。</string>
     <string name="responses_api">Responses API</string>

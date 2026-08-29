@@ -1173,6 +1173,7 @@
     <string name="developer_options_disable_message">Thao tác này dừng thu thập, xóa dữ liệu chẩn đoán và tắt mô hình gỡ lỗi.</string>
     <string name="developer_options_disable_confirm">Tắt</string>
     <string name="developer_options_clear_diagnostics">Xóa phiên chẩn đoán?</string>
+    <string name="developer_options_clear_diagnostics_action">Xóa phiên chẩn đoán</string>
     <string name="developer_options_export_share_title">Chia sẻ gói chẩn đoán Agora</string>
     <string name="developer_options_export_failed">Không thể tạo gói chẩn đoán.</string>
     <string name="responses_api">Responses API</string>

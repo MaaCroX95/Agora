@@ -1167,6 +1167,7 @@
     <string name="developer_options_disable_message">يؤدي هذا إلى إيقاف الالتقاط وحذف بيانات التشخيص وإيقاف نموذج تصحيح الأخطاء.</string>
     <string name="developer_options_disable_confirm">إيقاف</string>
     <string name="developer_options_clear_diagnostics">مسح جلسة التشخيص؟</string>
+    <string name="developer_options_clear_diagnostics_action">مسح جلسة التشخيص</string>
     <string name="developer_options_export_share_title">مشاركة حزمة تشخيص Agora</string>
     <string name="developer_options_export_failed">تعذر إنشاء حزمة التشخيص.</string>
     <string name="responses_api">Responses API</string>

@@ -1167,6 +1167,7 @@
     <string name="developer_options_disable_message">Dadurch wird die Aufzeichnung beendet, die Diagnosedaten werden gelöscht und das Debug-Modell wird deaktiviert.</string>
     <string name="developer_options_disable_confirm">Ausschalten</string>
     <string name="developer_options_clear_diagnostics">Diagnosesitzung löschen?</string>
+    <string name="developer_options_clear_diagnostics_action">Diagnosesitzung löschen</string>
     <string name="developer_options_export_share_title">Agora-Diagnosepaket teilen</string>
     <string name="developer_options_export_failed">Das Diagnosepaket konnte nicht erstellt werden.</string>
     <string name="responses_api">Responses API</string>

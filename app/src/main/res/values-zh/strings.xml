@@ -1267,6 +1267,7 @@
     <string name="developer_options_disable_message">这会停止采集、删除诊断数据并关闭调试模型。</string>
     <string name="developer_options_disable_confirm">关闭</string>
     <string name="developer_options_clear_diagnostics">清除诊断会话？</string>
+    <string name="developer_options_clear_diagnostics_action">清除诊断会话</string>
     <string name="developer_options_export_share_title">分享 Agora 诊断包</string>
     <string name="developer_options_export_failed">无法创建诊断包。</string>
     <string name="responses_api">Responses API</string>

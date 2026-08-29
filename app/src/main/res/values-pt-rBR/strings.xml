@@ -1167,6 +1167,7 @@
     <string name="developer_options_disable_message">Isso interrompe a captura, exclui os dados de diagnóstico e desativa o modelo de depuração.</string>
     <string name="developer_options_disable_confirm">Desativar</string>
     <string name="developer_options_clear_diagnostics">Limpar a sessão de diagnóstico?</string>
+    <string name="developer_options_clear_diagnostics_action">Limpar a sessão de diagnóstico</string>
     <string name="developer_options_export_share_title">Compartilhar pacote de diagnóstico do Agora</string>
     <string name="developer_options_export_failed">Não foi possível criar o pacote de diagnóstico.</string>
     <string name="responses_api">Responses API</string>

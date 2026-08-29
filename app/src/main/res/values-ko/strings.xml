@@ -1167,6 +1167,7 @@
     <string name="developer_options_disable_message">캡처를 중지하고 진단 데이터를 삭제하며 디버그 모델을 끕니다.</string>
     <string name="developer_options_disable_confirm">끄기</string>
     <string name="developer_options_clear_diagnostics">진단 세션을 지울까요?</string>
+    <string name="developer_options_clear_diagnostics_action">진단 세션 지우기</string>
     <string name="developer_options_export_share_title">Agora 진단 번들 공유</string>
     <string name="developer_options_export_failed">진단 번들을 만들 수 없습니다.</string>
     <string name="responses_api">Responses API</string>

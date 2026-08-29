@@ -472,12 +472,20 @@ class ApprovedFeatureSourceContractTest {
         assertFalse(capture.contains("SegmentedButton("))
         assertTrue(capture.contains("actions = {"))
         assertTrue(capture.contains("Icons.Default.MoreVert"))
+        assertTrue(capture.contains("containerColor = MaterialTheme.colorScheme.surfaceContainer"))
+        assertTrue(capture.contains("tonalElevation = 16.dp"))
+        assertTrue(capture.contains("shape = RoundedCornerShape(12.dp)"))
+        assertTrue(
+            capture.contains("R.string.developer_options_clear_diagnostics_action"),
+        )
+        assertTrue(capture.contains("R.string.developer_options_clear_diagnostics)"))
         assertEquals(4, Regex("\\bCaptureExportMenuItem\\(").findAll(capture).count())
         assertTrue(capture.contains("DiagnosticExportFormat.RAW_JSON"))
         assertTrue(capture.contains("DiagnosticExportFormat.REDACTED_JSON"))
         assertTrue(capture.contains("DiagnosticExportFormat.SUMMARY_TEXT"))
         assertTrue(capture.contains("FloatingActionButton("))
         assertTrue(capture.contains("SmallFloatingActionButton("))
+        assertEquals(2, Regex("shape = CircleShape").findAll(capture).count())
         assertTrue(capture.contains("horizontalArrangement = Arrangement.End"))
         assertTrue(capture.contains("verticalArrangement = Arrangement.spacedBy(12.dp)"))
         assertTrue(capture.contains("targetState = captureRunning"))
@@ -491,8 +499,21 @@ class ApprovedFeatureSourceContractTest {
         assertFalse(capture.contains("snapshot.events.asReversed"))
         assertTrue(eventCard.contains("Surface("))
         assertTrue(eventCard.contains("shape = RoundedCornerShape(24.dp)"))
+        assertTrue(
+            eventCard.contains(
+                "LocalAgoraMotionPolicy.current.allowSpatialTransitions",
+            ),
+        )
+        assertTrue(eventCard.contains("if (allowSpatialTransitions)"))
+        assertTrue(eventCard.contains("Modifier.animateContentSize("))
+        assertTrue(
+            eventCard.contains("animationSpec = tween(CaptureCrossfadeDurationMillis)"),
+        )
+        assertTrue(eventCard.contains("} else {\n        Modifier"))
         assertTrue(eventCard.contains("SettingsItem("))
         assertFalse(eventCard.contains("leadingContent"))
+        assertFalse(capture.contains("FontFamily"))
+        assertFalse(capture.contains("fontFamily ="))
         assertTrue(capture.contains("collectIsDraggedAsState()"))
         assertTrue(capture.contains("isDragged && listState.canScrollForward -> followLatest = false"))
         assertTrue(capture.contains("if (!followLatest && snapshot.events.isNotEmpty())"))
@@ -629,6 +650,7 @@ class ApprovedFeatureSourceContractTest {
             "developer_options_capture_summary",
             "developer_options_capture_wire_line_summary",
             "developer_options_clear_diagnostics",
+            "developer_options_clear_diagnostics_action",
             "developer_options_debug_model",
             "developer_options_debug_model_description",
             "developer_options_disable_confirm",
