@@ -832,6 +832,9 @@
     <string name="import_strategy_merge">병합</string>
     <string name="import_strategy_replace">교체</string>
     <string name="import_strategy_skip">건너뛰기</string>
+    <string name="external_import_replace_confirm_title">기존 대화를 교체할까요?</string>
+    <string name="external_import_replace_confirm_message">모든 기존 대화를 삭제하고 선택한 가져온 대화만 유지합니다.</string>
+    <string name="external_import_replace_confirm_button">대화 교체</string>
     <string name="import_api_keys_warning">이 백업에는 자격 증명 및 비밀 정보가 포함되어 있습니다. 평문으로 가져오므로 출처를 신뢰하는 경우에만 계속하세요.</string>
     <string name="import_button">가져오기</string>
     <string name="importing_label">가져오는 중…</string>

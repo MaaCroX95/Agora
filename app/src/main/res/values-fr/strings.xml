@@ -832,6 +832,9 @@
     <string name="import_strategy_merge">Fusionner</string>
     <string name="import_strategy_replace">Remplacer</string>
     <string name="import_strategy_skip">Ignorer</string>
+    <string name="external_import_replace_confirm_title">Remplacer les conversations existantes ?</string>
+    <string name="external_import_replace_confirm_message">Cette action supprime toutes les conversations existantes et conserve uniquement les conversations importées sélectionnées.</string>
+    <string name="external_import_replace_confirm_button">Remplacer les conversations</string>
     <string name="import_api_keys_warning">Cette sauvegarde contient des identifiants et des secrets. Ils seront importés en texte clair. Ne continuez que si vous avez confiance en la source.</string>
     <string name="import_button">Importer</string>
     <string name="importing_label">Importation…</string>

@@ -329,6 +329,47 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         }
         messages.forEach { upsertMessage(it) }
     }
+    @Transaction
+    suspend fun replaceImportedConversationGraph(
+        conversations: List<ChatEntity>,
+        runs: List<RunEntity>,
+        messages: List<MessageEntity>,
+    ) {
+        val conversationIds = conversations.mapTo(mutableSetOf(), ChatEntity::id)
+        val runIds = runs.mapTo(mutableSetOf(), RunEntity::id)
+        require(conversationIds.size == conversations.size) { "Imported conversation IDs must be unique" }
+        require(runIds.size == runs.size) { "Imported Run IDs must be unique" }
+        require(messages.mapTo(mutableSetOf(), MessageEntity::id).size == messages.size) {
+            "Imported message IDs must be unique"
+        }
+        val runsById = runs.associateBy(RunEntity::id)
+        val messagesById = messages.associateBy(MessageEntity::id)
+        require(runs.all {
+            it.status.isTerminal &&
+                it.activeSlot == null &&
+                it.conversationId in conversationIds
+        }) {
+            "Every imported Run must be terminal and belong to an imported conversation"
+        }
+        require(runs.all { run ->
+            run.parentRunId == null ||
+                runsById[run.parentRunId]?.conversationId == run.conversationId
+        }) {
+            "Every imported parent Run must belong to the same replacement conversation"
+        }
+        require(messages.all { message ->
+            message.conversationId in conversationIds &&
+                runsById[message.runId]?.conversationId == message.conversationId &&
+                (message.parentId == null ||
+                    messagesById[message.parentId]?.conversationId == message.conversationId)
+        }) {
+            "Every imported message and parent must belong to its replacement conversation"
+        }
+        deleteAllConversations()
+        conversations.forEach { upsertConversation(it) }
+        runs.forEach { insertRun(it) }
+        messages.forEach { upsertMessage(it) }
+    }
 
     /**
      * Creates a fork as one database commit. A cancelled or rejected import must never leave

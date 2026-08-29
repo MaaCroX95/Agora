@@ -832,6 +832,9 @@
     <string name="import_strategy_merge">マージ</string>
     <string name="import_strategy_replace">置換</string>
     <string name="import_strategy_skip">スキップ</string>
+    <string name="external_import_replace_confirm_title">既存の会話を置き換えますか？</string>
+    <string name="external_import_replace_confirm_message">既存の会話をすべて削除し、選択したインポート会話のみを残します。</string>
+    <string name="external_import_replace_confirm_button">会話を置き換える</string>
     <string name="import_api_keys_warning">このバックアップには認証情報とシークレットが含まれています。これらは平文でインポートされます。送信元を信頼できる場合のみ続行してください。</string>
     <string name="import_button">インポート</string>
     <string name="importing_label">インポート中…</string>

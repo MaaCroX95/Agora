@@ -904,6 +904,9 @@
     <string name="import_strategy_merge">合併</string>
     <string name="import_strategy_replace">取代</string>
     <string name="import_strategy_skip">略過</string>
+    <string name="external_import_replace_confirm_title">取代現有對話？</string>
+    <string name="external_import_replace_confirm_message">這會刪除所有現有對話，且只保留所選的匯入對話。</string>
+    <string name="external_import_replace_confirm_button">取代對話</string>
     <string name="import_api_keys_warning">此匯出包含明文憑證與祕密。僅在信任來源時繼續。</string>
     <string name="third_party_import">第三方</string>
     <string name="claude_import_title">從 Claude 匯入</string>

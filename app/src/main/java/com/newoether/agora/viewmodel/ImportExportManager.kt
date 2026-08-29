@@ -22,7 +22,7 @@ import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.ConversationSettingsTransferCoordinator
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
-import com.newoether.agora.ui.settings.ImportStrategy
+import com.newoether.agora.data.DataImporter.ImportStrategy
 import com.newoether.agora.util.SnackbarEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -307,10 +307,8 @@ class ImportExportManager(
                     ChatEntity(ce.id, ce.title, ce.lastUpdated, ce.selectedBranchesJson, ce.systemPromptId, ce.modelId)
                 }
                 if (strategy == ImportStrategy.REPLACE) {
-                    conversations.deleteAllConversations()
-                    chatEntities.forEach { conversations.upsertConversation(it) }
                     val graph = planImportedLegacyMessages(importData.messages)
-                    conversations.importRunGraph(graph.runs, graph.messages)
+                    chatDao.replaceImportedConversationGraph(chatEntities, graph.runs, graph.messages)
                     _claudeImportProgress.value = 0.8f
                     _claudeImportResult.value = ClaudeChatImporter.ImportResult(chatEntities.size, graph.messages.size)
                 } else {
@@ -404,10 +402,8 @@ class ImportExportManager(
                 }
                 val thoughtsCount = importData.messages.count { it.thoughts != null && it.thoughts.isNotBlank() }
                 if (strategy == ImportStrategy.REPLACE) {
-                    conversations.deleteAllConversations()
-                    chatEntities.forEach { conversations.upsertConversation(it) }
                     val graph = planImportedLegacyMessages(importData.messages)
-                    conversations.importRunGraph(graph.runs, graph.messages)
+                    chatDao.replaceImportedConversationGraph(chatEntities, graph.runs, graph.messages)
                     _gptImportProgress.value = 0.8f
                     _gptImportResult.value = GptChatImporter.ImportResult(chatEntities.size, graph.messages.size, thoughtsCount)
                 } else {

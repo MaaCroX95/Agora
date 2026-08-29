@@ -887,6 +887,9 @@
     <string name="import_strategy_merge">Merge</string>
     <string name="import_strategy_replace">Replace</string>
     <string name="import_strategy_skip">Skip</string>
+    <string name="external_import_replace_confirm_title">Replace Existing Conversations?</string>
+    <string name="external_import_replace_confirm_message">This deletes all existing conversations and keeps only the selected imported conversations.</string>
+    <string name="external_import_replace_confirm_button">Replace Conversations</string>
     <string name="import_api_keys_warning">This export contains credentials and secrets in plain text. Only proceed if you trust the source.</string>
     <string name="import_button">Import</string>
     <string name="importing_label">Importing…</string>

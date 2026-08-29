@@ -1014,6 +1014,9 @@
     <string name="import_strategy_merge">合并</string>
     <string name="import_strategy_replace">替换</string>
     <string name="import_strategy_skip">跳过</string>
+    <string name="external_import_replace_confirm_title">替换现有对话？</string>
+    <string name="external_import_replace_confirm_message">这会删除所有现有对话，并且只保留选中的导入对话。</string>
+    <string name="external_import_replace_confirm_button">替换对话</string>
     <string name="import_api_keys_warning">此导出包含明文凭据与秘密。仅在信任来源时继续。</string>
     <string name="third_party_import">第三方</string>
     <string name="claude_import_title">从 Claude 导入</string>

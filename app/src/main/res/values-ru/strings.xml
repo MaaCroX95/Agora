@@ -832,6 +832,9 @@
     <string name="import_strategy_merge">Объединить</string>
     <string name="import_strategy_replace">Заменить</string>
     <string name="import_strategy_skip">Пропустить</string>
+    <string name="external_import_replace_confirm_title">Заменить существующие беседы?</string>
+    <string name="external_import_replace_confirm_message">Все существующие беседы будут удалены, и останутся только выбранные импортированные беседы.</string>
+    <string name="external_import_replace_confirm_button">Заменить беседы</string>
     <string name="import_api_keys_warning">Эта резервная копия содержит учетные данные и секреты. Они будут импортированы в открытом виде. Продолжайте, только если доверяете источнику.</string>
     <string name="import_button">Импорт</string>
     <string name="importing_label">Импорт…</string>

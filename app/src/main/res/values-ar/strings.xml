@@ -832,6 +832,9 @@
     <string name="import_strategy_merge">دمج</string>
     <string name="import_strategy_replace">استبدال</string>
     <string name="import_strategy_skip">تخطٍّ</string>
+    <string name="external_import_replace_confirm_title">هل تريد استبدال المحادثات الحالية؟</string>
+    <string name="external_import_replace_confirm_message">سيؤدي هذا إلى حذف جميع المحادثات الحالية والاحتفاظ فقط بالمحادثات المستوردة المحددة.</string>
+    <string name="external_import_replace_confirm_button">استبدال المحادثات</string>
     <string name="import_api_keys_warning">تحتوي هذه النسخة الاحتياطية على بيانات اعتماد وأسرار. سيتم استيرادها كنص عادي. تابع فقط إذا كنت تثق بالمصدر.</string>
     <string name="import_button">استيراد</string>
     <string name="importing_label">جارٍ الاستيراد…</string>

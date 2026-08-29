@@ -834,6 +834,9 @@
     <string name="import_strategy_merge">Gộp</string>
     <string name="import_strategy_replace">Thay thế</string>
     <string name="import_strategy_skip">Bỏ qua</string>
+    <string name="external_import_replace_confirm_title">Thay thế các cuộc trò chuyện hiện có?</string>
+    <string name="external_import_replace_confirm_message">Thao tác này xóa tất cả cuộc trò chuyện hiện có và chỉ giữ lại các cuộc trò chuyện đã nhập được chọn.</string>
+    <string name="external_import_replace_confirm_button">Thay thế cuộc trò chuyện</string>
     <string name="import_api_keys_warning">Bản sao lưu này chứa thông tin xác thực và bí mật. Chúng sẽ được nhập dưới dạng văn bản thuần. Chỉ tiếp tục nếu bạn tin tưởng nguồn.</string>
     <string name="import_button">Nhập</string>
     <string name="importing_label">Đang nhập…</string>

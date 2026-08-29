@@ -832,6 +832,9 @@
     <string name="import_strategy_merge">Combinar</string>
     <string name="import_strategy_replace">Reemplazar</string>
     <string name="import_strategy_skip">Omitir</string>
+    <string name="external_import_replace_confirm_title">¿Reemplazar conversaciones existentes?</string>
+    <string name="external_import_replace_confirm_message">Esto elimina todas las conversaciones existentes y conserva solo las conversaciones importadas seleccionadas.</string>
+    <string name="external_import_replace_confirm_button">Reemplazar conversaciones</string>
     <string name="import_api_keys_warning">Esta copia de seguridad contiene credenciales y secretos. Se importarán en texto plano. Continúa solo si confías en el origen.</string>
     <string name="import_button">Importar</string>
     <string name="importing_label">Importando…</string>

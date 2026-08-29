@@ -124,6 +124,15 @@ Secret `MERGE` retains unmatched local secrets and merges imported records by st
 identity. Secret `REPLACE` clears replaceable secret values for existing structural owners when the
 archive omits them, but it does not create an owner for an orphan secret.
 
+ChatGPT and Claude imports expose `MERGE` and `REPLACE` for the selected conversations. `MERGE`
+preserves every unrelated local conversation and adds only imported graph identities that are not
+already present. `REPLACE` deletes every existing conversation graph and leaves only the selected
+imported conversations. The external replacement validates the complete selected graph before any
+delete and performs the delete plus Conversation, Run, and Message writes in one Room transaction.
+The unified Settings UI must present a second destructive confirmation before starting external
+`REPLACE`, explicitly stating that all existing conversations will be deleted and only the selected
+imported conversations will remain.
+
 ## 7. Legacy compatibility and failure behavior
 
 - Unknown JSON fields are ignored; known fields are normalized and validated by their current owner.
