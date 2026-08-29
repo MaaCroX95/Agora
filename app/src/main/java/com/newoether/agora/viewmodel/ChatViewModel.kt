@@ -348,8 +348,8 @@ class ChatViewModel(
         scrollRequests.requestMessage(currentConversationId.value, messageId)
     }
 
-    fun triggerScrollToAbsoluteBottomAfter(conversationId: String, messageId: String) {
-        scrollRequests.requestAbsoluteBottomAfter(conversationId, messageId)
+    fun triggerScrollToAbsoluteBottomAfter(conversationId: String, messageId: String, alignToViewportTop: Boolean = false) {
+        scrollRequests.requestAbsoluteBottomAfter(conversationId, messageId, alignToViewportTop = alignToViewportTop)
     }
 
     fun triggerScrollToAttachedBottomAfter(conversationId: String, messageId: String) {

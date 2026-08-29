@@ -61,6 +61,51 @@ class CompactScrollLifecycleSourceContractTest {
         )
     }
 
+    @Test
+    fun newChatFirstSendUsesOneViewportTopAlignmentOwner() {
+        val root = locateMainSourceRoot()
+        val acceptedInput = File(
+            root,
+            "com/newoether/agora/viewmodel/DirectAcceptedInputEffectExecutor.kt",
+        ).readText()
+        val requests = File(
+            root,
+            "com/newoether/agora/viewmodel/ScrollRequestCoordinator.kt",
+        ).readText()
+        val coordinator = File(
+            root,
+            "com/newoether/agora/ui/chat/ChatScrollCoordinator.kt",
+        ).readText()
+        val streamingTail = File(
+            root,
+            "com/newoether/agora/ui/chat/StreamingTailIndicator.kt",
+        ).readText()
+        val messageList = File(root, "com/newoether/agora/ui/chat/MessageList.kt").readText()
+        assertTrue(
+            acceptedInput.contains(
+                "request.requestScroll(request.conversationId, userMessageId, request.wasNewChat)",
+            ),
+        )
+        assertTrue(requests.contains("val alignToViewportTop: Boolean = false"))
+        assertTrue(requests.contains("alignToViewportTop = alignToViewportTop"))
+        assertTrue(coordinator.contains("alignToViewportTop = request.alignToViewportTop"))
+        assertTrue(streamingTail.contains("resolveMessageListTargetTop("))
+        assertTrue(
+            coordinator.contains(
+                "streamingTailController.absoluteBottomAlignToViewportTop = alignToViewportTop",
+            ),
+        )
+        assertTrue(
+            streamingTail.contains(
+                "var absoluteBottomAlignToViewportTop by mutableStateOf(false)",
+            ),
+        )
+        assertTrue(
+            messageList.contains(
+                "streamingTailController.absoluteBottomTargetTop",
+            ),
+        )
+    }
     private fun locateMainSourceRoot(): File {
         var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
         repeat(8) {

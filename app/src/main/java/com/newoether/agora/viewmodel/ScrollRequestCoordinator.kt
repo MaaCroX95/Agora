@@ -16,6 +16,7 @@ data class AnimatedScrollRequest(
     val targetMessageId: String?,
     val destination: AnimatedScrollDestination = AnimatedScrollDestination.MESSAGE,
     val attachedOnly: Boolean = false,
+    val alignToViewportTop: Boolean = false,
 )
 
 /** Owns one-shot chat scroll requests and their composer/open-transition suppression flags. */
@@ -43,6 +44,7 @@ internal class ScrollRequestCoordinator {
         conversationId: String,
         messageId: String,
         attachedOnly: Boolean = false,
+        alignToViewportTop: Boolean = false,
     ) {
         _request.value = AnimatedScrollRequest(
             id = ids.incrementAndGet(),
@@ -50,6 +52,7 @@ internal class ScrollRequestCoordinator {
             targetMessageId = messageId,
             destination = AnimatedScrollDestination.ABSOLUTE_BOTTOM,
             attachedOnly = attachedOnly,
+            alignToViewportTop = alignToViewportTop,
         )
     }
 

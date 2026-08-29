@@ -116,7 +116,11 @@ internal class MessageGenerationController(
     private val messages: StateFlow<List<ChatMessage>>,
     // -- Callbacks into ChatViewModel-owned side effects --
     private val onScrollToMessage: (String?) -> Unit,
-    private val onScrollToAbsoluteBottomAfter: (conversationId: String, messageId: String) -> Unit,
+    private val onScrollToAbsoluteBottomAfter: (
+        conversationId: String,
+        messageId: String,
+        alignToViewportTop: Boolean,
+    ) -> Unit,
     /** Like [onScrollToAbsoluteBottomAfter] but the scroll is suppressed when the viewport is not
      *  already at the bottom. Used by loop cycles so automated messages never steal the user's
      *  scroll position. */
@@ -258,7 +262,9 @@ internal class MessageGenerationController(
                 streamingMessage = streamingMessage,
             )
         },
-        onScrollToAbsoluteBottomAfter = onScrollToAbsoluteBottomAfter,
+        onScrollToAbsoluteBottomAfter = { conversationId, messageId ->
+            onScrollToAbsoluteBottomAfter(conversationId, messageId, false)
+        },
         onUserMessagePersisted = onUserMessagePersisted,
     )
     private val regenerationService = ConversationRegenerationService(
@@ -293,11 +299,14 @@ internal class MessageGenerationController(
         onMutationFailed = onTreeMutationFailed,
     )
 
-    private fun resolveScrollCallback(policy: SendScrollPolicy): (String, String) -> Unit =
-        when (policy) {
-            SendScrollPolicy.FORCE -> onScrollToAbsoluteBottomAfter
-            SendScrollPolicy.ATTACHED_ONLY -> onScrollToAttachedBottomAfter
+    private fun resolveScrollCallback(
+        policy: SendScrollPolicy,
+    ): (String, String, Boolean) -> Unit = when (policy) {
+        SendScrollPolicy.FORCE -> onScrollToAbsoluteBottomAfter
+        SendScrollPolicy.ATTACHED_ONLY -> { conversationId, messageId, _ ->
+            onScrollToAttachedBottomAfter(conversationId, messageId)
         }
+    }
 
     /**
      * Run [block] only if the currently-open conversation is [genId]. Guards synchronous

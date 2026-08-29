@@ -1,5 +1,6 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.ui.chat.resolveMessageListTargetTop
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -25,7 +26,7 @@ class ScrollRequestCoordinatorTest {
     }
 
     @Test
-    fun `absolute and attached requests preserve destination and monotonic identity`() {
+    fun `absolute attached and top-aligned requests preserve destination and monotonic identity`() {
         val coordinator = ScrollRequestCoordinator()
         coordinator.requestMessage("conversation", null)
 
@@ -47,6 +48,17 @@ class ScrollRequestCoordinatorTest {
         )
         assertEquals(3L, coordinator.request.value?.id)
         assertTrue(coordinator.request.value?.attachedOnly == true)
+        assertTrue(coordinator.request.value?.alignToViewportTop == false)
+        coordinator.requestAbsoluteBottomAfter(
+            conversationId = "conversation",
+            messageId = "new-chat",
+            alignToViewportTop = true,
+        )
+        assertEquals(4L, coordinator.request.value?.id)
+        assertTrue(coordinator.request.value?.attachedOnly == false)
+        assertTrue(coordinator.request.value?.alignToViewportTop == true)
+        assertEquals(140f, resolveMessageListTargetTop(false).value)
+        assertEquals(0f, resolveMessageListTargetTop(true).value)
     }
 
     @Test

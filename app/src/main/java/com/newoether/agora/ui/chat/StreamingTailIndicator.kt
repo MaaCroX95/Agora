@@ -49,6 +49,10 @@ internal class StreamingTailController {
 
     var isAttached by mutableStateOf(false)
         internal set
+    var absoluteBottomAlignToViewportTop by mutableStateOf(false)
+        internal set
+    val absoluteBottomTargetTop
+        get() = resolveMessageListTargetTop(absoluteBottomAlignToViewportTop)
 }
 
 @Composable
