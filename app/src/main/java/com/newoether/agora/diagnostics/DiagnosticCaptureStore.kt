@@ -18,7 +18,6 @@ internal data class DiagnosticStoredState(
 /** Owns the app-private durable representation of the active diagnostic capture session. */
 internal class DiagnosticCaptureStore(
     private val directory: File,
-    private val maxEvents: Int = DEFAULT_MAX_EVENTS,
     private val maxPayloadBytes: Int = DEFAULT_MAX_PAYLOAD_BYTES,
     private val maxRetainedPayloadBytes: Long = DEFAULT_MAX_RETAINED_PAYLOAD_BYTES,
 ) {
@@ -31,7 +30,6 @@ internal class DiagnosticCaptureStore(
     }
 
     init {
-        require(maxEvents > 0)
         require(maxPayloadBytes > 0)
         require(maxRetainedPayloadBytes > 0L)
     }
@@ -45,19 +43,9 @@ internal class DiagnosticCaptureStore(
         if (loadedMetadata.schemaVersion != SCHEMA_VERSION) return deleteAll()
 
         var dropped = 0L
-        var evicted = 0L
         var newlyTruncated = 0L
-        val allEventFiles = eventFiles()
-        val retainedEventFiles = if (allEventFiles.size > maxEvents) {
-            val obsoleteFiles = allEventFiles.dropLast(maxEvents)
-            obsoleteFiles.forEach(File::delete)
-            evicted += obsoleteFiles.size
-            allEventFiles.takeLast(maxEvents)
-        } else {
-            allEventFiles
-        }
         val events = buildList {
-            retainedEventFiles.forEach { file ->
+            eventFiles().forEach { file ->
                 val sequence = file.name.removeSuffix(EVENT_EXTENSION).toLongOrNull()
                 val event = runCatching {
                     json.decodeFromString<DiagnosticEvent>(file.readText(Charsets.UTF_8))
@@ -76,44 +64,92 @@ internal class DiagnosticCaptureStore(
             }
         }.sortedBy(DiagnosticEvent::sequence)
 
+        val retainedPayloadBytes = events.sumOf(::payloadByteSize)
+        val capacityLimitReached =
+            loadedMetadata.capacityLimitReached ||
+                retainedPayloadBytes >= maxRetainedPayloadBytes
         val nextSequence = max(
             loadedMetadata.nextSequence,
             (events.lastOrNull()?.sequence ?: 0L) + 1L,
         )
-        var state = DiagnosticStoredState(
+        val state = DiagnosticStoredState(
             metadata = loadedMetadata.copy(
+                state = if (capacityLimitReached && loadedMetadata.sessionId != null) {
+                    DiagnosticCaptureState.PAUSED
+                } else {
+                    loadedMetadata.state
+                },
                 nextSequence = nextSequence,
                 droppedEventCount = loadedMetadata.droppedEventCount + dropped,
-                evictedEventCount = loadedMetadata.evictedEventCount + evicted,
                 truncatedPayloadCount = loadedMetadata.truncatedPayloadCount + newlyTruncated,
+                capacityLimitReached = capacityLimitReached,
             ),
             events = events,
-            retainedPayloadBytes = events.sumOf(::payloadByteSize),
+            retainedPayloadBytes = retainedPayloadBytes,
         )
-        state = enforceBounds(state)
         persistMetadata(state)
         return state
     }
 
-    fun append(state: DiagnosticStoredState, event: DiagnosticEvent): DiagnosticStoredState {
-        require(event.sequence > 0L)
-        ensureDirectories()
-        val normalized = normalize(event)
-        val target = eventFile(normalized.event.sequence)
-        require(!target.exists()) { "Diagnostic event sequence already exists: ${event.sequence}" }
-        writeAtomically(target, json.encodeToString(normalized.event))
+    fun append(state: DiagnosticStoredState, event: DiagnosticEvent): DiagnosticStoredState =
+        appendBatch(state, listOf(event))
 
-        var next = DiagnosticStoredState(
+    fun appendBatch(
+        state: DiagnosticStoredState,
+        events: List<DiagnosticEvent>,
+    ): DiagnosticStoredState {
+        if (events.isEmpty() || state.metadata.capacityLimitReached) return state
+        ensureDirectories()
+        events.forEachIndexed { index, event ->
+            require(event.sequence > 0L) {
+                "Diagnostic event sequence must be positive: ${event.sequence}"
+            }
+            require(event.sequence == state.metadata.nextSequence + index) {
+                "Diagnostic event sequence is not contiguous: ${event.sequence}"
+            }
+        }
+
+        val accepted = mutableListOf<NormalizedEvent>()
+        var retainedPayloadBytes = state.retainedPayloadBytes
+        var capacityLimitReached = retainedPayloadBytes >= maxRetainedPayloadBytes
+        for (event in events) {
+            if (capacityLimitReached) break
+            val normalized = normalize(event)
+            val nextPayloadBytes = retainedPayloadBytes + normalized.payloadBytes
+            if (nextPayloadBytes > maxRetainedPayloadBytes) {
+                capacityLimitReached = true
+                break
+            }
+            val target = eventFile(normalized.event.sequence)
+            require(!target.exists()) {
+                "Diagnostic event sequence already exists: ${normalized.event.sequence}"
+            }
+            writeAtomically(target, json.encodeToString(normalized.event))
+            accepted += normalized
+            retainedPayloadBytes = nextPayloadBytes
+            if (retainedPayloadBytes >= maxRetainedPayloadBytes) {
+                capacityLimitReached = true
+            }
+        }
+
+        val acceptedEvents = accepted.map(NormalizedEvent::event)
+        val next = DiagnosticStoredState(
             metadata = state.metadata.copy(
-                nextSequence = max(state.metadata.nextSequence, normalized.event.sequence + 1L),
-                truncatedPayloadCount = state.metadata.truncatedPayloadCount + normalized.truncatedCount,
+                state = if (capacityLimitReached) {
+                    DiagnosticCaptureState.PAUSED
+                } else {
+                    state.metadata.state
+                },
+                nextSequence = acceptedEvents.lastOrNull()?.sequence?.plus(1L)
+                    ?: state.metadata.nextSequence,
+                truncatedPayloadCount = state.metadata.truncatedPayloadCount +
+                    accepted.sumOf(NormalizedEvent::truncatedCount),
+                capacityLimitReached = capacityLimitReached,
             ),
-            events = (state.events + normalized.event).sortedBy(DiagnosticEvent::sequence),
-            retainedPayloadBytes = state.retainedPayloadBytes + normalized.payloadBytes,
+            events = state.events + acceptedEvents,
+            retainedPayloadBytes = retainedPayloadBytes,
         )
-        next = enforceBounds(next)
-        persistMetadata(next)
-        return next
+        return persistMetadata(next)
     }
 
     fun persistMetadata(state: DiagnosticStoredState): DiagnosticStoredState {
@@ -132,6 +168,7 @@ internal class DiagnosticCaptureStore(
                     droppedEventCount = 0L,
                     evictedEventCount = 0L,
                     truncatedPayloadCount = 0L,
+                    capacityLimitReached = false,
                 ),
             ),
         )
@@ -140,26 +177,6 @@ internal class DiagnosticCaptureStore(
     fun deleteAll(): DiagnosticStoredState {
         directory.deleteRecursively()
         return DiagnosticStoredState()
-    }
-
-    private fun enforceBounds(initial: DiagnosticStoredState): DiagnosticStoredState {
-        if (initial.events.isEmpty()) return initial.copy(retainedPayloadBytes = 0L)
-        val retained = initial.events.toMutableList()
-        var bytes = initial.retainedPayloadBytes
-        var evicted = 0L
-        while (retained.size > maxEvents || bytes > maxRetainedPayloadBytes) {
-            val removed = retained.removeAt(0)
-            bytes -= payloadByteSize(removed)
-            eventFile(removed.sequence).delete()
-            evicted++
-        }
-        return initial.copy(
-            metadata = initial.metadata.copy(
-                evictedEventCount = initial.metadata.evictedEventCount + evicted,
-            ),
-            events = retained,
-            retainedPayloadBytes = bytes.coerceAtLeast(0L),
-        )
     }
 
     private fun normalize(event: DiagnosticEvent): NormalizedEvent {
@@ -294,9 +311,8 @@ internal class DiagnosticCaptureStore(
     )
 
     internal companion object {
-        const val DEFAULT_MAX_EVENTS = 512
         const val DEFAULT_MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
-        const val DEFAULT_MAX_RETAINED_PAYLOAD_BYTES = 16L * 1024L * 1024L
+        const val DEFAULT_MAX_RETAINED_PAYLOAD_BYTES = 64L * 1024L * 1024L
         private const val SCHEMA_VERSION = 1
         private const val EVENTS_DIRECTORY = "events"
         private const val METADATA_FILE = "capture-metadata.json"

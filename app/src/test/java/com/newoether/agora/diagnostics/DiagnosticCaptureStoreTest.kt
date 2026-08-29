@@ -3,6 +3,7 @@ package com.newoether.agora.diagnostics
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -37,65 +38,156 @@ class DiagnosticCaptureStoreTest {
         assertEquals(listOf(1L), restored.events.map(DiagnosticEvent::sequence))
         assertEquals("event-one", restored.events.single().wireText())
         assertEquals(9L, restored.retainedPayloadBytes)
+        assertFalse(restored.metadata.capacityLimitReached)
     }
 
     @Test
-    fun `payload and retained limits truncate then evict oldest`() {
+    fun `payload limit truncates without an event count eviction`() {
         val store = DiagnosticCaptureStore(
             directory = root,
-            maxEvents = 2,
             maxPayloadBytes = 4,
-            maxRetainedPayloadBytes = 6L,
+            maxRetainedPayloadBytes = 1_024L,
         )
-        var state = DiagnosticStoredState(metadata = metadata())
+        val events = listOf(wireEvent(1L, "abcdef")) +
+            (2L..513L).map { sequence -> wireEvent(sequence, "x") }
+        val state = store.appendBatch(
+            DiagnosticStoredState(metadata = metadata()),
+            events,
+        )
 
-        state = store.append(state, wireEvent(1L, "abcdef"))
-        assertEquals("abcd", state.events.single().wireText())
-        assertTrue(state.events.single().wireCapture().truncated)
+        assertEquals(513, state.events.size)
+        assertEquals(1L, state.events.first().sequence)
+        assertEquals(513L, state.events.last().sequence)
+        assertEquals("abcd", state.events.first().wireText())
+        assertTrue(state.events.first().wireCapture().truncated)
         assertEquals(1L, state.metadata.truncatedPayloadCount)
-
-        state = store.append(state, wireEvent(2L, "12"))
-        state = store.append(state, wireEvent(3L, "34"))
-
-        assertEquals(listOf(2L, 3L), state.events.map(DiagnosticEvent::sequence))
-        assertEquals(1L, state.metadata.evictedEventCount)
-        assertEquals(4L, state.retainedPayloadBytes)
-        assertEquals(listOf(2L, 3L), DiagnosticCaptureStore(root, 2, 4, 6L).load()
-            .events.map(DiagnosticEvent::sequence))
+        assertEquals(0L, state.metadata.evictedEventCount)
+        assertEquals(516L, state.retainedPayloadBytes)
+        assertFalse(state.metadata.capacityLimitReached)
     }
 
     @Test
-    fun `reload reapplies tighter payload and event limits without double counting`() {
+    fun `batch retains the complete fitting prefix and rejects the over-limit event whole`() {
+        val store = DiagnosticCaptureStore(
+            directory = root,
+            maxPayloadBytes = 100,
+            maxRetainedPayloadBytes = 6L,
+        )
+        val state = store.appendBatch(
+            DiagnosticStoredState(metadata = metadata()),
+            listOf(
+                wireEvent(1L, "abc"),
+                wireEvent(2L, "de"),
+                wireEvent(3L, "fg"),
+            ),
+        )
+
+        assertEquals(listOf(1L, 2L), state.events.map(DiagnosticEvent::sequence))
+        assertEquals(listOf("abc", "de"), state.events.map { it.wireText() })
+        assertEquals(5L, state.retainedPayloadBytes)
+        assertEquals(3L, state.metadata.nextSequence)
+        assertEquals(DiagnosticCaptureState.PAUSED, state.metadata.state)
+        assertTrue(state.metadata.capacityLimitReached)
+        assertEquals(0L, state.metadata.evictedEventCount)
+        assertFalse(File(root, "events/00000000000000000003.json").exists())
+    }
+
+    @Test
+    fun `event reaching the exact capacity is retained and pauses capture`() {
+        val store = DiagnosticCaptureStore(
+            directory = root,
+            maxPayloadBytes = 100,
+            maxRetainedPayloadBytes = 5L,
+        )
+        val state = store.appendBatch(
+            DiagnosticStoredState(metadata = metadata()),
+            listOf(wireEvent(1L, "abc"), wireEvent(2L, "de")),
+        )
+
+        assertEquals(listOf(1L, 2L), state.events.map(DiagnosticEvent::sequence))
+        assertEquals(5L, state.retainedPayloadBytes)
+        assertEquals(3L, state.metadata.nextSequence)
+        assertEquals(DiagnosticCaptureState.PAUSED, state.metadata.state)
+        assertTrue(state.metadata.capacityLimitReached)
+    }
+
+    @Test
+    fun `capacity pause survives reload without deleting retained events`() {
+        val store = DiagnosticCaptureStore(root, maxPayloadBytes = 100, maxRetainedPayloadBytes = 5L)
+        val limited = store.appendBatch(
+            DiagnosticStoredState(metadata = metadata()),
+            listOf(wireEvent(1L, "abc"), wireEvent(2L, "de")),
+        )
+
+        val restored = DiagnosticCaptureStore(
+            root,
+            maxPayloadBytes = 100,
+            maxRetainedPayloadBytes = 5L,
+        ).load()
+
+        assertEquals(limited, restored)
+        assertEquals(listOf(1L, 2L), restored.events.map(DiagnosticEvent::sequence))
+        assertEquals(0L, restored.metadata.evictedEventCount)
+    }
+
+    @Test
+    fun `load preserves legacy events over a tighter capacity and marks the session incomplete`() {
         val permissive = DiagnosticCaptureStore(
             directory = root,
-            maxEvents = 10,
             maxPayloadBytes = 100,
-            maxRetainedPayloadBytes = 1_000L,
+            maxRetainedPayloadBytes = 100L,
         )
-        var state = DiagnosticStoredState(metadata = metadata())
-        state = permissive.append(state, wireEvent(1L, "abcdef"))
-        state = permissive.append(state, wireEvent(2L, "12"))
-        permissive.append(state, wireEvent(3L, "34"))
+        val stored = permissive.appendBatch(
+            DiagnosticStoredState(metadata = metadata()),
+            listOf(wireEvent(1L, "abcd"), wireEvent(2L, "efgh")),
+        )
 
-        val tightened = DiagnosticCaptureStore(root, 2, 4, 100L).load()
-        val secondReload = DiagnosticCaptureStore(root, 2, 4, 100L).load()
+        val tightened = DiagnosticCaptureStore(
+            root,
+            maxPayloadBytes = 100,
+            maxRetainedPayloadBytes = 6L,
+        ).load()
 
-        assertEquals(listOf(2L, 3L), tightened.events.map(DiagnosticEvent::sequence))
-        assertEquals(1L, tightened.metadata.evictedEventCount)
-        assertEquals(0L, tightened.metadata.truncatedPayloadCount)
-        assertEquals(tightened.metadata, secondReload.metadata)
+        assertEquals(stored.events, tightened.events)
+        assertEquals(8L, tightened.retainedPayloadBytes)
+        assertEquals(DiagnosticCaptureState.PAUSED, tightened.metadata.state)
+        assertTrue(tightened.metadata.capacityLimitReached)
+        assertEquals(0L, tightened.metadata.evictedEventCount)
+    }
+
+    @Test
+    fun `legacy schema one metadata defaults capacity marker to false`() {
+        root.mkdirs()
+        File(root, "capture-metadata.json").writeText(
+            """{"schemaVersion":1,"state":"RUNNING","sessionId":"legacy","startedAtMillis":5,"nextSequence":1,"droppedEventCount":0,"evictedEventCount":2,"truncatedPayloadCount":0}""",
+        )
+
+        val restored = DiagnosticCaptureStore(root).load()
+
+        assertEquals(DiagnosticCaptureState.RUNNING, restored.metadata.state)
+        assertEquals("legacy", restored.metadata.sessionId)
+        assertEquals(2L, restored.metadata.evictedEventCount)
+        assertFalse(restored.metadata.capacityLimitReached)
     }
 
     @Test
     fun `reload truncates oversized persisted payload once`() {
-        val permissive = DiagnosticCaptureStore(root, 10, 100, 1_000L)
+        val permissive = DiagnosticCaptureStore(root, maxPayloadBytes = 100, maxRetainedPayloadBytes = 1_000L)
         val state = permissive.append(
             DiagnosticStoredState(metadata = metadata()),
             wireEvent(1L, "abcdef"),
         )
 
-        val tightened = DiagnosticCaptureStore(root, 10, 4, 1_000L).load()
-        val secondReload = DiagnosticCaptureStore(root, 10, 4, 1_000L).load()
+        val tightened = DiagnosticCaptureStore(
+            root,
+            maxPayloadBytes = 4,
+            maxRetainedPayloadBytes = 1_000L,
+        ).load()
+        val secondReload = DiagnosticCaptureStore(
+            root,
+            maxPayloadBytes = 4,
+            maxRetainedPayloadBytes = 1_000L,
+        ).load()
 
         assertEquals("abcd", tightened.events.single().wireText())
         assertEquals(1L, tightened.metadata.truncatedPayloadCount)
@@ -104,23 +196,45 @@ class DiagnosticCaptureStoreTest {
     }
 
     @Test
-    fun `clear preserves paused session and monotonic sequence while resetting counters`() {
+    fun `batch rejects non-positive event sequences`() {
         val store = DiagnosticCaptureStore(root)
-        var state = DiagnosticStoredState(
-            metadata = metadata(
-                state = DiagnosticCaptureState.PAUSED,
-                sessionId = "paused-session",
-                startedAtMillis = 50L,
-                nextSequence = 7L,
-                dropped = 2L,
-                evicted = 3L,
-                truncated = 4L,
-            ),
-        )
-        state = store.append(state, wireEvent(7L, "retained"))
 
-        val cleared = store.clear(state)
-        val restored = DiagnosticCaptureStore(root).load()
+        assertThrows(IllegalArgumentException::class.java) {
+            store.appendBatch(
+                DiagnosticStoredState(metadata = metadata(nextSequence = 0L)),
+                listOf(wireEvent(0L, "invalid")),
+            )
+        }
+        assertFalse(File(root, "events/00000000000000000000.json").exists())
+    }
+
+    @Test
+    fun `clear preserves paused session and monotonic sequence while resetting completeness counters`() {
+        val store = DiagnosticCaptureStore(
+            directory = root,
+            maxPayloadBytes = 100,
+            maxRetainedPayloadBytes = 8L,
+        )
+        val limited = store.append(
+            DiagnosticStoredState(
+                metadata = metadata(
+                    state = DiagnosticCaptureState.RUNNING,
+                    sessionId = "paused-session",
+                    startedAtMillis = 50L,
+                    nextSequence = 7L,
+                    dropped = 2L,
+                    evicted = 3L,
+                    truncated = 4L,
+                ),
+            ),
+            wireEvent(7L, "retained"),
+        )
+        assertEquals(listOf(7L), limited.events.map(DiagnosticEvent::sequence))
+        assertEquals(8L, limited.metadata.nextSequence)
+        assertTrue(limited.metadata.capacityLimitReached)
+
+        val cleared = store.clear(limited)
+        val restored = store.load()
 
         assertTrue(cleared.events.isEmpty())
         assertEquals(DiagnosticCaptureState.PAUSED, restored.metadata.state)
@@ -129,6 +243,7 @@ class DiagnosticCaptureStoreTest {
         assertEquals(0L, restored.metadata.droppedEventCount)
         assertEquals(0L, restored.metadata.evictedEventCount)
         assertEquals(0L, restored.metadata.truncatedPayloadCount)
+        assertFalse(restored.metadata.capacityLimitReached)
         assertTrue(restored.events.isEmpty())
     }
 
@@ -194,6 +309,7 @@ class DiagnosticCaptureStoreTest {
         dropped: Long = 0L,
         evicted: Long = 0L,
         truncated: Long = 0L,
+        capacityLimitReached: Boolean = false,
     ) = DiagnosticCaptureMetadata(
         state = state,
         sessionId = sessionId,
@@ -202,6 +318,7 @@ class DiagnosticCaptureStoreTest {
         droppedEventCount = dropped,
         evictedEventCount = evicted,
         truncatedPayloadCount = truncated,
+        capacityLimitReached = capacityLimitReached,
     )
 
     private fun wireEvent(sequence: Long, value: String) = DiagnosticEvent(

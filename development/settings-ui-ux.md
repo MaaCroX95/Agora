@@ -86,6 +86,14 @@ layout, states, density, or interaction design has been approved.
   16 dp tonal elevation, and a 12 dp rounded shape.
 - Summary/Raw event-card height changes use a 250 ms tween when spatial
   transitions are allowed and snap when Reduced Motion disables them.
+- A capture session retains every accepted event in order without an event-count
+  limit or oldest-event eviction. Retained payload is capped at 64 MiB; reaching
+  that boundary pauses capture and persistently marks the session incomplete.
+  The event that would exceed the boundary is rejected whole. Existing 2 MiB
+  per-captured-text truncation remains the only payload truncation policy.
+- Clearing a capacity-limited session removes its retained events and capacity
+  marker while preserving the session identity and monotonic sequence. It is
+  the only path that re-enables capture after the capacity boundary is reached.
 - Both lower-right floating action buttons are explicitly circular. Their stack
   uses 24 dp end and bottom outer margins with a 12 dp gap between buttons.
 - Page text inherits the application Material typography. Do not apply a

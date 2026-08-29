@@ -37,6 +37,7 @@ internal data class DiagnosticCaptureMetadata(
     val droppedEventCount: Long = 0L,
     val evictedEventCount: Long = 0L,
     val truncatedPayloadCount: Long = 0L,
+    val capacityLimitReached: Boolean = false,
 )
 
 @Serializable
@@ -117,6 +118,7 @@ data class DiagnosticSnapshot(
     val droppedEventCount: Long = 0L,
     val evictedEventCount: Long = 0L,
     val truncatedPayloadCount: Long = 0L,
+    val capacityLimitReached: Boolean = false,
 ) {
     val isCaptureActive: Boolean get() = state == DiagnosticCaptureState.RUNNING
 }
