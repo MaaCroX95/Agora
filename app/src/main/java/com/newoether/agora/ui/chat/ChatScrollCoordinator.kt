@@ -97,7 +97,6 @@ internal class ChatScrollCoordinator internal constructor(
     }
     fun requestAbsoluteBottomScroll(
         feedbackSpec: FeedbackScrollSpec = DefaultFeedbackScrollSpec,
-        alignToViewportTop: Boolean = false,
     ): Boolean {
         if (absoluteBottomScrollPhase.isActive) return false
         imeBottomAnchorStateHolder.value = reduceImeBottomAnchor(
@@ -109,7 +108,6 @@ internal class ChatScrollCoordinator internal constructor(
             AbsoluteBottomScrollEvent.Requested,
         )
         absoluteBottomRequestFeedbackSpecState.value = feedbackSpec
-        streamingTailController.absoluteBottomAlignToViewportTop = alignToViewportTop
         absoluteBottomRequestTokenState.longValue =
             if (absoluteBottomRequestTokenState.longValue == Long.MAX_VALUE) 1L
             else absoluteBottomRequestTokenState.longValue + 1L
@@ -543,10 +541,7 @@ internal class ChatScrollCoordinator internal constructor(
                             currentUserDragRevision = userDragRevision,
                         )
                         if (shouldScroll) {
-                            requestAbsoluteBottomScroll(
-                                feedbackSpec = SendFeedbackScrollSpec,
-                                alignToViewportTop = request.alignToViewportTop,
-                            )
+                            requestAbsoluteBottomScroll(feedbackSpec = SendFeedbackScrollSpec)
                         }
                     } else if (!targetCommitted) {
                         DebugLog.e(
@@ -630,9 +625,7 @@ internal class ChatScrollCoordinator internal constructor(
         } else {
             calculateTailMinHeightPx(
                 viewportHeightPx = viewportHeightPx,
-                targetTopPx = with(density) {
-                    streamingTailController.absoluteBottomTargetTop.roundToPx()
-                },
+                targetTopPx = with(density) { 140.dp.roundToPx() },
                 bottomObstructionPx = with(density) {
                     (bottomBarHeight + shareSelectionBarSpace + 8.dp).roundToPx()
                 },

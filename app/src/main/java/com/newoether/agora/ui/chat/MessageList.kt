@@ -570,7 +570,7 @@ internal fun MessageList(
     } else {
         calculateTailMinHeightPx(
             viewportHeightPx = viewportHeight,
-            targetTopPx = with(density) { streamingTailController.absoluteBottomTargetTop.roundToPx() },
+            targetTopPx = with(density) { 140.dp.roundToPx() },
             bottomObstructionPx = with(density) {
                 (bottomBarHeight + 8.dp).roundToPx()
             },

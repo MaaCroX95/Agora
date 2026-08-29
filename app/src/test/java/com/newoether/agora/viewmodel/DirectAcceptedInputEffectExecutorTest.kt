@@ -75,7 +75,7 @@ class DirectAcceptedInputEffectExecutorTest {
                 "persist-user:$USER_ID",
                 "accept-callback:$USER_ID",
                 "accept-event:$USER_ID",
-                "scroll:$USER_ID:false",
+                "scroll:$USER_ID",
                 "bound-launch",
             ),
             fixture.events,
@@ -214,7 +214,6 @@ class DirectAcceptedInputEffectExecutorTest {
         assertTrue(acceptanceIndex > transferIndex)
         assertTrue(publicationIndex > acceptanceIndex)
         assertTrue(clearIndex > publicationIndex)
-        assertTrue(fixture.events.contains("scroll:$USER_ID:true"))
         state.dispose()
         Unit
     }
@@ -344,9 +343,7 @@ class DirectAcceptedInputEffectExecutorTest {
             requestKind = "chat",
             newConversationSettings = newConversationSettings,
             alreadyHoldsLock = false,
-            requestScroll = { _, messageId, alignToViewportTop ->
-                events += "scroll:$messageId:$alignToViewportTop"
-            },
+            requestScroll = { _, messageId -> events += "scroll:$messageId" },
             onAccepted = { events += "accept-callback:${it.messageId}" },
             onModelMessageCreated = null,
         )

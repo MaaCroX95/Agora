@@ -1,8 +1,6 @@
 package com.newoether.agora.ui.chat
 
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageGenerationBoundaryResolver
 import com.newoether.agora.model.Participant
@@ -23,9 +21,6 @@ internal fun messageListLayoutMode(
     else -> MessageListLayoutMode.STABLE
 }
 
-internal val DefaultMessageListTargetTop: Dp = 140.dp
-internal fun resolveMessageListTargetTop(alignToViewportTop: Boolean): Dp =
-    if (alignToViewportTop) 0.dp else DefaultMessageListTargetTop
 internal fun calculateTailMinHeightPx(
     viewportHeightPx: Int,
     targetTopPx: Int,

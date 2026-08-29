@@ -61,11 +61,7 @@ internal data class DirectAcceptedInputRequest(
     val requestKind: String,
     val newConversationSettings: ConversationSettings? = null,
     val alreadyHoldsLock: Boolean,
-    val requestScroll: (
-        conversationId: String,
-        messageId: String,
-        alignToViewportTop: Boolean,
-    ) -> Unit,
+    val requestScroll: (conversationId: String, messageId: String) -> Unit,
     val onAccepted: suspend (SendAcceptance) -> Unit,
     val onModelMessageCreated: ((String) -> Unit)?,
 ) {
@@ -263,7 +259,7 @@ internal class DirectAcceptedInputEffectExecutor(
 
                     if (request.wasNewChat) {
                         publishAndClearNewChatIfNeeded()
-                        request.requestScroll(request.conversationId, userMessageId, request.wasNewChat)
+                        request.requestScroll(request.conversationId, userMessageId)
                     }
 
                     val placeholder = toUiMessage(modelEntity)
@@ -273,7 +269,7 @@ internal class DirectAcceptedInputEffectExecutor(
                     }
                     if (isConversationOpen(request.conversationId)) {
                         if (!request.wasNewChat) {
-                            request.requestScroll(request.conversationId, userMessageId, request.wasNewChat)
+                            request.requestScroll(request.conversationId, userMessageId)
                         }
                         renderStore.commitGraph(
                             committedMessages = listOf(
