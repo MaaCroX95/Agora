@@ -72,7 +72,7 @@ internal fun ollamaStreamTermination(
     timedOut: Boolean = false,
 ): StreamTermination = StreamTermination(
     sawTerminalMarker = sawDone,
-    stopReason = doneReason?.trim()?.lowercase(),
+    stopReason = doneReason?.trim()?.takeIf(String::isNotEmpty)?.lowercase(),
     producedContent = producedContent,
     toolCallInFlight = toolCallInFlight,
     streamError = streamError,
@@ -316,6 +316,9 @@ class OllamaProvider : LlmProvider {
                             consecutiveReadTimeouts = 0
                             try {
                                 val response = json.decodeFromString<OllamaStreamResponse>(line)
+                                response.doneReason?.takeIf(String::isNotBlank)?.let {
+                                    doneReason = it
+                                }
                                 response.error?.takeIf(String::isNotBlank)?.let { message ->
                                     streamError = GenerationError.Api(
                                         code = null,
@@ -326,7 +329,7 @@ class OllamaProvider : LlmProvider {
                                 response.message?.let { msg ->
                                     // 1. Handle explicit thinking field (Ollama 0.5.4+)
                                     msg.thinking?.let { thinking ->
-                                        if (thinking.isNotEmpty() && config.thinkingEnabled) {
+                                        if (thinking.isNotBlank()) {
                                             emitTracked(StreamEvent.ThoughtChunk(thinking, null))
                                         }
                                     }
@@ -337,7 +340,7 @@ class OllamaProvider : LlmProvider {
                                     msg.toolCalls?.takeIf { it.isNotEmpty() }?.let { toolCalls ->
                                         val parsed = toolCalls.map { tc ->
                                             val streamKey = "call_stream_${java.util.UUID.randomUUID()}"
-                                            val id = tc.id
+                                            val id = tc.id?.takeIf(String::isNotBlank)
                                                 ?: "${Constants.TOOL_CALL_ID_PREFIX}${java.util.UUID.randomUUID()}"
                                             val name = tc.function?.name.orEmpty()
                                             val args = tc.function?.arguments?.let {
@@ -393,7 +396,6 @@ class OllamaProvider : LlmProvider {
                                 }
                                 if (response.done) {
                                     sawDone = true
-                                    doneReason = response.doneReason
                                     emit(StreamEvent.UsageUpdate(response.toTokenUsage()))
                                 }
                                 if (streamError != null || sawDone) break

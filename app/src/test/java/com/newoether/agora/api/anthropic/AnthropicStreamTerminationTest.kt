@@ -57,6 +57,20 @@ class AnthropicStreamTerminationTest {
     }
 
     @Test
+    fun blankRelayStopReasonCannotEraseEffectiveValue() {
+        val router = AnthropicStreamEventRouter()
+        router.route(decode("""{"type":"message_delta","delta":{"stop_reason":"max_tokens"}}"""))
+        router.route(
+            decode(
+                """{"type":"message_stop","message":{"stop_reason":" "}}"""
+            )
+        )
+
+        assertEquals("max_tokens", router.stopReason)
+        assertTrue(router.messageStopReceived)
+    }
+
+    @Test
     fun fieldlessMessageStop_stillProvesSemanticCompletion() {
         // Spec-compliant message_stop carries no fields at all.
         val router = AnthropicStreamEventRouter()

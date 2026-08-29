@@ -729,32 +729,48 @@ class GeminiProvider(
                                 inThoughtBlock = false
                                 candidate?.content?.parts?.forEach { part ->
                                     var isPartOfThought = false
+                                    val partThoughtSignature =
+                                        part.thoughtSignature?.takeIf(String::isNotBlank)
+                                    partThoughtSignature?.let { signature ->
+                                        currentThoughtSignature = signature
+                                        isPartOfThought = true
+                                        inThoughtBlock = true
+                                    }
                                     part.thought?.let { thoughtElement ->
                                         if (thoughtElement is JsonPrimitive) {
                                             if (thoughtElement.isString) {
                                                 val content = thoughtElement.content
-                                                emitTracked(StreamEvent.ThoughtChunk(content, extractThoughtTitle(content), currentThoughtSignature))
-                                                isPartOfThought = true
-                                                inThoughtBlock = true
+                                                content.takeIf(String::isNotBlank)?.let {
+                                                    emitTracked(
+                                                        StreamEvent.ThoughtChunk(
+                                                            it,
+                                                            extractThoughtTitle(it),
+                                                            currentThoughtSignature,
+                                                        ),
+                                                    )
+                                                    isPartOfThought = true
+                                                    inThoughtBlock = true
+                                                }
                                             } else if (thoughtElement.content == "true") {
                                                 isPartOfThought = true
                                                 inThoughtBlock = true
                                             }
                                         }
                                     }
-                                    part.reasoningContent?.let {
+                                    part.reasoningContent?.takeIf(String::isNotBlank)?.let {
                                         emitTracked(StreamEvent.ThoughtChunk(it, extractThoughtTitle(it), currentThoughtSignature))
                                         isPartOfThought = true
                                         inThoughtBlock = true
                                     }
-                                    part.thoughtSignature?.let { sig ->
-                                        currentThoughtSignature = sig
-                                        isPartOfThought = true
-                                        inThoughtBlock = true
-                                    }
-                                    part.text?.takeIf(String::isNotEmpty)?.let {
+                                    part.text?.takeIf(String::isNotBlank)?.let {
                                         if (isPartOfThought || inThoughtBlock) {
-                                            emitTracked(StreamEvent.ThoughtChunk(it, extractThoughtTitle(it), currentThoughtSignature))
+                                            emitTracked(
+                                                StreamEvent.ThoughtChunk(
+                                                    it,
+                                                    extractThoughtTitle(it),
+                                                    currentThoughtSignature,
+                                                ),
+                                            )
                                             inThoughtBlock = false
                                         } else {
                                             answerText.append(it)
@@ -780,7 +796,8 @@ class GeminiProvider(
                                         )
                                     }
                                     part.functionCall?.let { fc ->
-                                        val callId = fc.id ?: "call_${UUID.randomUUID()}"
+                                        val callId = fc.id?.takeIf(String::isNotBlank)
+                                            ?: "call_${UUID.randomUUID()}"
                                         if (
                                             !fc.name.matches(safeWireToolName) ||
                                             !callId.matches(safeWireToolCallId) ||
@@ -795,8 +812,8 @@ class GeminiProvider(
                                             val argsJson = fc.args?.let {
                                                 Json.encodeToString(JsonObject.serializer(), it)
                                             } ?: "{}"
-                                            val signature = part.thoughtSignature
-                                                ?: fc.thoughtSignature
+                                            val signature = partThoughtSignature
+                                                ?: fc.thoughtSignature?.takeIf(String::isNotBlank)
                                                 ?: currentThoughtSignature
                                             val streamKey = "call_stream_${UUID.randomUUID()}"
                                             emitTracked(StreamEvent.ToolCallUpdate(streamKey, callId, fc.name, argsJson, signature))

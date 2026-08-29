@@ -62,10 +62,10 @@ abstract class BaseOpenAiProvider : LlmProvider {
     ) {
         // reasoning_content is the vLLM/DeepSeek-compatible field; `reasoning` is the bare-string
         // form many relays emit instead. Take whichever the endpoint actually populated.
-        (delta.reasoningContent ?: delta.reasoning)?.let { reasoning ->
-            if (reasoning.isNotEmpty() && config.thinkingEnabled) {
-                emit(StreamEvent.ThoughtChunk(reasoning))
-            }
+        val reasoning = delta.reasoningContent?.takeIf(String::isNotBlank)
+            ?: delta.reasoning?.takeIf(String::isNotBlank)
+        reasoning?.let {
+            emit(StreamEvent.ThoughtChunk(it))
         }
         delta.content?.takeIf(String::isNotEmpty)?.let { content ->
             emit(StreamEvent.TextChunk(content))
@@ -308,7 +308,7 @@ abstract class BaseOpenAiProvider : LlmProvider {
         config: ProviderConfig,
         emit: suspend (StreamEvent) -> Unit,
     ): StreamTermination {
-        val router = OpenAiResponsesEventRouter(json, config.thinkingEnabled)
+        val router = OpenAiResponsesEventRouter(json)
         var producedContent = false
         var reportedError = false
         var timedOut = false
@@ -525,8 +525,8 @@ abstract class BaseOpenAiProvider : LlmProvider {
                             ?: pendingToolCalls.keys.singleOrNull()
                             ?: pendingToolCalls.size
                         val pending = pendingToolCalls.getOrPut(index) { PendingToolCall() }
-                        if (tc.id != null) pending.id = tc.id
-                        tc.function?.name?.let { if (it.isNotEmpty()) pending.name = it }
+                        tc.id?.takeIf(String::isNotBlank)?.let { pending.id = it }
+                        tc.function?.name?.takeIf(String::isNotBlank)?.let { pending.name = it }
                         tc.function?.arguments?.let {
                             // Snapshot-tolerant: a relay that resends the whole argument string in
                             // every delta must not produce `{"a":1}{"a":1}`, and an empty

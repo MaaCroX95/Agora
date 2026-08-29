@@ -98,6 +98,83 @@ class BaseOpenAiProviderTerminationTest {
     }
 
     @Test
+    fun returnedChatReasoningIsSurfacedWhenRequestThinkingIsDisabled() = withServer(
+        terminalGraceMillis = 100L,
+        response = { socket, release ->
+            socket.writeSse(
+                """{"choices":[{"index":0,"delta":{"reasoning_content":"reason"},"finish_reason":"stop"}]}"""
+            )
+            release.await()
+        },
+    ) { provider, config, _ ->
+        val events = collect(provider, config)
+
+        assertFalse(config.thinkingEnabled)
+        assertEquals("reason", events.filterIsInstance<StreamEvent.ThoughtChunk>().single().thought)
+        assertTrue(events.none { it is StreamEvent.Error })
+    }
+
+    @Test
+    fun openRouterBlankReasoningDetailsDoNotSuppressEffectiveFallback() = withServer(
+        terminalGraceMillis = 100L,
+        providerFactory = { OpenRouterProvider() },
+        response = { socket, release ->
+            socket.writeSse(
+                """{"choices":[{"index":0,"delta":{"reasoning_details":[{"type":"reasoning.text","text":" "}],"reasoning":"fallback"},"finish_reason":"stop"}]}"""
+            )
+            release.await()
+        },
+    ) { provider, config, _ ->
+        val events = collect(provider, config)
+
+        assertFalse(config.thinkingEnabled)
+        assertEquals("fallback", events.filterIsInstance<StreamEvent.ThoughtChunk>().single().thought)
+        assertTrue(events.none { it is StreamEvent.Error })
+    }
+
+    @Test
+    fun returnedResponsesReasoningIsSurfacedWhenRequestThinkingIsDisabled() = withServer(
+        terminalGraceMillis = 100L,
+        responsesApiEnabled = true,
+        response = { socket, _ ->
+            socket.writeSse(
+                """{"type":"response.reasoning_text.delta","sequence_number":1,"delta":"reason"}"""
+            )
+            socket.writeSse(
+                """{"type":"response.completed","sequence_number":2,"response":{"status":"completed"}}"""
+            )
+        },
+    ) { provider, config, _ ->
+        val events = collect(provider, config)
+
+        assertFalse(config.thinkingEnabled)
+        assertEquals("reason", events.filterIsInstance<StreamEvent.ThoughtChunk>().single().thought)
+        assertTrue(events.none { it is StreamEvent.Error })
+    }
+
+    @Test
+    fun blankStructuredToolIdentityDeltaCannotEraseEffectiveValues() = withServer(
+        terminalGraceMillis = 100L,
+        response = { socket, release ->
+            socket.writeSse(
+                """{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{"}}]},"finish_reason":null}]}"""
+            )
+            socket.writeSse(
+                """{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":" ","type":"function","function":{"name":" ","arguments":"}"}}]},"finish_reason":"stop"}]}"""
+            )
+            release.await()
+        },
+    ) { provider, config, _ ->
+        val events = collect(provider, config)
+        val call = events.filterIsInstance<StreamEvent.ToolCallRequest>().single()
+
+        assertEquals("call_1", call.id)
+        assertEquals("lookup", call.name)
+        assertEquals("{}", call.arguments)
+        assertTrue(events.none { it is StreamEvent.Error })
+    }
+
+    @Test
     fun toolCallFinishReason_emitsCallAndDoesNotRequireDone() = withServer(
         terminalGraceMillis = 100L,
         response = { socket, release ->

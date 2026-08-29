@@ -99,6 +99,42 @@ class OllamaProviderRequestSerializationTest {
     }
 
     @Test
+    fun returnedThinkingAndBlankToolIdRemainEffectiveWhenRequestThinkingIsDisabled() = withServer { server ->
+        server.responseBody = (
+            "{\"message\":{\"role\":\"assistant\",\"content\":\"\",\"thinking\":\"reason\"," +
+                "\"tool_calls\":[{\"id\":\" \",\"function\":{\"name\":\"file_read\"," +
+                "\"arguments\":{\"path\":\"a.txt\"}}}]}," +
+                "\"done\":true,\"done_reason\":\" \",\"prompt_eval_count\":1,\"eval_count\":1}\n"
+            )
+        val events = collect(
+            server,
+            config(server, "qwen3:8b").copy(thinkingEnabled = false),
+        )
+
+        assertEquals("reason", events.filterIsInstance<StreamEvent.ThoughtChunk>().single().thought)
+        val update = events.filterIsInstance<StreamEvent.ToolCallUpdate>().single()
+        val call = events.filterIsInstance<StreamEvent.ToolCallRequest>().single()
+        assertTrue(update.id?.isNotBlank() == true)
+        assertEquals(update.id, call.id)
+        assertEquals("file_read", call.name)
+        assertTrue(events.none { it is StreamEvent.Error })
+    }
+
+    @Test
+    fun blankTerminalDoneReasonCannotEraseEarlierEffectiveValue() = withServer { server ->
+        server.responseBody =
+            "{\"message\":{\"role\":\"assistant\",\"content\":\"partial\"}," +
+                "\"done\":false,\"done_reason\":\"length\"}\n" +
+                "{\"message\":{\"role\":\"assistant\",\"content\":\"\"}," +
+                "\"done\":true,\"done_reason\":\" \",\"prompt_eval_count\":1,\"eval_count\":1}\n"
+        val events = collect(server, config(server, "qwen3:8b"))
+
+        assertTrue(
+            events.filterIsInstance<StreamEvent.Error>().single().error is GenerationError.OutputTruncated,
+        )
+    }
+
+    @Test
     fun validatorAcceptsOnlyBooleanOrSupportedEffortStrings() {
         listOf(JsonPrimitive(true), JsonPrimitive(false), JsonPrimitive("low"), JsonPrimitive("medium"), JsonPrimitive("high"))
             .forEach { think -> request(think).requireValidWireFormat() }
