@@ -208,7 +208,7 @@ class GenerationRequestBuilder(
             ?.let(providerRegistry::canonicalModelId)
             ?: selectedModelId
         val compactProviderName = providerRegistry.providerForModel(compactModel)
-        val providerInstances = providerRegistry.all.toMap()
+        val providerInstances = providerRegistry.generationSnapshot()
         val compactKey = if (compactProviderName == providerName) {
             frozenKey
         } else {

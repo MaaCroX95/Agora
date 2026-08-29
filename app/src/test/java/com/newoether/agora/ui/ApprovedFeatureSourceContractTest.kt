@@ -607,6 +607,48 @@ class ApprovedFeatureSourceContractTest {
     }
 
     @Test
+    fun debugProviderUsesHiddenExactGenerationBoundary() {
+        val root = sourceRoot()
+        val provider = source(root, "com/newoether/agora/api/DebugProvider.kt")
+        val registry = source(root, "com/newoether/agora/viewmodel/ProviderRegistry.kt")
+        val builder = source(root, "com/newoether/agora/viewmodel/GenerationRequestBuilder.kt")
+
+        assertTrue(provider.contains("class DebugProvider : LlmProvider"))
+        assertTrue(provider.contains("StreamEvent.HostedToolCallUpdate("))
+        assertTrue(provider.contains("delay(STEP_DELAY_MILLIS)"))
+        assertFalse(provider.contains("HttpClient"))
+        assertFalse(provider.contains("requestResolver"))
+        assertFalse(provider.contains("StreamEvent.ToolCallUpdate"))
+        assertFalse(provider.contains("StreamEvent.ToolCallRequest"))
+        assertFalse(provider.contains("StreamEvent.ToolCallsRequest"))
+
+        val builtIns = registry
+            .substringAfter("private val builtInProviders")
+            .substringBefore("private val debugProvider")
+        assertFalse(builtIns.contains("DebugProvider"))
+        assertTrue(registry.contains("private val debugProvider = DebugProvider()"))
+        assertTrue(registry.contains("val all: Map<String, LlmProvider> get() = providers"))
+        assertTrue(registry.contains("fun generationSnapshot(): Map<String, LlmProvider>"))
+        assertTrue(registry.contains("providers.toMap() + (DebugProvider.PROVIDER_NAME to debugProvider)"))
+        assertTrue(registry.contains("settings.developerOptionsEnabled.value && settings.debugModelEnabled.value"))
+        assertTrue(registry.contains("registered = getInstanceOrNull(providerName) != null"))
+        assertTrue(registry.contains("if (providerName == DebugProvider.PROVIDER_NAME) return null"))
+
+        val resolution = registry
+            .substringAfter("fun providerForModel(modelId: String): String")
+            .substringBefore("/** Canonicalizes legacy name-prefixed IDs")
+        val exactDebugIndex = resolution.indexOf("modelId == DebugProvider.MODEL_ID")
+        val prefixedIndex = resolution.indexOf("modelId.contains(\":\")")
+        val availableModelsIndex = resolution.indexOf("settings.availableModels.value")
+        assertTrue(exactDebugIndex >= 0)
+        assertTrue(prefixedIndex > exactDebugIndex)
+        assertTrue(availableModelsIndex > prefixedIndex)
+
+        assertTrue(builder.contains("providerRegistry.generationSnapshot()"))
+        assertFalse(builder.contains("providerRegistry.all.toMap()"))
+    }
+
+    @Test
     fun skillsAreSavedCatalogToolsWithRequestResolvedPromptAndNoActiveSkill() {
         val root = sourceRoot()
         val manager = source(root, "com/newoether/agora/data/SkillManager.kt")

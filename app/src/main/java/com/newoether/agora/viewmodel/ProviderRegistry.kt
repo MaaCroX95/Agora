@@ -1,5 +1,6 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.api.DebugProvider
 import com.newoether.agora.api.LlmProvider
 import com.newoether.agora.api.ModelFetchEmptyResultException
 import com.newoether.agora.api.ModelFetchTimeoutException
@@ -101,9 +102,11 @@ internal fun providerConfigurationIsValid(
     registered: Boolean,
     builtIn: Boolean,
     effectiveBaseUrl: String?,
+    debugProviderEnabled: Boolean = false,
 ): Boolean = when {
     providerName == Constants.PROVIDER_UNKNOWN -> false
     !registered -> false
+    providerName == DebugProvider.PROVIDER_NAME -> debugProviderEnabled
     providerName == Constants.PROVIDER_LOCAL -> true
     !builtIn || providerName == Constants.PROVIDER_OLLAMA -> !effectiveBaseUrl.isNullOrBlank()
     else -> activeKey.isNotBlank()
@@ -137,25 +140,45 @@ class ProviderRegistry(
         Constants.PROVIDER_LOCAL to localProvider
     )
 
+    private val debugProvider = DebugProvider()
+
     // Declared as MutableMap so `in`/`contains` keep Map (containsKey) semantics (KT-18053).
     private val providers: MutableMap<String, LlmProvider> = ConcurrentHashMap(builtInProviders)
     private val runtimeEndpointResolutions = ConcurrentHashMap<String, CustomEndpointResolution>()
     private val initialCustomProviderSync = CompletableDeferred<Unit>()
 
-    /** Live, thread-safe read view shared with the generation pipeline. */
+    /** Live, thread-safe read view shared with normal provider synchronization and settings UI. */
     val all: Map<String, LlmProvider> get() = providers
 
-    fun isBuiltIn(name: String): Boolean = name in builtInProviders
+    /** Immutable provider set captured for one generation admission. */
+    fun generationSnapshot(): Map<String, LlmProvider> =
+        if (isDebugProviderEnabled()) {
+            providers.toMap() + (DebugProvider.PROVIDER_NAME to debugProvider)
+        } else {
+            providers.toMap()
+        }
 
-    fun getInstance(name: String): LlmProvider = requireNotNull(providers[name]) {
+    private fun isDebugProviderEnabled(): Boolean =
+        settings.developerOptionsEnabled.value && settings.debugModelEnabled.value
+
+    fun isBuiltIn(name: String): Boolean =
+        name == DebugProvider.PROVIDER_NAME || name in builtInProviders
+
+    fun getInstance(name: String): LlmProvider = requireNotNull(getInstanceOrNull(name)) {
         "Provider is not registered: $name"
     }
 
     /** Null-tolerant lookup for UI reads: a settings page can recompose one frame after
      *  its provider was deleted, which must render gracefully, not crash. */
-    fun getInstanceOrNull(name: String): LlmProvider? = providers[name]
+    fun getInstanceOrNull(name: String): LlmProvider? =
+        if (name == DebugProvider.PROVIDER_NAME) {
+            debugProvider.takeIf { isDebugProviderEnabled() }
+        } else {
+            providers[name]
+        }
 
     fun getEffectiveBaseUrl(providerName: String): String? {
+        if (providerName == DebugProvider.PROVIDER_NAME) return null
         val configuredBaseUrl = settings.providerBaseUrls.value[providerName]?.takeIf { it.isNotBlank() }
             ?: return providers[providerName]?.takeIf { !isBuiltIn(providerName) }?.defaultBaseUrl
         val customConfig = settings.customProviders.value.firstOrNull { it.name == providerName }
@@ -173,12 +196,14 @@ class ProviderRegistry(
         providerConfigurationIsValid(
             providerName = providerName,
             activeKey = activeKey,
-            registered = providerName in providers,
+            registered = getInstanceOrNull(providerName) != null,
             builtIn = isBuiltIn(providerName),
             effectiveBaseUrl = getEffectiveBaseUrl(providerName),
+            debugProviderEnabled = isDebugProviderEnabled(),
         )
 
     fun providerForModel(modelId: String): String {
+        if (modelId == DebugProvider.MODEL_ID) return DebugProvider.PROVIDER_NAME
         // Custom model IDs carry the provider's immutable ID. Resolve it to the mutable display
         // name only at the live connection boundary; renaming can no longer reclassify the model.
         if (modelId.contains(":")) {
