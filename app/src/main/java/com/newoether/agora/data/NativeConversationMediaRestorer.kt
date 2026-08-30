@@ -55,46 +55,38 @@ internal class NativeConversationMediaRestorer(
             imagesDir.mkdirs()
 
             fun restoreEntry(path: String, kind: String): RestoredMediaFile? {
-                return archive.stream(path)?.buffered()?.use { input ->
-                    input.mark(16)
-                    val header = ByteArray(16)
-                    val headerSize = input.read(header).coerceAtLeast(0)
-                    input.reset()
-                    val extension = when (kind) {
-                        "image" -> detectImageExtension(header.copyOf(headerSize))
-                        "video" -> detectVideoExtension(header.copyOf(headerSize))
-                        else -> path.substringAfterLast('.', "bin")
-                            .lowercase()
-                            .takeIf { it.length in 1..10 && it.all(Char::isLetterOrDigit) }
-                            ?: "bin"
-                    }
-                    val targetDir = if (kind == "image") imagesDir else context.filesDir
-                    val prefix = when (kind) {
-                        "image" -> "img_import_"
-                        "video" -> "vid_import_"
-                        else -> "draft_import_"
-                    }
-                    val target = File(targetDir, "$prefix${UUID.randomUUID()}.$extension")
-                    val copied = target.outputStream().buffered().use { output ->
-                        input.copyTo(output)
-                    }
-                    if (copied <= 0L) {
-                        target.delete()
-                        null
-                    } else {
-                        createdFiles += target
-                        val uri = if (kind == "image") {
-                            FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                target,
-                            ).toString()
-                        } else {
-                            "file://${target.absolutePath}"
-                        }
-                        RestoredMediaFile(target.absolutePath, uri)
-                    }
+                val header = archive.prefix(path, 16) ?: return null
+                val extension = when (kind) {
+                    "image" -> detectImageExtension(header)
+                    "video" -> detectVideoExtension(header)
+                    else -> path.substringAfterLast('.', "bin")
+                        .lowercase()
+                        .takeIf { it.length in 1..10 && it.all(Char::isLetterOrDigit) }
+                        ?: "bin"
                 }
+                val targetDir = if (kind == "image") imagesDir else context.filesDir
+                val prefix = when (kind) {
+                    "image" -> "img_import_"
+                    "video" -> "vid_import_"
+                    else -> "draft_import_"
+                }
+                val target = File(targetDir, "$prefix${UUID.randomUUID()}.$extension")
+                val copied = archive.copyTo(path, target) ?: return null
+                if (copied <= 0L) {
+                    target.delete()
+                    return null
+                }
+                createdFiles += target
+                val uri = if (kind == "image") {
+                    FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        target,
+                    ).toString()
+                } else {
+                    "file://${target.absolutePath}"
+                }
+                return RestoredMediaFile(target.absolutePath, uri)
             }
 
             names.asSequence()

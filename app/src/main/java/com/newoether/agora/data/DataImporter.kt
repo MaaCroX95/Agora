@@ -280,24 +280,22 @@ class DataImporter(
         val temporary = File(context.filesDir, ".custom_font_import_${UUID.randomUUID()}.tmp")
         val target = File(context.filesDir, "custom_font_import_${UUID.randomUUID()}")
         try {
-            archive.stream(entry)?.use { input ->
-                temporary.outputStream().buffered().use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var total = 0L
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        total += count
-                        if (total > MAX_CUSTOM_FONT_BYTES) {
-                            throw IOException("Custom font exceeds the import size limit")
-                        }
-                        output.write(buffer, 0, count)
-                    }
-                }
-            } ?: return null
+            archive.copyTo(
+                name = entry,
+                target = temporary,
+                maxBytes = MAX_CUSTOM_FONT_BYTES,
+            ) ?: return null
             val displayName = com.newoether.agora.util.readFontName(temporary)
             if (!temporary.renameTo(target)) {
-                temporary.copyTo(target, overwrite = true)
+                temporary.inputStream().use { input ->
+                    NativeBackupArchive.copyStreamToFile(
+                        input = input,
+                        target = target,
+                        declaredSize = temporary.length(),
+                        maxBytes = MAX_CUSTOM_FONT_BYTES,
+                        sourceName = "custom font",
+                    )
+                }
                 temporary.delete()
             }
             return RestoredCustomFont(target.absolutePath, displayName)
@@ -354,10 +352,24 @@ class DataImporter(
                 }
 
                 val keysDecision = decisions[DataExporter.ExportCategory.API_KEYS]
+                val promptsDecision = decisions[DataExporter.ExportCategory.SYSTEM_PROMPTS]
+                val convDecision = decisions[DataExporter.ExportCategory.CONVERSATIONS]
+                val memDecision = decisions[DataExporter.ExportCategory.MEMORIES]
+                val settingsDecision = decisions[DataExporter.ExportCategory.SETTINGS]
                 val allowLegacySecrets =
                     manifest.version < NativeBackupFormat.CURRENT_VERSION &&
                         keysDecision != null &&
                         keysDecision != ImportStrategy.SKIP
+
+                opened.preflightImportResources(
+                    conversationsSelected = convDecision != null &&
+                        convDecision != ImportStrategy.SKIP,
+                    settingsSelected = settingsDecision != null &&
+                        settingsDecision != ImportStrategy.SKIP,
+                    archiveVersion = manifest.version,
+                    destinationRoot = context.filesDir,
+                    customFontLimitBytes = MAX_CUSTOM_FONT_BYTES,
+                )
 
                 // Import prompts before conversations/settings so every archived prompt reference
                 // can be resolved after MERGE ID collision handling.
@@ -365,7 +377,6 @@ class DataImporter(
                     availableIds = settingsManager.systemPrompts.first()
                         .mapTo(mutableSetOf()) { it.id },
                 )
-                val promptsDecision = decisions[DataExporter.ExportCategory.SYSTEM_PROMPTS]
                 if (promptsDecision != null && promptsDecision != ImportStrategy.SKIP) {
                     try {
                         promptImport = importSystemPrompts(opened, promptsDecision)
@@ -376,7 +387,6 @@ class DataImporter(
                     step()
                 }
 
-                val convDecision = decisions[DataExporter.ExportCategory.CONVERSATIONS]
                 if (convDecision != null && convDecision != ImportStrategy.SKIP) {
                     var restoredMedia: NativeConversationMediaRestorer.RestoredMedia? = null
                     var graphCommitted = false
@@ -427,7 +437,6 @@ class DataImporter(
                     step()
                 }
 
-                val memDecision = decisions[DataExporter.ExportCategory.MEMORIES]
                 if (memDecision != null && memDecision != ImportStrategy.SKIP) {
                     try {
                         val memNames = opened.names().filter { it.startsWith("memories/") }
@@ -504,7 +513,6 @@ class DataImporter(
                     step()
                 }
 
-                val settingsDecision = decisions[DataExporter.ExportCategory.SETTINGS]
                 if (settingsDecision != null && settingsDecision != ImportStrategy.SKIP) {
                     var restoredFont: RestoredCustomFont? = null
                     var fontApplied = false

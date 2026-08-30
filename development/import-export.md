@@ -41,6 +41,17 @@ rejected before category restoration.
 
 The archive never treats a manifest category as proof that its payload is valid. Missing, malformed,
 or incompatible entries produce category errors without reinterpreting another entry as a fallback.
+Archive validation completes before any category mutation or resource extraction. Entry names must be
+relative forward-slash paths with no empty, `.` or `..` segment, drive prefix, backslash ambiguity,
+or duplicate/colliding file-directory identity. All non-resource entries together are limited to
+256 MiB expanded metadata, and every entry's streamed byte count and CRC must match the ZIP record.
+
+Conversation image/video/draft resources, legacy `images/` and `videos/` resources, and the recognized
+custom-font entry are storage-backed resources. Normal attachment resources have no fixed byte or
+entry-count ceiling when storage is sufficient; there is no standalone total ZIP entry-count limit.
+The archive cache copy and every selected resource extraction preflight destination capacity, check
+space again while streaming, and delete partial files on failure. The custom-font owner retains its
+separate 64 MiB limit. Sandbox and proot payloads remain excluded rather than becoming resources.
 
 ## 3. Portable `settings.json` allowlist
 
@@ -166,9 +177,12 @@ Focused tests for any archive or setting change must prove:
 7. archive category selection cannot mutate an unselected category;
 8. conversation media, Memory/Skill files, System Prompts, and custom fonts keep their owner-specific
    conflict, cleanup, and rollback behavior;
-9. unreadable attachment resources preserve order, type, and filename as disabled placeholders, and
+9. archive validation rejects unsafe or duplicate paths before mutation, caps aggregate non-resource
+   metadata at 256 MiB, verifies streamed size and CRC, and enforces cache/destination capacity before
+   and during copy without a standalone resource entry-count limit;
+10. unreadable attachment resources preserve order, type, and filename as disabled placeholders, and
    successful manual and automatic backups report the complete unavailable-resource count;
-10. the default and every maintained public manual remain consistent with this contract.
+11. the default and every maintained public manual remain consistent with this contract.
 
 The project full build remains required after implementation changes. Build success alone does not
 prove SAF access, large-archive streaming, device storage, or user-visible conflict handling.
