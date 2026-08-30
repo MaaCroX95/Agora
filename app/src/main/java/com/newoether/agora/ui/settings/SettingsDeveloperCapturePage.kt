@@ -70,6 +70,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
@@ -94,6 +95,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
 private const val CaptureCrossfadeDurationMillis = 250
+private val CaptureEdgeTolerance = 2.dp
 
 private enum class CaptureViewMode {
     SUMMARY,
@@ -107,17 +109,34 @@ internal fun SettingsDeveloperCapturePage(
     onExportFailed: () -> Unit,
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
     val motionPolicy = LocalAgoraMotionPolicy.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val snapshot by DeveloperDiagnostics.snapshots.collectAsState()
     val hasNavigableEvents = snapshot.events.isNotEmpty()
-    val canScrollUp by remember(listState) {
-        derivedStateOf { listState.canScrollBackward }
+    val edgeTolerancePx = with(density) { CaptureEdgeTolerance.roundToPx() }
+    val atTop by remember(listState, edgeTolerancePx) {
+        derivedStateOf {
+            listState.firstVisibleItemIndex == 0 &&
+                listState.firstVisibleItemScrollOffset <= edgeTolerancePx.coerceAtLeast(0)
+        }
     }
-    val canScrollDown by remember(listState) {
-        derivedStateOf { listState.canScrollForward }
+    val atBottom by remember(listState, edgeTolerancePx) {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            if (layoutInfo.totalItemsCount == 0) {
+                true
+            } else {
+                val lastVisibleItem = layoutInfo.visibleItemsInfo.maxByOrNull { it.index }
+                lastVisibleItem?.index == layoutInfo.totalItemsCount - 1 &&
+                    lastVisibleItem.offset + lastVisibleItem.size <=
+                    layoutInfo.viewportEndOffset + edgeTolerancePx.coerceAtLeast(0)
+            }
+        }
     }
+    val canScrollUp = !atTop
+    val canScrollDown = !atBottom
     var viewMode by rememberSaveable { mutableStateOf(CaptureViewMode.SUMMARY) }
     var selectedEvent by remember { mutableStateOf<DiagnosticEvent?>(null) }
     var showClearConfirmation by remember { mutableStateOf(false) }

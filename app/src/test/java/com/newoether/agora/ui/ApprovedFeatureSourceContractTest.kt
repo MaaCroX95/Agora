@@ -544,6 +544,22 @@ class ApprovedFeatureSourceContractTest {
         assertFalse(capture.contains("allowProgrammaticScrollMotion"))
         assertFalse(capture.contains("animateToAbsoluteTop"))
         assertFalse(capture.contains("animateToAbsoluteBottom"))
+        assertTrue(capture.contains("CaptureEdgeTolerance = 2.dp"))
+        listOf(
+            "val edgeTolerancePx = with(density) { CaptureEdgeTolerance.roundToPx() }",
+            "listState.firstVisibleItemIndex == 0",
+            "listState.firstVisibleItemScrollOffset <= edgeTolerancePx.coerceAtLeast(0)",
+            "val lastVisibleItem = layoutInfo.visibleItemsInfo.maxByOrNull { it.index }",
+            "lastVisibleItem?.index == layoutInfo.totalItemsCount - 1",
+            "lastVisibleItem.offset + lastVisibleItem.size <=",
+            "layoutInfo.viewportEndOffset + edgeTolerancePx.coerceAtLeast(0)",
+            "val canScrollUp = !atTop",
+            "val canScrollDown = !atBottom",
+        ).forEach { edgeContract ->
+            assertTrue(capture.contains(edgeContract))
+        }
+        assertFalse(capture.contains("listState.canScrollBackward"))
+        assertFalse(capture.contains("listState.canScrollForward"))
         assertTrue(capture.contains("listState.scrollToItem(0)"))
         assertTrue(capture.contains("listState.scrollToItem(lastIndex)"))
         assertFalse(capture.contains("estimatedItemSizePx"))

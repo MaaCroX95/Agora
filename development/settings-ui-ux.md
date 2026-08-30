@@ -114,10 +114,15 @@ layout, states, density, or interaction design has been approved.
   actions jump directly to the physical top and bottom with `scrollToItem`,
   independent of the programmatic-scroll motion policy.
 - At the top only the down action is shown, in the middle both actions are
-  shown, and at the bottom only the up action is shown. Empty or non-scrollable
-  content shows neither. Each fixed-order slot fades for 250 ms; when spatial
-  transitions are allowed it also expands or shrinks vertically for 250 ms so
-  stack placement does not jump.
+  shown, and at the bottom only the up action is shown. Arrow visibility uses a
+  symmetric 2 dp physical-edge tolerance: the top is reached while item 0 is
+  first visible with an offset at most 2 dp, and the bottom is reached while the
+  final visible item's end is no more than 2 dp beyond the viewport end. Empty
+  or non-scrollable content shows neither. This tolerance changes visibility
+  judgment only; it does not change list padding or directional scroll targets.
+  Each fixed-order slot fades for 250 ms; when spatial transitions are allowed
+  it also expands or shrinks vertically for 250 ms so stack placement does not
+  jump.
 - Rolling capacity never creates a capacity-limited UI state. The legacy
   incomplete-status resource and disabled resume projection remain only for
   backward-compatible snapshots before Store reconciliation clears the marker.
