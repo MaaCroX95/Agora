@@ -63,7 +63,14 @@ class ChatDaoExternalImportReplaceTest {
             ),
             Triple(
                 listOf(first),
-                listOf(firstRun.copy(activeSlot = 1)),
+                listOf(
+                    firstRun.copy(
+                        status = RunStatus.ACTIVE,
+                        activeSlot = 1,
+                        endedAt = null,
+                        endReason = null,
+                    ),
+                ),
                 emptyList(),
             ),
             Triple(
