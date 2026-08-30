@@ -63,6 +63,11 @@ icons/images in every menu row, matching the Material default size used by the u
 long-press dropdown. Their 16 dp trigger icons remain unchanged. Menu shape, row geometry, 12 dp
 icon-label gap, labels, badges, switches, ordering, enablement, and click behavior remain unchanged.
 
+The monochrome Google Search and OpenAI Search provider icons inherit the dropdown's current Compose
+content color. They therefore remain legible across light and dark themes and retain inherited
+disabled-state alpha; neither row hard-codes a light or dark tint. Provider artwork, icon size,
+spacing, labels, badges, switches, availability, ordering, and interaction remain unchanged.
+
 ## 5. Chat bottom-bar answer fade
 
 In normal, non-expanded composer mode, the existing 40 dp vertical fade is an alpha mask on the
@@ -296,7 +301,8 @@ is introduced for this test model.
 Focused verification must cover the onboarding action's fixed 32 dp inset and 48 dp height, absence
 of custom press-size/inset/content-scale state, and unchanged action semantics, Generation Settings description, locale key/value
 parity for the Context and Thinking-segment labels, absence of the removed context-window wording,
-24 dp leading-icon parity across both chat-bottom dropdowns without resizing their triggers, absence
+24 dp leading-icon parity across both chat-bottom dropdowns without resizing their triggers,
+theme-adaptive Google Search and OpenAI Search icon color without fixed light/dark tint, absence
 of the Detailed token usage Appearance row and dead chat-side parameter threading, the Tool Blocks ->
 Thinking segment -> Auto-Expand Appearance row order with unchanged predicates, the normal-only
 0 dp gradient lead with unchanged 40 dp width and 20 dp expanded behavior, and scoped Settings-arrow

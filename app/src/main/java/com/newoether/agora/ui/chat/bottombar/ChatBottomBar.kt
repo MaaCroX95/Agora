@@ -684,7 +684,7 @@ fun ChatBottomBar(
                                         Image(
                                             painter = androidx.compose.ui.res.painterResource(R.drawable.provider_google),
                                             contentDescription = null,
-                                            colorFilter = ColorFilter.tint(Color.White),
+                                            colorFilter = ColorFilter.tint(LocalContentColor.current),
                                             modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp),
                                         )
                                         Spacer(modifier = Modifier.width(12.dp))

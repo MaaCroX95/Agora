@@ -185,7 +185,7 @@ class ApplicationUiSourceContractTest {
     }
 
     @Test
-    fun `chat bottom dropdowns match the user message twenty four dp icon size`() {
+    fun `chat bottom dropdowns keep twenty four dp icons and adaptive provider color`() {
         val attachment = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/chat/bottombar/AttachmentAddMenu.kt",
         )
@@ -203,6 +203,10 @@ class ApplicationUiSourceContractTest {
         assertTrue(attachment.contains("CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp"))
         assertTrue(bottomBar.contains("CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp"))
         assertTrue(components.contains("Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp)"))
+        assertTrue(bottomBar.contains("ColorFilter.tint(LocalContentColor.current)"))
+        assertFalse(bottomBar.contains("ColorFilter.tint(Color.White)"))
+        assertTrue(components.contains("tint = LocalContentColor.current"))
+        assertFalse(components.contains("tint = Color.White"))
         assertTrue(attachment.contains("Icons.Default.Add"))
         assertTrue(attachment.contains("modifier = Modifier.size(16.dp)"))
         assertTrue(bottomBar.contains("Icons.Default.MoreVert"))
