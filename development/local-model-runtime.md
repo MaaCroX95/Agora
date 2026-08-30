@@ -16,10 +16,26 @@ retention setting remains owned by [import-export.md](import-export.md).
 - `LlamaChatEngine` owns a resident Chat native handle and its replaceable multimodal projector
   substate. `LlamaEngine` owns a resident Embedding native handle only while the runtime identifies
   that resident as Embedding.
-- `AppContainer` binds the one app-lifetime idle-retention settings flow to the runtime.
+- `AppContainer` binds the one app-lifetime idle-retention settings flow to the runtime and supplies
+  Android's process native-library directory for backend initialization.
 
 No caller may load, unload, reset, replace, or generate with an embedded model outside this owner.
 Remote Providers, including a PC-hosted Qwen endpoint, do not enter this queue.
+
+### Android CPU backend initialization
+
+The Android build uses shared llama.cpp/ggml libraries and dynamic CPU backends. It packages the
+seven upstream Android ARM variants from `android_armv8.0_1` through `android_armv9.2_2`; the
+`android_armv8.0_1` module is the compatible arm64 baseline when no higher-scoring feature set is
+available. KleidiAI, Vulkan, and OpenMP remain disabled.
+
+`AppContainer` passes `applicationInfo.nativeLibraryDir` once to `LocalModelRuntime`. The runtime
+canonicalizes that directory and calls the existing `LlamaEngine` JNI owner, which loads the best
+compatible CPU module with `ggml_backend_load_all_from_path` before initializing llama.cpp. Chat and
+Embedding model-load entry points must not independently load or initialize backends. Repeated
+initialization from the same process directory is a no-op; a different directory is an invariant
+violation. If no compatible CPU backend loads, Local Chat reports its ordinary model-load failure and
+Local Embedding returns no result without making application startup fail.
 
 ## 2. Resident identity and switching
 
@@ -163,7 +179,10 @@ Native-streaming verification must cover both generation loops, exact batch boun
 safety, terminal flushing, callback rejection, per-token cancellation, and content-free telemetry.
 Text-cache verification must cover same-identity reuse, token LCP divergence, exact-match one-token
 replay, prompt-capacity validation before mutation, failed truncation, decode failure, cancellation
-between successful batches, generated-token ledger ordering, and multimodal invalidation.
+between successful batches, generated-token ledger ordering, and multimodal invalidation. Android
+backend verification must cover shared dynamic builds, all seven upstream Android ARM CPU modules,
+armv8.0 baseline packaging, explicit loading from `applicationInfo.nativeLibraryDir`, initialization
+before either model-load path, and absence of KleidiAI, Vulkan, and OpenMP.
 
 Settings tests must cover the exact presets/default/normalization, DataStore read/write, one
 AppContainer binding, Local Advanced placement and slider commit behavior, locale key/placeholder

@@ -703,9 +703,6 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatLoadModel(
     }
 
     const auto load_started = std::chrono::steady_clock::now();
-    llama_backend_init();
-    ggml_backend_load_all();
-
     llama_model_params model_params = llama_model_default_params();
     const auto model_started = std::chrono::steady_clock::now();
     handle->model = llama_model_load_from_file(path_str, model_params);

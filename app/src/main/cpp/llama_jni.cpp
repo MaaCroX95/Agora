@@ -4,6 +4,7 @@
 #include <cstring>
 #include <android/log.h>
 #include "llama.h"
+#include "ggml-backend.h"
 
 #define LOG_TAG "LlamaEngine"
 #ifndef NDEBUG
@@ -24,6 +25,25 @@ struct LlamaHandle {
 
 extern "C" {
 
+JNIEXPORT jboolean JNICALL
+Java_com_newoether_agora_api_LlamaEngine_nativeInitializeBackends(
+    JNIEnv * env, jclass /*clazz*/, jstring native_library_dir) {
+
+    if (!native_library_dir) return JNI_FALSE;
+    const char * directory = env->GetStringUTFChars(native_library_dir, nullptr);
+    if (!directory) return JNI_FALSE;
+
+    ggml_backend_load_all_from_path(directory);
+    env->ReleaseStringUTFChars(native_library_dir, directory);
+
+    if (!ggml_backend_reg_by_name("CPU")) {
+        LOGE("No compatible CPU backend was loaded");
+        return JNI_FALSE;
+    }
+    llama_backend_init();
+    return JNI_TRUE;
+}
+
 JNIEXPORT jlong JNICALL
 Java_com_newoether_agora_api_LlamaEngine_nativeLoadModel(
     JNIEnv * env, jclass /*clazz*/, jstring path) {
@@ -36,9 +56,6 @@ Java_com_newoether_agora_api_LlamaEngine_nativeLoadModel(
         env->ReleaseStringUTFChars(path, path_str);
         return 0;
     }
-
-    // Backend init (safe to call multiple times)
-    llama_backend_init();
 
     // Load model
     llama_model_params model_params = llama_model_default_params();

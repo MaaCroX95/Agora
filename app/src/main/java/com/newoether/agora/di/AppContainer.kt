@@ -50,6 +50,10 @@ class AppContainer(
 ) {
     private val application = appContext.applicationContext as Application
 
+    init {
+        LocalModelRuntime.initialize(application.applicationInfo.nativeLibraryDir)
+    }
+
     /** App-lifetime scope that backs the shared settings StateFlows.
      *  The handler is the last line of defense: children launched directly on this scope
      *  (settings sync, scheduler, task runners) have no other parent to report to, and an

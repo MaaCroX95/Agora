@@ -343,6 +343,66 @@ class LocalLlamaOwnershipSourceContractTest {
     }
 
     @Test
+    fun `android CPU backends are packaged and initialized before local model loads`() {
+        val cmake = mainCppSource("CMakeLists.txt")
+        val appContainer = mainSource("com/newoether/agora/di/AppContainer.kt")
+        val runtime = mainSource("com/newoether/agora/api/LocalModelRuntime.kt")
+        val engine = mainSource("com/newoether/agora/api/LlamaEngine.kt")
+        val embeddingNative = mainCppSource("llama_jni.cpp")
+        val chatNative = mainCppSource("llama_chat_jni.cpp")
+
+        listOf(
+            "set(BUILD_SHARED_LIBS ON CACHE BOOL \"\" FORCE)",
+            "set(GGML_NATIVE OFF CACHE BOOL \"\" FORCE)",
+            "set(GGML_BACKEND_DL ON CACHE BOOL \"\" FORCE)",
+            "set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL \"\" FORCE)",
+            "set(GGML_CPU_KLEIDIAI OFF CACHE BOOL \"\" FORCE)",
+            "set(GGML_VULKAN OFF CACHE BOOL \"\" FORCE)",
+            "set(GGML_OPENMP OFF CACHE BOOL \"\" FORCE)",
+        ).forEach { assertTrue(cmake.contains(it)) }
+        listOf(
+            "ggml-cpu-android_armv8.0_1",
+            "ggml-cpu-android_armv8.2_1",
+            "ggml-cpu-android_armv8.2_2",
+            "ggml-cpu-android_armv8.6_1",
+            "ggml-cpu-android_armv9.0_1",
+            "ggml-cpu-android_armv9.2_1",
+            "ggml-cpu-android_armv9.2_2",
+        ).forEach { assertTrue(cmake.contains(it)) }
+        assertTrue(cmake.contains("LIBRARY_OUTPUT_DIRECTORY \${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"))
+        assertTrue(cmake.contains("Required Android CPU backend target is missing"))
+
+        assertEquals(
+            1,
+            Regex.escape("LocalModelRuntime.initialize(").toRegex()
+                .findAll(appContainer).count(),
+        )
+        assertTrue(appContainer.contains("application.applicationInfo.nativeLibraryDir"))
+        assertTrue(runtime.contains("LlamaEngine.initializeBackends(canonicalDirectory)"))
+        assertTrue(runtime.contains("if (nativeBackendDirectory == null) return@run false"))
+        assertTrue(runtime.contains("if (nativeBackendDirectory == null) return@run null"))
+        assertTrue(engine.contains("nativeInitializeBackends(nativeLibraryDir)"))
+
+        val initialization = embeddingNative
+            .substringAfter("LlamaEngine_nativeInitializeBackends(")
+            .substringBefore("\nJNIEXPORT")
+        val loadBackends = initialization.indexOf("ggml_backend_load_all_from_path(directory)")
+        val verifyCpu = initialization.indexOf("ggml_backend_reg_by_name(\"CPU\")")
+        val initializeLlama = initialization.indexOf("llama_backend_init()")
+        assertTrue(loadBackends >= 0 && verifyCpu > loadBackends)
+        assertTrue(initializeLlama > verifyCpu)
+
+        val embeddingLoad = embeddingNative
+            .substringAfter("LlamaEngine_nativeLoadModel(")
+            .substringBefore("\nJNIEXPORT")
+        val chatLoad = nativeFunctionSection(chatNative, "nativeChatLoadModel")
+        assertFalse(embeddingLoad.contains("llama_backend_init"))
+        assertFalse(embeddingLoad.contains("ggml_backend_load_all"))
+        assertFalse(chatLoad.contains("llama_backend_init"))
+        assertFalse(chatLoad.contains("ggml_backend_load_all"))
+    }
+
+    @Test
     fun `idle offload is generation safe and uses the canonical permit`() {
         val runtime = mainSource("com/newoether/agora/api/LocalModelRuntime.kt")
         val queue = runtime.substringAfter("internal class LocalModelTaskQueue(")
