@@ -80,7 +80,7 @@ class DurableSelectedContextLoaderTest {
                 selectedBranchesJson = Json.encodeToString(mapOf(root.id to selected.id)),
             )
             val requestedIds = mutableListOf<List<String>>()
-            val loader = loader(snapshot, entities, requestedIds)
+            val loader = loader(snapshot, entities, requestedIds) { it }
 
             val loaded = loader.load(
                 DurableSelectedContextRequest(
@@ -95,7 +95,9 @@ class DurableSelectedContextLoaderTest {
                     allMessages = entities,
                 ),
                 includeStoredTranscriptions = false,
-            ).let(::projectGenerationStatusesForApi)
+            ).let { messages ->
+                projectGenerationStatusesForApi(messages) { it }
+            }
 
             assertEquals(oracle, loaded.messages)
             assertEquals(
@@ -141,7 +143,7 @@ class DurableSelectedContextLoaderTest {
                 }
             }
             val requestedIds = mutableListOf<List<String>>()
-            val loaded = loader(snapshot(entities), entities, requestedIds).load(
+            val loaded = loader(snapshot(entities), entities, requestedIds) { it }.load(
                 DurableSelectedContextRequest(
                     conversationId = CONVERSATION_ID,
                     anchorMessageId = entities.last().id,
@@ -169,7 +171,7 @@ class DurableSelectedContextLoaderTest {
         val entities = listOf(old, compact, user, model)
         val requestedIds = mutableListOf<List<String>>()
 
-        val loaded = loader(snapshot(entities), entities, requestedIds).load(
+        val loaded = loader(snapshot(entities), entities, requestedIds) { it }.load(
             DurableSelectedContextRequest(
                 conversationId = CONVERSATION_ID,
                 anchorMessageId = model.id,
@@ -205,7 +207,7 @@ class DurableSelectedContextLoaderTest {
             val entities = listOf(old, successful, failed, user)
             val requestedIds = mutableListOf<List<String>>()
 
-            val loaded = loader(snapshot(entities), entities, requestedIds).load(
+            val loaded = loader(snapshot(entities), entities, requestedIds) { it }.load(
                 DurableSelectedContextRequest(
                     conversationId = CONVERSATION_ID,
                     anchorMessageId = user.id,
@@ -221,9 +223,10 @@ class DurableSelectedContextLoaderTest {
         }
 
     @Test
-    fun `terminal error after a tool round keeps its complete detail in Provider context`() =
+    fun `terminal error after a tool round uses the formatter in Provider context`() =
         runTest {
-            val errorDetail = "Formatted provider failure: INSUFFICIENT_BALANCE"
+            val rawErrorDetail = "Raw provider failure: INSUFFICIENT_BALANCE"
+            val displayedErrorDetail = "Displayed provider failure"
             val root = message("root", null, Participant.USER, "question", 0, "root-run")
             val failed = message(
                 "failed",
@@ -243,7 +246,7 @@ class DurableSelectedContextLoaderTest {
                             toolCallId = "call-1",
                         ),
                         MessageSegment(type = "answer", content = "partial answer"),
-                        MessageSegment(type = "error", content = errorDetail),
+                        MessageSegment(type = "error", content = rawErrorDetail),
                     ),
                 ),
             )
@@ -296,7 +299,12 @@ class DurableSelectedContextLoaderTest {
             )
             val entities = listOf(root, failed, tool, result, followUp)
 
-            val loaded = loader(snapshot(entities), entities, mutableListOf()).load(
+            val loaded = loader(
+                snapshot = snapshot(entities),
+                entities = entities,
+                requestedIds = mutableListOf(),
+                generationErrorFormatter = { displayedErrorDetail },
+            ).load(
                 DurableSelectedContextRequest(
                     conversationId = CONVERSATION_ID,
                     anchorMessageId = followUp.id,
@@ -314,8 +322,9 @@ class DurableSelectedContextLoaderTest {
             assertTrue(projectedFailure.text.startsWith("partial answer"))
             assertEquals(
                 1,
-                Regex(Regex.escape(errorDetail)).findAll(projectedFailure.text).count(),
+                Regex(Regex.escape(displayedErrorDetail)).findAll(projectedFailure.text).count(),
             )
+            assertFalse(projectedFailure.text.contains(rawErrorDetail))
             assertTrue(projectedFailure.text.contains("[Generation status: ERROR]"))
             val retainedSegments = Json.decodeFromString<List<MessageSegment>>(
                 requireNotNull(loaded.entities.single { it.id == failed.id }.toolCallJson),
@@ -338,7 +347,10 @@ class DurableSelectedContextLoaderTest {
         coEvery { dao.getMessagesByIds(any()) } answers {
             firstArg<List<String>>().mapNotNull(byId::get)
         }
-        val loader = DurableSelectedContextLoader(ConversationRepository(dao, database = null))
+        val loader = DurableSelectedContextLoader(
+            conversations = ConversationRepository(dao, database = null),
+            generationErrorFormatter = { it },
+        )
         val request = DurableSelectedContextRequest(
             conversationId = CONVERSATION_ID,
             followSelectedBranch = true,
@@ -355,7 +367,7 @@ class DurableSelectedContextLoaderTest {
     @Test
     fun `missing selected payload row fails closed`() = runTest {
         val entity = message("latest", null, Participant.USER, "small", 0, "run")
-        val loader = loader(snapshot(listOf(entity)), emptyList(), mutableListOf())
+        val loader = loader(snapshot(listOf(entity)), emptyList(), mutableListOf()) { it }
 
         try {
             loader.load(
@@ -375,6 +387,7 @@ class DurableSelectedContextLoaderTest {
         snapshot: ProviderContextTopologySnapshot,
         entities: List<MessageEntity>,
         requestedIds: MutableList<List<String>>,
+        generationErrorFormatter: (String) -> String,
     ): DurableSelectedContextLoader {
         val dao = mockk<ChatDao>()
         coEvery { dao.getProviderContextTopologySnapshot(CONVERSATION_ID) } returns snapshot
@@ -382,7 +395,10 @@ class DurableSelectedContextLoaderTest {
         coEvery { dao.getMessagesByIds(any()) } answers {
             firstArg<List<String>>().also { requestedIds += it }.mapNotNull(byId::get)
         }
-        return DurableSelectedContextLoader(ConversationRepository(dao, database = null))
+        return DurableSelectedContextLoader(
+            conversations = ConversationRepository(dao, database = null),
+            generationErrorFormatter = generationErrorFormatter,
+        )
     }
 
     private fun snapshot(

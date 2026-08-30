@@ -677,6 +677,9 @@ class ChatViewModel(
             generationManager = { generationManager },
             newChatSystemPromptId = { pendingSystemPromptId.value },
         )
+            generationErrorFormatter = { raw ->
+                normalizePersistedGenerationErrorText(appContext, raw)
+            },
     }
 
     internal val conversationContextProjection: StateFlow<ConversationContextProjection>

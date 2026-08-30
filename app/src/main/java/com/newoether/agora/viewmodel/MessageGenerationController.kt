@@ -148,7 +148,12 @@ internal class MessageGenerationController(
     private val pauseConversationTasks: suspend (String) -> Unit = {},
 ) {
     private val titleGenerator = ConversationTitleGenerator(convRepo, settings, providerRegistry)
-    private val contextCompactor = ContextCompactor(conversations = convRepo)
+    private val contextCompactor = ContextCompactor(
+        conversations = convRepo,
+        generationErrorFormatter = { raw ->
+            normalizePersistedGenerationErrorText(appContext, raw)
+        },
+    )
     private val terminalSettlement = GenerationTerminalSettlementController(
         conversations = convRepo,
         stopFinalizer = GenerationFinalizer(convRepo) { _, _ -> },

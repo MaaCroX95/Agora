@@ -36,6 +36,7 @@ import com.newoether.agora.viewmodel.StandardGenerationContinuationLauncher
 import com.newoether.agora.viewmodel.StandardGenerationContinuationRequest
 import com.newoether.agora.viewmodel.automaticCompactAllowsHandoff
 import com.newoether.agora.viewmodel.launchStandardContinuationAfterGuidance
+import com.newoether.agora.viewmodel.normalizePersistedGenerationErrorText
 import com.newoether.agora.viewmodel.ProviderRegistry
 import com.newoether.agora.viewmodel.RagManager
 import com.newoether.agora.viewmodel.RunFinalizationEffectCoordinator
@@ -155,7 +156,12 @@ class TaskExecutionEngine(
     private val stopFinalizer = GenerationFinalizer(convRepo, ragManager::indexMessageForRag)
     private val runFinalizationEffects = RunFinalizationEffectCoordinator()
     private val titleGenerator = ConversationTitleGenerator(convRepo, settings, providerRegistry)
-    private val contextCompactor = ContextCompactor(conversations = convRepo)
+    private val contextCompactor = ContextCompactor(
+        conversations = convRepo,
+        generationErrorFormatter = { raw ->
+            normalizePersistedGenerationErrorText(appContext, raw)
+        },
+    )
     private val acceptedInputGraphWriter = AcceptedInputGraphWriter(convRepo)
     private val terminalSettlement = GenerationTerminalSettlementController(
         conversations = convRepo,

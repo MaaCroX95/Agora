@@ -40,7 +40,12 @@ class TranscriptionManager(
     private val conversations: ConversationRepository,
     private val context: Context
 ) {
-    private val contextLoader = DurableSelectedContextLoader(conversations)
+    private val contextLoader = DurableSelectedContextLoader(
+        conversations = conversations,
+        generationErrorFormatter = { raw ->
+            normalizePersistedGenerationErrorText(context, raw)
+        },
+    )
 
     data class TranscriptionTarget(
         val messageId: String,

@@ -30,7 +30,10 @@ class ConversationCompactControllerTest {
     @Test
     fun disabledSettingShortCircuitsBeforeReadingDurableGraph() = runBlocking {
         val conversations = mockk<ConversationRepository>()
-        val compactor = ContextCompactor(conversations = conversations)
+        val compactor = ContextCompactor(
+            conversations = conversations,
+            generationErrorFormatter = { it },
+        )
 
         assertFalse(
             compactor.automaticNeeded(

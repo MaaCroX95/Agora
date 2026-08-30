@@ -362,24 +362,25 @@ host, and TLS failure are matched case-insensitively and localized. Nonblank Pro
 diagnostic detail remains verbatim inside the localized wrapper unless it is plain prose whose first
 lowercase Unicode letter can be title-cased safely; codes, URLs, JSON, and identifiers are not
 rewritten. A narrow render-time compatibility normalizer applies the same known-phrase and safe
-sentence-case rules to already-persisted strings without mutating Room data. For display only, a
-JSON object may contribute one nonblank human-readable detail in the strict order nested
-`error.message`, top-level `message`, then top-level `reason`; JSON escapes are decoded and
-duplicate envelope fields are omitted. Malformed JSON, non-object JSON, or an object without one of
-those supported string fields remains verbatim. This display extraction never changes persisted or
-Provider-facing text.
+sentence-case rules to already-persisted strings without mutating Room data. The gray error bar and
+later Provider terminal-error projection both use that same compatibility normalizer. A JSON object
+may contribute one nonblank human-readable detail in the strict order nested `error.message`,
+top-level `message`, then top-level `reason`; JSON escapes are decoded and duplicate envelope fields
+are omitted. Malformed JSON, non-object JSON, or an object without one of those supported string
+fields remains verbatim. The normalized result is presentation-only for Room, but it is also the
+exact Provider-facing error detail in the current Android locale.
 
 A normal durable MODEL row ending in ERROR or STOPPED remains that exact assistant turn in every
 later Provider request whose selected context contains that row. API-only canonicalization
 preserves its nonblank partial answer first and appends one terminal annotation to the same assistant
 text.
-For ERROR, the complete formatted generation error is mandatory Provider-visible request content.
-API-only canonicalization sends the last nonblank persisted `error` through the established
-generation-error formatting and normalization path, then appends that complete formatted result.
-Formatting may normalize structure and presentation, but it must retain all error information. No
-request-building, context, projection, or Provider-adapter layer may omit, summarize, redact, cap,
-truncate, drop, or replace any part of the formatted result. If the failed MODEL row is in the
-selected context, dispatching an API request without that complete formatted error is
+For ERROR, the final gray-error-bar string in the current Android locale is mandatory
+Provider-visible request content. API-only canonicalization sends the last nonblank persisted
+`error` through `normalizePersistedGenerationErrorText(context, raw)`, then appends that exact result
+as `Details:`. Structured envelope fields that the shared gray presentation omits are not separately
+appended to Provider context. No request-building, context, projection, or Provider-adapter layer may
+substitute a different parser, localization, normalization, or fallback. If the failed MODEL row is
+in the selected context, dispatching an API request without that exact displayed error result is
 contract-invalid. Only legacy error-only rows without an error segment may use their stored text as
 the formatter input. STOPPED appends its stopped annotation even when no partial answer exists.
 The API projection normalizes only its transient status to prevent duplicate projection; it never

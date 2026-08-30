@@ -77,6 +77,9 @@ class GenerationManager(
     private val runFinalizationExecutor = GenerationRunFinalizationExecutor(conversations)
     private val apiPathBuilder = GenerationApiPathBuilder(
         conversations = conversations,
+        generationErrorFormatter = { raw ->
+            normalizePersistedGenerationErrorText(context, raw)
+        },
         toolDefinitions = toolExecutor,
     )
     private val completionEffects = GenerationCompletionEffectsExecutor(

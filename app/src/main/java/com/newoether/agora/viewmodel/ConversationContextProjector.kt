@@ -25,9 +25,10 @@ internal class ConversationContextProjector(
     private val conversations: ConversationRepository,
     private val requestBuilder: GenerationRequestBuilder,
     private val generationManager: () -> GenerationManager,
+    private val generationErrorFormatter: (String) -> String,
     private val newChatSystemPromptId: () -> String? = { null },
     private val contextLoader: DurableSelectedContextLoader =
-        DurableSelectedContextLoader(conversations),
+        DurableSelectedContextLoader(conversations, generationErrorFormatter),
 ) {
     private val requestIds = AtomicLong(0L)
     private val _projection = MutableStateFlow(ConversationContextProjection())

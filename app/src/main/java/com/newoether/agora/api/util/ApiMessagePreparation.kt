@@ -67,9 +67,7 @@ private fun canonicalContextMessages(
 ): List<ChatMessage> {
     val compacted = projectNearestContextCompact(messages, markSummaryForApi)
     val canonical = validateToolMessages(
-        stripEmptyTurns(
-            projectGenerationStatusesForApi(compacted.distinctBy(ChatMessage::id))
-        )
+        stripEmptyTurns(compacted.distinctBy(ChatMessage::id))
     )
     return stripEmptyTurns(mergeConsecutiveSameRole(canonical))
 }
