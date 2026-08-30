@@ -90,7 +90,7 @@ layout, states, density, or interaction design has been approved.
 - Summary/Raw event-card height changes use a 250 ms tween when spatial
   transitions are allowed and snap when Reduced Motion disables them.
 - A capture session retains the newest complete events in sequence order under a
-  4 MiB aggregate budget measured from each retained event's actual serialized
+  16 MiB aggregate budget measured from each retained event's actual serialized
   UTF-8 JSON bytes, including its envelope, context, attributes, and payload.
   Accepting a new event evicts the oldest complete retained events until the
   aggregate fits while capture remains running. The existing
@@ -111,15 +111,13 @@ layout, states, density, or interaction design has been approved.
 - All lower-right floating action buttons are explicitly circular. Their stack
   uses 24 dp end and bottom outer margins with a 12 dp gap between buttons.
 - The event list never follows new events automatically. Directional circular
-  actions target the physical top and bottom through the chat feedback-scroll
-  owners; Reduced Motion snaps to the same destinations. A user drag cancels
-  the page-owned scroll job.
+  actions jump directly to the physical top and bottom with `scrollToItem`,
+  independent of the programmatic-scroll motion policy.
 - At the top only the down action is shown, in the middle both actions are
   shown, and at the bottom only the up action is shown. Empty or non-scrollable
   content shows neither. Each fixed-order slot fades for 250 ms; when spatial
   transitions are allowed it also expands or shrinks vertically for 250 ms so
-  stack placement does not jump. During programmatic scrolling, visible actions
-  stay in place with disabled colors and disabled semantics.
+  stack placement does not jump.
 - Rolling capacity never creates a capacity-limited UI state. The legacy
   incomplete-status resource and disabled resume projection remain only for
   backward-compatible snapshots before Store reconciliation clears the marker.

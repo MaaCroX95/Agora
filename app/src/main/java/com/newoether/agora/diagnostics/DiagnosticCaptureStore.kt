@@ -398,7 +398,7 @@ internal class DiagnosticCaptureStore(
 
     internal companion object {
         const val DEFAULT_MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
-        const val DEFAULT_MAX_RETAINED_PAYLOAD_BYTES = 4L * 1024L * 1024L
+        const val DEFAULT_MAX_RETAINED_PAYLOAD_BYTES = 16L * 1024L * 1024L
         private const val SCHEMA_VERSION = 1
         private const val EVENTS_DIRECTORY = "events"
         private const val METADATA_FILE = "capture-metadata.json"

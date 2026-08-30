@@ -24,9 +24,9 @@ class DiagnosticCaptureStoreTest {
     }
 
     @Test
-    fun `default retained event budget is four mebibytes`() {
+    fun `default retained event budget is sixteen mebibytes`() {
         assertEquals(
-            4L * 1024L * 1024L,
+            16L * 1024L * 1024L,
             DiagnosticCaptureStore.DEFAULT_MAX_RETAINED_PAYLOAD_BYTES,
         )
     }
