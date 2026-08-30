@@ -33,7 +33,6 @@ import com.newoether.agora.model.AttachmentItem
 import com.newoether.agora.model.ChatConversation
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageStatus
-import com.newoether.agora.model.isContextCompact
 import com.newoether.agora.model.apiModelName
 import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.sandbox.SandboxManager
@@ -635,23 +634,20 @@ class ChatViewModel(
 
     val pendingConversationSettings: StateFlow<ConversationSettings?> =
         conversationWorkspaces.newChatConversationSettings
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val isCompacting: StateFlow<Boolean> = currentConversationId
-        .flatMapLatest { conversationId ->
-            if (conversationId == null) flowOf(false)
-            else generationRegistry.getOrCreate(conversationId).streamingMessage
-                .map { message -> message?.isContextCompact() == true }
-        }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
-    val compactPreview: StateFlow<String> = currentConversationId
-        .flatMapLatest { conversationId ->
-            if (conversationId == null) flowOf("")
-            else generationRegistry.getOrCreate(conversationId).streamingMessage
-                .map { message ->
-                    message?.takeIf(ChatMessage::isContextCompact)?.text.orEmpty()
-                }
-        }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
+    private val compactUi = ConversationCompactUiCoordinator(
+        currentConversationId = currentConversationId,
+        registry = generationRegistry,
+        scope = viewModelScope,
+        configuredModel = { settings.contextCompactModel.value },
+        currentModel = { currentActiveModel.value },
+        configuredPrompt = { settings.contextCompactPrompt.value },
+        configuredRetainCount = { settings.contextCompactRetainCount.value },
+        compactManual = { request -> generationController.compactManual(request) },
+        failureMessage = { result -> compactFailureMessage(appContext, result) },
+        onFailure = { message -> emitSnackbar(message) },
+    )
+    val isCompacting: StateFlow<Boolean> get() = compactUi.isCompacting
+    val compactPreview: StateFlow<String> get() = compactUi.compactPreview
     fun setPendingConversationSettings(value: ConversationSettings?) =
         setConversationSettings(null, value)
     fun setConversationSettings(convId: String?, value: ConversationSettings?) =
@@ -884,61 +880,28 @@ class ChatViewModel(
 
     fun deleteConversation(id: String) = conversationLifecycleController.delete(id)
 
-    /**
-     * Deletes a message and all its descendants (BFS cascade).
-     * Hidden tool_/result_ children are included in the cascade.
-     * Attachments, embeddings, and branch selections are cleaned up.
-     * Returns the count of deleted messages (for the confirmation dialog).
-     */
     suspend fun compactContextManual(
         model: String,
         prompt: String,
         retainLogicalMessages: Int,
-    ): CompactResult = generationController.compactManual(
-        CompactRequest(model, prompt, retainLogicalMessages),
-    )
+    ): CompactResult = compactUi.manual(model, prompt, retainLogicalMessages)
 
     /** Owns manual Compact beyond the lifetime of the dialog/composition that initiated it. */
     fun startContextCompactManual(
         model: String,
         prompt: String,
         retainMessages: Int,
-    ) {
-        viewModelScope.launch {
-            val result = try {
-                compactContextManual(model, prompt, retainMessages)
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                CompactResult.Failed(CompactFailureReason.GENERIC)
-            }
-            if (result is CompactResult.Failed) emitSnackbar(compactFailureMessage(appContext, result))
-        }
-    }
+    ) = compactUi.startManual(model, prompt, retainMessages)
 
     /** Re-runs Compact for one terminal Compact pill while preserving its graph position. */
-    fun startContextRecompact(messageId: String) {
-        val model = settings.contextCompactModel.value
-            ?.takeIf(String::isNotBlank)
-            ?: currentActiveModel.value
-        val request = CompactRequest(
-            model = model,
-            prompt = settings.contextCompactPrompt.value,
-            retainLogicalMessages = settings.contextCompactRetainCount.value,
-            replaceMessageId = messageId,
-        )
-        viewModelScope.launch {
-            val result = try {
-                generationController.compactManual(request)
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                CompactResult.Failed(CompactFailureReason.GENERIC)
-            }
-            if (result is CompactResult.Failed) emitSnackbar(compactFailureMessage(appContext, result))
-        }
-    }
+    fun startContextRecompact(messageId: String) = compactUi.startRecompact(messageId)
 
+    /**
+     * Deletes a message and all its descendants (BFS cascade).
+     * Hidden tool_/result_ children are included in the cascade.
+     * Attachments, embeddings, and branch selections are cleaned up.
+     * Returns the count of deleted messages (for the confirmation dialog).
+     */
     fun deleteMessage(messageId: String): Int {
         if (isSwitching.value) return 0
         return generationController.deleteMessage(messageId)
