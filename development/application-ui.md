@@ -296,6 +296,55 @@ Models Settings, Tasks, Context Settings, title generation, transcription settin
 configuration surface. No new UI, Provider configuration, API-key field, or model-list architecture
 is introduced for this test model.
 
+## 23. Conversation-owned attachment import and pre-acceptance Send
+
+Every Composer attachment enters one durable, conversation-owned import lifecycle at selection
+time. The attachment tile appears immediately, Agora copies the source into app-private staging,
+and all required image normalization, video frame extraction, PDF rendering, ordinary-file text
+reading, or Local Sandbox copying begins before Send. `PROCESSING`, `READY`, and `FAILED` are
+persisted with the draft for both ordinary conversations and the New Chat workspace. Navigating to
+another conversation does not cancel or transfer work; returning shows the same live state. After
+process death, `PROCESSING` restarts from its immutable private staged source, `FAILED` remains
+retryable, and an unavailable staged source becomes `FAILED`. Legacy drafts without import state
+are `READY`. The existing `unavailable` value remains reserved for backup/import restoration when
+the attachment resource cannot be restored and never represents import failure.
+
+An image's `READY` private path is its final normalized artifact. The immutable staged image remains
+separate until the `READY` draft write succeeds, then becomes reclaimable. A crash after output
+creation but before that write therefore restarts from the original staged bytes rather than
+compressing the output again. `READY` video frames, selected PDF page images, bounded ordinary-file
+text, and Local Sandbox paths are likewise complete import results. Send performs no decoding,
+scaling, compression, frame extraction, PDF rendering, file text read, or additional ownership copy.
+Provider file reads, Base64, JSON serialization, and upload remain request encoding after accepted
+input and are not attachment import work.
+
+A `PROCESSING` tile shows its overlay and freely rotating indeterminate circular progress indicator
+through independent Crossfades. A `FAILED` tile remains in place with a gray exclamation overlay;
+tapping that overlay retries the complete import from private staging. Failed attachments do not
+disable Send and are excluded from the accepted result. `READY` tiles have no processing overlay.
+
+Tapping Send freezes that draft owner's exact text, model/settings snapshot, and attachment
+membership. Text editing, add/remove, and retry actions are disabled until the request leaves its
+pre-acceptance lifecycle. `WAITING` waits for every frozen attachment's processing coroutine to
+exit, then preserves Composer order while retaining only `READY` results; zero successful
+attachments is valid when the frozen text independently permits Send. Tapping the spinning Send
+control during `WAITING` cancels only that Send request, keeps attachment processing alive, restores
+editing, and releases the deletion lock. `SUBMITTING` is not cancellable. Failure before accepted
+input returns the same frozen Composer to editable `IDLE`. Authoritative acceptance clears that
+owner's complete Composer, including failed tiles.
+
+Switching conversations cannot cancel, redirect, duplicate, or clear the frozen request. From Send
+tap through authoritative acceptance and exact-owner clearing, Delete Conversation is disabled for
+the origin and the controller rejects deletion races below the dialog. A New Chat request selects
+its newly created conversation only if the user still occupies the originating New Chat workspace;
+otherwise it appears in the list without taking focus. A process restart restores the durable draft
+and attachment imports but never automatically replays an unaccepted Send request.
+
+Attachment paging preserves occurrence identity. Send emits successful attachment artifacts and
+metadata in one traversal of Composer order. Composer and durable-message viewers assign pager
+indices while constructing their filtered media sequence; they never recover an occurrence with
+`indexOf` on a URI or path, so duplicate values and mixed attachment types open the tapped item.
+
 ## 15. Verification
 
 Focused verification must cover the onboarding action's fixed 32 dp inset and 48 dp height, absence

@@ -37,6 +37,18 @@ enum class AttachmentStorage {
 }
 
 @Serializable
+enum class AttachmentImportState {
+    @SerialName("processing")
+    PROCESSING,
+
+    @SerialName("ready")
+    READY,
+
+    @SerialName("failed")
+    FAILED,
+}
+
+@Serializable
 data class AttachmentMeta(val items: List<AttachmentItem> = emptyList())
 
 @Serializable
@@ -77,5 +89,7 @@ data class SelectedAttachment(
     val localPath: String? = null,  // copied into storage owned by [storage] at pick time
     val storage: AttachmentStorage = AttachmentStorage.APP_PRIVATE,
     val sandboxPath: String? = null,
+    val importState: AttachmentImportState = AttachmentImportState.READY,
+    val preparedText: String? = null,
     val unavailable: Boolean = false,
 )

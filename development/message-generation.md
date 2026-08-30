@@ -205,6 +205,11 @@ durable message identity and cannot become a parallel message graph.
 
 ### 8.1 Ordinary Send and queue drain
 
+- Composer pre-acceptance work freezes an immutable draft-owner, destination, model/settings, text,
+  and ordered `READY` attachment snapshot before it invokes ordinary admission. Conversation
+  selection may change while that work waits, but accepted input uses only the frozen identity and
+  clears only that exact draft owner. The generation path must not re-read the visible conversation
+  or current model to choose a destination for an already frozen request.
 - One accepted Send creates one fresh Run, durable USER input, and MODEL placeholder atomically.
 - One claimed FIFO drain enters the same Send transaction and creates a fresh Run.
 - Input queued while another generation owns the slot stays memory-owned until a legal boundary.

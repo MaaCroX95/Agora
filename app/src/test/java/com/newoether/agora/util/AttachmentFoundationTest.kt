@@ -1,5 +1,6 @@
 package com.newoether.agora.util
 
+import com.newoether.agora.model.AttachmentImportState
 import com.newoether.agora.model.AttachmentItem
 import com.newoether.agora.model.AttachmentMeta
 import com.newoether.agora.model.AttachmentStorage
@@ -33,6 +34,17 @@ class AttachmentFoundationTest {
         assertEquals(AttachmentStorage.APP_PRIVATE, decoded.storage)
         assertTrue(decoded.storage.canPreview)
         assertTrue(decoded.storage.reclaimWhenAbandoned)
+    }
+
+    @Test
+    fun legacySelectedAttachmentDefaultsToReadyImportState() {
+        val decoded = Json.decodeFromString<SelectedAttachment>(
+            """{"localId":"legacy","uri":"file:///draft","type":"image"}""",
+        )
+
+        assertEquals(AttachmentImportState.READY, decoded.importState)
+        assertNull(decoded.preparedText)
+        assertFalse(decoded.unavailable)
     }
 
     @Test
