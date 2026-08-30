@@ -664,6 +664,8 @@
     <string name="auto_cache_title">Кэширование</string>
     <string name="auto_cache">Автоматически кэшировать новые сообщения</string>
     <string name="auto_cache_desc">Автоматически индексирует новые сообщения выбранной моделью эмбеддинга. Если выключено, сообщения не кэшируются до ручного запуска.</string>
+    <string name="show_uncached_notification">Показывать уведомление о некэшированных сообщениях</string>
+    <string name="show_uncached_notification_desc">Показывает напоминание, когда автоматическое кэширование отключено и остаются некэшированные сообщения</string>
     <string name="cache_action">Кэшировать</string>
     <string name="recache_action">Перекэшировать</string>
     <string name="recache_confirm_title">Перекэшировать все сообщения</string>

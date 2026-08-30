@@ -664,6 +664,8 @@
     <string name="auto_cache_title">التخزين المؤقت</string>
     <string name="auto_cache">تخزين الرسائل الجديدة مؤقتًا تلقائيًا</string>
     <string name="auto_cache_desc">يفهرس الرسائل الجديدة تلقائيًا بنموذج التضمين المحدد. عند الإيقاف، لا تُخزَّن الرسائل مؤقتًا حتى يتم تشغيلها يدويًا.</string>
+    <string name="show_uncached_notification">إظهار إشعار الرسائل غير المخزنة مؤقتًا</string>
+    <string name="show_uncached_notification_desc">اعرض تذكيرًا عندما يكون التخزين المؤقت التلقائي متوقفًا وتبقى رسائل غير مخزنة مؤقتًا</string>
     <string name="cache_action">تخزين مؤقت</string>
     <string name="recache_action">إعادة التخزين المؤقت</string>
     <string name="recache_confirm_title">إعادة تخزين جميع الرسائل مؤقتًا</string>

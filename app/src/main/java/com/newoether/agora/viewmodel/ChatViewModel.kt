@@ -225,7 +225,9 @@ class ChatViewModel(
             checkUpdate = UpdateChecker::check,
             onUpdateFound = { _updateDialogData.value = it },
             isCaching = { ragManager.cachingProgress.value.containsKey(it) },
-            cacheMessages = ragManager::cacheMessagesForModel,
+            cacheMessages = { modelId, silent ->
+                ragManager.cacheMessagesForModel(modelId, silent = silent)
+            },
             cacheReminder = { notCached, total, action ->
                 SnackbarEvent(
                     getApplication<Application>().getString(

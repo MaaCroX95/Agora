@@ -664,6 +664,8 @@
     <string name="auto_cache_title">Mise en cache</string>
     <string name="auto_cache">Mettre en cache automatiquement les nouveaux messages</string>
     <string name="auto_cache_desc">Indexe automatiquement les nouveaux messages avec le modèle d\'embedding sélectionné. Désactivé, les messages ne sont jamais mis en cache jusqu\'à une action manuelle.</string>
+    <string name="show_uncached_notification">Afficher la notification des messages non mis en cache</string>
+    <string name="show_uncached_notification_desc">Affiche un rappel lorsque la mise en cache automatique est désactivée et que des messages ne sont pas mis en cache</string>
     <string name="cache_action">Cache</string>
     <string name="recache_action">Remettre en cache</string>
     <string name="recache_confirm_title">Remettre en cache tous les messages</string>

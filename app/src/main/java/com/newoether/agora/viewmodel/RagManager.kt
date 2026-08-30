@@ -228,19 +228,18 @@ class RagManager(
         if (id == settings.activeEmbeddingModelId.value) return
         scope.launch(Dispatchers.IO) {
             settings.setActiveEmbeddingModelId(id)
-            val model = settings.embeddingModels.value.find { it.id == id } ?: return@launch
+            if (settings.embeddingModels.value.none { it.id == id }) return@launch
             val total = conversations.getIndexableMessageCount()
             val cached = conversations.getEmbeddingCountByModel(id)
             val notCached = (total - cached).coerceAtLeast(0)
-            if (notCached > 0) {
-                if (cachingProgress.value.containsKey(id)) {
-                    emitSnackbar(SnackbarEvent(appContext.getString(R.string.embedding_model_caching, model.name)))
-                } else {
-                    emitSnackbar(SnackbarEvent(
-                        appContext.getString(R.string.messages_not_cached, notCached, total),
-                        appContext.getString(R.string.cache_now)
-                    ) { cacheMessagesForModel(id) })
-                }
+            if (notCached == 0 || cachingProgress.value.containsKey(id)) return@launch
+            if (settings.getAutoCacheEnabled()) {
+                cacheMessagesForModel(id, silent = true)
+            } else if (settings.getShowUncachedNotification()) {
+                emitSnackbar(SnackbarEvent(
+                    appContext.getString(R.string.messages_not_cached, notCached, total),
+                    appContext.getString(R.string.cache_now)
+                ) { cacheMessagesForModel(id) })
             }
         }
     }

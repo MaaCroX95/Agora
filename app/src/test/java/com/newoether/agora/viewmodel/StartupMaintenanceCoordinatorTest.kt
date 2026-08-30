@@ -63,6 +63,8 @@ class StartupMaintenanceCoordinatorTest {
         )
         coEvery { fixture.settings.getEmbeddingModels() } returns listOf(active)
         coEvery { fixture.settings.getActiveEmbeddingModelId() } returns active.id
+        coEvery { fixture.settings.getAutoCacheEnabled() } returns false
+        coEvery { fixture.settings.getShowUncachedNotification() } returns true
         coEvery { fixture.conversations.getIndexableMessageCount() } returns 10
         coEvery { fixture.conversations.getEmbeddingCountByModel(active.id) } returns 3
 
@@ -71,7 +73,50 @@ class StartupMaintenanceCoordinatorTest {
         fixture.snackbars.single().onAction?.invoke()
 
         assertEquals("7/10", fixture.snackbars.single().message)
-        assertEquals(listOf(active.id), fixture.cacheRequests)
+        assertEquals(listOf(active.id to false), fixture.cacheRequests)
+    }
+
+    @Test
+    fun autoCacheSilentlyBackfillsUncachedMessages() = runTest {
+        val fixture = Fixture(this)
+        val active = EmbeddingModelConfig(
+            id = "embedding",
+            name = "Embedding",
+            type = EmbeddingModelType.LOCAL,
+        )
+        coEvery { fixture.settings.getEmbeddingModels() } returns listOf(active)
+        coEvery { fixture.settings.getActiveEmbeddingModelId() } returns active.id
+        coEvery { fixture.settings.getAutoCacheEnabled() } returns true
+        coEvery { fixture.conversations.getIndexableMessageCount() } returns 10
+        coEvery { fixture.conversations.getEmbeddingCountByModel(active.id) } returns 3
+
+        fixture.coordinator.start()
+        runCurrent()
+
+        assertEquals(listOf(active.id to true), fixture.cacheRequests)
+        assertTrue(fixture.snackbars.isEmpty())
+    }
+
+    @Test
+    fun disabledAutoCacheAndReminderLeaveUncachedMessagesSilent() = runTest {
+        val fixture = Fixture(this)
+        val active = EmbeddingModelConfig(
+            id = "embedding",
+            name = "Embedding",
+            type = EmbeddingModelType.REMOTE,
+        )
+        coEvery { fixture.settings.getEmbeddingModels() } returns listOf(active)
+        coEvery { fixture.settings.getActiveEmbeddingModelId() } returns active.id
+        coEvery { fixture.settings.getAutoCacheEnabled() } returns false
+        coEvery { fixture.settings.getShowUncachedNotification() } returns false
+        coEvery { fixture.conversations.getIndexableMessageCount() } returns 10
+        coEvery { fixture.conversations.getEmbeddingCountByModel(active.id) } returns 3
+
+        fixture.coordinator.start()
+        runCurrent()
+
+        assertTrue(fixture.cacheRequests.isEmpty())
+        assertTrue(fixture.snackbars.isEmpty())
     }
 
     @Test
@@ -146,7 +191,7 @@ class StartupMaintenanceCoordinatorTest {
         val checkedVersions = mutableListOf<String>()
         val updates = mutableListOf<UpdateInfo>()
         val snackbars = mutableListOf<SnackbarEvent>()
-        val cacheRequests = mutableListOf<String>()
+        val cacheRequests = mutableListOf<Pair<String, Boolean>>()
         val sweepFailures = mutableListOf<Exception>()
         var updateResult: UpdateInfo? = null
         private val dispatcher = StandardTestDispatcher(testScope.testScheduler)
@@ -162,7 +207,7 @@ class StartupMaintenanceCoordinatorTest {
             },
             onUpdateFound = updates::add,
             isCaching = { it in cachingIds },
-            cacheMessages = cacheRequests::add,
+            cacheMessages = { modelId, silent -> cacheRequests += modelId to silent },
             cacheReminder = { notCached, total, action ->
                 SnackbarEvent("$notCached/$total", "cache", action)
             },

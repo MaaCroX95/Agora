@@ -171,6 +171,7 @@ class SettingsRepository(
     val accessSkillsModify: StateFlow<Boolean> = hot(settingsManager.accessSkillsModify, true)
     val ragSearchEnabled: StateFlow<Boolean> = hot(settingsManager.ragSearchEnabled, false)
     val autoCacheEnabled: StateFlow<Boolean> = hot(settingsManager.autoCacheEnabled, true)
+    val showUncachedNotification: StateFlow<Boolean> = hot(settingsManager.showUncachedNotification, true)
     val autoUpdateCheck: StateFlow<Boolean> = hot(settingsManager.autoUpdateCheck, true)
     val lastUpdateCheckTime: StateFlow<Long> = hot(settingsManager.lastUpdateCheckTime, 0L)
     val modelSearchMethod: StateFlow<String> = hot(settingsManager.modelSearchMethod, "keyword")
@@ -611,6 +612,8 @@ class SettingsRepository(
     fun setAccessSkillsModify(enabled: Boolean) = scope.launch { settingsManager.saveAccessSkillsModify(enabled) }
     fun setRagSearchEnabled(enabled: Boolean) = scope.launch { settingsManager.saveRagSearchEnabled(enabled) }
     fun setAutoCacheEnabled(enabled: Boolean) = scope.launch { settingsManager.saveAutoCacheEnabled(enabled) }
+    fun setShowUncachedNotification(enabled: Boolean) =
+        scope.launch { settingsManager.saveShowUncachedNotification(enabled) }
     fun setAutoUpdateCheck(enabled: Boolean) = scope.launch { settingsManager.saveAutoUpdateCheck(enabled) }
     fun setLastUpdateCheckTime(time: Long) = scope.launch { settingsManager.saveLastUpdateCheckTime(time) }
     fun setModelSearchMethod(method: String) = scope.launch { settingsManager.saveModelSearchMethod(method) }
@@ -725,6 +728,8 @@ class SettingsRepository(
     // detail of this repository — the single owner of the settings surface.
 
     suspend fun getAutoUpdateCheck(): Boolean = settingsManager.autoUpdateCheck.first()
+    suspend fun getAutoCacheEnabled(): Boolean = settingsManager.autoCacheEnabled.first()
+    suspend fun getShowUncachedNotification(): Boolean = settingsManager.showUncachedNotification.first()
     suspend fun getLastUpdateCheckTime(): Long = settingsManager.lastUpdateCheckTime.first()
     suspend fun getEmbeddingModels(): List<EmbeddingModelConfig> = settingsManager.embeddingModels.first()
     suspend fun getActiveEmbeddingModelId(): String = settingsManager.activeEmbeddingModelId.first()

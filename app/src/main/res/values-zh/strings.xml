@@ -688,6 +688,8 @@
     <string name="auto_cache_title">缓存</string>
     <string name="auto_cache">自动缓存新消息</string>
     <string name="auto_cache_desc">使用选定的嵌入模型自动索引新消息。关闭后，消息仅在手动触发时才会被缓存。</string>
+    <string name="show_uncached_notification">显示未缓存通知</string>
+    <string name="show_uncached_notification_desc">当自动缓存关闭且仍有消息未缓存时显示提醒</string>
     <string name="cache_action">缓存</string>
     <string name="recache_action">重新缓存</string>
     <string name="recache_confirm_title">重新缓存所有消息</string>

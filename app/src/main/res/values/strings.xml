@@ -717,6 +717,8 @@
     <string name="auto_cache_title">Caching</string>
     <string name="auto_cache">Auto-Cache New Messages</string>
     <string name="auto_cache_desc">Automatically index new messages with the selected embedding model. When off, messages are never cached until manually triggered.</string>
+    <string name="show_uncached_notification">Show Uncached Notification</string>
+    <string name="show_uncached_notification_desc">Show a reminder when automatic caching is off and messages remain uncached</string>
     <string name="cache_action">Cache</string>
     <string name="recache_action">Re-cache</string>
     <string name="recache_confirm_title">Re-cache All Messages</string>

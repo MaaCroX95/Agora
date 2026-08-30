@@ -70,7 +70,22 @@ status. Startup/page refresh failure retains the previous snapshot and logs only
 Semantic ranking remains governed by the bounded search path above; count optimization cannot
 materialize, decode, rank, delete, or rebuild embedding rows.
 
-## 6. Required verification
+## 6. Automatic cache backfill and reminder
+
+`Auto Cache` remains enabled by default and owns both incremental indexing of newly persisted eligible
+messages and full uncached detection at application startup or active Embedding-model change. When an
+active model has uncached messages and no cache run is already active, enabled Auto Cache starts the
+existing full model cache runner with silent presentation. That automatic run emits no uncached,
+caching, success, completion, partial-failure, or setup-failure Snackbar. Manual cache and recache
+actions retain their existing feedback.
+
+`Show Uncached Notification` is a separate default-on portable setting. It is consulted only while
+Auto Cache is disabled. In that state, startup and active-model detection may emit the existing
+uncached-message Snackbar with its exact manual cache action when the setting is enabled; disabling it
+leaves the messages uncached and emits no reminder. The Settings row is placed directly below Auto
+Cache and is not shown while Auto Cache is enabled.
+
+## 7. Required verification
 
 Focused verification must cover aggregate count mapping, configured models with no rows, coalesced
 refresh, retained-snapshot behavior, the model-leading migration/index, and absence of page-owned N+1

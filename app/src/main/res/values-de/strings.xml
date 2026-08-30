@@ -664,6 +664,8 @@
     <string name="auto_cache_title">Zwischenspeicherung</string>
     <string name="auto_cache">Neue Nachrichten automatisch zwischenspeichern</string>
     <string name="auto_cache_desc">Indexiert neue Nachrichten automatisch mit dem ausgewählten Embedding-Modell. Wenn deaktiviert, werden Nachrichten erst nach manueller Auslösung zwischengespeichert.</string>
+    <string name="show_uncached_notification">Benachrichtigung für nicht zwischengespeicherte Nachrichten anzeigen</string>
+    <string name="show_uncached_notification_desc">Zeigt eine Erinnerung an, wenn das automatische Zwischenspeichern deaktiviert ist und Nachrichten nicht zwischengespeichert sind</string>
     <string name="cache_action">Cache</string>
     <string name="recache_action">Neu zwischenspeichern</string>
     <string name="recache_confirm_title">Alle Nachrichten neu zwischenspeichern</string>

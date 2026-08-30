@@ -183,6 +183,8 @@ class SettingsManager(private val context: Context) {
     val conversationSettings: Flow<Map<String, ConversationSettings>> =
         context.dataStore.data.map { preferences -> decodeConversationSettings(preferences, json) }
     val autoCacheEnabled: Flow<Boolean> = context.dataStore.data.map { it[AUTO_CACHE_ENABLED] ?: true }
+    val showUncachedNotification: Flow<Boolean> =
+        context.dataStore.data.map { it[SHOW_UNCACHED_NOTIFICATION] ?: true }
     val autoUpdateCheck: Flow<Boolean> = context.dataStore.data.map { it[AUTO_UPDATE_CHECK] ?: true }
     val lastUpdateCheckTime: Flow<Long> = context.dataStore.data.map { it[LAST_UPDATE_CHECK_TIME] ?: 0L }
     val localChatModels: Flow<List<LocalChatModelConfig>> = modelPreferenceStore.localChatModels
@@ -501,6 +503,9 @@ class SettingsManager(private val context: Context) {
     }
     suspend fun saveAutoCacheEnabled(enabled: Boolean) {
         context.dataStore.edit { it[AUTO_CACHE_ENABLED] = enabled }
+    }
+    suspend fun saveShowUncachedNotification(enabled: Boolean) {
+        context.dataStore.edit { it[SHOW_UNCACHED_NOTIFICATION] = enabled }
     }
     suspend fun saveAutoUpdateCheck(enabled: Boolean) {
         context.dataStore.edit { it[AUTO_UPDATE_CHECK] = enabled }
@@ -906,6 +911,7 @@ class SettingsManager(private val context: Context) {
             prefs.remove(SEARCH_MATCH_LIMIT)
             prefs.remove(RAG_THRESHOLD)
             prefs.remove(AUTO_CACHE_ENABLED)
+            prefs.remove(SHOW_UNCACHED_NOTIFICATION)
             prefs.remove(AUTO_UPDATE_CHECK)
             prefs.remove(CUSTOM_PROVIDERS_JSON)
             prefs.remove(SHELL_ENABLED)

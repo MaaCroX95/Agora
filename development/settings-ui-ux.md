@@ -76,6 +76,9 @@ layout, states, density, or interaction design has been approved.
 - Async labels, leading icons, counts, and connection status must change in
   place without shifting the surrounding layout.
 - Rows remain clickable as a whole and expose one clear semantic action.
+- Search Settings places `Show Uncached Notification` directly below Auto Cache only while Auto
+  Cache is disabled. Its default-on stored value is retained while hidden; enabling Auto Cache hides
+  the row rather than changing that value.
 
 ## Diagnostic Capture
 

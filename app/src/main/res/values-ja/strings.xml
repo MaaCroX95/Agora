@@ -664,6 +664,8 @@
     <string name="auto_cache_title">キャッシュ</string>
     <string name="auto_cache">新しいメッセージを自動キャッシュ</string>
     <string name="auto_cache_desc">選択した埋め込みモデルで新しいメッセージを自動的にインデックス化します。オフの場合、手動で実行するまでメッセージはキャッシュされません。</string>
+    <string name="show_uncached_notification">未キャッシュ通知を表示</string>
+    <string name="show_uncached_notification_desc">自動キャッシュがオフで、未キャッシュのメッセージが残っている場合にリマインダーを表示します。</string>
     <string name="cache_action">キャッシュ</string>
     <string name="recache_action">再キャッシュ</string>
     <string name="recache_confirm_title">すべてのメッセージを再キャッシュ</string>

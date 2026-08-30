@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.ManageSearch
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
@@ -47,6 +48,7 @@ private val searchMethods = listOf(
 fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     val accessPastConversations by viewModel.settings.accessPastConversations.collectAsState()
     val autoCacheEnabled by viewModel.settings.autoCacheEnabled.collectAsState()
+    val showUncachedNotification by viewModel.settings.showUncachedNotification.collectAsState()
     val modelSearchMethod by viewModel.settings.modelSearchMethod.collectAsState()
     val manualSearchMethod by viewModel.settings.manualSearchMethod.collectAsState()
     val embeddingModels by viewModel.settings.embeddingModels.collectAsState()
@@ -134,8 +136,8 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
 
                 SettingsGroup(
                     title = stringResource(R.string.auto_cache_title),
-                items = listOf(
-                    {
+                items = buildList {
+                    add {
                         SettingsItem(
                             headlineContent = { Text(stringResource(R.string.auto_cache)) },
                             supportingContent = { Text(stringResource(R.string.auto_cache_desc)) },
@@ -146,7 +148,27 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                             modifier = Modifier.clickable { viewModel.settings.setAutoCacheEnabled(!autoCacheEnabled) }
                         )
                     }
-                )
+                    if (!autoCacheEnabled) {
+                        add {
+                            SettingsItem(
+                                headlineContent = { Text(stringResource(R.string.show_uncached_notification)) },
+                                supportingContent = { Text(stringResource(R.string.show_uncached_notification_desc)) },
+                                leadingContent = {
+                                    Icon(Icons.Default.Notifications, null, tint = MaterialTheme.colorScheme.primary)
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = showUncachedNotification,
+                                        onCheckedChange = viewModel.settings::setShowUncachedNotification,
+                                    )
+                                },
+                                modifier = Modifier.clickable {
+                                    viewModel.settings.setShowUncachedNotification(!showUncachedNotification)
+                                }
+                            )
+                        }
+                    }
+                }
             )
 
             SettingsGroup(

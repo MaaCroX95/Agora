@@ -586,6 +586,8 @@
     <string name="auto_cache_title">快取</string>
     <string name="auto_cache">自動快取新訊息</string>
     <string name="auto_cache_desc">使用選定的嵌入模型自動索引新訊息。關閉後，訊息僅在手動觸發時才會被快取。</string>
+    <string name="show_uncached_notification">顯示未快取通知</string>
+    <string name="show_uncached_notification_desc">自動快取關閉且仍有訊息未快取時顯示提醒</string>
     <string name="cache_action">快取</string>
     <string name="recache_action">重新快取</string>
     <string name="recache_confirm_title">重新快取所有訊息</string>

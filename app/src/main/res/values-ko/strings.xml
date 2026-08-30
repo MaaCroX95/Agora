@@ -664,6 +664,8 @@
     <string name="auto_cache_title">캐싱</string>
     <string name="auto_cache">새 메시지 자동 캐시</string>
     <string name="auto_cache_desc">선택한 임베딩 모델로 새 메시지를 자동으로 인덱싱합니다. 꺼져 있으면 수동으로 실행하기 전까지 메시지가 캐시되지 않습니다.</string>
+    <string name="show_uncached_notification">캐시되지 않은 메시지 알림 표시</string>
+    <string name="show_uncached_notification_desc">자동 캐시가 꺼져 있고 캐시되지 않은 메시지가 남아 있을 때 알림을 표시합니다.</string>
     <string name="cache_action">캐시</string>
     <string name="recache_action">다시 캐시</string>
     <string name="recache_confirm_title">모든 메시지 다시 캐시</string>

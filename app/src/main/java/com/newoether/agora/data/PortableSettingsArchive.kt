@@ -98,6 +98,7 @@ internal object PortableSettingsArchive {
         put("searchMatchLimit", JsonPrimitive(sm.searchMatchLimit.first()))
         put("ragThreshold", JsonPrimitive(sm.ragThreshold.first()))
         put("autoCacheEnabled", JsonPrimitive(sm.autoCacheEnabled.first()))
+        put("showUncachedNotification", JsonPrimitive(sm.showUncachedNotification.first()))
         put("autoUpdateCheck", JsonPrimitive(sm.autoUpdateCheck.first()))
 
         put("imageTranscriptionEnabled", JsonPrimitive(sm.imageTranscriptionEnabled.first()))
@@ -342,6 +343,7 @@ internal object PortableSettingsArchive {
         obj.int("searchMatchLimit")?.let { sm.saveSearchMatchLimit(it) }
         obj.float("ragThreshold")?.let { sm.saveRagThreshold(it) }
         obj.boolean("autoCacheEnabled")?.let { sm.saveAutoCacheEnabled(it) }
+        obj.boolean("showUncachedNotification")?.let { sm.saveShowUncachedNotification(it) }
         obj.boolean("autoUpdateCheck")?.let { sm.saveAutoUpdateCheck(it) }
 
         obj.boolean("imageTranscriptionEnabled")?.let { sm.saveImageTranscriptionEnabled(it) }

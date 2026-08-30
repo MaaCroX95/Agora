@@ -667,6 +667,8 @@
     <string name="auto_cache_title">Lưu bộ đệm</string>
     <string name="auto_cache">Tự động lưu bộ đệm các tin nhắn mới</string>
     <string name="auto_cache_desc">Tự động chỉ mục các tin nhắn mới bằng mô hình nhúng đã chọn. Khi tắt, các tin nhắn sẽ không bao giờ được lưu bộ đệm cho đến khi được kích hoạt thủ công.</string>
+    <string name="show_uncached_notification">Hiển thị thông báo tin nhắn chưa lưu bộ đệm</string>
+    <string name="show_uncached_notification_desc">Hiển thị lời nhắc khi tính năng tự động lưu bộ đệm bị tắt và vẫn còn tin nhắn chưa được lưu bộ đệm</string>
     <string name="cache_action">Lưu bộ đệm</string>
     <string name="recache_action">Lưu lại bộ đệm</string>
     <string name="recache_confirm_title">Lưu lại bộ đệm tất cả tin nhắn</string>

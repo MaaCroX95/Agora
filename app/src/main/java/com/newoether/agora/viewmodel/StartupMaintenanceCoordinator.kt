@@ -18,7 +18,7 @@ internal class StartupMaintenanceCoordinator(
     private val checkUpdate: suspend (String) -> UpdateInfo?,
     private val onUpdateFound: (UpdateInfo) -> Unit,
     private val isCaching: (String) -> Boolean,
-    private val cacheMessages: (String) -> Unit,
+    private val cacheMessages: (modelId: String, silent: Boolean) -> Unit,
     private val cacheReminder: (notCached: Int, total: Int, action: () -> Unit) -> SnackbarEvent,
     private val emitSnackbar: suspend (SnackbarEvent) -> Unit,
     private val sweepAttachments: suspend () -> Unit,
@@ -30,7 +30,7 @@ internal class StartupMaintenanceCoordinator(
     fun start() {
         scope.launch(ioDispatcher) { migrateLegacyCustomProviderReferences() }
         scope.launch(ioDispatcher) { checkForUpdateIfDue() }
-        scope.launch(ioDispatcher) { remindAboutUncachedMessages() }
+        scope.launch(ioDispatcher) { handleUncachedMessages() }
         scope.launch(ioDispatcher) { conversations.deleteOrphanedEmbeddings() }
         scope.launch(ioDispatcher) { conversations.repairInvalidRunBranchSelections() }
         scope.launch(ioDispatcher) {
@@ -64,13 +64,17 @@ internal class StartupMaintenanceCoordinator(
         checkUpdate(currentVersion())?.let(onUpdateFound)
     }
 
-    private suspend fun remindAboutUncachedMessages() {
+    private suspend fun handleUncachedMessages() {
         val activeId = settings.getActiveEmbeddingModelId()
         val active = settings.getEmbeddingModels().find { it.id == activeId } ?: return
         val total = conversations.getIndexableMessageCount()
         val notCached = (total - conversations.getEmbeddingCountByModel(active.id)).coerceAtLeast(0)
         if (notCached == 0 || isCaching(active.id)) return
-        emitSnackbar(cacheReminder(notCached, total) { cacheMessages(active.id) })
+        if (settings.getAutoCacheEnabled()) {
+            cacheMessages(active.id, true)
+        } else if (settings.getShowUncachedNotification()) {
+            emitSnackbar(cacheReminder(notCached, total) { cacheMessages(active.id, false) })
+        }
     }
 
     private companion object {

@@ -664,6 +664,8 @@
     <string name="auto_cache_title">Almacenamiento en caché</string>
     <string name="auto_cache">Almacenar en caché los mensajes nuevos automáticamente</string>
     <string name="auto_cache_desc">Indexa automáticamente los mensajes nuevos con el modelo de embedding seleccionado. Si está desactivado, los mensajes nunca se almacenan en caché hasta que se active manualmente.</string>
+    <string name="show_uncached_notification">Mostrar notificación de mensajes sin caché</string>
+    <string name="show_uncached_notification_desc">Muestra un recordatorio cuando el almacenamiento automático en caché está desactivado y quedan mensajes sin almacenar en caché</string>
     <string name="cache_action">Caché</string>
     <string name="recache_action">Volver a cachear</string>
     <string name="recache_confirm_title">Volver a cachear todos los mensajes</string>
