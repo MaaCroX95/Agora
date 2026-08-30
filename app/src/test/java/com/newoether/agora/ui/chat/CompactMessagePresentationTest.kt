@@ -42,6 +42,27 @@ class CompactMessagePresentationTest {
     }
 
     @Test
+    fun tailMinimumHeightBelongsToTheActualLastTurn() {
+        val ordinaryTurns = buildMessageListTurns(
+            listOf(
+                message("user", Participant.USER),
+                message("assistant", Participant.MODEL),
+            ),
+        )
+        val turnsWithCompact = buildMessageListTurns(
+            listOf(
+                message("user", Participant.USER),
+                message("assistant", Participant.MODEL),
+                message("compact_boundary", Participant.MODEL),
+            ),
+        )
+
+        assertEquals("user", messageListTailTurnKey(ordinaryTurns))
+        assertEquals("compact_boundary", messageListTailTurnKey(turnsWithCompact))
+        assertFalse(turnsWithCompact.first().key == messageListTailTurnKey(turnsWithCompact))
+    }
+
+    @Test
     fun leadingAndConsecutiveCompactsRemainStandaloneForEveryStatus() {
         val compacts = MessageStatus.entries.map { status ->
             message("compact_${status.name.lowercase()}", Participant.MODEL).copy(

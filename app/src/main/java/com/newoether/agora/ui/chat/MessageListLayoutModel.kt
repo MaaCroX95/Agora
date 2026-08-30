@@ -193,6 +193,8 @@ internal fun buildMessageListTurns(messages: List<ChatMessage>): List<MessageLis
     return turns
 }
 
+internal fun messageListTailTurnKey(turns: List<MessageListTurn>): String? = turns.lastOrNull()?.key
+
 internal fun messageListTurnIndex(
     turns: List<MessageListTurn>,
     messageId: String,

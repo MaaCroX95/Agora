@@ -253,6 +253,7 @@ internal fun MessageList(
     }
     val turnCache = remember { MessageListTurnCache() }
     val turns = remember(presentationMessages) { turnCache.update(presentationMessages) }
+    val tailTurnKey = messageListTailTurnKey(turns)
     LaunchedEffect(conversationId, turns, searchQuery) { onSearchTurnsChanged(turns) }
 
     LaunchedEffect(
@@ -964,7 +965,7 @@ internal fun MessageList(
             userScrollEnabled = userScrollEnabled
         ) {
             items(turns, key = { turn -> stableVisualKey(turn.key) }) { turn ->
-                val isLastTurn = turn.key == lastUserMessage?.id
+                val isLastTurn = turn.key == tailTurnKey
                 // A turn's key and composition survive when the next USER is appended. Only the
                 // new turn enters; the previous assistant never moves to a different Lazy item.
                 Box(modifier = Modifier) {
