@@ -562,7 +562,7 @@ internal fun MessageList(
         RunUiProjection.project(messages.list, allMessages.list)
     }
 
-    val tailMinHeightPx = if (lastUserMessage == null || viewportHeight == 0) {
+    val tailMinHeightPx = if (tailTurnKey == null || viewportHeight == 0) {
         0
     } else {
         calculateTailMinHeightPx(

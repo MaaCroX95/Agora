@@ -1004,8 +1004,8 @@ fun ChatApp(
         selectedModel = selectedModel,
         compactPrompt = compactPrompt,
         compactRetainCount = compactRetainCount,
-        enabledModels = enabledModels,
-        modelAliases = modelAliases, customProviders = customProviders,
+        enabledModels = chatEnabledModels,
+        modelAliases = chatModelAliases, customProviders = customProviders,
         isCompacting = isCompacting,
     )
 

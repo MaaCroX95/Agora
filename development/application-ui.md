@@ -271,6 +271,26 @@ install, remove, and upgrade work therefore remains available to later consumers
 Only an explicit Sandbox reset may cancel the manager scope, and reset must replace that scope before
 continuing. The queue is not persisted or restored after process death, mirrored through a durable
 flag, or represented as retained UI state. The Play flavor exposes an empty outcome stream.
+## 21. Tasks Once date-picker mode transition
+
+The Tasks Once date picker uses Material3's modal `DatePickerDialog` at its stable 568 dp container
+height. Material3 remains the sole owner of `DatePickerState.displayMode`, selected-date state,
+calendar/input `AnimatedContent`, focus, keyboard interaction, and the mode-toggle transition. Agora
+does not mirror the mode, delay or retry keyboard handoff, or animate the Dialog window's
+wrap-content height. Confirmation, cancellation, selectable-date validation, formatting, colors, and
+schedule persistence remain unchanged.
+
+## 22. Debug test-model visibility
+
+When Developer Options and Debug Model are enabled, the existing `debug` model participates in the
+canonical Chat-enabled model set and uses the display alias `Debug`. Every ordinary Chat model
+chooser consuming that set, including manual Compact, receives the same model and alias collection;
+manual Compact has no private injection or separate policy. The hidden Debug Provider remains a
+generation-only implementation detail and never appears in Provider Settings, provider editors,
+Models Settings, Tasks, Context Settings, title generation, transcription settings, or another
+configuration surface. No new UI, Provider configuration, API-key field, or model-list architecture
+is introduced for this test model.
+
 ## 15. Verification
 
 Focused verification must cover the onboarding action's fixed 32 dp inset and 48 dp height, absence
@@ -296,8 +316,13 @@ multiple image URI paste, mixed image/text pass-through, unsupported content pas
 private-copy routing, and failure cleanup. Model-alias verification covers explicit precedence, all
 approved family-specific suffixes, generic preservation of ambiguous tokens, casing/separator
 normalization, idempotence, inferred search, duplicate-display preservation, raw-ID supporting text,
-and unchanged-fallback non-persistence. Local Sandbox outcome verification covers emission before
-collection, ordered pending outcomes, one-time sequential display and consumption, absence of replay
-after collector recreation, every install/remove/upgrade/reset success and failure path, the empty
-Play stream, and the absence of persistence or retained UI state. The project-defined full build gate
-remains required after final code or resource changes.
+and unchanged-fallback non-persistence. Tasks Once verification covers the fixed 568 dp Material
+modal height, Material3 ownership of display mode and keyboard interaction, and absence of shadow
+mode, delay, retry, or window-size animation. Debug-model verification covers one canonical
+Chat-enabled model/alias set shared by ordinary Chat and manual Compact while every Provider Settings
+and other configuration surface remains free of Debug Provider/model integration. Local Sandbox
+outcome verification covers emission before collection, ordered pending outcomes, one-time sequential
+display and consumption, absence of replay after collector recreation, every
+install/remove/upgrade/reset success and failure path, the empty Play stream, and the absence of
+persistence or retained UI state. The project-defined full build gate remains required after final
+code or resource changes.

@@ -783,10 +783,10 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(chatApp.contains("viewModel.settings.developerOptionsEnabled.collectAsState()"))
         assertTrue(chatApp.contains("viewModel.settings.debugModelEnabled.collectAsState()"))
         assertTrue(chatApp.contains("validChatModels("))
-        assertEquals(1, Regex("enabledModels = chatEnabledModels").findAll(chatApp).count())
-        assertTrue(chatApp.contains("enabledModels = enabledModels"))
+        assertEquals(2, Regex("enabledModels = chatEnabledModels").findAll(chatApp).count())
+        assertFalse(chatApp.contains("enabledModels = enabledModels"))
         assertTrue(chatApp.contains("DebugProvider.MODEL_ID to DebugProvider.PROVIDER_NAME"))
-        assertTrue(chatApp.contains("modelAliases = chatModelAliases"))
+        assertEquals(2, Regex("modelAliases = chatModelAliases").findAll(chatApp).count())
 
         listOf(
             "com/newoether/agora/ui/settings/SettingsModelsPage.kt",

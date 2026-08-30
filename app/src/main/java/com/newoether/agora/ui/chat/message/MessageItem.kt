@@ -1,13 +1,20 @@
 package com.newoether.agora.ui.chat.message
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColor
 import androidx.compose.animation.expandIn
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkOut
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Delete
@@ -429,6 +436,7 @@ internal fun MessageItem(
     }
 }
 
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 internal fun ContextCompactPill(
     presentation: ContextCompactPillPresentation,
@@ -437,40 +445,47 @@ internal fun ContextCompactPill(
     onRecompact: () -> Unit = {},
     onDelete: () -> Unit = {},
 ) {
-    val inProgress = presentation == ContextCompactPillPresentation.IN_PROGRESS
-    val error = presentation == ContextCompactPillPresentation.ERROR
     var actionsExpanded by remember { mutableStateOf(false) }
+    val motionPolicy = LocalAgoraMotionPolicy.current
     val pillShape = RoundedCornerShape(100.dp)
-    val containerColor by animateColorAsState(
-        targetValue = if (error) {
+    val presentationTransition = updateTransition(
+        targetState = presentation,
+        label = "compactPillPresentation",
+    )
+    val containerColor by presentationTransition.animateColor(
+        transitionSpec = { tween(durationMillis = 240) },
+        label = "compactPillContainer",
+    ) { renderedPresentation ->
+        if (renderedPresentation == ContextCompactPillPresentation.ERROR) {
             MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
         } else {
             MaterialTheme.colorScheme.secondaryContainer
-        },
-        animationSpec = tween(durationMillis = 240),
-        label = "compactPillContainer",
-    )
-    val contentColor by animateColorAsState(
-        targetValue = if (error) {
+        }
+    }
+    val contentColor by presentationTransition.animateColor(
+        transitionSpec = { tween(durationMillis = 240) },
+        label = "compactPillContent",
+    ) { renderedPresentation ->
+        if (renderedPresentation == ContextCompactPillPresentation.ERROR) {
             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
         } else {
             MaterialTheme.colorScheme.onSecondaryContainer
-        },
-        animationSpec = tween(durationMillis = 240),
-        label = "compactPillContent",
-    )
-    val iconColor by animateColorAsState(
-        targetValue = if (error) {
+        }
+    }
+    val iconColor by presentationTransition.animateColor(
+        transitionSpec = { tween(durationMillis = 240) },
+        label = "compactPillIcon",
+    ) { renderedPresentation ->
+        if (renderedPresentation == ContextCompactPillPresentation.ERROR) {
             MaterialTheme.colorScheme.onSurfaceVariant
         } else {
             MaterialTheme.colorScheme.onSecondaryContainer
-        },
-        animationSpec = tween(durationMillis = 240),
-        label = "compactPillIcon",
-    )
+        }
+    }
     val destructiveActionTint = MaterialTheme.colorScheme.error.copy(
         alpha = if (actionsEnabled) 1f else 0.38f,
     )
+    val presentationCrossfadeSpec = tween<Float>(durationMillis = 240)
     Surface(
         modifier = if (onClick != null) {
             Modifier
@@ -494,36 +509,65 @@ internal fun ContextCompactPill(
                 modifier = Modifier.size(32.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                if (inProgress) {
-                    com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Icon(
-                        imageVector = when (presentation) {
-                            ContextCompactPillPresentation.ERROR ->
-                                androidx.compose.material.icons.Icons.Default.Error
-                            ContextCompactPillPresentation.STOPPED ->
-                                androidx.compose.material.icons.Icons.Default.StopCircle
-                            else -> androidx.compose.material.icons.Icons.Default.Compress
-                        },
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = iconColor,
-                    )
+                presentationTransition.Crossfade(
+                    animationSpec = presentationCrossfadeSpec,
+                ) { renderedPresentation ->
+                    if (renderedPresentation == ContextCompactPillPresentation.IN_PROGRESS) {
+                        com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = iconColor,
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = when (renderedPresentation) {
+                                ContextCompactPillPresentation.ERROR ->
+                                    androidx.compose.material.icons.Icons.Default.Error
+                                ContextCompactPillPresentation.STOPPED ->
+                                    androidx.compose.material.icons.Icons.Default.StopCircle
+                                else -> androidx.compose.material.icons.Icons.Default.Compress
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = iconColor,
+                        )
+                    }
                 }
             }
-            Text(
-                when {
-                    error -> stringResource(R.string.context_compact_error)
-                    presentation == ContextCompactPillPresentation.STOPPED -> stringResource(R.string.context_compact_stopped)
-                    inProgress -> stringResource(com.newoether.agora.R.string.context_compacting)
-                    else -> stringResource(com.newoether.agora.R.string.context_compact)
+            presentationTransition.AnimatedContent(
+                transitionSpec = {
+                    val fade = fadeIn(animationSpec = presentationCrossfadeSpec) togetherWith
+                        fadeOut(animationSpec = presentationCrossfadeSpec)
+                    fade.using(
+                        SizeTransform(
+                            clip = false,
+                            sizeAnimationSpec = { _, _ ->
+                                if (motionPolicy.allowSpatialTransitions) {
+                                    tween(durationMillis = 240)
+                                } else {
+                                    snap()
+                                }
+                            },
+                        )
+                    )
                 },
-                maxLines = 1,
-                style = MaterialTheme.typography.labelLarge,
-            )
+                contentAlignment = Alignment.CenterStart,
+            ) { renderedPresentation ->
+                Text(
+                    when (renderedPresentation) {
+                        ContextCompactPillPresentation.ERROR ->
+                            stringResource(R.string.context_compact_error)
+                        ContextCompactPillPresentation.STOPPED ->
+                            stringResource(R.string.context_compact_stopped)
+                        ContextCompactPillPresentation.IN_PROGRESS ->
+                            stringResource(R.string.context_compacting)
+                        ContextCompactPillPresentation.SUCCESS ->
+                            stringResource(R.string.context_compact)
+                    },
+                    maxLines = 1,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
             Box {
                 IconButton(
                     onClick = { actionsExpanded = true },

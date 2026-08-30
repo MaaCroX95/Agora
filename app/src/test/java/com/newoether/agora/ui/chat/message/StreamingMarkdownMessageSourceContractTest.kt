@@ -142,9 +142,12 @@ class StreamingMarkdownMessageSourceContractTest {
     }
 
     @Test
-    fun `Compact detail and pill use stable content geometry and neutral error state`() {
+    fun `Compact detail and pill share presentation crossfade and size transform`() {
         val source = source(locateMainSourceRoot(), "MessageItem.kt")
         val pillSource = source.substringAfter("internal fun ContextCompactPill(")
+        val labelTransition = pillSource
+            .substringAfter("presentationTransition.AnimatedContent(")
+            .substringBefore("Box {\n                IconButton(")
 
         assertTrue(source.contains("R.string.context_compact_streaming"))
         assertTrue(source.contains("directMarkdownContent = compactDetailText"))
@@ -152,15 +155,19 @@ class StreamingMarkdownMessageSourceContractTest {
         assertFalse(source.contains("\\u200B"))
         assertTrue(source.contains("R.string.context_compact_error"))
         assertTrue(source.contains("R.string.context_compact_stopped"))
-        assertTrue(pillSource.contains("animateColorAsState("))
+        assertTrue(pillSource.contains("val presentationTransition = updateTransition("))
+        assertEquals(3, Regex("presentationTransition\\.animateColor\\(").findAll(pillSource).count())
+        assertEquals(1, Regex("presentationTransition\\.Crossfade\\(").findAll(pillSource).count())
+        assertEquals(1, Regex("presentationTransition\\.AnimatedContent\\(").findAll(pillSource).count())
+        assertFalse(pillSource.contains("animateColorAsState("))
+        assertFalse(pillSource.contains("animateContentSize("))
+        assertTrue(labelTransition.contains("SizeTransform("))
+        assertTrue(labelTransition.contains("motionPolicy.allowSpatialTransitions"))
+        assertTrue(labelTransition.contains("snap()"))
+        assertTrue(labelTransition.contains("contentAlignment = Alignment.CenterStart"))
         assertTrue(pillSource.contains("Icons.Default.Error"))
         assertTrue(pillSource.contains("MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)"))
         assertTrue(pillSource.contains("MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)"))
-        assertTrue(
-            Regex(
-                """targetValue = if \(error\) \{\s*MaterialTheme\.colorScheme\.onSurfaceVariant""",
-            ).containsMatchIn(pillSource),
-        )
         assertFalse(pillSource.contains("MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)"))
         assertFalse(pillSource.contains("MaterialTheme.colorScheme.error.copy(alpha = 0.8f)"))
         assertTrue(pillSource.contains(".padding(horizontal = 7.dp)"))

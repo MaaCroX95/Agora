@@ -257,12 +257,24 @@ could absorb a following message. Participant compatibility values, Run associat
 SENDING/THINKING/TOOL_CALLING/terminal/error status, and blank summary text never permit a Compact
 to merge with a preceding or following turn. This UI item boundary does not change Room identity,
 generation boundaries, Provider context, or Compact rendering semantics.
-Its outer row height/padding and internal icon/text/action slots must remain stable across
-SENDING/THINKING/terminal/error transitions. The capsule Row uses a 7 dp horizontal inset and 7 dp
-spacing between each slot so its 32 dp leading icon slot and 32 dp overflow-action touch target are
-visually balanced around the text. Both slots render an 18 dp glyph; minimum height, menu behavior,
-and action enablement remain unchanged. UI
-specialization cannot redefine generation or context contracts.
+Its outer minimum height/padding and 32 dp icon/action slots remain stable across
+SENDING/THINKING/terminal/error transitions. The palette, leading icon, and label are keyed to one
+`ContextCompactPillPresentation` transition; palette values interpolate and the leading icon
+crossfades inside its fixed slot. The label uses that same transition's `AnimatedContent`: its content
+fades while one `SizeTransform` animates directly between the outgoing and incoming label sizes.
+No outer `animateContentSize` may wrap retained Crossfade children, and ordinary recomposition,
+message-content changes, menu changes, or parent layout changes must not become a second size owner.
+Reduced Motion snaps the label size while retaining the allowed opacity transition. The capsule Row
+uses a 7 dp horizontal inset and 7 dp spacing between each slot so its 32 dp leading icon slot and 32
+dp overflow-action touch target are visually balanced around the text. Both slots render an 18 dp
+glyph; minimum height, menu behavior, and action enablement remain unchanged. UI specialization
+cannot redefine generation or context contracts.
+
+The tail minimum-height owner is the final user-semantic LazyColumn turn, not the physical final turn.
+An ordinary turn beginning with a real USER message and every standalone Compact both qualify. A
+later Assistant-only item cannot take that ownership from the preceding Compact, so
+`[USER, ASSISTANT, COMPACT, ASSISTANT]` remains anchored to the Compact. This tail rule does not merge
+Compact with neighboring turns or change message identity, ordering, grouping, scrolling, or search.
 
 When the Compact detail Bottom Sheet is open and the ordinary durable message is
 SENDING/answering with no real Markdown output, it shows the localized equivalent of

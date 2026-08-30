@@ -42,24 +42,38 @@ class CompactMessagePresentationTest {
     }
 
     @Test
-    fun tailMinimumHeightBelongsToTheActualLastTurn() {
+    fun tailMinimumHeightBelongsToTheLastUserSemanticTurn() {
         val ordinaryTurns = buildMessageListTurns(
             listOf(
                 message("user", Participant.USER),
                 message("assistant", Participant.MODEL),
             ),
         )
-        val turnsWithCompact = buildMessageListTurns(
+        val turnsEndingWithCompact = buildMessageListTurns(
             listOf(
                 message("user", Participant.USER),
                 message("assistant", Participant.MODEL),
                 message("compact_boundary", Participant.MODEL),
             ),
         )
+        val turnsWithAssistantAfterCompact = buildMessageListTurns(
+            listOf(
+                message("user", Participant.USER),
+                message("assistant", Participant.MODEL),
+                message("compact_boundary", Participant.MODEL),
+                message("later-assistant", Participant.MODEL),
+            ),
+        )
 
         assertEquals("user", messageListTailTurnKey(ordinaryTurns))
-        assertEquals("compact_boundary", messageListTailTurnKey(turnsWithCompact))
-        assertFalse(turnsWithCompact.first().key == messageListTailTurnKey(turnsWithCompact))
+        assertEquals("compact_boundary", messageListTailTurnKey(turnsEndingWithCompact))
+        assertEquals("compact_boundary", messageListTailTurnKey(turnsWithAssistantAfterCompact))
+        assertEquals(
+            null,
+            messageListTailTurnKey(
+                buildMessageListTurns(listOf(message("assistant", Participant.MODEL))),
+            ),
+        )
     }
 
     @Test

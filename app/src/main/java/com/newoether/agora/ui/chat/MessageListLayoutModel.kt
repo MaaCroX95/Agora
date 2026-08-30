@@ -193,7 +193,13 @@ internal fun buildMessageListTurns(messages: List<ChatMessage>): List<MessageLis
     return turns
 }
 
-internal fun messageListTailTurnKey(turns: List<MessageListTurn>): String? = turns.lastOrNull()?.key
+internal fun messageListTailTurnKey(turns: List<MessageListTurn>): String? = turns
+    .lastOrNull { turn ->
+        turn.messages.firstOrNull()?.let { message ->
+            MessageGenerationBoundaryResolver.isRealUser(message) || message.isContextCompact()
+        } == true
+    }
+    ?.key
 
 internal fun messageListTurnIndex(
     turns: List<MessageListTurn>,

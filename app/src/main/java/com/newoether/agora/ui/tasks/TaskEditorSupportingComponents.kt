@@ -274,6 +274,7 @@ internal fun TaskDatePickerDialog(
 
     DatePickerDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier.height(568.dp),
         confirmButton = {
             TextButton(
                 onClick = {

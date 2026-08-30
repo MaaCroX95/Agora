@@ -848,6 +848,23 @@ class ApplicationUiSourceContractTest {
         assertFalse(mediaViewer.contains("kotlinx.coroutines.delay(400)"))
     }
 
+    @Test
+    fun `Once date picker keeps the Material modal height without taking over mode or IME`() {
+        val source = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/tasks/TaskEditorSupportingComponents.kt",
+        )
+        val picker = source
+            .substringAfter("internal fun TaskDatePickerDialog(")
+            .substringBefore("internal fun TaskTimePickerDialog(")
+
+        assertTrue(picker.contains("modifier = Modifier.height(568.dp)"))
+        assertTrue(picker.contains("showModeToggle = true"))
+        assertFalse(picker.contains("pendingCalendarMode"))
+        assertFalse(picker.contains("displayMode = DatePickerDisplayMode"))
+        assertFalse(picker.contains("LocalSoftwareKeyboardController"))
+        assertFalse(picker.contains("delay("))
+    }
+
     private fun stringValue(xml: String, key: String): String {
         val regex = Regex("""<string name="$key">([^<]*)</string>""")
         return requireNotNull(regex.find(xml)) { "Missing $key" }.groupValues[1]
