@@ -1148,11 +1148,11 @@
     <string name="developer_options_capture_raw">Исходные данные</string>
     <string name="developer_options_capture_play">Начать или продолжить сбор</string>
     <string name="developer_options_capture_pause">Приостановить сбор</string>
-    <string name="developer_options_capture_jump_latest">К последнему событию</string>
+    <string name="developer_options_capture_scroll_to_top">Прокрутить вверх</string>
+    <string name="developer_options_capture_scroll_to_bottom">Прокрутить вниз</string>
     <string name="developer_options_capture_more_actions">Действия со сбором</string>
     <string name="developer_options_capture_clear_message">Очистить собранные события и счётчики? Состояние сбора и сеанс сохранятся.</string>
     <string name="developer_options_capture_clear_confirm">Очистить</string>
-    <string name="developer_options_capture_export_raw_json">Экспортировать исходный JSON</string>
     <string name="developer_options_capture_export_redacted_json">Экспортировать очищенный JSON</string>
     <string name="developer_options_capture_export_summary_text">Экспортировать текст сводки</string>
     <string name="developer_options_capture_empty">Нет собранных событий</string>
@@ -1160,6 +1160,7 @@
     <string name="developer_options_capture_state_running">Выполняется</string>
     <string name="developer_options_capture_state_paused">Приостановлено</string>
     <string name="developer_options_capture_status_summary">%1$s · событий: %2$d · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">Сбор неполный · достигнут предел 64 МиБ</string>
     <string name="developer_options_capture_counters">Пропущено %1$d · Удалено %2$d · Обрезано %3$d</string>
     <string name="developer_options_capture_session">Сеанс %1$s · далее #%2$d</string>
     <string name="developer_options_capture_http_request_summary">HTTP %1$s · символов в теле=%2$d</string>

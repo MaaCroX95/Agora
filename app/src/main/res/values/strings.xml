@@ -1150,11 +1150,11 @@
     <string name="developer_options_capture_raw">Raw</string>
     <string name="developer_options_capture_play">Start or resume capture</string>
     <string name="developer_options_capture_pause">Pause capture</string>
-    <string name="developer_options_capture_jump_latest">Jump to latest</string>
+    <string name="developer_options_capture_scroll_to_top">Scroll to Top</string>
+    <string name="developer_options_capture_scroll_to_bottom">Scroll to Bottom</string>
     <string name="developer_options_capture_more_actions">Capture actions</string>
     <string name="developer_options_capture_clear_message">Clear captured events and counters? Capture state and session will be preserved.</string>
     <string name="developer_options_capture_clear_confirm">Clear</string>
-    <string name="developer_options_capture_export_raw_json">Export Raw JSON</string>
     <string name="developer_options_capture_export_redacted_json">Export Redacted JSON</string>
     <string name="developer_options_capture_export_summary_text">Export Summary Text</string>
     <string name="developer_options_capture_empty">No captured events</string>
@@ -1162,6 +1162,7 @@
     <string name="developer_options_capture_state_running">Running</string>
     <string name="developer_options_capture_state_paused">Paused</string>
     <string name="developer_options_capture_status_summary">%1$s · %2$d events · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">Capture incomplete · 64 MiB limit reached</string>
     <string name="developer_options_capture_counters">Dropped %1$d · Evicted %2$d · Truncated %3$d</string>
     <string name="developer_options_capture_session">Session %1$s · next #%2$d</string>
     <string name="developer_options_capture_http_request_summary">HTTP %1$s · body chars=%2$d</string>

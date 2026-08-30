@@ -1148,11 +1148,11 @@
     <string name="developer_options_capture_raw">Rohdaten</string>
     <string name="developer_options_capture_play">Aufzeichnung starten oder fortsetzen</string>
     <string name="developer_options_capture_pause">Aufzeichnung pausieren</string>
-    <string name="developer_options_capture_jump_latest">Zum neuesten Eintrag</string>
+    <string name="developer_options_capture_scroll_to_top">Nach oben scrollen</string>
+    <string name="developer_options_capture_scroll_to_bottom">Nach unten scrollen</string>
     <string name="developer_options_capture_more_actions">Aufzeichnungsaktionen</string>
     <string name="developer_options_capture_clear_message">Aufgezeichnete Ereignisse und Zähler löschen? Aufzeichnungsstatus und Sitzung bleiben erhalten.</string>
     <string name="developer_options_capture_clear_confirm">Löschen</string>
-    <string name="developer_options_capture_export_raw_json">Roh-JSON exportieren</string>
     <string name="developer_options_capture_export_redacted_json">Bereinigtes JSON exportieren</string>
     <string name="developer_options_capture_export_summary_text">Zusammenfassungstext exportieren</string>
     <string name="developer_options_capture_empty">Keine aufgezeichneten Ereignisse</string>
@@ -1160,6 +1160,7 @@
     <string name="developer_options_capture_state_running">Läuft</string>
     <string name="developer_options_capture_state_paused">Pausiert</string>
     <string name="developer_options_capture_status_summary">%1$s · %2$d Ereignisse · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">Aufzeichnung unvollständig · 64-MiB-Limit erreicht</string>
     <string name="developer_options_capture_counters">Verworfen %1$d · Entfernt %2$d · Gekürzt %3$d</string>
     <string name="developer_options_capture_session">Sitzung %1$s · nächste Nr. %2$d</string>
     <string name="developer_options_capture_http_request_summary">HTTP %1$s · Textzeichen=%2$d</string>

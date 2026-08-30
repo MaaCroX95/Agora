@@ -1148,11 +1148,11 @@
     <string name="developer_options_capture_raw">원본</string>
     <string name="developer_options_capture_play">캡처 시작 또는 재개</string>
     <string name="developer_options_capture_pause">캡처 일시중지</string>
-    <string name="developer_options_capture_jump_latest">최신 항목으로 이동</string>
+    <string name="developer_options_capture_scroll_to_top">맨 위로 스크롤</string>
+    <string name="developer_options_capture_scroll_to_bottom">맨 아래로 스크롤</string>
     <string name="developer_options_capture_more_actions">캡처 작업</string>
     <string name="developer_options_capture_clear_message">캡처된 이벤트와 카운터를 지울까요? 캡처 상태와 세션은 유지됩니다.</string>
     <string name="developer_options_capture_clear_confirm">지우기</string>
-    <string name="developer_options_capture_export_raw_json">원본 JSON 내보내기</string>
     <string name="developer_options_capture_export_redacted_json">편집된 JSON 내보내기</string>
     <string name="developer_options_capture_export_summary_text">요약 텍스트 내보내기</string>
     <string name="developer_options_capture_empty">캡처된 이벤트 없음</string>
@@ -1160,6 +1160,7 @@
     <string name="developer_options_capture_state_running">실행 중</string>
     <string name="developer_options_capture_state_paused">일시중지됨</string>
     <string name="developer_options_capture_status_summary">%1$s · 이벤트 %2$d개 · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">캡처 미완료 · 64 MiB 제한에 도달함</string>
     <string name="developer_options_capture_counters">삭제됨 %1$d · 축출됨 %2$d · 잘림 %3$d</string>
     <string name="developer_options_capture_session">세션 %1$s · 다음 #%2$d</string>
     <string name="developer_options_capture_http_request_summary">HTTP %1$s · 본문 문자=%2$d</string>

@@ -1156,11 +1156,11 @@
     <string name="developer_options_capture_raw">原始</string>
     <string name="developer_options_capture_play">開始或繼續擷取</string>
     <string name="developer_options_capture_pause">暫停擷取</string>
-    <string name="developer_options_capture_jump_latest">跳到最新</string>
+    <string name="developer_options_capture_scroll_to_top">捲動到頂部</string>
+    <string name="developer_options_capture_scroll_to_bottom">捲動到底部</string>
     <string name="developer_options_capture_more_actions">擷取操作</string>
     <string name="developer_options_capture_clear_message">清除已擷取的事件與計數器？擷取狀態與工作階段將保留。</string>
     <string name="developer_options_capture_clear_confirm">清除</string>
-    <string name="developer_options_capture_export_raw_json">匯出原始 JSON</string>
     <string name="developer_options_capture_export_redacted_json">匯出遮蔽 JSON</string>
     <string name="developer_options_capture_export_summary_text">匯出摘要文字</string>
     <string name="developer_options_capture_empty">沒有已擷取的事件</string>
@@ -1168,6 +1168,7 @@
     <string name="developer_options_capture_state_running">擷取中</string>
     <string name="developer_options_capture_state_paused">已暫停</string>
     <string name="developer_options_capture_status_summary">%1$s · %2$d 個事件 · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">擷取不完整 · 已達 64 MiB 上限</string>
     <string name="developer_options_capture_counters">捨棄 %1$d · 淘汰 %2$d · 截斷 %3$d</string>
     <string name="developer_options_capture_session">工作階段 %1$s · 下一個 #%2$d</string>
     <string name="developer_options_capture_http_request_summary">HTTP %1$s · 本文字元=%2$d</string>

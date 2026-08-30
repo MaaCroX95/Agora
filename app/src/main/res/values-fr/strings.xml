@@ -1148,11 +1148,11 @@
     <string name="developer_options_capture_raw">Brut</string>
     <string name="developer_options_capture_play">Démarrer ou reprendre la capture</string>
     <string name="developer_options_capture_pause">Suspendre la capture</string>
-    <string name="developer_options_capture_jump_latest">Aller au plus récent</string>
+    <string name="developer_options_capture_scroll_to_top">Faire défiler vers le haut</string>
+    <string name="developer_options_capture_scroll_to_bottom">Faire défiler vers le bas</string>
     <string name="developer_options_capture_more_actions">Actions de capture</string>
     <string name="developer_options_capture_clear_message">Effacer les événements et compteurs capturés ? L\'état de capture et la session seront conservés.</string>
     <string name="developer_options_capture_clear_confirm">Effacer</string>
-    <string name="developer_options_capture_export_raw_json">Exporter le JSON brut</string>
     <string name="developer_options_capture_export_redacted_json">Exporter le JSON expurgé</string>
     <string name="developer_options_capture_export_summary_text">Exporter le résumé texte</string>
     <string name="developer_options_capture_empty">Aucun événement capturé</string>
@@ -1160,6 +1160,7 @@
     <string name="developer_options_capture_state_running">En cours</string>
     <string name="developer_options_capture_state_paused">En pause</string>
     <string name="developer_options_capture_status_summary">%1$s · %2$d événements · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">Capture incomplète · limite de 64 Mio atteinte</string>
     <string name="developer_options_capture_counters">Ignorés %1$d · Évincés %2$d · Tronqués %3$d</string>
     <string name="developer_options_capture_session">Session %1$s · prochain nº %2$d</string>
     <string name="developer_options_capture_http_request_summary">HTTP %1$s · caractères du corps=%2$d</string>

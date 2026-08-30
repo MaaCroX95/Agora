@@ -5,12 +5,15 @@ import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -24,7 +27,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -36,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -59,17 +62,21 @@ import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -82,11 +89,13 @@ import com.newoether.agora.diagnostics.DiagnosticEventPayload
 import com.newoether.agora.diagnostics.DiagnosticExportFormat
 import com.newoether.agora.diagnostics.DiagnosticRequestContext
 import com.newoether.agora.diagnostics.DiagnosticSnapshot
+import com.newoether.agora.ui.chat.animateToAbsoluteBottom
+import com.newoether.agora.ui.chat.animateToAbsoluteTop
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -105,32 +114,104 @@ internal fun SettingsDeveloperCapturePage(
     onExportFailed: () -> Unit,
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val motionPolicy = LocalAgoraMotionPolicy.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val snapshot by DeveloperDiagnostics.snapshots.collectAsState()
     val isDragged by listState.interactionSource.collectIsDraggedAsState()
+    val hasNavigableEvents = snapshot.events.isNotEmpty()
+    val canScrollUp by remember(listState) {
+        derivedStateOf { listState.canScrollBackward }
+    }
+    val canScrollDown by remember(listState) {
+        derivedStateOf { listState.canScrollForward }
+    }
     var viewMode by rememberSaveable { mutableStateOf(CaptureViewMode.SUMMARY) }
-    var followLatest by rememberSaveable { mutableStateOf(true) }
     var selectedEvent by remember { mutableStateOf<DiagnosticEvent?>(null) }
     var showClearConfirmation by remember { mutableStateOf(false) }
     var showActionsMenu by remember { mutableStateOf(false) }
+    var directionalScrollJob by remember { mutableStateOf<Job?>(null) }
+    var directionalScrollRequestId by remember { mutableLongStateOf(0L) }
+    var directionalScrollActive by remember { mutableStateOf(false) }
     val hasCaptureData = snapshot.hasCaptureData()
     val chooserTitle = stringResource(R.string.developer_options_export_share_title)
     val playLabel = stringResource(R.string.developer_options_capture_play)
     val pauseLabel = stringResource(R.string.developer_options_capture_pause)
-    val jumpLatestLabel = stringResource(R.string.developer_options_capture_jump_latest)
+    val scrollUpLabel = stringResource(R.string.developer_options_capture_scroll_to_top)
+    val scrollDownLabel = stringResource(R.string.developer_options_capture_scroll_to_bottom)
     val moreActionsLabel = stringResource(R.string.developer_options_capture_more_actions)
 
-    LaunchedEffect(isDragged, listState.canScrollForward) {
-        when {
-            isDragged && listState.canScrollForward -> followLatest = false
-            !listState.canScrollForward -> followLatest = true
+    fun requestDirectionalScroll(toTop: Boolean) {
+        directionalScrollRequestId += 1L
+        val requestId = directionalScrollRequestId
+        directionalScrollJob?.cancel()
+        directionalScrollActive = true
+        directionalScrollJob = scope.launch {
+            try {
+                if (motionPolicy.allowProgrammaticScrollMotion) {
+                    val visibleItems = listState.layoutInfo.visibleItemsInfo
+                    val estimatedItemSizePx = visibleItems
+                        .map { item -> item.size }
+                        .filter { size -> size > 0 }
+                        .takeIf { sizes -> sizes.isNotEmpty() }
+                        ?.average()
+                        ?.toFloat()
+                        ?: with(density) { 72.dp.toPx() }
+                    val minimumStepPx = with(density) { 2.dp.toPx() }
+                    if (toTop) {
+                        listState.animateToAbsoluteTop(
+                            estimatedItemSizePx = estimatedItemSizePx,
+                            minimumStepPx = minimumStepPx,
+                        )
+                    } else {
+                        listState.animateToAbsoluteBottom(
+                            isGenerationActive = { false },
+                            estimateRemainingDistancePx = {
+                                val layout = listState.layoutInfo
+                                val lastVisible = layout.visibleItemsInfo
+                                    .maxByOrNull { item -> item.index }
+                                    ?: return@animateToAbsoluteBottom null
+                                val averageVisibleSizePx = layout.visibleItemsInfo
+                                    .map { item -> item.size }
+                                    .filter { size -> size > 0 }
+                                    .takeIf { sizes -> sizes.isNotEmpty() }
+                                    ?.average()
+                                    ?.toFloat()
+                                    ?: estimatedItemSizePx
+                                val remainingItems =
+                                    (layout.totalItemsCount - lastVisible.index - 1)
+                                        .coerceAtLeast(0)
+                                val estimatedContentEndPx =
+                                    lastVisible.offset +
+                                        lastVisible.size +
+                                        remainingItems * averageVisibleSizePx
+                                val viewportContentEndPx =
+                                    layout.viewportEndOffset - layout.afterContentPadding
+                                (estimatedContentEndPx - viewportContentEndPx)
+                                    .coerceAtLeast(0f)
+                            },
+                            minimumStepPx = minimumStepPx,
+                            onPhaseChanged = {},
+                        )
+                    }
+                } else if (toTop) {
+                    listState.scrollToItem(0)
+                } else {
+                    val lastIndex = listState.layoutInfo.totalItemsCount - 1
+                    if (lastIndex >= 0) listState.scrollToItem(lastIndex)
+                }
+            } finally {
+                if (directionalScrollRequestId == requestId) {
+                    directionalScrollActive = false
+                    directionalScrollJob = null
+                }
+            }
         }
     }
-    LaunchedEffect(snapshot.events.lastOrNull()?.sequence, viewMode, followLatest) {
-        if (followLatest && snapshot.events.isNotEmpty()) {
-            listState.scrollToLatestCaptureEvent(snapshot.events.size)
-        }
+
+    LaunchedEffect(isDragged) {
+        if (isDragged) directionalScrollJob?.cancel()
     }
 
     selectedEvent?.let { event ->
@@ -281,6 +362,10 @@ internal fun SettingsDeveloperCapturePage(
             }
         },
         floatingActionButton = {
+            val directionalActionEnabled = !directionalScrollActive
+            val scrollUpEnabled = directionalActionEnabled && canScrollUp
+            val scrollDownEnabled = directionalActionEnabled && canScrollDown
+            val captureActionEnabled = !snapshot.capacityLimitReached
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -289,33 +374,132 @@ internal fun SettingsDeveloperCapturePage(
             ) {
                 Column(
                     horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    if (!followLatest && snapshot.events.isNotEmpty()) {
-                        CaptureTooltip(label = jumpLatestLabel) {
-                            SmallFloatingActionButton(
-                                onClick = { followLatest = true },
-                                shape = CircleShape,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.KeyboardArrowDown,
-                                    contentDescription = jumpLatestLabel,
-                                )
+                    AnimatedVisibility(
+                        visible = hasNavigableEvents && canScrollUp,
+                        enter = if (motionPolicy.allowSpatialTransitions) {
+                            fadeIn(tween(CaptureCrossfadeDurationMillis)) +
+                                expandVertically(tween(CaptureCrossfadeDurationMillis))
+                        } else {
+                            fadeIn(tween(CaptureCrossfadeDurationMillis))
+                        },
+                        exit = if (motionPolicy.allowSpatialTransitions) {
+                            fadeOut(tween(CaptureCrossfadeDurationMillis)) +
+                                shrinkVertically(tween(CaptureCrossfadeDurationMillis))
+                        } else {
+                            fadeOut(tween(CaptureCrossfadeDurationMillis))
+                        },
+                    ) {
+                        Box(modifier = Modifier.padding(bottom = 12.dp)) {
+                            CaptureTooltip(label = scrollUpLabel) {
+                                SmallFloatingActionButton(
+                                    onClick = {
+                                        if (scrollUpEnabled) {
+                                            requestDirectionalScroll(toTop = true)
+                                        }
+                                    },
+                                    modifier = if (scrollUpEnabled) {
+                                        Modifier
+                                    } else {
+                                        Modifier.semantics { disabled() }
+                                    },
+                                    shape = CircleShape,
+                                    containerColor = if (scrollUpEnabled) {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    },
+                                    contentColor = if (scrollUpEnabled) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowUp,
+                                        contentDescription = scrollUpLabel,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    AnimatedVisibility(
+                        visible = hasNavigableEvents && canScrollDown,
+                        enter = if (motionPolicy.allowSpatialTransitions) {
+                            fadeIn(tween(CaptureCrossfadeDurationMillis)) +
+                                expandVertically(tween(CaptureCrossfadeDurationMillis))
+                        } else {
+                            fadeIn(tween(CaptureCrossfadeDurationMillis))
+                        },
+                        exit = if (motionPolicy.allowSpatialTransitions) {
+                            fadeOut(tween(CaptureCrossfadeDurationMillis)) +
+                                shrinkVertically(tween(CaptureCrossfadeDurationMillis))
+                        } else {
+                            fadeOut(tween(CaptureCrossfadeDurationMillis))
+                        },
+                    ) {
+                        Box(modifier = Modifier.padding(bottom = 12.dp)) {
+                            CaptureTooltip(label = scrollDownLabel) {
+                                SmallFloatingActionButton(
+                                    onClick = {
+                                        if (scrollDownEnabled) {
+                                            requestDirectionalScroll(toTop = false)
+                                        }
+                                    },
+                                    modifier = if (scrollDownEnabled) {
+                                        Modifier
+                                    } else {
+                                        Modifier.semantics { disabled() }
+                                    },
+                                    shape = CircleShape,
+                                    containerColor = if (scrollDownEnabled) {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    },
+                                    contentColor = if (scrollDownEnabled) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowDown,
+                                        contentDescription = scrollDownLabel,
+                                    )
+                                }
                             }
                         }
                     }
                     CaptureTooltip(label = captureActionLabel) {
                         FloatingActionButton(
                             onClick = {
-                                scope.launch {
-                                    if (captureRunning) {
-                                        DeveloperDiagnostics.pauseCapture()
-                                    } else {
-                                        DeveloperDiagnostics.startCapture()
+                                if (captureActionEnabled) {
+                                    scope.launch {
+                                        if (captureRunning) {
+                                            DeveloperDiagnostics.pauseCapture()
+                                        } else {
+                                            DeveloperDiagnostics.startCapture()
+                                        }
                                     }
                                 }
                             },
+                            modifier = if (captureActionEnabled) {
+                                Modifier
+                            } else {
+                                Modifier.semantics { disabled() }
+                            },
                             shape = CircleShape,
+                            containerColor = if (captureActionEnabled) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
+                            contentColor = if (captureActionEnabled) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         ) {
                             Crossfade(
                                 targetState = captureRunning,
@@ -444,6 +628,15 @@ private fun CaptureSnapshotSummary(snapshot: DiagnosticSnapshot) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
+        if (snapshot.capacityLimitReached) {
+            Text(
+                text = stringResource(
+                    R.string.developer_options_capture_capacity_incomplete,
+                ),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         snapshot.session?.let { session ->
             Text(
                 text = stringResource(
@@ -541,13 +734,6 @@ private fun CaptureEventContent(
             )
         }
     }
-}
-
-private suspend fun LazyListState.scrollToLatestCaptureEvent(eventCount: Int) {
-    if (eventCount <= 0) return
-    val targetIndex = eventCount + 1
-    snapshotFlow { layoutInfo.totalItemsCount }.first { it > targetIndex }
-    scrollToItem(targetIndex)
 }
 
 private fun DiagnosticSnapshot.hasCaptureData(): Boolean =

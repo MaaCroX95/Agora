@@ -110,12 +110,34 @@ class SettingsResourceContractTest {
             "developer_options_disable_title" to "Turn Off Developer Options?",
             "developer_options_clear_diagnostics" to "Clear Diagnostic Session?",
             "developer_options_clear_diagnostics_action" to "Clear Diagnostic Session",
+            "developer_options_capture_scroll_to_top" to "Scroll to Top",
+            "developer_options_capture_scroll_to_bottom" to "Scroll to Bottom",
             "developer_options_export_share_title" to "Share Agora Diagnostic Bundle",
             "skills_empty" to "No Skills Yet",
         )
         expected.forEach { (key, title) ->
             assertEquals("English settings surface resource $key", title, values[key])
         }
+    }
+
+    @Test
+    fun englishDiagnosticCaptureCopyUsesFinalPrivacyAndCapacityContract() {
+        val values = readStringValues(File(locateResourceDirectory(), "values"))
+
+        assertEquals(
+            "Capture incomplete · 64 MiB limit reached",
+            values["developer_options_capture_capacity_incomplete"],
+        )
+        assertEquals(
+            "Export Redacted JSON",
+            values["developer_options_capture_export_redacted_json"],
+        )
+        assertEquals(
+            "Export Summary Text",
+            values["developer_options_capture_export_summary_text"],
+        )
+        assertFalse(values.containsKey("developer_options_capture_export_raw_json"))
+        assertFalse(values.containsKey("developer_options_capture_jump_latest"))
     }
 
     @Test

@@ -485,18 +485,31 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(capture.contains("DiagnosticExportFormat.REDACTED_JSON"))
         assertTrue(capture.contains("DiagnosticExportFormat.SUMMARY_TEXT"))
         assertTrue(capture.contains("FloatingActionButton("))
-        assertTrue(capture.contains("SmallFloatingActionButton("))
-        assertEquals(2, Regex("shape = CircleShape").findAll(capture).count())
+        assertEquals(2, Regex("\\bSmallFloatingActionButton\\(").findAll(capture).count())
+        assertEquals(3, Regex("shape = CircleShape").findAll(capture).count())
         assertTrue(capture.contains("horizontalArrangement = Arrangement.End"))
         assertTrue(capture.contains(".padding(end = 24.dp, bottom = 24.dp)"))
         assertFalse(capture.contains(".padding(horizontal = 16.dp)"))
-        assertTrue(capture.contains("verticalArrangement = Arrangement.spacedBy(12.dp)"))
+        assertFalse(capture.contains("verticalArrangement = Arrangement.spacedBy(12.dp)"))
+        assertEquals(2, Regex("Modifier\\.padding\\(bottom = 12\\.dp\\)").findAll(capture).count())
         assertTrue(capture.contains("targetState = captureRunning"))
         assertTrue(capture.contains("DeveloperDiagnostics.startCapture()"))
         assertTrue(capture.contains("DeveloperDiagnostics.pauseCapture()"))
+        assertTrue(capture.contains("captureActionEnabled = !snapshot.capacityLimitReached"))
+        assertTrue(capture.contains("scrollUpEnabled = directionalActionEnabled && canScrollUp"))
+        assertTrue(capture.contains("scrollDownEnabled = directionalActionEnabled && canScrollDown"))
+        assertTrue(capture.contains("if (scrollUpEnabled) {"))
+        assertTrue(capture.contains("if (scrollDownEnabled) {"))
+        assertTrue(capture.contains("R.string.developer_options_capture_capacity_incomplete"))
+        assertEquals(3, Regex("Modifier\\.semantics \\{ disabled\\(\\) \\}").findAll(capture).count())
+        assertTrue(capture.contains("MaterialTheme.colorScheme.surfaceVariant"))
+        assertTrue(capture.contains("MaterialTheme.colorScheme.onSurfaceVariant"))
         assertTrue(capture.contains("CaptureCrossfadeDurationMillis = 250"))
         assertEquals(2, Regex("\\bCrossfade\\(").findAll(capture).count())
         assertEquals(1, Regex("\\bAnimatedContent\\(").findAll(capture).count())
+        assertEquals(2, Regex("\\bAnimatedVisibility\\(").findAll(capture).count())
+        assertEquals(2, Regex("expandVertically\\(").findAll(capture).count())
+        assertEquals(2, Regex("shrinkVertically\\(").findAll(capture).count())
         assertEquals(2, Regex("targetState = viewMode").findAll(capture).count())
         assertTrue(capture.contains("items(snapshot.events, key = DiagnosticEvent::sequence)"))
         assertFalse(capture.contains("snapshot.events.reversed"))
@@ -525,11 +538,23 @@ class ApprovedFeatureSourceContractTest {
         assertFalse(capture.contains("FontFamily"))
         assertFalse(capture.contains("fontFamily ="))
         assertTrue(capture.contains("collectIsDraggedAsState()"))
-        assertTrue(capture.contains("isDragged && listState.canScrollForward -> followLatest = false"))
-        assertTrue(capture.contains("if (!followLatest && snapshot.events.isNotEmpty())"))
-        assertTrue(capture.contains("val targetIndex = eventCount + 1"))
-        assertFalse(capture.contains("val targetIndex = eventCount + 2"))
-        assertEquals(2, Regex("scrollToLatestCaptureEvent\\(").findAll(capture).count())
+        assertTrue(capture.contains("var directionalScrollJob by remember { mutableStateOf<Job?>(null) }"))
+        assertTrue(capture.contains("var directionalScrollRequestId by remember { mutableLongStateOf(0L) }"))
+        assertTrue(capture.contains("directionalScrollJob?.cancel()"))
+        assertTrue(capture.contains("if (isDragged) directionalScrollJob?.cancel()"))
+        assertTrue(capture.contains("motionPolicy.allowProgrammaticScrollMotion"))
+        assertTrue(capture.contains("listState.animateToAbsoluteTop("))
+        assertTrue(capture.contains("listState.animateToAbsoluteBottom("))
+        assertTrue(capture.contains("listState.scrollToItem(0)"))
+        assertTrue(capture.contains("listState.scrollToItem(lastIndex)"))
+        assertTrue(capture.contains("remainingItems * averageVisibleSizePx"))
+        assertTrue(capture.contains("visible = hasNavigableEvents && canScrollUp"))
+        assertTrue(capture.contains("visible = hasNavigableEvents && canScrollDown"))
+        assertFalse(capture.contains("followLatest"))
+        assertFalse(capture.contains("scrollToLatestCaptureEvent"))
+        assertFalse(capture.contains("animateScrollToItem"))
+        assertFalse(capture.contains("R.string.developer_options_capture_jump_latest"))
+        assertFalse(capture.contains("R.string.developer_options_capture_export_raw_json"))
         assertTrue(capture.contains("item(key = \"capture-fab-spacer\")"))
         assertTrue(capture.contains("Spacer(Modifier.height(80.dp))"))
         assertTrue(capture.contains("val rawEventDetails = remember(event) { event.rawDetails() }"))
@@ -547,7 +572,8 @@ class ApprovedFeatureSourceContractTest {
             "\"Export\"",
             "\"Summary\"",
             "\"Raw\"",
-            "\"Jump to latest\"",
+            "\"Scroll to Top\"",
+            "\"Scroll to Bottom\"",
             "\"No captured events.\"",
         ).forEach { hardCodedLabel ->
             assertFalse("Capture page still contains $hardCodedLabel", capture.contains(hardCodedLabel))
@@ -639,19 +665,20 @@ class ApprovedFeatureSourceContractTest {
             "developer_options_capture_clear_confirm",
             "developer_options_capture_clear_message",
             "developer_options_capture_counters",
+            "developer_options_capture_capacity_incomplete",
             "developer_options_capture_description",
             "developer_options_capture_empty",
-            "developer_options_capture_export_raw_json",
             "developer_options_capture_export_redacted_json",
             "developer_options_capture_export_summary_text",
             "developer_options_capture_http_request_summary",
             "developer_options_capture_http_response_summary",
-            "developer_options_capture_jump_latest",
             "developer_options_capture_more_actions",
             "developer_options_capture_parsed_event_summary",
             "developer_options_capture_pause",
             "developer_options_capture_play",
             "developer_options_capture_raw",
+            "developer_options_capture_scroll_to_bottom",
+            "developer_options_capture_scroll_to_top",
             "developer_options_capture_session",
             "developer_options_capture_state_idle",
             "developer_options_capture_state_paused",

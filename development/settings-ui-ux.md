@@ -97,8 +97,23 @@ layout, states, density, or interaction design has been approved.
 - Clearing a capacity-limited session removes its retained events and capacity
   marker while preserving the session identity and monotonic sequence. It is
   the only path that re-enables capture after the capacity boundary is reached.
-- Both lower-right floating action buttons are explicitly circular. Their stack
+- All lower-right floating action buttons are explicitly circular. Their stack
   uses 24 dp end and bottom outer margins with a 12 dp gap between buttons.
+- The event list never follows new events automatically. Directional circular
+  actions target the physical top and bottom through the chat feedback-scroll
+  owners; Reduced Motion snaps to the same destinations. A user drag cancels
+  the page-owned scroll job.
+- At the top only the down action is shown, in the middle both actions are
+  shown, and at the bottom only the up action is shown. Empty or non-scrollable
+  content shows neither. Each fixed-order slot fades for 250 ms; when spatial
+  transitions are allowed it also expands or shrinks vertically for 250 ms so
+  stack placement does not jump. During programmatic scrolling, visible actions
+  stay in place with disabled colors and disabled semantics.
+- Capacity-limited capture shows a localized incomplete-status message and the
+  circular start/resume action remains disabled until Clear removes the marker.
+- Public export offers only content-redacted JSON and Summary Text. Raw JSON is
+  not an export resource or menu action; the page-local Raw event view retains
+  its existing credential-cleaned diagnostic fidelity.
 - Page text inherits the application Material typography. Do not apply a
   page-local monospace family to capture summaries, context, or raw details.
 

@@ -1148,11 +1148,11 @@
     <string name="developer_options_capture_raw">Bruto</string>
     <string name="developer_options_capture_play">Iniciar ou retomar captura</string>
     <string name="developer_options_capture_pause">Pausar captura</string>
-    <string name="developer_options_capture_jump_latest">Ir para o mais recente</string>
+    <string name="developer_options_capture_scroll_to_top">Rolar para o início</string>
+    <string name="developer_options_capture_scroll_to_bottom">Rolar para o fim</string>
     <string name="developer_options_capture_more_actions">Ações de captura</string>
     <string name="developer_options_capture_clear_message">Limpar eventos e contadores capturados? O estado da captura e a sessão serão preservados.</string>
     <string name="developer_options_capture_clear_confirm">Limpar</string>
-    <string name="developer_options_capture_export_raw_json">Exportar JSON bruto</string>
     <string name="developer_options_capture_export_redacted_json">Exportar JSON editado</string>
     <string name="developer_options_capture_export_summary_text">Exportar texto de resumo</string>
     <string name="developer_options_capture_empty">Nenhum evento capturado</string>
@@ -1160,6 +1160,7 @@
     <string name="developer_options_capture_state_running">Em execução</string>
     <string name="developer_options_capture_state_paused">Pausada</string>
     <string name="developer_options_capture_status_summary">%1$s · %2$d eventos · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">Captura incompleta · limite de 64 MiB atingido</string>
     <string name="developer_options_capture_counters">Descartados %1$d · Removidos %2$d · Truncados %3$d</string>
     <string name="developer_options_capture_session">Sessão %1$s · próximo #%2$d</string>
     <string name="developer_options_capture_http_request_summary">HTTP %1$s · caracteres do corpo=%2$d</string>

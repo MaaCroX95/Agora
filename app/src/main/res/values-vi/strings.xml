@@ -1154,11 +1154,11 @@
     <string name="developer_options_capture_raw">Thô</string>
     <string name="developer_options_capture_play">Bắt đầu hoặc tiếp tục thu thập</string>
     <string name="developer_options_capture_pause">Tạm dừng thu thập</string>
-    <string name="developer_options_capture_jump_latest">Chuyển đến mới nhất</string>
+    <string name="developer_options_capture_scroll_to_top">Cuộn lên đầu</string>
+    <string name="developer_options_capture_scroll_to_bottom">Cuộn xuống cuối</string>
     <string name="developer_options_capture_more_actions">Thao tác thu thập</string>
     <string name="developer_options_capture_clear_message">Xóa các sự kiện và bộ đếm đã thu thập? Trạng thái thu thập và phiên sẽ được giữ lại.</string>
     <string name="developer_options_capture_clear_confirm">Xóa</string>
-    <string name="developer_options_capture_export_raw_json">Xuất JSON thô</string>
     <string name="developer_options_capture_export_redacted_json">Xuất JSON đã biên tập</string>
     <string name="developer_options_capture_export_summary_text">Xuất văn bản tóm tắt</string>
     <string name="developer_options_capture_empty">Không có sự kiện đã thu thập</string>
@@ -1166,6 +1166,7 @@
     <string name="developer_options_capture_state_running">Đang chạy</string>
     <string name="developer_options_capture_state_paused">Đã tạm dừng</string>
     <string name="developer_options_capture_status_summary">%1$s · %2$d sự kiện · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">Thu thập chưa đầy đủ · đã đạt giới hạn 64 MiB</string>
     <string name="developer_options_capture_counters">Đã bỏ %1$d · Đã loại %2$d · Đã cắt %3$d</string>
     <string name="developer_options_capture_session">Phiên %1$s · tiếp theo #%2$d</string>
     <string name="developer_options_capture_http_request_summary">HTTP %1$s · ký tự nội dung=%2$d</string>
