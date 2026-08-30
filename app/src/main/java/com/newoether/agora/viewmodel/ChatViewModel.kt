@@ -675,11 +675,11 @@ class ChatViewModel(
             conversations = convRepo,
             requestBuilder = requestBuilder,
             generationManager = { generationManager },
-            newChatSystemPromptId = { pendingSystemPromptId.value },
-        )
             generationErrorFormatter = { raw ->
                 normalizePersistedGenerationErrorText(appContext, raw)
             },
+            newChatSystemPromptId = { pendingSystemPromptId.value },
+        )
     }
 
     internal val conversationContextProjection: StateFlow<ConversationContextProjection>
