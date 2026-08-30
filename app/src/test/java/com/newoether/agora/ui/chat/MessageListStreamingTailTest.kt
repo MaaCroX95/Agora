@@ -658,6 +658,62 @@ class MessageListStreamingTailTest {
     }
 
     @Test
+    fun physicalEdgeUnmeasuredFramesBrakeAndUseConsumedVelocitySymmetrically() {
+        fun step(
+            direction: Float = 1f,
+            adjacent: Boolean = false,
+            velocityPxPerSecond: Float = 100_000f,
+            elapsedSeconds: Float = 0.016f,
+        ) = physicalEdgeScrollStepPx(
+            direction = direction,
+            exactErrorPx = null,
+            targetAdjacent = adjacent,
+            previousVelocityPxPerSecond = velocityPxPerSecond,
+            elapsedSeconds = elapsedSeconds,
+            viewportSizePx = 1_000f,
+            minimumStepPx = 2f,
+        )
+
+        val cruise = step()
+        val approach = step(adjacent = true)
+        val fromRest = step(velocityPxPerSecond = 0f)
+        val fromConsumedVelocity = step(velocityPxPerSecond = 3_000f)
+
+        assertEquals(280f, cruise, 0.001f)
+        assertEquals(80f, approach, 0.001f)
+        assertTrue(approach < cruise)
+        assertTrue(fromConsumedVelocity > fromRest)
+        assertEquals(
+            -fromConsumedVelocity,
+            step(direction = -1f, velocityPxPerSecond = -3_000f),
+            0.001f,
+        )
+        assertEquals(0f, step(elapsedSeconds = 0f), 0f)
+        assertEquals(0f, step(direction = 0f), 0f)
+    }
+
+    @Test
+    fun physicalEdgeMeasuredErrorImmediatelyOwnsDirectionAndStepLimit() {
+        fun measuredStep(errorPx: Float, velocityPxPerSecond: Float = 10_000f) =
+            physicalEdgeScrollStepPx(
+                direction = 1f,
+                exactErrorPx = errorPx,
+                targetAdjacent = true,
+                previousVelocityPxPerSecond = velocityPxPerSecond,
+                elapsedSeconds = 0.016f,
+                viewportSizePx = 1_000f,
+                minimumStepPx = 2f,
+            )
+
+        val firstMeasuredStep = measuredStep(errorPx = 18f, velocityPxPerSecond = 18_000f)
+        assertTrue(firstMeasuredStep in 0f..18f)
+        assertTrue(firstMeasuredStep < 80f)
+        assertEquals(7f, measuredStep(7f), 0.001f)
+        assertEquals(-5f, measuredStep(-5f), 0.001f)
+        assertEquals(0f, measuredStep(0f), 0f)
+    }
+
+    @Test
     fun sendEasingOnlyShapesStartupThenReturnsTheAdaptiveTailUnchanged() {
         val adaptiveStep = 120f
         val startupSpec = FeedbackScrollStartupSpec(
