@@ -723,7 +723,9 @@ internal fun CitationSourcesSummaryCapsule(
         val coords = coordinates?.takeIf { it.isAttached } ?: return@LaunchedEffect
         if (!visible) return@LaunchedEffect
         val centerY = coords.positionInRoot().y + coords.size.height / 2f
-        matchKeys.forEach { key -> spec.onMatchPosition(key, centerY) }
+        matchKeys.forEach { key ->
+            spec.onMatchPosition(key, spec.measurementEpoch, centerY)
+        }
     }
     Row(
         modifier = modifier
@@ -785,7 +787,7 @@ internal fun CitationSourcesBottomSheet(
     val sheetState = rememberSmoothBottomSheetState()
     val listState = rememberLazyListState()
     var pendingActivation by remember { mutableStateOf<CitationRecord?>(null) }
-    val sheetSearchSpec = searchSpec?.copy(onMatchPosition = { _, _ -> })
+    val sheetSearchSpec = searchSpec?.copy(onMatchPosition = { _, _, _ -> })
     fun collapseThenActivate(source: CitationRecord) {
         pendingActivation = source
         sheetState.requestDismiss()

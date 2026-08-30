@@ -201,8 +201,10 @@ ordinary Unicode text or standard Markdown links.
 - The message Copy action emits the cleaned original answer followed, when sources exist, by a
   portable Markdown `Sources` list. It includes display titles and safe URLs where available; it
   never includes raw Provider-private IDs.
-- In-conversation text search matches cleaned answer text and citation source titles. It does not
-  match raw URLs, file IDs, Provider-private IDs, or encoded citation JSON.
+- In-conversation text search matches only ordinary selected-branch USER and Assistant message body
+  text through the existing visible Markdown projection. Citation source titles and all citation
+  metadata are excluded, including raw URLs, file IDs, Provider-private IDs, and encoded citation
+  JSON.
 - Selection operates on visible rendered content. Inline capsule alternate text remains
   `[<capsule label>]`; the dedicated Copy action remains the authoritative portable
   answer-plus-Sources export.
@@ -236,7 +238,7 @@ ordinary Unicode text or standard Markdown links.
 | `GenerationManager` and existing streaming segment overlay | Accept identified citation events, checkpoint the bounded segments, and preserve them through terminal settlement. |
 | Provider message projection | Exclude citation segments while preserving original assistant text and all existing tool/thought protocol behavior. |
 | Importers/exporters | Normalize supported external citations and preserve native citation segments. |
-| Existing Markdown/message UI | Project terminal inline source capsules, the action-lifecycle Sources summary capsule and bottom sheet, detail interaction, copy text, search titles, selection fallback, and accessibility. |
+| Existing Markdown/message UI | Project terminal inline source capsules, the action-lifecycle Sources summary capsule and bottom sheet, detail interaction, copy text, body-search highlighting, selection fallback, and accessibility. |
 
 These owners must not create a citation-specific generation lifecycle, Room schema, Provider
 adapter hierarchy, Markdown dialect, tool execution path, or branch/history owner.

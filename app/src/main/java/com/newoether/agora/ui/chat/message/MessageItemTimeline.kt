@@ -672,6 +672,7 @@ internal fun TimelineSegmentsContent(
     autoExpansionController: GroupedSegmentAutoExpansionController,
     expandedStates: SnapshotStateMap<String, Boolean>,
     renderContext: ChatMarkdownRenderContext,
+    searchHighlight: SearchHighlightSpec?,
     citations: List<CitationRecord>,
     onCitationActivate: (List<CitationRecord>) -> Unit,
     segmentAppearanceRegistry: SegmentAppearanceRegistry,
@@ -703,6 +704,10 @@ internal fun TimelineSegmentsContent(
                             ),
                             isStreaming = answerIsStreaming,
                         )
+                        val answerSearchHighlight = searchHighlight?.forSourceSlice(
+                            sliceStart = answerOffset,
+                            sliceLength = seg.content.length,
+                        )
                         val answerAppearanceKey =
                             "${segmentAppearanceKey(message.id, index, seg)}:timeline"
                         val answerFadeTracker =
@@ -731,17 +736,21 @@ internal fun TimelineSegmentsContent(
                                         projection = presentedProjection,
                                         onActivate = onCitationActivate,
                                     ) {
-                                        StreamingMarkdownMessage(
-                                            content = presentedContent,
-                                            isStreaming = presentedIsStreaming,
-                                            renderContext = renderContext,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .noOpBringIntoView(),
-                                            selectionEnabled = !presentedIsStreaming,
-                                            textDeltas = seg.streamingTextDeltas,
-                                            fadeTracker = answerFadeTracker,
-                                        )
+                                        CompositionLocalProvider(
+                                            LocalSearchHighlightSpec provides answerSearchHighlight,
+                                        ) {
+                                            StreamingMarkdownMessage(
+                                                content = presentedContent,
+                                                isStreaming = presentedIsStreaming,
+                                                renderContext = renderContext,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .noOpBringIntoView(),
+                                                selectionEnabled = !presentedIsStreaming,
+                                                textDeltas = seg.streamingTextDeltas,
+                                                fadeTracker = answerFadeTracker,
+                                            )
+                                        }
                                     }
                                 }
                             }

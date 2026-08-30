@@ -6,6 +6,7 @@ import com.newoether.agora.model.MessageGenerationBoundaryResolver
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.isContextCompact
 import com.newoether.agora.util.Constants
+import kotlin.math.roundToInt
 
 internal enum class MessageListLayoutMode {
     STABLE,
@@ -230,6 +231,29 @@ internal fun estimateSearchMatchCenterInTurnPx(
     return precedingHeight + targetHeight * textFraction
 }
 
+internal fun searchMatchCenterInTurnPx(
+    glyphCenterInRootPx: Float,
+    listRootInRootPx: Float,
+    turnOffsetInListPx: Float,
+): Float = glyphCenterInRootPx - listRootInRootPx - turnOffsetInListPx
+internal fun searchMatchScrollErrorPx(
+    turnOffsetInListPx: Float,
+    matchCenterInTurnPx: Float,
+    viewportCenterInListPx: Float,
+): Float = turnOffsetInListPx + matchCenterInTurnPx - viewportCenterInListPx
+internal fun searchMatchScrollOffsetPx(
+    matchCenterInTurnPx: Float,
+    viewportCenterInListPx: Float,
+): Int = (matchCenterInTurnPx - viewportCenterInListPx).roundToInt()
+internal fun acceptsSearchMatchMeasurement(
+    activeKey: String?,
+    reportedKey: String,
+    measurementEpoch: String?,
+): Boolean = if (activeKey == null) {
+    measurementEpoch == null
+} else {
+    reportedKey == activeKey && measurementEpoch == activeKey
+}
 internal data class MessageListViewportAnchor(
     val messageId: String,
     val scrollOffsetPx: Int,

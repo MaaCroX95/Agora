@@ -245,18 +245,6 @@ class ConversationRepository(
     fun observeMessage(messageId: String): Flow<MessageEntity?> =
         chatDao.observeMessage(messageId)
 
-    fun observeConversationSearchMatches(
-        conversationId: String,
-        query: String,
-    ): Flow<List<MessageEntity>> =
-        if (query.isBlank()) {
-            kotlinx.coroutines.flow.flowOf(emptyList())
-        } else {
-            chatDao.observeConversationSearchMatches(
-                conversationId = conversationId,
-                escapedQuery = escapeLikePattern(query),
-            )
-        }
 
     suspend fun getProviderContextTopologySnapshot(
         conversationId: String,

@@ -66,6 +66,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
@@ -119,6 +120,7 @@ internal fun MessageList(
     searchQuery: String = "",
     activeSearchMatch: ConversationSearchMatch? = null,
     onSearchMatchDistance: (key: String, distanceToViewportCenter: Float) -> Unit = { _, _ -> },
+    onSearchTurnsChanged: (List<MessageListTurn>) -> Unit = {},
     selectionMode: Boolean = false,
     selectedMessageIds: Set<String> = emptySet(),
     onToggleMessageSelection: (String) -> Unit = {},
@@ -156,7 +158,9 @@ internal fun MessageList(
     val mutationAnchorLock = remember(state) { MessageListMutationAnchorLock() }
     val mutationScope = rememberCoroutineScope()
     val pendingMutationSettles = remember(state) { mutableMapOf<String, Job>() }
-    val searchMatchCentersInTurn = remember(state) { mutableStateMapOf<String, Float>() }
+    val searchMatchCentersInTurn = remember(state, activeSearchMatch?.key) {
+        mutableStateMapOf<String, Float>()
+    }
     val hydratedPayloads = remember(conversationId) { HydratedMessagePayloadLru() }
     var listRootY by remember(state) { mutableFloatStateOf(0f) }
     var streamingTailFollowMode by remember(state, conversationId) {
@@ -249,6 +253,7 @@ internal fun MessageList(
     }
     val turnCache = remember { MessageListTurnCache() }
     val turns = remember(presentationMessages) { turnCache.update(presentationMessages) }
+    LaunchedEffect(conversationId, turns, searchQuery) { onSearchTurnsChanged(turns) }
 
     LaunchedEffect(
         conversationId,
@@ -605,11 +610,21 @@ internal fun MessageList(
         if (!motionPolicy.allowProgrammaticScrollMotion) {
             state.scrollToItem(
                 index = turnIndex,
-                scrollOffset = (
-                    listRootY +
-                        estimatedAnchorInTurn -
-                        targetCenterY
-                    ).roundToInt(),
+                scrollOffset = searchMatchScrollOffsetPx(
+                    matchCenterInTurnPx = estimatedAnchorInTurn,
+                    viewportCenterInListPx = targetCenterY,
+                ),
+            )
+            val exactCenterInTurn = snapshotFlow {
+                searchMatchCentersInTurn[match.key]
+            }
+                .first { it != null }!!
+            state.scrollToItem(
+                index = turnIndex,
+                scrollOffset = searchMatchScrollOffsetPx(
+                    matchCenterInTurnPx = exactCenterInTurn,
+                    viewportCenterInListPx = targetCenterY,
+                ),
             )
             return@LaunchedEffect
         }
@@ -617,10 +632,12 @@ internal fun MessageList(
         state.smoothSeekToItem(
             targetIndex = { turnIndex },
             targetErrorPx = { visibleTarget ->
-                val anchorInRootCoordinates =
-                    searchMatchCentersInTurn[match.key]
-                        ?: (listRootY + estimatedAnchorInTurn)
-                visibleTarget.offset + anchorInRootCoordinates - targetCenterY
+                searchMatchScrollErrorPx(
+                    turnOffsetInListPx = visibleTarget.offset.toFloat(),
+                    matchCenterInTurnPx =
+                        searchMatchCentersInTurn[match.key] ?: estimatedAnchorInTurn,
+                    viewportCenterInListPx = targetCenterY,
+                )
             },
             estimatedErrorPx = {
                 val firstVisible = state.layoutInfo.visibleItemsInfo
@@ -629,8 +646,7 @@ internal fun MessageList(
                 val firstIndex = firstVisible.index.coerceIn(0, turns.size)
                 val distanceFromFirstToTarget =
                     heightPrefix[turnIndex] - heightPrefix[firstIndex]
-                listRootY +
-                    firstVisible.offset +
+                firstVisible.offset +
                     distanceFromFirstToTarget +
                     estimatedAnchorInTurn -
                     targetCenterY
@@ -838,12 +854,20 @@ internal fun MessageList(
             onSegmentDetailRequest = requestSegmentDetail,
             searchQuery = searchQuery,
             activeSearchMatch = activeSearchMatch,
-            onSearchMatchPosition = { key, centerY ->
+            onSearchMatchPosition = { key, measurementEpoch, centerY ->
+                val activeKey = activeSearchMatch?.key
+                if (!acceptsSearchMatchMeasurement(activeKey, key, measurementEpoch)) {
+                    return@MessageItem
+                }
                 val turnIndex = messageListTurnIndex(turns, message.id)
                 val visibleTurn = state.layoutInfo.visibleItemsInfo
                     .firstOrNull { it.index == turnIndex }
-                if (visibleTurn != null) {
-                    searchMatchCentersInTurn[key] = centerY - visibleTurn.offset
+                if (activeKey != null && visibleTurn != null) {
+                    searchMatchCentersInTurn[key] = searchMatchCenterInTurnPx(
+                        glyphCenterInRootPx = centerY,
+                        listRootInRootPx = listRootY,
+                        turnOffsetInListPx = visibleTurn.offset.toFloat(),
+                    )
                 }
                 val topInsetPx = with(density) { 140.dp.toPx() }
                 val bottomInsetPx = with(density) { bottomBarHeight.toPx() }
@@ -851,7 +875,7 @@ internal fun MessageList(
                     ((viewportHeight - bottomInsetPx - topInsetPx).coerceAtLeast(0f) / 2f)
                 onSearchMatchDistance(
                     key,
-                    kotlin.math.abs(centerY - viewportCenterY),
+                    kotlin.math.abs(centerY - listRootY - viewportCenterY),
                 )
             },
             selectionMode = selectionMode,
@@ -924,8 +948,6 @@ internal fun MessageList(
         authoritativeMessages = authoritativeMessages.list,
         streamingMessage = streamingMessage,
         observeMessage = observeMessage,
-        searchQuery = searchQuery,
-        activeSearchMatch = activeSearchMatch,
         parseInlineDollarMath = parseInlineDollarMath,
         onMediaClick = onMediaClick,
         modifier = modifier,

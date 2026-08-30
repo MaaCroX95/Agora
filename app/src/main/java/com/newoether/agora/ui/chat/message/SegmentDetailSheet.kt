@@ -48,8 +48,6 @@ import com.newoether.agora.R
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
-import com.newoether.agora.ui.chat.ConversationSearchMatch
-import com.newoether.agora.ui.chat.conversationSearchMatchRanges
 import com.newoether.agora.ui.components.CircularBackButton
 import com.newoether.agora.ui.components.SmoothBottomSheet
 import com.newoether.agora.ui.components.rememberSmoothBottomSheetState
@@ -101,8 +99,6 @@ internal fun MessageSegmentDetailHost(
     authoritativeMessages: List<ChatMessage>,
     streamingMessage: ChatMessage?,
     observeMessage: (String) -> Flow<ChatMessage?>,
-    searchQuery: String,
-    activeSearchMatch: ConversationSearchMatch?,
     parseInlineDollarMath: Boolean,
     onMediaClick: (List<String>, Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -140,23 +136,8 @@ internal fun MessageSegmentDetailHost(
         requestedIndices = requestedSegmentIndices,
         showSegmentListFirst = showSegmentListFirst,
     )
-    val searchHighlight = searchQuery.takeIf(String::isNotBlank)?.let { query ->
-        val active = activeSearchMatch?.takeIf { match -> match.messageId == message.id }
-        SearchHighlightSpec(
-            query = query,
-            activeRange = active
-                ?.takeIf { match -> match.citationSourceId == null }
-                ?.let { match -> match.start until match.endExclusive },
-            activeKey = active?.key,
-            matchKeys = conversationSearchMatchRanges(message, query).map { range ->
-                "${message.id}:${range.first}:${range.last + 1}"
-            },
-            onMatchPosition = { _, _ -> },
-        )
-    }
     val markdownRenderContext = rememberChatMarkdownAssets(
         textColor = MaterialTheme.colorScheme.onSurface,
-        searchHighlight = searchHighlight,
         parseInlineDollarMath = parseInlineDollarMath,
     ).thoughtRenderContext
 

@@ -831,9 +831,24 @@ single-value Flow, historical row hydration, or a payload cache. Composed histor
 and hydrate their full payload by stable message identity. JSON decoding and display projection occur
 off the main thread. A bounded LRU may retain completed display projections, but it is never
 authoritative state, never bridges a terminal transition, and never changes topology, edit identity,
-or Provider-visible materialization. Search and semantic-search reads use bounded payload projections
-instead of unbounded full-row materialization. LazyColumn eviction or rehydration may change object
-lifetime only; it must not change content, generation state, or glyph-birth metadata.
+or Provider-visible materialization. The top-right current-conversation search derives eligible
+ordinary USER and MODEL IDs from the complete payload-free selected path, reads those payloads in
+fixed 64-ID pages, restores selected-path order within each page, and retains only lightweight match
+ranges. Its one matching surface is display-projected message body text: Tool/result/Compact rows,
+Thinking and Tool segments, citation/source metadata, and attachment metadata never enter candidates
+or counts. Canonical result order is selected-path root-to-leaf, then source range ascending within
+each message. Each independently rendered Timeline Answer slice retains the global match identity
+for only the source ranges inside that slice. When results first arrive, the exact visible occurrence
+nearest the usable message-viewport center becomes active; Up selects the adjacent visual occurrence
+above, Down selects the adjacent visual occurrence below, and neither direction wraps at an end.
+`MessageList` remains the only scroll owner: it receives the canonical rendered turn order, accepts
+exact glyph geometry only for the active measurement epoch, and centers that exact occurrence in
+LazyColumn-local coordinates between the top bar and composer through its single progressive seek.
+Search result recall is independent of LazyColumn composition and payload-cache residency;
+jumping to a match continues through the existing stable message identity and per-row hydration path.
+Semantic-search reads keep their separate bounded payload projection. LazyColumn eviction or
+rehydration may change object lifetime only; it must not change content, generation state, or
+glyph-birth metadata.
 
 An open Thinking-segment Bottom Sheet is owned above the LazyColumn and stores only durable message
 identity plus segment-selection mode. It never stores a copied row payload, observes the payload LRU,

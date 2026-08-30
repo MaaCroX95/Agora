@@ -147,7 +147,6 @@ internal fun scaledMarkdownTextStyle(style: TextStyle): TextStyle = style.copy(
 @Composable
 internal fun rememberChatMarkdownAssets(
     textColor: Color,
-    searchHighlight: SearchHighlightSpec? = null,
     parseInlineDollarMath: Boolean = false,
 ): ChatMarkdownAssets {
     val linkColor = MaterialTheme.colorScheme.primary
@@ -214,7 +213,6 @@ internal fun rememberChatMarkdownAssets(
     val activeSearchHighlightColor = ActiveSearchHighlightBackground
 
     val customMarkdownComponents = remember(
-        searchHighlight,
         searchHighlightColor,
         activeSearchHighlightColor,
     ) {
@@ -223,7 +221,7 @@ internal fun rememberChatMarkdownAssets(
             text = { model ->
                 SearchHighlightedMarkdownText(
                     model = model,
-                    spec = searchHighlight,
+                    spec = LocalSearchHighlightSpec.current,
                     highlightColor = searchHighlightColor,
                     activeHighlightColor = activeSearchHighlightColor,
                 )
@@ -232,7 +230,7 @@ internal fun rememberChatMarkdownAssets(
                 SearchHighlightedMarkdownText(
                     model = model,
                     style = model.typography.paragraph,
-                    spec = searchHighlight,
+                    spec = LocalSearchHighlightSpec.current,
                     highlightColor = searchHighlightColor,
                     activeHighlightColor = activeSearchHighlightColor,
                 )
@@ -242,7 +240,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h1,
                     MarkdownTokenTypes.ATX_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -252,7 +250,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h2,
                     MarkdownTokenTypes.ATX_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -262,7 +260,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h3,
                     MarkdownTokenTypes.ATX_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -272,7 +270,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h4,
                     MarkdownTokenTypes.ATX_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -282,7 +280,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h5,
                     MarkdownTokenTypes.ATX_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -292,7 +290,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h6,
                     MarkdownTokenTypes.ATX_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -302,7 +300,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h1,
                     MarkdownTokenTypes.SETEXT_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -312,7 +310,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h2,
                     MarkdownTokenTypes.SETEXT_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -321,7 +319,7 @@ internal fun rememberChatMarkdownAssets(
                 SearchHighlightedMarkdownCode(
                     model = model,
                     fenced = true,
-                    spec = searchHighlight,
+                    spec = LocalSearchHighlightSpec.current,
                     highlightColor = searchHighlightColor,
                     activeHighlightColor = activeSearchHighlightColor,
                 )
@@ -330,7 +328,7 @@ internal fun rememberChatMarkdownAssets(
                 SearchHighlightedMarkdownCode(
                     model = model,
                     fenced = false,
-                    spec = searchHighlight,
+                    spec = LocalSearchHighlightSpec.current,
                     highlightColor = searchHighlightColor,
                     activeHighlightColor = activeSearchHighlightColor,
                 )
@@ -338,7 +336,7 @@ internal fun rememberChatMarkdownAssets(
             table = { model ->
                 SearchHighlightedMarkdownTable(
                     model = model,
-                    spec = searchHighlight,
+                    spec = LocalSearchHighlightSpec.current,
                     highlightColor = searchHighlightColor,
                     activeHighlightColor = activeSearchHighlightColor,
                 )
@@ -351,7 +349,7 @@ internal fun rememberChatMarkdownAssets(
                         literalText = requireNotNull(
                             literalHtmlBlockText(model.content, model.node)
                         ),
-                        spec = searchHighlight,
+                        spec = LocalSearchHighlightSpec.current,
                         highlightColor = searchHighlightColor,
                         activeHighlightColor = activeSearchHighlightColor,
                     )

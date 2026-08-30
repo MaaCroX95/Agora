@@ -121,7 +121,11 @@ internal fun MessageItem(
     onHeightChanged: (Int) -> Unit = {},
     searchQuery: String = "",
     activeSearchMatch: ConversationSearchMatch? = null,
-    onSearchMatchPosition: (key: String, centerYInRoot: Float) -> Unit = { _, _ -> },
+    onSearchMatchPosition: (
+        key: String,
+        measurementEpoch: String?,
+        centerYInRoot: Float,
+    ) -> Unit = { _, _, _ -> },
     selectionMode: Boolean = false,
     selected: Boolean = false,
     onToggleSelection: () -> Unit = {},
@@ -204,7 +208,8 @@ internal fun MessageItem(
 
     val searchHighlight = searchQuery.takeIf { it.isNotBlank() }?.let { query ->
         val active = activeSearchMatch?.takeIf { it.messageId == message.id }
-        val matchKeys = conversationSearchMatchRanges(displayMessage, query).map { range ->
+        val matchRanges = conversationSearchMatchRanges(displayMessage, query)
+        val matchKeys = matchRanges.map { range ->
             "${message.id}:${range.first}:${range.last + 1}"
         }
         SearchHighlightSpec(
@@ -214,12 +219,12 @@ internal fun MessageItem(
                 ?.let { it.start until it.endExclusive },
             activeKey = active?.key,
             matchKeys = matchKeys,
+            sourceRanges = matchRanges,
             onMatchPosition = onSearchMatchPosition,
         )
     }
     val markdownAssets = rememberChatMarkdownAssets(
         textColor,
-        searchHighlight,
         parseInlineDollarMath,
     )
     val markdownRenderContext = markdownAssets.renderContext

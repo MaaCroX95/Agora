@@ -317,7 +317,7 @@ internal fun AssistantMessageContent(
         CitationSourcesBottomSheet(
             messageId = message.id,
             citations = citations,
-            searchSpec = searchHighlight,
+            searchSpec = null,
             onActivate = { source ->
                 haptics.confirm()
                 onSingleCitationActivate(source)
@@ -329,7 +329,7 @@ internal fun AssistantMessageContent(
         CitationSourcesBottomSheet(
             messageId = message.id,
             citations = groupedSources,
-            searchSpec = searchHighlight,
+            searchSpec = null,
             onActivate = { source ->
                 haptics.confirm()
                 onSingleCitationActivate(source)
@@ -471,6 +471,7 @@ internal fun AssistantMessageContent(
                         autoExpansionController = groupedSegmentAutoExpansionController,
                         expandedStates = thoughtExpandedStates,
                         renderContext = renderContext,
+                        searchHighlight = searchHighlight,
                         citations = citations,
                         onCitationActivate = onCitationActivate,
                         segmentAppearanceRegistry = segmentAppearanceRegistry,
@@ -589,6 +590,9 @@ internal fun AssistantMessageContent(
                                 projection = presentedProjection,
                                 onActivate = onCitationActivate,
                             ) {
+                                CompositionLocalProvider(
+                                    LocalSearchHighlightSpec provides searchHighlight,
+                                ) {
                                 if (compactAnswerAppearanceKey != null) {
                                     AnimatedTimelineBlockAppearance(
                                         animationKey = compactAnswerAppearanceKey,
@@ -617,6 +621,7 @@ internal fun AssistantMessageContent(
                                     )
                                 }
                             }
+                        }
                         }
                     }
                 }
@@ -719,7 +724,7 @@ internal fun AssistantMessageContent(
                         CitationSourcesSummaryCapsule(
                             messageId = message.id,
                             citations = presentedCitations,
-                            searchSpec = searchHighlight,
+                            searchSpec = null,
                             visible = sourcesSummaryVisible,
                             enabled = sourcesSummaryVisible,
                             onClick = {

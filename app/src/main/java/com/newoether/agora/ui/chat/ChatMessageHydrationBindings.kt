@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.map
 
 internal data class ChatMessageHydrationBindings(
     val observeMessage: (String) -> Flow<ChatMessage?>,
-    val searchMessages: (String, String) -> Flow<List<ChatMessage>>,
+    val searchMessages: suspend (String, List<String>) -> List<ChatMessage>,
 )
 
 @Composable
@@ -24,9 +24,9 @@ internal fun rememberChatMessageHydrationBindings(
             viewModel.messagePayloadHydration.observeMessage(messageId)
                 .map { message -> message?.forDisplay(customProviders) }
         },
-        searchMessages = { conversationId, query ->
-            viewModel.messagePayloadHydration.observeSearchMessages(conversationId, query)
-                .map { found -> found.map { message -> message.forDisplay(customProviders) } }
+        searchMessages = { conversationId, messageIds ->
+            viewModel.messagePayloadHydration.loadMessages(conversationId, messageIds)
+                .map { message -> message.forDisplay(customProviders) }
         },
     )
 }

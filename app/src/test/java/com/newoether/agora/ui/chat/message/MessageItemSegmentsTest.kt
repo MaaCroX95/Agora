@@ -430,6 +430,39 @@ class MessageItemSegmentsTest {
     }
 
     @Test
+    fun timelineAnswerSlicesKeepOnlyTheirOwnGlobalMatchKeys() {
+        val first = "needle"
+        val second = "xx needle yy"
+        val firstRange = 0 until first.length
+        val secondRange = (first.length + 3) until (first.length + 9)
+        val spec = SearchHighlightSpec(
+            query = "needle",
+            activeRange = secondRange,
+            activeKey = "message:${secondRange.first}:${secondRange.last + 1}",
+            matchKeys = listOf(
+                "message:${firstRange.first}:${firstRange.last + 1}",
+                "message:${secondRange.first}:${secondRange.last + 1}",
+            ),
+            sourceRanges = listOf(firstRange, secondRange),
+            onMatchPosition = { _, _, _ -> },
+        )
+
+        val firstSlice = spec.forSourceSlice(sliceStart = 0, sliceLength = first.length)
+        val secondSlice = spec.forSourceSlice(
+            sliceStart = first.length,
+            sliceLength = second.length,
+        )
+
+        assertEquals(listOf("message:0:6"), firstSlice.matchKeys)
+        assertEquals(listOf(0 until 6), firstSlice.sourceRanges)
+        assertEquals(null, firstSlice.activeKey)
+        assertEquals(listOf("message:9:15"), secondSlice.matchKeys)
+        assertEquals(listOf(3 until 9), secondSlice.sourceRanges)
+        assertEquals(3 until 9, secondSlice.activeRange)
+        assertEquals("message:9:15", secondSlice.activeKey)
+    }
+
+    @Test
     fun legacyFailedRowWithAnswerSegmentsDoesNotRenderItsAnswerAsTheErrorDetail() {
         val message = ChatMessage(
             text = "Generated answer",

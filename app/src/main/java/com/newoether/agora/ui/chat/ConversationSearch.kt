@@ -2,8 +2,8 @@ package com.newoether.agora.ui.chat
 
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.Participant
-import com.newoether.agora.model.citationRecords
 import com.newoether.agora.ui.chat.message.escapeForMarkdown
+import com.newoether.agora.util.Constants
 import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.MarkdownTokenTypes
 import org.intellij.markdown.ast.ASTNode
@@ -20,6 +20,32 @@ internal data class ConversationSearchMatch(
     val key: String get() = citationSourceId?.let { sourceId ->
         "$messageId:citation:$sourceId:$start:$endExclusive"
     } ?: "$messageId:$start:$endExclusive"
+}
+
+private const val CONVERSATION_SEARCH_PAYLOAD_PAGE_SIZE = 64
+
+internal fun isConversationSearchBodyEligible(message: ChatMessage): Boolean =
+    (message.participant == Participant.USER || message.participant == Participant.MODEL) &&
+        !message.id.startsWith(Constants.TOOL_MSG_PREFIX) &&
+        !message.id.startsWith(Constants.RESULT_MSG_PREFIX) &&
+        !message.id.startsWith(Constants.COMPACT_MSG_PREFIX)
+
+internal fun conversationSearchMessageIds(messages: List<ChatMessage>): List<String> =
+    messages.filter(::isConversationSearchBodyEligible).map(ChatMessage::id)
+
+internal suspend fun scanConversationSearchMatches(
+    selectedPathMessageIds: List<String>,
+    query: String,
+    loadMessages: suspend (List<String>) -> List<ChatMessage>,
+): List<ConversationSearchMatch> {
+    if (query.isBlank()) return emptyList()
+    return buildList {
+        selectedPathMessageIds.chunked(CONVERSATION_SEARCH_PAYLOAD_PAGE_SIZE).forEach { pageIds ->
+            val messagesById = loadMessages(pageIds).associateBy(ChatMessage::id)
+            val orderedPage = pageIds.mapNotNull(messagesById::get)
+            addAll(findConversationSearchMatches(orderedPage, query))
+        }
+    }
 }
 
 internal fun caseInsensitiveMatchRanges(text: String, query: String): List<IntRange> {
@@ -42,29 +68,16 @@ internal fun findConversationSearchMatches(
     if (query.isBlank()) return emptyList()
     return buildList {
         messages.forEach { message ->
-            var occurrence = 0
-            conversationSearchMatchRanges(message, query).forEach { range ->
+            if (!isConversationSearchBodyEligible(message)) return@forEach
+            conversationSearchMatchRanges(message, query).forEachIndexed { occurrence, range ->
                 add(
                     ConversationSearchMatch(
                         messageId = message.id,
                         start = range.first,
                         endExclusive = range.last + 1,
-                        occurrenceInMessage = occurrence++,
+                        occurrenceInMessage = occurrence,
                     ),
                 )
-            }
-            message.citationRecords().forEach { citation ->
-                caseInsensitiveMatchRanges(citation.title, query).forEach { range ->
-                    add(
-                        ConversationSearchMatch(
-                            messageId = message.id,
-                            start = range.first,
-                            endExclusive = range.last + 1,
-                            occurrenceInMessage = occurrence++,
-                            citationSourceId = citation.sourceId,
-                        ),
-                    )
-                }
             }
         }
     }

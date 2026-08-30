@@ -632,9 +632,9 @@ fun ChatApp(
                                 },
                                 activeSearchMatch = conversationSearchMatches
                                     .getOrNull(conversationSearchMatchIndex),
-                                onSearchMatchDistance = { key, distance ->
-                                    conversationInteraction.recordSearchMatchDistance(key, distance)
-                                },
+                                onSearchMatchDistance =
+                                    conversationInteraction::recordSearchMatchDistance,
+                                onSearchTurnsChanged = conversationInteraction::recordSearchTurns,
                                 selectionMode = shareSelectionActive,
                                 selectedMessageIds = selectedShareMessageIds,
                                 onToggleMessageSelection = { messageId ->

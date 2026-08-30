@@ -90,22 +90,6 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
     @Query("SELECT * FROM messages WHERE id = :messageId")
     fun observeMessage(messageId: String): Flow<MessageEntity?>
 
-    @Query(
-        """
-        SELECT *
-        FROM messages
-        WHERE conversationId = :conversationId
-          AND (
-              text LIKE '%' || :escapedQuery || '%' ESCAPE '\'
-              OR toolCallJson LIKE '%' || :escapedQuery || '%' ESCAPE '\'
-          )
-        ORDER BY timestamp ASC, id ASC
-        """
-    )
-    fun observeConversationSearchMatches(
-        conversationId: String,
-        escapedQuery: String,
-    ): Flow<List<MessageEntity>>
 
     @Query(
         """

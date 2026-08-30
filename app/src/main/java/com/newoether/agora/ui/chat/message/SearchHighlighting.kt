@@ -2,6 +2,7 @@ package com.newoether.agora.ui.chat.message
 
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,8 +28,34 @@ internal data class SearchHighlightSpec(
     val activeRange: IntRange?,
     val activeKey: String?,
     val matchKeys: List<String>,
-    val onMatchPosition: (key: String, centerYInRoot: Float) -> Unit,
+    val sourceRanges: List<IntRange>,
+    val measurementEpoch: String? = activeKey,
+    val onMatchPosition: (key: String, measurementEpoch: String?, centerYInRoot: Float) -> Unit,
 )
+internal val LocalSearchHighlightSpec = compositionLocalOf<SearchHighlightSpec?> { null }
+
+internal fun SearchHighlightSpec.forSourceSlice(
+    sliceStart: Int,
+    sliceLength: Int,
+): SearchHighlightSpec {
+    val sliceEndExclusive = sliceStart + sliceLength
+    val sliceMatches = sourceRanges.zip(matchKeys).filter { (range, _) ->
+        range.first >= sliceStart && range.last < sliceEndExclusive
+    }
+    val localRanges = sliceMatches.map { (range, _) ->
+        (range.first - sliceStart)..(range.last - sliceStart)
+    }
+    val localKeys = sliceMatches.map { (_, key) -> key }
+    val localActiveRange = activeRange
+        ?.takeIf { range -> range.first >= sliceStart && range.last < sliceEndExclusive }
+        ?.let { range -> (range.first - sliceStart)..(range.last - sliceStart) }
+    return copy(
+        activeRange = localActiveRange,
+        activeKey = activeKey?.takeIf(localKeys::contains),
+        matchKeys = localKeys,
+        sourceRanges = localRanges,
+    )
+}
 
 internal data class DisplaySearchMatch(
     val key: String,
@@ -122,7 +149,13 @@ internal fun ReportSearchPositions(
     layoutResult: TextLayoutResult?,
     coordinates: LayoutCoordinates?,
 ) {
-    LaunchedEffect(spec?.query, displayMatches, layoutResult, coordinates) {
+    LaunchedEffect(
+        spec?.query,
+        spec?.measurementEpoch,
+        displayMatches,
+        layoutResult,
+        coordinates,
+    ) {
         val activeSpec = spec ?: return@LaunchedEffect
         val layout = layoutResult ?: return@LaunchedEffect
         val coords = coordinates?.takeIf { it.isAttached } ?: return@LaunchedEffect
@@ -132,6 +165,7 @@ internal fun ReportSearchPositions(
                 val box = layout.getBoundingBox(match.displayRange.first)
                 activeSpec.onMatchPosition(
                     match.key,
+                    activeSpec.measurementEpoch,
                     rootY + (box.top + box.bottom) / 2f,
                 )
             }
