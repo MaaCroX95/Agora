@@ -3,7 +3,10 @@ package com.newoether.agora.data
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.channels.SeekableByteChannel
 import java.util.ArrayDeque
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
@@ -45,6 +48,49 @@ class NativeBackupArchiveTest {
     }
 
     @Test
+    fun directSeekableChannelClosesWithoutDeletingSourceArchive() {
+        val archiveFile = rawZip(
+            "direct-source.agora",
+            listOf(RawEntry("manifest.json", "manifest".toByteArray())),
+        )
+        val channel = FileInputStream(archiveFile).channel
+
+        NativeBackupArchive.open(channel).use { archive ->
+            assertTrue(archive.has("manifest.json"))
+        }
+
+        assertFalse(channel.isOpen)
+        assertTrue(archiveFile.exists())
+    }
+
+    @Test
+    fun rejectsNonSeekableSourceWithLocalDownloadInstruction() {
+        val channel = NonSeekableChannel()
+
+        val error = assertThrows(IOException::class.java) {
+            NativeBackupArchive.open(channel)
+        }
+
+        assertTrue(error.message.orEmpty().contains("download it to local storage"))
+        assertFalse(channel.isOpen)
+    }
+
+    @Test
+    fun contextOpenUsesFileDescriptorWithoutWholeArchiveCacheCopy() {
+        val source = sourceFile(
+            "app/src/main/java/com/newoether/agora/data/NativeBackupArchive.kt",
+        ).replace("\r\n", "\n")
+        val contextOpen = source.substringAfter("fun open(context: Context, uri: Uri)")
+            .substringBefore("internal fun open(")
+
+        assertTrue(contextOpen.contains("openFileDescriptor(uri, \"r\")"))
+        assertTrue(contextOpen.contains("ParcelFileDescriptor.AutoCloseInputStream"))
+        assertFalse(contextOpen.contains("openInputStream(uri)"))
+        assertFalse(contextOpen.contains("context.cacheDir"))
+        assertFalse(contextOpen.contains("File.createTempFile"))
+    }
+
+    @Test
     fun rejectsUnsafeAbsoluteAndAmbiguousPathsAndDeletesTemporaryArchive() {
         val unsafeNames = listOf(
             "../manifest.json",
@@ -57,7 +103,9 @@ class NativeBackupArchiveTest {
 
         unsafeNames.forEachIndexed { index, name ->
             val file = rawZip("unsafe-$index.zip", listOf(RawEntry(name, byteArrayOf(1))))
-            assertThrows(IOException::class.java) { NativeBackupArchive.open(file) }
+            assertThrows("Expected rejection for $name", IOException::class.java) {
+                NativeBackupArchive.open(file)
+            }
             assertFalse(file.exists())
         }
     }
@@ -78,16 +126,25 @@ class NativeBackupArchiveTest {
     }
 
     @Test
-    fun metadataAggregateHonorsBoundaryWhileResourcesRemainUncapped() {
+    fun metadataAggregateHonorsBoundaryWhileStreamedPayloadsAndResourcesRemainUncapped() {
+        val conversationPayload = ByteArray(32) { it.toByte() }
         val acceptedFile = rawZip(
             "metadata-boundary.zip",
             listOf(
                 RawEntry("manifest.json", byteArrayOf(1, 2, 3, 4)),
                 RawEntry("memories/item.md", byteArrayOf(5, 6, 7, 8)),
+                RawEntry(NativeBackupFormat.CONVERSATIONS_ENTRY, conversationPayload),
                 RawEntry("media/videos/large", ByteArray(1024)),
             ),
         )
         NativeBackupArchive.open(acceptedFile, metadataLimitBytes = 8).use { archive ->
+            assertArrayEquals(
+                conversationPayload,
+                archive.stream(NativeBackupFormat.CONVERSATIONS_ENTRY)!!.use { it.readBytes() },
+            )
+            assertThrows(IOException::class.java) {
+                archive.bytes(NativeBackupFormat.CONVERSATIONS_ENTRY)
+            }
             assertEquals(1024L, archive.size("media/videos/large"))
             assertEquals(
                 1024L,
@@ -112,6 +169,23 @@ class NativeBackupArchiveTest {
             NativeBackupArchive.open(rejectedFile, metadataLimitBytes = 8)
         }
         assertFalse(rejectedFile.exists())
+    }
+
+    @Test
+    fun rejectsCorruptStreamedConversationCrcAndDeletesTemporaryArchive() {
+        val file = rawZip(
+            "bad-conversation-crc.zip",
+            listOf(
+                RawEntry(
+                    NativeBackupFormat.CONVERSATIONS_ENTRY,
+                    byteArrayOf(1, 2, 3),
+                    crcOverride = 0L,
+                ),
+            ),
+        )
+
+        assertThrows(IOException::class.java) { NativeBackupArchive.open(file) }
+        assertFalse(file.exists())
     }
 
     @Test
@@ -306,6 +380,29 @@ class NativeBackupArchiveTest {
             directory = directory.parentFile ?: error("Reached filesystem root")
         }
         error("Unable to locate $relativePath")
+    }
+
+    private class NonSeekableChannel : SeekableByteChannel {
+        private var open = true
+
+        override fun read(destination: ByteBuffer): Int = throw IOException("not seekable")
+
+        override fun write(source: ByteBuffer): Int = throw IOException("read only")
+
+        override fun position(): Long = throw IOException("not seekable")
+
+        override fun position(newPosition: Long): SeekableByteChannel =
+            throw IOException("not seekable")
+
+        override fun size(): Long = throw IOException("not seekable")
+
+        override fun truncate(size: Long): SeekableByteChannel = throw IOException("read only")
+
+        override fun isOpen(): Boolean = open
+
+        override fun close() {
+            open = false
+        }
     }
 
     private class CountingInputStream(

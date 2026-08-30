@@ -43,15 +43,22 @@ The archive never treats a manifest category as proof that its payload is valid.
 or incompatible entries produce category errors without reinterpreting another entry as a fallback.
 Archive validation completes before any category mutation or resource extraction. Entry names must be
 relative forward-slash paths with no empty, `.` or `..` segment, drive prefix, backslash ambiguity,
-or duplicate/colliding file-directory identity. All non-resource entries together are limited to
-256 MiB expanded metadata, and every entry's streamed byte count and CRC must match the ZIP record.
+or duplicate/colliding file-directory identity. `conversations.json` is an unbounded streamed database
+payload: preview and import never materialize the complete entry in memory, but opening the archive
+still streams it fully and verifies its declared size and CRC before any mutation. All remaining
+non-resource entries, which current import paths may materialize wholly in memory, are limited to
+256 MiB expanded aggregate metadata and receive the same streamed size and CRC verification.
 
 Conversation image/video/draft resources, legacy `images/` and `videos/` resources, and the recognized
 custom-font entry are storage-backed resources. Normal attachment resources have no fixed byte or
 entry-count ceiling when storage is sufficient; there is no standalone total ZIP entry-count limit.
-The archive cache copy and every selected resource extraction preflight destination capacity, check
-space again while streaming, and delete partial files on failure. The custom-font owner retains its
-separate 64 MiB limit. Sandbox and proot payloads remain excluded rather than becoming resources.
+A seekable SAF source is opened directly through its file descriptor, so preview/import does not
+create or retain a whole-archive copy in application cache. A provider that cannot expose random
+access is rejected with an instruction to download/select a local file; import does not fall back to
+a cache duplicate or a second streaming authority. Every selected resource extraction preflights
+destination capacity, checks space again while streaming, and deletes partial files on failure. The
+custom-font owner retains its separate 64 MiB limit. Sandbox and proot payloads remain excluded rather
+than becoming resources.
 
 A conversation export reads conversation settings before entering Room, then captures Conversations,
 Runs, paged Messages, Tasks, Loops, and every raw media reference into a temporary typed JSONL spool
@@ -183,9 +190,11 @@ Focused tests for any archive or setting change must prove:
 7. archive category selection cannot mutate an unselected category;
 8. conversation media, Memory/Skill files, System Prompts, and custom fonts keep their owner-specific
    conflict, cleanup, and rollback behavior;
-9. archive validation rejects unsafe or duplicate paths before mutation, caps aggregate non-resource
-   metadata at 256 MiB, verifies streamed size and CRC, and enforces cache/destination capacity before
-   and during copy without a standalone resource entry-count limit;
+9. archive validation rejects unsafe or duplicate paths before mutation, leaves streamed
+   `conversations.json` without a fixed byte cap while verifying its size and CRC, caps aggregate
+   in-memory non-resource metadata at 256 MiB, requires direct seekable-source access without a
+   whole-cache duplicate, and enforces destination capacity before and during resource copy without
+   a standalone resource entry-count limit;
 10. unreadable attachment resources preserve order, type, and filename as disabled placeholders, and
    successful manual and automatic backups report the complete unavailable-resource count;
 11. the default and every maintained public manual remain consistent with this contract.

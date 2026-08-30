@@ -2,24 +2,27 @@ package com.newoether.agora.data
 
 import android.content.Context
 import android.net.Uri
-import android.provider.OpenableColumns
+import android.os.ParcelFileDescriptor
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
+import java.io.FileInputStream
 import java.io.IOException
 import java.io.InputStream
+import java.nio.channels.SeekableByteChannel
 import java.util.zip.CRC32
-import java.util.zip.ZipEntry
-import java.util.zip.ZipFile
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
+import org.apache.commons.compress.archivers.zip.ZipFile as CommonsZipFile
 
 /**
- * On-demand reader over a validated backup ZIP. Metadata is bounded and verified when the archive
- * opens. Resource entries remain uncapped, but are capacity-checked and byte-verified before import.
+ * On-demand reader over a validated backup ZIP. In-memory metadata is bounded, streamed payloads are
+ * byte-verified without a fixed size cap, and resources are capacity-checked before import.
  */
 internal class NativeBackupArchive private constructor(
-    private val zip: ZipFile,
-    private val temporaryFile: File,
-    private val entries: Map<String, ZipEntry>,
+    private val zip: CommonsZipFile,
+    private val sourceCloseable: Closeable?,
+    private val ownedTemporaryFile: File?,
+    private val entries: Map<String, ZipArchiveEntry>,
     private val metadataLimitBytes: Long,
 ) : Closeable {
     fun has(name: String): Boolean = entries.containsKey(name)
@@ -30,6 +33,9 @@ internal class NativeBackupArchive private constructor(
         val entry = entries[name] ?: return null
         if (isResourceEntry(name)) {
             throw IOException("Resource entry must be copied to storage: $name")
+        }
+        if (isStreamedPayload(name)) {
+            throw IOException("Streamed payload must be read as a stream: $name")
         }
         return zip.getInputStream(entry).use { input ->
             readBounded(input, metadataLimitBytes, name)
@@ -118,7 +124,7 @@ internal class NativeBackupArchive private constructor(
         }
     }
 
-    private fun validateEntryStream(entry: ZipEntry) {
+    private fun validateEntryStream(entry: ZipArchiveEntry) {
         zip.getInputStream(entry).use { input ->
             consumeChecked(input, entry.size, entry.crc, Long.MAX_VALUE, entry.name)
         }
@@ -128,45 +134,33 @@ internal class NativeBackupArchive private constructor(
         try {
             zip.close()
         } finally {
-            temporaryFile.delete()
+            try {
+                sourceCloseable?.close()
+            } finally {
+                ownedTemporaryFile?.delete()
+            }
         }
     }
 
     companion object {
         internal const val MAX_METADATA_BYTES = 256L * 1024L * 1024L
         private const val BUFFER_BYTES = 32 * 1024
+        private const val NON_SEEKABLE_SOURCE_MESSAGE =
+            "Backup source does not support random access; download it to local storage and select the local file"
 
         fun open(context: Context, uri: Uri): NativeBackupArchive? {
-            val declaredSize = runCatching {
-                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
-            }.getOrNull()?.takeIf { it >= 0L } ?: runCatching {
-                context.contentResolver.query(
-                    uri,
-                    arrayOf(OpenableColumns.SIZE),
-                    null,
-                    null,
-                    null,
-                )?.use { cursor ->
-                    if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else -1L
-                }?.takeIf { it >= 0L } ?: -1L
-            }.getOrDefault(-1L)
-            val input = context.contentResolver.openInputStream(uri) ?: return null
-            return input.use { source ->
-                context.cacheDir.mkdirs()
-                val temporaryFile = File.createTempFile("agora_import_", ".zip", context.cacheDir)
-                try {
-                    copyStreamToFile(
-                        input = source,
-                        target = temporaryFile,
-                        declaredSize = declaredSize,
-                        availableBytes = { context.cacheDir.usableSpace },
-                        sourceName = "backup archive",
-                    )
-                    open(temporaryFile)
-                } catch (error: Exception) {
-                    temporaryFile.delete()
-                    throw error
-                }
+            val descriptor = context.contentResolver.openFileDescriptor(uri, "r") ?: return null
+            val source = ParcelFileDescriptor.AutoCloseInputStream(descriptor)
+            return try {
+                openSeekableChannel(
+                    channel = source.channel,
+                    sourceCloseable = source,
+                    ownedTemporaryFile = null,
+                )
+            } catch (error: Exception) {
+                runCatching { source.close() }
+                if (error is IOException) throw error
+                throw IOException("Invalid backup archive", error)
             }
         }
 
@@ -174,14 +168,64 @@ internal class NativeBackupArchive private constructor(
             temporaryFile: File,
             metadataLimitBytes: Long = MAX_METADATA_BYTES,
         ): NativeBackupArchive {
-            var zip: ZipFile? = null
-            try {
-                zip = ZipFile(temporaryFile)
-                val entries = validateArchive(zip, metadataLimitBytes)
-                return NativeBackupArchive(zip, temporaryFile, entries, metadataLimitBytes)
+            val source = FileInputStream(temporaryFile)
+            return try {
+                openSeekableChannel(
+                    channel = source.channel,
+                    sourceCloseable = source,
+                    ownedTemporaryFile = temporaryFile,
+                    metadataLimitBytes = metadataLimitBytes,
+                )
             } catch (error: Exception) {
-                runCatching { zip?.close() }
+                runCatching { source.close() }
                 temporaryFile.delete()
+                if (error is IOException) throw error
+                throw IOException("Invalid backup archive", error)
+            }
+        }
+
+        internal fun open(
+            channel: SeekableByteChannel,
+            metadataLimitBytes: Long = MAX_METADATA_BYTES,
+        ): NativeBackupArchive =
+            openSeekableChannel(
+                channel = channel,
+                sourceCloseable = null,
+                ownedTemporaryFile = null,
+                metadataLimitBytes = metadataLimitBytes,
+            )
+
+        private fun openSeekableChannel(
+            channel: SeekableByteChannel,
+            sourceCloseable: Closeable?,
+            ownedTemporaryFile: File?,
+            metadataLimitBytes: Long = MAX_METADATA_BYTES,
+        ): NativeBackupArchive {
+            try {
+                val position = channel.position()
+                channel.position(position)
+                channel.size()
+            } catch (error: Exception) {
+                runCatching { channel.close() }
+                throw IOException(NON_SEEKABLE_SOURCE_MESSAGE, error)
+            }
+
+            var zip: CommonsZipFile? = null
+            try {
+                zip = CommonsZipFile.builder()
+                    .setSeekableByteChannel(channel)
+                    .get()
+                val entries = validateArchive(zip, metadataLimitBytes)
+                return NativeBackupArchive(
+                    zip = zip,
+                    sourceCloseable = sourceCloseable,
+                    ownedTemporaryFile = ownedTemporaryFile,
+                    entries = entries,
+                    metadataLimitBytes = metadataLimitBytes,
+                )
+            } catch (error: Exception) {
+                runCatching { zip?.close() ?: channel.close() }
+                ownedTemporaryFile?.delete()
                 if (error is IOException) throw error
                 throw IOException("Invalid backup archive", error)
             }
@@ -251,16 +295,17 @@ internal class NativeBackupArchive private constructor(
         }
 
         private fun validateArchive(
-            zip: ZipFile,
+            zip: CommonsZipFile,
             metadataLimitBytes: Long,
-        ): Map<String, ZipEntry> {
+        ): Map<String, ZipArchiveEntry> {
             require(metadataLimitBytes >= 0L)
-            val files = linkedMapOf<String, ZipEntry>()
+            val files = linkedMapOf<String, ZipArchiveEntry>()
             val canonicalNames = mutableSetOf<String>()
             var declaredMetadataBytes = 0L
-            val enumeration = zip.entries()
+            val enumeration = zip.entries
             while (enumeration.hasMoreElements()) {
                 val entry = enumeration.nextElement()
+                validateRawEntryName(entry)
                 val canonicalName = validateEntryName(entry)
                 if (!canonicalNames.add(canonicalName)) {
                     throw IOException("Duplicate or ambiguous ZIP entry: ${entry.name}")
@@ -278,7 +323,7 @@ internal class NativeBackupArchive private constructor(
                     continue
                 }
                 files[entry.name] = entry
-                if (!isResourceEntry(entry.name)) {
+                if (isInMemoryMetadata(entry.name)) {
                     declaredMetadataBytes = checkedAdd(
                         declaredMetadataBytes,
                         entry.size,
@@ -307,7 +352,11 @@ internal class NativeBackupArchive private constructor(
                             input,
                             entry.size,
                             entry.crc,
-                            metadataLimitBytes,
+                            if (isInMemoryMetadata(entry.name)) {
+                                metadataLimitBytes
+                            } else {
+                                Long.MAX_VALUE
+                            },
                             entry.name,
                         )
                     }
@@ -315,7 +364,13 @@ internal class NativeBackupArchive private constructor(
             return files
         }
 
-        private fun validateEntryName(entry: ZipEntry): String {
+        private fun validateRawEntryName(entry: ZipArchiveEntry) {
+            if (entry.rawName.any { it == '\\'.code.toByte() }) {
+                throw IOException("Ambiguous ZIP entry path: ${entry.name}")
+            }
+        }
+
+        private fun validateEntryName(entry: ZipArchiveEntry): String {
             val name = entry.name
             if (name.isEmpty() || name.startsWith('/') || name.startsWith('\\')) {
                 throw IOException("Unsafe ZIP entry path: $name")
@@ -334,6 +389,12 @@ internal class NativeBackupArchive private constructor(
 
         private fun isResourceEntry(name: String): Boolean =
             isConversationResource(name) || isLegacyCustomFont(name)
+
+        private fun isStreamedPayload(name: String): Boolean =
+            name == NativeBackupFormat.CONVERSATIONS_ENTRY
+
+        private fun isInMemoryMetadata(name: String): Boolean =
+            !isResourceEntry(name) && !isStreamedPayload(name)
 
         private fun isConversationResource(name: String): Boolean =
             name.startsWith(NativeBackupFormat.IMAGE_MEDIA_PREFIX) ||
