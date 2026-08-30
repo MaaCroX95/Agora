@@ -107,6 +107,17 @@ class ChatViewModel(
         persistence = conversationWorkspaces,
         conversations = conversationRepository,
     )
+    private val conversationComposer = ConversationComposerController(
+        scope = viewModelScope,
+        drafts = composerDrafts,
+        processor = AttachmentImportProcessor(application),
+        conversations = conversationRepository,
+        sandboxHomeDir = {
+            sandboxFactory?.takeIf { it.isAvailable() }?.let {
+                File(application.filesDir, "sandbox-home")
+            }
+        },
+    )
     val dataControl = DataControlController(
         conversations = conversationRepository,
         memory = memoryManager,
@@ -779,6 +790,7 @@ class ChatViewModel(
 
     init {
         startInitJobs()
+        conversationComposer.start()
         unreadGenerationAcknowledger.start()
         conversationUi.start()
 

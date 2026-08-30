@@ -1,0 +1,483 @@
+package com.newoether.agora.viewmodel
+
+import com.newoether.agora.data.local.NewChatDraftAttachmentReference
+import com.newoether.agora.data.repository.ConversationRepository
+import com.newoether.agora.model.AttachmentImportState
+import com.newoether.agora.model.SelectedAttachment
+import com.newoether.agora.util.DebugLog
+import io.mockk.Runs
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.just
+import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
+import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+class ConversationComposerControllerTest {
+    @get:Rule
+    val temporaryFolder = TemporaryFolder()
+
+    @Test
+    fun `two owners keep independent processing state across selection changes`() = runTest {
+        val processor = mockk<AttachmentImportProcessor>()
+        val gates = mapOf(
+            "a" to CompletableDeferred<Unit>(),
+            "b" to CompletableDeferred<Unit>(),
+        )
+        coEvery { processor.stage(any()) } coAnswers {
+            val source = firstArg<SelectedAttachment>()
+            AttachmentImportProcessor.StageResult.Success(
+                attachment = source.processing("/stage/${source.localId}"),
+                createdPaths = emptyList(),
+            )
+        }
+        coEvery { processor.process(any(), any()) } coAnswers {
+            val staged = firstArg<SelectedAttachment>()
+            gates.getValue(staged.localId).await()
+            AttachmentImportProcessor.ProcessResult.Ready(staged.ready())
+        }
+        val fixture = fixture(processor)
+        fixture.controller.load(OWNER_A)
+        fixture.controller.load(OWNER_B)
+
+        fixture.controller.importAttachment(OWNER_A, attachment("a"))
+        fixture.controller.importAttachment(OWNER_B, attachment("b"))
+        runCurrent()
+
+        assertEquals(AttachmentImportState.PROCESSING, fixture.state(OWNER_A, "a").importState)
+        assertEquals(AttachmentImportState.PROCESSING, fixture.state(OWNER_B, "b").importState)
+        gates.getValue("b").complete(Unit)
+        fixture.controller.awaitProcessing(OWNER_B)
+        assertEquals(AttachmentImportState.READY, fixture.state(OWNER_B, "b").importState)
+        assertEquals(AttachmentImportState.PROCESSING, fixture.state(OWNER_A, "a").importState)
+
+        gates.getValue("a").complete(Unit)
+        fixture.controller.awaitProcessing(OWNER_A)
+        assertEquals(AttachmentImportState.READY, fixture.state(OWNER_A, "a").importState)
+    }
+
+    @Test
+    fun `startup restores ordinary and new chat processing after process restart`() = runTest {
+        val ordinary = attachment("ordinary").processing("/stage/ordinary")
+        val newChat = attachment("new-chat").processing("/stage/new-chat")
+        val processor = mockk<AttachmentImportProcessor>()
+        coEvery { processor.process(any(), any()) } coAnswers {
+            AttachmentImportProcessor.ProcessResult.Ready(
+                firstArg<SelectedAttachment>().ready(),
+            )
+        }
+        val persistence = MemoryDraftPersistence(
+            mapOf(
+                OWNER_A to draft("ordinary text", ordinary),
+                NEW_CHAT_WORKSPACE_ID to draft("new chat text", newChat),
+            ),
+        )
+        val repository = repository()
+        coEvery { repository.getConversationDraftAttachmentOwnerIds() } returns listOf(OWNER_A)
+        coEvery { repository.getNewChatDraftAttachmentReference() } returns
+            NewChatDraftAttachmentReference(Json.encodeToString(listOf(newChat)))
+        val controller = controller(processor, persistence, repository)
+
+        controller.start().join()
+        controller.awaitProcessing(OWNER_A)
+        controller.awaitProcessing(NEW_CHAT_WORKSPACE_ID)
+
+        assertEquals(AttachmentImportState.READY, controller.state(OWNER_A).value.single().importState)
+        assertEquals(
+            AttachmentImportState.READY,
+            controller.state(NEW_CHAT_WORKSPACE_ID).value.single().importState,
+        )
+        assertEquals(AttachmentImportState.READY, persistence.attachment(OWNER_A).importState)
+        assertEquals(
+            AttachmentImportState.READY,
+            persistence.attachment(NEW_CHAT_WORKSPACE_ID).importState,
+        )
+        coVerify(exactly = 2) { processor.process(any(), any()) }
+    }
+
+    @Test
+    fun `missing restored staged source becomes durable failed`() = runTest {
+        val processing = attachment("missing").processing("/stage/missing")
+        val processor = mockk<AttachmentImportProcessor>()
+        coEvery { processor.process(processing, any()) } returns
+            AttachmentImportProcessor.ProcessResult.Failure(
+                IllegalStateException("missing staged source"),
+            )
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(OWNER_A to draft(attachments = arrayOf(processing))),
+            owners = listOf(OWNER_A),
+        )
+
+        fixture.controller.start().join()
+        fixture.controller.awaitProcessing(OWNER_A)
+
+        assertEquals(AttachmentImportState.FAILED, fixture.state(OWNER_A, "missing").importState)
+        assertEquals(AttachmentImportState.FAILED, fixture.persistence.attachment(OWNER_A).importState)
+    }
+
+    @Test
+    fun `failed attachment retry resumes from private staged source`() = runTest {
+        val failed = attachment("retry").copy(
+            localPath = "/stage/retry",
+            importState = AttachmentImportState.FAILED,
+        )
+        val processor = mockk<AttachmentImportProcessor>()
+        coEvery { processor.process(any(), any()) } coAnswers {
+            AttachmentImportProcessor.ProcessResult.Ready(
+                firstArg<SelectedAttachment>().ready(),
+            )
+        }
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(OWNER_A to draft(attachments = arrayOf(failed))),
+        )
+        fixture.controller.load(OWNER_A)
+        fixture.persistence.failWrites = true
+        mockkObject(DebugLog)
+        every { DebugLog.e(any(), any(), any()) } just Runs
+
+        try {
+            assertFalse(fixture.controller.retry(OWNER_A, "retry"))
+            assertEquals(AttachmentImportState.FAILED, fixture.state(OWNER_A, "retry").importState)
+            fixture.persistence.failWrites = false
+            assertTrue(fixture.controller.retry(OWNER_A, "retry"))
+            fixture.controller.awaitProcessing(OWNER_A)
+        } finally {
+            unmockkObject(DebugLog)
+        }
+
+        assertEquals(
+            listOf(AttachmentImportState.PROCESSING, AttachmentImportState.READY),
+            fixture.persistence.updatedStates(OWNER_A),
+        )
+        assertEquals(AttachmentImportState.READY, fixture.state(OWNER_A, "retry").importState)
+        coVerify(exactly = 0) { processor.stage(any()) }
+        coVerify(exactly = 1) { processor.process(any(), any()) }
+    }
+
+    @Test
+    fun `removal during work cancels only the selected attachment`() = runTest {
+        val processor = mockk<AttachmentImportProcessor>()
+        val siblingStageGate = CompletableDeferred<Unit>()
+        val siblingProcessGate = CompletableDeferred<Unit>()
+        val targetProcessingStarted = CompletableDeferred<Unit>()
+        val targetCancelled = CompletableDeferred<Unit>()
+        coEvery { processor.stage(any()) } coAnswers {
+            val source = firstArg<SelectedAttachment>()
+            if (source.localId == "sibling") siblingStageGate.await()
+            AttachmentImportProcessor.StageResult.Success(
+                attachment = source.processing("/stage/${source.localId}"),
+                createdPaths = emptyList(),
+            )
+        }
+        coEvery { processor.process(any(), any()) } coAnswers {
+            val staged = firstArg<SelectedAttachment>()
+            if (staged.localId == "target") {
+                targetProcessingStarted.complete(Unit)
+                try {
+                    awaitCancellation()
+                } finally {
+                    targetCancelled.complete(Unit)
+                }
+            } else {
+                siblingProcessGate.await()
+                AttachmentImportProcessor.ProcessResult.Ready(staged.ready())
+            }
+        }
+        val fixture = fixture(processor)
+        fixture.controller.load(OWNER_A)
+        fixture.controller.importAttachment(OWNER_A, attachment("target"))
+        fixture.controller.importAttachment(OWNER_A, attachment("sibling"))
+        targetProcessingStarted.await()
+
+        assertEquals(listOf("target"), fixture.persistence.attachments(OWNER_A).map { it.localId })
+        assertTrue(fixture.controller.remove(OWNER_A, "target"))
+        targetCancelled.await()
+        assertEquals(listOf("sibling"), fixture.controller.state(OWNER_A).value.ids())
+        assertTrue(fixture.persistence.attachments(OWNER_A).isEmpty())
+        assertEquals(AttachmentImportState.PROCESSING, fixture.state(OWNER_A, "sibling").importState)
+
+        siblingStageGate.complete(Unit)
+        runCurrent()
+        siblingProcessGate.complete(Unit)
+        fixture.controller.awaitProcessing(OWNER_A)
+        assertEquals(AttachmentImportState.READY, fixture.state(OWNER_A, "sibling").importState)
+        assertEquals(listOf("sibling"), fixture.persistence.attachments(OWNER_A).map { it.localId })
+    }
+
+    @Test
+    fun `failed removal keeps attachment processing until a durable retry succeeds`() = runTest {
+        val processing = attachment("keep").processing("/stage/keep")
+        val gate = CompletableDeferred<Unit>()
+        val processor = mockk<AttachmentImportProcessor>()
+        coEvery { processor.process(processing, any()) } coAnswers {
+            gate.await()
+            AttachmentImportProcessor.ProcessResult.Ready(processing.ready())
+        }
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(OWNER_A to draft(attachments = arrayOf(processing))),
+        )
+        fixture.controller.load(OWNER_A)
+        runCurrent()
+        fixture.persistence.failWrites = true
+        mockkObject(DebugLog)
+        every { DebugLog.e(any(), any(), any()) } just Runs
+
+        try {
+            assertFalse(fixture.controller.remove(OWNER_A, "keep"))
+            assertEquals(AttachmentImportState.PROCESSING, fixture.state(OWNER_A, "keep").importState)
+            assertEquals(AttachmentImportState.PROCESSING, fixture.persistence.attachment(OWNER_A).importState)
+
+            fixture.persistence.failWrites = false
+            gate.complete(Unit)
+            fixture.controller.awaitProcessing(OWNER_A)
+            assertEquals(AttachmentImportState.READY, fixture.state(OWNER_A, "keep").importState)
+            assertEquals(AttachmentImportState.READY, fixture.persistence.attachment(OWNER_A).importState)
+        } finally {
+            unmockkObject(DebugLog)
+        }
+    }
+
+    @Test
+    fun `stale completion deletes generated output after removal`() = runTest {
+        val staged = attachment("stale").processing("/stage/stale")
+        val generated = File(temporaryFolder.root, "stale-output.jpg")
+        val gate = CompletableDeferred<Unit>()
+        val processor = mockk<AttachmentImportProcessor>()
+        coEvery { processor.process(staged, any()) } coAnswers {
+            withContext(NonCancellable) {
+                gate.await()
+                generated.writeText("generated")
+                AttachmentImportProcessor.ProcessResult.Ready(
+                    attachment = staged.ready(generated.absolutePath),
+                    createdPaths = listOf(generated.absolutePath),
+                )
+            }
+        }
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(OWNER_A to draft(attachments = arrayOf(staged))),
+        )
+        fixture.controller.load(OWNER_A)
+        runCurrent()
+
+        assertTrue(fixture.controller.remove(OWNER_A, "stale"))
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertFalse(generated.exists())
+        assertTrue(fixture.controller.state(OWNER_A).value.attachments.isEmpty())
+        assertTrue(fixture.persistence.attachments(OWNER_A).isEmpty())
+    }
+
+    @Test
+    fun `cancellation after ready result keeps durably committed output`() = runTest {
+        val staged = attachment("cancelled-ready").processing("/stage/cancelled-ready")
+        val generated = File(temporaryFolder.root, "cancelled-ready.jpg")
+        val ready = staged.ready(generated.absolutePath)
+        val processor = mockk<AttachmentImportProcessor>()
+        coEvery { processor.process(staged, any()) } coAnswers {
+            generated.writeText("generated")
+            currentCoroutineContext().cancel()
+            AttachmentImportProcessor.ProcessResult.Ready(
+                attachment = ready,
+                createdPaths = listOf(generated.absolutePath),
+            )
+        }
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(OWNER_A to draft(attachments = arrayOf(staged))),
+        )
+
+        fixture.controller.load(OWNER_A)
+        fixture.controller.awaitProcessing(OWNER_A)
+
+        assertTrue(generated.exists())
+        assertEquals(ready, fixture.persistence.attachment(OWNER_A))
+        assertEquals(ready, fixture.controller.state(OWNER_A).value.single())
+    }
+
+    @Test
+    fun `ready replacement reclaims staged source only after durable write`() = runTest {
+        val staged = attachment("ready").processing("/stage/ready")
+        val ready = staged.ready("/final/ready.jpg")
+        val processor = mockk<AttachmentImportProcessor>()
+        coEvery { processor.process(staged, any()) } returns
+            AttachmentImportProcessor.ProcessResult.Ready(ready)
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(OWNER_A to draft(attachments = arrayOf(staged))),
+        )
+
+        fixture.controller.load(OWNER_A)
+        fixture.controller.awaitProcessing(OWNER_A)
+
+        assertEquals(ready, fixture.persistence.attachment(OWNER_A))
+        coVerify(exactly = 1) {
+            fixture.repository.deleteUnreferencedDraftAttachmentFiles(listOf(staged))
+        }
+    }
+
+    private fun TestScope.fixture(
+        processor: AttachmentImportProcessor,
+        initial: Map<String, ConversationWorkspaceDraft> = emptyMap(),
+        owners: List<String> = emptyList(),
+    ): Fixture {
+        val persistence = MemoryDraftPersistence(initial)
+        val repository = repository()
+        return Fixture(
+            controller = controller(
+                processor = processor,
+                persistence = persistence,
+                repository = repository,
+                owners = owners,
+            ),
+            persistence = persistence,
+            repository = repository,
+        )
+    }
+
+    private fun TestScope.controller(
+        processor: AttachmentImportProcessor,
+        persistence: MemoryDraftPersistence,
+        repository: ConversationRepository,
+        owners: List<String>? = null,
+    ): ConversationComposerController {
+        val drafts = ComposerDraftController(
+            persistence = persistence,
+            conversations = repository,
+        )
+        return if (owners == null) {
+            ConversationComposerController(
+                scope = backgroundScope,
+                drafts = drafts,
+                processor = processor,
+                conversations = repository,
+            )
+        } else {
+            ConversationComposerController(
+                scope = backgroundScope,
+                drafts = drafts,
+                processor = processor,
+                conversations = repository,
+                listRestorableOwners = { owners },
+                hasNewChatDraft = { false },
+            )
+        }
+    }
+
+    private fun repository(): ConversationRepository =
+        mockk(relaxed = true)
+
+    private fun Fixture.state(ownerId: String, attachmentId: String): SelectedAttachment =
+        controller.state(ownerId).value.attachments.single { it.localId == attachmentId }
+
+    private fun ConversationComposerSnapshot.single(): SelectedAttachment = attachments.single()
+
+    private fun ConversationComposerSnapshot.ids(): List<String> = attachments.map { it.localId }
+
+    private fun attachment(id: String) = SelectedAttachment(
+        localId = id,
+        uri = "content://source/$id",
+        type = "image",
+        fileName = "$id.jpg",
+        importState = AttachmentImportState.READY,
+    )
+
+    private fun SelectedAttachment.processing(path: String) = copy(
+        localPath = path,
+        importState = AttachmentImportState.PROCESSING,
+    )
+
+    private fun SelectedAttachment.ready(path: String = localPath.orEmpty()) = copy(
+        localPath = path,
+        importState = AttachmentImportState.READY,
+    )
+
+    private fun draft(
+        text: String = "",
+        vararg attachments: SelectedAttachment,
+    ) = ConversationWorkspaceDraft(
+        text = text,
+        attachmentsJson = attachments.takeIf { it.isNotEmpty() }
+            ?.let { Json.encodeToString(it.toList()) },
+    )
+
+    private data class Fixture(
+        val controller: ConversationComposerController,
+        val persistence: MemoryDraftPersistence,
+        val repository: ConversationRepository,
+    )
+
+    private class MemoryDraftPersistence(
+        initial: Map<String, ConversationWorkspaceDraft>,
+    ) : ComposerDraftPersistence {
+        private val drafts = ConcurrentHashMap(initial)
+        private val updates = mutableListOf<Pair<String, ConversationWorkspaceDraft>>()
+        var failWrites = false
+
+        override suspend fun loadDraft(ownerId: String): ConversationWorkspaceDraft =
+            drafts[ownerId] ?: ConversationWorkspaceDraft("", null)
+
+        override suspend fun updateDraft(
+            ownerId: String,
+            text: String,
+            attachmentsJson: String?,
+        ) {
+            if (failWrites) throw IllegalStateException("draft write failed")
+            val value = ConversationWorkspaceDraft(text, attachmentsJson)
+            drafts[ownerId] = value
+            synchronized(updates) { updates += ownerId to value }
+        }
+
+        override suspend fun clearAcceptedDraft(ownerId: String) {
+            drafts[ownerId] = ConversationWorkspaceDraft("", null)
+        }
+
+        fun attachments(ownerId: String): List<SelectedAttachment> = drafts[ownerId]
+            ?.attachmentsJson
+            ?.let { Json.decodeFromString(it) }
+            ?: emptyList()
+
+        fun attachment(ownerId: String): SelectedAttachment = attachments(ownerId).single()
+
+        fun updatedStates(ownerId: String): List<AttachmentImportState> = synchronized(updates) {
+            updates.filter { it.first == ownerId }.mapNotNull { (_, draft) ->
+                draft.attachmentsJson
+                    ?.let { Json.decodeFromString<List<SelectedAttachment>>(it) }
+                    ?.singleOrNull()
+                    ?.importState
+            }
+        }
+    }
+
+    private companion object {
+        const val OWNER_A = "conversation-a"
+        const val OWNER_B = "conversation-b"
+    }
+}
