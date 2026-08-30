@@ -173,15 +173,30 @@ class MessageListLayoutTest {
     }
 
     @Test
-    fun componentGrowthAndShrinkBelowMinimumNeverChangeTailGeometry() {
-        val beforeContent = 500
-        val afterContent = 220
-        val minimum = calculateTailMinHeightPx(1_000, 140, 180)
-        val beforeHeight = calculateTailLayoutHeightPx(minimum, beforeContent)
-        val afterHeight = calculateTailLayoutHeightPx(minimum, afterContent)
+    fun postAnchorGrowthAndShrinkKeepAllBlankCapacityAtThePhysicalEnd() {
+        val turns = buildMessageListTurns(
+            listOf(
+                message("user", Participant.USER),
+                message("assistant", Participant.MODEL),
+                message("compact_boundary", Participant.MODEL),
+                message("later-assistant", Participant.MODEL),
+            ),
+        )
+        val baseMinimum = calculateTailMinHeightPx(1_000, 140, 180)
 
-        assertEquals(minimum, beforeHeight)
-        assertEquals(minimum, afterHeight)
+        fun tailRegionHeight(compactHeight: Int, assistantHeight: Int): Int {
+            val holderMinimum = calculateTailHolderMinHeightPx(
+                turns = turns,
+                semanticAnchorKey = messageListTailAnchorKey(turns),
+                baseMinimumHeightPx = baseMinimum,
+                messageHeights = mapOf("compact_boundary" to compactHeight),
+            )
+            return compactHeight + calculateTailLayoutHeightPx(holderMinimum, assistantHeight)
+        }
+
+        assertEquals(baseMinimum, tailRegionHeight(compactHeight = 80, assistantHeight = 220))
+        assertEquals(baseMinimum, tailRegionHeight(compactHeight = 240, assistantHeight = 220))
+        assertEquals(920, tailRegionHeight(compactHeight = 240, assistantHeight = 680))
     }
 
     @Test

@@ -289,11 +289,15 @@ dp overflow-action touch target are visually balanced around the text. Both slot
 glyph; minimum height, menu behavior, and action enablement remain unchanged. UI specialization
 cannot redefine generation or context contracts.
 
-The tail minimum-height owner is the final user-semantic LazyColumn turn, not the physical final turn.
-An ordinary turn beginning with a real USER message and every standalone Compact both qualify. A
-later Assistant-only item cannot take that ownership from the preceding Compact, so
-`[USER, ASSISTANT, COMPACT, ASSISTANT]` remains anchored to the Compact. This tail rule does not merge
-Compact with neighboring turns or change message identity, ordering, grouping, scrolling, or search.
+The final real-USER or standalone Compact turn is the semantic tail anchor. The physical final rendered
+turn holds the remaining tail-region minimum height; these are separate responsibilities. Before
+assigning that minimum, subtract the measured content height from the semantic anchor itself through
+every turn before the physical holder, and clamp the remainder at zero. The holder then contributes
+the larger of that remainder or its own content height, so the complete anchored region is exactly
+the larger of the base viewport minimum or its actual content. Therefore
+`[USER, ASSISTANT, COMPACT, ASSISTANT]` remains positioned from Compact while Compact and every later
+standalone turn stay adjacent and all unused capacity appears only after the complete tail. This rule
+does not merge turns or change message identity, ordering, grouping, scrolling, or search.
 
 When the Compact detail Bottom Sheet is open and the ordinary durable message is
 SENDING/answering with no real Markdown output, it shows the localized equivalent of

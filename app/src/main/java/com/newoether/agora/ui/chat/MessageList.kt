@@ -253,7 +253,8 @@ internal fun MessageList(
     }
     val turnCache = remember { MessageListTurnCache() }
     val turns = remember(presentationMessages) { turnCache.update(presentationMessages) }
-    val tailTurnKey = messageListTailTurnKey(turns)
+    val tailAnchorKey = messageListTailAnchorKey(turns)
+    val tailHolderKey = messageListTailHolderKey(turns)
     LaunchedEffect(conversationId, turns, searchQuery) { onSearchTurnsChanged(turns) }
 
     LaunchedEffect(
@@ -562,15 +563,20 @@ internal fun MessageList(
         RunUiProjection.project(messages.list, allMessages.list)
     }
 
-    val tailMinHeightPx = if (tailTurnKey == null || viewportHeight == 0) {
+    val tailMinHeightPx = if (tailAnchorKey == null || viewportHeight == 0) {
         0
     } else {
-        calculateTailMinHeightPx(
-            viewportHeightPx = viewportHeight,
-            targetTopPx = with(density) { 140.dp.roundToPx() },
-            bottomObstructionPx = with(density) {
-                (bottomBarHeight + 8.dp).roundToPx()
-            },
+        calculateTailHolderMinHeightPx(
+            turns = turns,
+            semanticAnchorKey = tailAnchorKey,
+            baseMinimumHeightPx = calculateTailMinHeightPx(
+                viewportHeightPx = viewportHeight,
+                targetTopPx = with(density) { 140.dp.roundToPx() },
+                bottomObstructionPx = with(density) {
+                    (bottomBarHeight + 8.dp).roundToPx()
+                },
+            ),
+            messageHeights = messageHeights,
         )
     }
     val tailMinHeight = with(density) { tailMinHeightPx.toDp() }
@@ -965,18 +971,13 @@ internal fun MessageList(
             userScrollEnabled = userScrollEnabled
         ) {
             items(turns, key = { turn -> stableVisualKey(turn.key) }) { turn ->
-                val isLastTurn = turn.key == tailTurnKey
-                // A turn's key and composition survive when the next USER is appended. Only the
-                // new turn enters; the previous assistant never moves to a different Lazy item.
+                val holdsTailMinimum = turn.key == tailHolderKey
                 Box(modifier = Modifier) {
-                    // The last turn atomically absorbs bottom space. Earlier turns keep the same
-                    // Column call site with a zero minimum, so losing tail status cannot dispose
-                    // or recreate any child message.
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(
-                                min = if (isLastTurn) tailMinHeight else 0.dp,
+                                min = if (holdsTailMinimum) tailMinHeight else 0.dp,
                             ),
                     ) {
                         turn.messages.forEach { message ->

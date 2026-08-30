@@ -34,6 +34,20 @@ internal fun calculateTailLayoutHeightPx(
     contentHeightPx: Int,
 ): Int = maxOf(minimumHeightPx, contentHeightPx)
 
+internal fun calculateTailHolderMinHeightPx(
+    turns: List<MessageListTurn>,
+    semanticAnchorKey: String?,
+    baseMinimumHeightPx: Int,
+    messageHeights: Map<String, Int>,
+): Int {
+    val anchorIndex = turns.indexOfFirst { turn -> turn.key == semanticAnchorKey }
+    if (anchorIndex < 0 || turns.isEmpty()) return 0
+    val precedingTailHeightPx = turns
+        .subList(anchorIndex, turns.lastIndex)
+        .sumOf { turn -> turn.messages.sumOf { message -> messageHeights[message.id] ?: 0 } }
+    return (baseMinimumHeightPx - precedingTailHeightPx).coerceAtLeast(0)
+}
+
 /**
  * One stable LazyColumn item per ordinary conversation turn or Compact message.
  *
@@ -193,13 +207,15 @@ internal fun buildMessageListTurns(messages: List<ChatMessage>): List<MessageLis
     return turns
 }
 
-internal fun messageListTailTurnKey(turns: List<MessageListTurn>): String? = turns
+internal fun messageListTailAnchorKey(turns: List<MessageListTurn>): String? = turns
     .lastOrNull { turn ->
         turn.messages.firstOrNull()?.let { message ->
             MessageGenerationBoundaryResolver.isRealUser(message) || message.isContextCompact()
         } == true
     }
     ?.key
+
+internal fun messageListTailHolderKey(turns: List<MessageListTurn>): String? = turns.lastOrNull()?.key
 
 internal fun messageListTurnIndex(
     turns: List<MessageListTurn>,

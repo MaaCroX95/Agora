@@ -42,7 +42,7 @@ class CompactMessagePresentationTest {
     }
 
     @Test
-    fun tailMinimumHeightBelongsToTheLastUserSemanticTurn() {
+    fun tailAnchorAndPhysicalHolderRemainSeparateAfterCompact() {
         val ordinaryTurns = buildMessageListTurns(
             listOf(
                 message("user", Participant.USER),
@@ -62,16 +62,58 @@ class CompactMessagePresentationTest {
                 message("assistant", Participant.MODEL),
                 message("compact_boundary", Participant.MODEL),
                 message("later-assistant", Participant.MODEL),
+                message("later-error", Participant.ERROR),
             ),
         )
 
-        assertEquals("user", messageListTailTurnKey(ordinaryTurns))
-        assertEquals("compact_boundary", messageListTailTurnKey(turnsEndingWithCompact))
-        assertEquals("compact_boundary", messageListTailTurnKey(turnsWithAssistantAfterCompact))
+        assertEquals("user", messageListTailAnchorKey(ordinaryTurns))
+        assertEquals("user", messageListTailHolderKey(ordinaryTurns))
+        assertEquals("compact_boundary", messageListTailAnchorKey(turnsEndingWithCompact))
+        assertEquals("compact_boundary", messageListTailHolderKey(turnsEndingWithCompact))
+        assertEquals("compact_boundary", messageListTailAnchorKey(turnsWithAssistantAfterCompact))
+        assertEquals("later-error", messageListTailHolderKey(turnsWithAssistantAfterCompact))
         assertEquals(
             null,
-            messageListTailTurnKey(
+            messageListTailAnchorKey(
                 buildMessageListTurns(listOf(message("assistant", Participant.MODEL))),
+            ),
+        )
+    }
+
+    @Test
+    fun postCompactTurnsConsumeTheAnchorRegionBeforeTrailingSpace() {
+        val turns = buildMessageListTurns(
+            listOf(
+                message("user", Participant.USER),
+                message("assistant", Participant.MODEL),
+                message("compact_boundary", Participant.MODEL),
+                message("later-assistant", Participant.MODEL),
+                message("later-error", Participant.ERROR),
+            ),
+        )
+        val heights = mapOf(
+            "compact_boundary" to 80,
+            "later-assistant" to 180,
+            "later-error" to 40,
+        )
+        val holderMinimum = calculateTailHolderMinHeightPx(
+            turns = turns,
+            semanticAnchorKey = messageListTailAnchorKey(turns),
+            baseMinimumHeightPx = 680,
+            messageHeights = heights,
+        )
+
+        assertEquals(420, holderMinimum)
+        assertEquals(680, 80 + 180 + calculateTailLayoutHeightPx(holderMinimum, 40))
+        assertEquals(
+            0,
+            calculateTailHolderMinHeightPx(
+                turns = turns,
+                semanticAnchorKey = messageListTailAnchorKey(turns),
+                baseMinimumHeightPx = 680,
+                messageHeights = heights +
+                    ("compact_boundary" to 300) +
+                    ("later-assistant" to 500),
             ),
         )
     }
