@@ -437,6 +437,7 @@ class ConversationComposerControllerTest {
         fixture.controller.load(OWNER_A)
         fixture.controller.load(OWNER_B)
 
+        fixture.controller.updateText(OWNER_A, "updated a")
         assertTrue(fixture.controller.persistText(OWNER_A, "updated a"))
 
         assertEquals("updated a", fixture.controller.state(OWNER_A).value.text)
@@ -445,6 +446,51 @@ class ConversationComposerControllerTest {
         assertEquals(0L, fixture.controller.state(OWNER_B).value.revision)
         assertEquals("updated a", fixture.persistence.text(OWNER_A))
         assertEquals("owner b", fixture.persistence.text(OWNER_B))
+    }
+
+    @Test
+    fun `attachment completion preserves the active text projection version`() = runTest {
+        val source = attachment("projection")
+        val processor = mockk<AttachmentImportProcessor>()
+        coEvery { processor.stage(match { it.localId == source.localId }) } returns
+            AttachmentImportProcessor.StageResult.Success(
+                attachment = source.processing("/stage/projection"),
+                createdPaths = emptyList(),
+            )
+        coEvery { processor.process(any(), any()) } coAnswers {
+            AttachmentImportProcessor.ProcessResult.Ready(
+                firstArg<SelectedAttachment>().ready(),
+            )
+        }
+        val fixture = fixture(processor)
+        fixture.controller.load(OWNER_A)
+        fixture.controller.updateText(OWNER_A, "active input")
+
+        fixture.controller.importAttachment(OWNER_A, source)
+        fixture.controller.awaitProcessing(OWNER_A)
+
+        assertEquals("active input", fixture.controller.state(OWNER_A).value.text)
+        assertEquals(0L, fixture.controller.state(OWNER_A).value.textProjectionVersion)
+        assertEquals(AttachmentImportState.READY, fixture.state(OWNER_A, source.localId).importState)
+    }
+
+    @Test
+    fun `accepted clear rejects a stale debounced text write`() = runTest {
+        val processor = mockk<AttachmentImportProcessor>()
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(OWNER_A to draft(text = "pending")),
+        )
+        fixture.controller.load(OWNER_A)
+        fixture.controller.updateText(OWNER_A, "pending edit")
+
+        val clearResult = fixture.controller.clearAccepted(OWNER_A)
+        assertTrue(clearResult.succeeded)
+        assertFalse(fixture.controller.persistText(OWNER_A, "pending edit"))
+
+        assertEquals("", fixture.controller.state(OWNER_A).value.text)
+        assertEquals(clearResult.revision, fixture.controller.state(OWNER_A).value.revision)
+        assertEquals("", fixture.persistence.text(OWNER_A))
     }
 
     @Test
@@ -468,7 +514,11 @@ class ConversationComposerControllerTest {
             result,
         )
         assertEquals(
-            ConversationComposerSnapshot(revision = 1L, loaded = true),
+            ConversationComposerSnapshot(
+                revision = 1L,
+                textProjectionVersion = 1L,
+                loaded = true,
+            ),
             fixture.controller.state(OWNER_A).value,
         )
         assertEquals("", fixture.persistence.text(OWNER_A))

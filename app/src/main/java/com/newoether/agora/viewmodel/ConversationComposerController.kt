@@ -21,6 +21,7 @@ internal data class ConversationComposerSnapshot(
     val text: String = "",
     val attachments: List<SelectedAttachment> = emptyList(),
     val revision: Long = 0L,
+    val textProjectionVersion: Long = 0L,
     val loaded: Boolean = false,
 )
 
@@ -106,13 +107,21 @@ internal class ConversationComposerController(
         }
     }
 
+    suspend fun updateText(ownerId: String, text: String) {
+        load(ownerId)
+        val session = session(ownerId)
+        session.mutex.withLock {
+            session.state.value = session.state.value.copy(text = text)
+        }
+    }
+
     suspend fun persistText(ownerId: String, text: String): Boolean {
         load(ownerId)
         val session = session(ownerId)
         return withContext(NonCancellable) {
             session.mutex.withLock {
                 val current = session.state.value
-                session.state.value = current.copy(text = text)
+                if (current.text != text) return@withLock false
                 val result = drafts.persist(
                     conversationId = ownerId,
                     expectedRevision = session.durable.revision,
@@ -159,8 +168,10 @@ internal class ConversationComposerController(
                 session.jobs.clear()
                 session.generations.clear()
                 session.transientAttachmentIds.clear()
+                val nextTextProjectionVersion = session.state.value.textProjectionVersion + 1L
                 session.durable = ConversationComposerSnapshot(
                     revision = result.revision,
+                    textProjectionVersion = nextTextProjectionVersion,
                     loaded = true,
                 )
                 session.state.value = session.durable
@@ -483,6 +494,7 @@ internal class ConversationComposerController(
                         text = current.text,
                         attachments = requestedAttachments,
                         revision = result.revision,
+                        textProjectionVersion = current.textProjectionVersion,
                         loaded = true,
                     )
                     session.transientAttachmentIds -= attachmentId
@@ -524,7 +536,11 @@ internal class ConversationComposerController(
     }
 
     private suspend fun reloadAndMergeLocked(ownerId: String, session: OwnerSession) {
-        val loaded = drafts.load(ownerId).toSnapshot()
+        val current = session.state.value
+        val loadedDraft = drafts.load(ownerId).toSnapshot()
+        val textProjectionVersion = current.textProjectionVersion +
+            if (loadedDraft.text != current.text) 1L else 0L
+        val loaded = loadedDraft.copy(textProjectionVersion = textProjectionVersion)
         val remaining = loaded.attachments.associateByTo(linkedMapOf()) { it.localId }
         val merged = buildList {
             session.state.value.attachments.forEach { attachment ->

@@ -4,7 +4,6 @@ import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
-import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.ui.chat.message.assistantActionAvailability
 import com.newoether.agora.ui.chat.message.assistantActionsVisible
 import org.junit.Assert.assertEquals
@@ -25,42 +24,6 @@ class MessageListLayoutTest {
 
         assertTrue(registry.isKnown("composed"))
         assertFalse(registry.isKnown("projected-but-not-composed"))
-    }
-
-    @Test
-    fun attachmentDraftMutationsBypassTheTextDebounce() {
-        val attachment = SelectedAttachment(uri = "file:///draft", type = "file")
-
-        assertEquals(
-            0L,
-            composerDraftWriteDelayMillis(
-                previousAttachments = emptyList(),
-                nextAttachments = listOf(attachment),
-                hasPendingRemovals = false,
-            ),
-        )
-        assertEquals(
-            0L,
-            composerDraftWriteDelayMillis(
-                previousAttachments = listOf(attachment),
-                nextAttachments = emptyList(),
-                hasPendingRemovals = true,
-            ),
-        )
-    }
-
-    @Test
-    fun textOnlyDraftMutationsRemainCoalesced() {
-        val attachment = SelectedAttachment(uri = "file:///draft", type = "file")
-
-        assertEquals(
-            300L,
-            composerDraftWriteDelayMillis(
-                previousAttachments = listOf(attachment),
-                nextAttachments = listOf(attachment),
-                hasPendingRemovals = false,
-            ),
-        )
     }
 
     @Test

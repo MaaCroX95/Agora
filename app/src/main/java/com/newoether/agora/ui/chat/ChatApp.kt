@@ -328,9 +328,9 @@ fun ChatApp(
     )
 
     ComposerDraftLifecycleEffect(
-        currentConversationId = currentConversationId,
+        ownerId = if (isNewChatMode) com.newoether.agora.viewmodel.NEW_CHAT_WORKSPACE_ID else currentConversationId ?: com.newoether.agora.viewmodel.NEW_CHAT_WORKSPACE_ID,
+        controller = viewModel.conversationComposer,
         viewModel = viewModel,
-        composer = composer,
         textFieldState = textFieldState,
     )
 

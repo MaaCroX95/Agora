@@ -107,7 +107,7 @@ class ChatViewModel(
         persistence = conversationWorkspaces,
         conversations = conversationRepository,
     )
-    private val conversationComposer = ConversationComposerController(
+    internal val conversationComposer = ConversationComposerController(
         scope = viewModelScope,
         drafts = composerDrafts,
         processor = AttachmentImportProcessor(application),
