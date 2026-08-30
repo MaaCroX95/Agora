@@ -64,6 +64,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -88,11 +89,11 @@ import com.newoether.agora.diagnostics.DiagnosticEventPayload
 import com.newoether.agora.diagnostics.DiagnosticExportFormat
 import com.newoether.agora.diagnostics.DiagnosticRequestContext
 import com.newoether.agora.diagnostics.DiagnosticSnapshot
-import com.newoether.agora.ui.chat.seekToPhysicalEdge
+import com.newoether.agora.ui.chat.animateToAbsoluteBottom
+import com.newoether.agora.ui.chat.animateToAbsoluteTop
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import java.io.File
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -131,6 +132,8 @@ internal fun SettingsDeveloperCapturePage(
     var showClearConfirmation by remember { mutableStateOf(false) }
     var showActionsMenu by remember { mutableStateOf(false) }
     var directionalScrollJob by remember { mutableStateOf<Job?>(null) }
+    var directionalScrollRequestId by remember { mutableLongStateOf(0L) }
+    var directionalScrollActive by remember { mutableStateOf(false) }
     val hasCaptureData = snapshot.hasCaptureData()
     val chooserTitle = stringResource(R.string.developer_options_export_share_title)
     val playLabel = stringResource(R.string.developer_options_capture_play)
@@ -140,21 +143,71 @@ internal fun SettingsDeveloperCapturePage(
     val moreActionsLabel = stringResource(R.string.developer_options_capture_more_actions)
 
     fun requestDirectionalScroll(toTop: Boolean) {
+        directionalScrollRequestId += 1L
+        val requestId = directionalScrollRequestId
         directionalScrollJob?.cancel()
-        lateinit var job: Job
-        job = scope.launch(start = CoroutineStart.LAZY) {
+        directionalScrollActive = true
+        directionalScrollJob = scope.launch {
             try {
-                listState.seekToPhysicalEdge(
-                    toEnd = !toTop,
-                    animate = motionPolicy.allowProgrammaticScrollMotion,
-                    minimumStepPx = with(density) { 2.dp.toPx() },
-                )
+                if (motionPolicy.allowProgrammaticScrollMotion) {
+                    val visibleItems = listState.layoutInfo.visibleItemsInfo
+                    val estimatedItemSizePx = visibleItems
+                        .map { item -> item.size }
+                        .filter { size -> size > 0 }
+                        .takeIf { sizes -> sizes.isNotEmpty() }
+                        ?.average()
+                        ?.toFloat()
+                        ?: with(density) { 72.dp.toPx() }
+                    val minimumStepPx = with(density) { 2.dp.toPx() }
+                    if (toTop) {
+                        listState.animateToAbsoluteTop(
+                            estimatedItemSizePx = estimatedItemSizePx,
+                            minimumStepPx = minimumStepPx,
+                        )
+                    } else {
+                        listState.animateToAbsoluteBottom(
+                            isGenerationActive = { false },
+                            estimateRemainingDistancePx = {
+                                val layout = listState.layoutInfo
+                                val lastVisible = layout.visibleItemsInfo
+                                    .maxByOrNull { item -> item.index }
+                                    ?: return@animateToAbsoluteBottom null
+                                val averageVisibleSizePx = layout.visibleItemsInfo
+                                    .map { item -> item.size }
+                                    .filter { size -> size > 0 }
+                                    .takeIf { sizes -> sizes.isNotEmpty() }
+                                    ?.average()
+                                    ?.toFloat()
+                                    ?: estimatedItemSizePx
+                                val remainingItems =
+                                    (layout.totalItemsCount - lastVisible.index - 1)
+                                        .coerceAtLeast(0)
+                                val estimatedContentEndPx =
+                                    lastVisible.offset +
+                                        lastVisible.size +
+                                        remainingItems * averageVisibleSizePx
+                                val viewportContentEndPx =
+                                    layout.viewportEndOffset - layout.afterContentPadding
+                                (estimatedContentEndPx - viewportContentEndPx)
+                                    .coerceAtLeast(0f)
+                            },
+                            minimumStepPx = minimumStepPx,
+                            onPhaseChanged = {},
+                        )
+                    }
+                } else if (toTop) {
+                    listState.scrollToItem(0)
+                } else {
+                    val lastIndex = listState.layoutInfo.totalItemsCount - 1
+                    if (lastIndex >= 0) listState.scrollToItem(lastIndex)
+                }
             } finally {
-                if (directionalScrollJob === job) directionalScrollJob = null
+                if (directionalScrollRequestId == requestId) {
+                    directionalScrollActive = false
+                    directionalScrollJob = null
+                }
             }
         }
-        directionalScrollJob = job
-        job.start()
     }
 
     LaunchedEffect(isDragged) {
@@ -309,7 +362,7 @@ internal fun SettingsDeveloperCapturePage(
             }
         },
         floatingActionButton = {
-            val directionalActionEnabled = directionalScrollJob == null
+            val directionalActionEnabled = !directionalScrollActive
             val scrollUpEnabled = directionalActionEnabled && canScrollUp
             val scrollDownEnabled = directionalActionEnabled && canScrollDown
             val captureActionEnabled = !snapshot.capacityLimitReached

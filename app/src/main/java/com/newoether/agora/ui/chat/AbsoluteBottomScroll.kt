@@ -324,24 +324,31 @@ internal suspend fun LazyListState.animateToAbsoluteBottom(
         while (currentCoroutineContext().isActive) {
             followedActiveGeneration = followedActiveGeneration || isGenerationActive()
             var layout = absoluteBottomLayoutSnapshot(layoutInfo, canScrollForward)
-            var targetMeasured = layout.sentinelVisible
-            if (targetMeasured) {
-                dispatch(AbsoluteBottomScrollEvent.TargetAvailable)
-            } else {
-                dispatch(AbsoluteBottomScrollEvent.TargetUnavailable)
-            }
+            if (!layout.sentinelVisible) dispatch(AbsoluteBottomScrollEvent.TargetUnavailable)
 
-            val reached = seekToPhysicalEdge(
-                toEnd = true,
-                animate = true,
-                minimumStepPx = minimumStepPx,
-                startup = feedbackSpec.startup,
-                onTargetMeasured = {
-                    if (!targetMeasured) {
-                        targetMeasured = true
-                        dispatch(AbsoluteBottomScrollEvent.TargetAvailable)
-                    }
+            val reached = smoothSeekToItem(
+                targetIndex = { (layoutInfo.totalItemsCount - 1).coerceAtLeast(0) },
+                targetErrorPx = { sentinel ->
+                    dispatch(AbsoluteBottomScrollEvent.TargetAvailable)
+                    val current = absoluteBottomLayoutSnapshot(
+                        layoutInfo = layoutInfo,
+                        canScrollForward = canScrollForward,
+                    )
+                    val contentEnd =
+                        current.viewportEndOffsetPx - current.afterContentPaddingPx
+                    (sentinel.offset + sentinel.size - contentEnd)
+                        .toFloat()
+                        .coerceAtLeast(0f)
                 },
+                estimatedErrorPx = estimateRemainingDistancePx,
+                exactTargetReady = {
+                    absoluteBottomLayoutSnapshot(
+                        layoutInfo = layoutInfo,
+                        canScrollForward = canScrollForward,
+                    ).sentinelVisible
+                },
+                minimumStepPx = minimumStepPx,
+                feedbackSpec = feedbackSpec,
             )
             if (!reached) {
                 dispatch(AbsoluteBottomScrollEvent.Finished)

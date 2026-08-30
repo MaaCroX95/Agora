@@ -111,14 +111,9 @@ layout, states, density, or interaction design has been approved.
 - All lower-right floating action buttons are explicitly circular. Their stack
   uses 24 dp end and bottom outer margins with a 12 dp gap between buttons.
 - The event list never follows new events automatically. Directional circular
-  actions submit one finite command to the canonical physical-edge seek owner,
-  which uses live list geometry and actual consumed deltas, brakes before an
-  adjacent target, and uses signed measured error as the only final-distance
-  authority. The page owns one replaceable nullable scroll job; a user drag
-  cancels it. It does not estimate distance from visible-card height or keep a
-  request-id/active shadow state. Reduced Motion uses the same owner to snap to
-  the exact physical edge. Chat delegates only its finite SEEKING movement to
-  this owner and retains its generation FOLLOWING/SETTLING lifecycle.
+  actions target the physical top and bottom through the chat feedback-scroll
+  owners; Reduced Motion snaps to the same destinations. A user drag cancels
+  the page-owned scroll job.
 - At the top only the down action is shown, in the middle both actions are
   shown, and at the bottom only the up action is shown. Empty or non-scrollable
   content shows neither. Each fixed-order slot fades for 250 ms; when spatial
