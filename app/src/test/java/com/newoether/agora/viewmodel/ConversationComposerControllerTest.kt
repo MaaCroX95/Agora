@@ -323,6 +323,159 @@ class ConversationComposerControllerTest {
     }
 
     @Test
+    fun `restore keeps unconfigured pdf and video processing without starting jobs`() = runTest {
+        val pdf = attachment("pdf").copy(
+            type = "pdf",
+            fileName = "document.pdf",
+            localPath = "/stage/document.pdf",
+            importState = AttachmentImportState.PROCESSING,
+        )
+        val video = attachment("video").copy(
+            type = "video",
+            fileName = "clip.mp4",
+            localPath = "/stage/clip.mp4",
+            importState = AttachmentImportState.PROCESSING,
+        )
+        val processor = mockk<AttachmentImportProcessor>()
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(OWNER_A to draft(attachments = arrayOf(pdf, video))),
+        )
+
+        fixture.controller.load(OWNER_A)
+        runCurrent()
+        fixture.controller.awaitProcessing(OWNER_A)
+
+        assertEquals(listOf(pdf, video), fixture.controller.state(OWNER_A).value.attachments)
+        coVerify(exactly = 0) { processor.process(any(), any()) }
+    }
+
+    @Test
+    fun `configuring durable pdf persists choice and starts processing once`() = runTest {
+        val pdf = attachment("pdf-configured").copy(
+            type = "pdf",
+            fileName = "document.pdf",
+            localPath = "/stage/document.pdf",
+            importState = AttachmentImportState.PROCESSING,
+        )
+        val processor = mockk<AttachmentImportProcessor>()
+        coEvery { processor.process(any(), any()) } coAnswers {
+            AttachmentImportProcessor.ProcessResult.Ready(
+                firstArg<SelectedAttachment>().copy(
+                    selectedPages = setOf(0, 1),
+                    preRenderedPaths = listOf("/rendered/page-1.jpg", "/rendered/page-2.jpg"),
+                    importState = AttachmentImportState.READY,
+                ),
+            )
+        }
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(OWNER_A to draft(attachments = arrayOf(pdf))),
+        )
+        fixture.controller.load(OWNER_A)
+
+        assertTrue(fixture.controller.configurePdf(OWNER_A, pdf.localId, setOf(1, 3)))
+        fixture.controller.awaitProcessing(OWNER_A)
+
+        assertEquals(setOf(0, 1), fixture.persistence.attachment(OWNER_A).selectedPages)
+        assertEquals(AttachmentImportState.READY, fixture.state(OWNER_A, pdf.localId).importState)
+        coVerify(exactly = 1) {
+            processor.process(match { it.selectedPages == setOf(1, 3) }, any())
+        }
+    }
+
+    @Test
+    fun `configuration selected during staging is merged before processing`() = runTest {
+        val source = attachment("pdf-staging").copy(
+            type = "pdf",
+            fileName = "document.pdf",
+        )
+        val stageStarted = CompletableDeferred<Unit>()
+        val releaseStage = CompletableDeferred<Unit>()
+        val processor = mockk<AttachmentImportProcessor>()
+        coEvery { processor.stage(match { it.localId == source.localId }) } coAnswers {
+            stageStarted.complete(Unit)
+            releaseStage.await()
+            AttachmentImportProcessor.StageResult.Success(
+                attachment = source.processing("/stage/document.pdf"),
+                createdPaths = emptyList(),
+            )
+        }
+        coEvery { processor.process(any(), any()) } coAnswers {
+            AttachmentImportProcessor.ProcessResult.Ready(
+                firstArg<SelectedAttachment>().copy(
+                    preRenderedPaths = listOf("/rendered/page.jpg"),
+                    importState = AttachmentImportState.READY,
+                ),
+            )
+        }
+        val fixture = fixture(processor)
+        fixture.controller.load(OWNER_A)
+        fixture.controller.importAttachment(OWNER_A, source)
+        stageStarted.await()
+
+        assertTrue(fixture.controller.configurePdf(OWNER_A, source.localId, setOf(2)))
+        releaseStage.complete(Unit)
+        fixture.controller.awaitProcessing(OWNER_A)
+
+        assertEquals(setOf(2), fixture.persistence.attachment(OWNER_A).selectedPages)
+        coVerify(exactly = 1) {
+            processor.process(match { it.selectedPages == setOf(2) }, any())
+        }
+    }
+
+    @Test
+    fun `text persistence updates only the exact owner revision`() = runTest {
+        val processor = mockk<AttachmentImportProcessor>()
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(
+                OWNER_A to draft(text = "owner a"),
+                OWNER_B to draft(text = "owner b"),
+            ),
+        )
+        fixture.controller.load(OWNER_A)
+        fixture.controller.load(OWNER_B)
+
+        assertTrue(fixture.controller.persistText(OWNER_A, "updated a"))
+
+        assertEquals("updated a", fixture.controller.state(OWNER_A).value.text)
+        assertEquals(1L, fixture.controller.state(OWNER_A).value.revision)
+        assertEquals("owner b", fixture.controller.state(OWNER_B).value.text)
+        assertEquals(0L, fixture.controller.state(OWNER_B).value.revision)
+        assertEquals("updated a", fixture.persistence.text(OWNER_A))
+        assertEquals("owner b", fixture.persistence.text(OWNER_B))
+    }
+
+    @Test
+    fun `accepted clear synchronizes durable and visible owner state`() = runTest {
+        val ready = attachment("accepted")
+        val processor = mockk<AttachmentImportProcessor>()
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(OWNER_A to draft("pending", ready)),
+        )
+        fixture.controller.load(OWNER_A)
+
+        val result = fixture.controller.clearAccepted(OWNER_A)
+
+        assertEquals(
+            DraftClearResult(
+                attachments = listOf(ready),
+                revision = 1L,
+                succeeded = true,
+            ),
+            result,
+        )
+        assertEquals(
+            ConversationComposerSnapshot(revision = 1L, loaded = true),
+            fixture.controller.state(OWNER_A).value,
+        )
+        assertEquals("", fixture.persistence.text(OWNER_A))
+        assertTrue(fixture.persistence.attachments(OWNER_A).isEmpty())
+    }
+
+    @Test
     fun `ready replacement reclaims staged source only after durable write`() = runTest {
         val staged = attachment("ready").processing("/stage/ready")
         val ready = staged.ready("/final/ready.jpg")
@@ -463,6 +616,8 @@ class ConversationComposerControllerTest {
             ?.attachmentsJson
             ?.let { Json.decodeFromString(it) }
             ?: emptyList()
+
+        fun text(ownerId: String): String = drafts[ownerId]?.text.orEmpty()
 
         fun attachment(ownerId: String): SelectedAttachment = attachments(ownerId).single()
 

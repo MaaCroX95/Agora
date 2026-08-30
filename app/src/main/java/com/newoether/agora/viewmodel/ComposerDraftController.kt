@@ -23,6 +23,12 @@ data class DraftPersistResult(
     val matchesRequested: Boolean,
 )
 
+data class DraftClearResult(
+    val attachments: List<SelectedAttachment>,
+    val revision: Long,
+    val succeeded: Boolean,
+)
+
 private data class PersistedComposerDraft(
     val text: String,
     val attachments: List<SelectedAttachment>,
@@ -144,25 +150,34 @@ internal class ComposerDraftController(
      * A successfully accepted send invalidates every older UI tail-flush by advancing the cached
      * revision only after the draft reference is durably cleared.
      */
-    suspend fun clearAccepted(conversationId: String): List<SelectedAttachment> =
+    suspend fun clearAccepted(conversationId: String): DraftClearResult =
         withContext(Dispatchers.IO + NonCancellable) {
             persistenceMutex.withLock {
                 try {
                     val current = persistedDrafts[conversationId] ?: read(conversationId)
                     persistence.clearAcceptedDraft(conversationId)
+                    val revision = current.revision + 1L
                     persistedDrafts[conversationId] = PersistedComposerDraft(
                         text = "",
                         attachments = emptyList(),
-                        revision = current.revision + 1L,
+                        revision = revision,
                     )
-                    current.attachments
+                    DraftClearResult(
+                        attachments = current.attachments,
+                        revision = revision,
+                        succeeded = true,
+                    )
                 } catch (e: Exception) {
                     DebugLog.e(
                         "ChatViewModel",
                         "Failed to clear accepted draft for $conversationId",
                         e,
                     )
-                    emptyList()
+                    DraftClearResult(
+                        attachments = emptyList(),
+                        revision = persistedDrafts[conversationId]?.revision ?: 0L,
+                        succeeded = false,
+                    )
                 }
             }
         }

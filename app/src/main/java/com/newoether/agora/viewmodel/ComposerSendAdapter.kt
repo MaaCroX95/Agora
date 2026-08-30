@@ -18,6 +18,7 @@ internal typealias ComposerSend = suspend (
 /** Adapts an authoritative Send acceptance to composer draft ownership and UI acknowledgement. */
 internal class ComposerSendAdapter(
     private val send: ComposerSend,
+    private val composers: ConversationComposerController,
     private val drafts: ComposerDraftController,
     private val scope: CoroutineScope,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
@@ -36,12 +37,12 @@ internal class ComposerSendAdapter(
         return send(text, images, attachments) { acceptance ->
             // Acceptance transfers ownership before the composer clears. Direct inputs are
             // Room-owned; queued guidance remains memory-owned until its later drain boundary.
-            val clearedDraftAttachments = withContext(NonCancellable) {
-                drafts.clearAccepted(draftOwnerId ?: acceptance.conversationId)
+            val clearResult = withContext(NonCancellable) {
+                composers.clearAccepted(draftOwnerId ?: acceptance.conversationId)
             }
             // The durable draft may still contain the pre-submission pending copy. Stable localId
             // prevents that stale snapshot from deleting a submitted runtime file.
-            val attachmentsToReclaim = clearedDraftAttachments.filterNot { attachment ->
+            val attachmentsToReclaim = clearResult.attachments.filterNot { attachment ->
                 attachment.localId in submittedRuntimeIds
             }
             withContext(mainDispatcher + NonCancellable) {

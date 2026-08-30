@@ -769,6 +769,7 @@ class ChatViewModel(
     private val composerSendAdapter by lazy {
         ComposerSendAdapter(
             send = generationController::sendMessage,
+            composers = conversationComposer,
             drafts = composerDrafts,
             scope = viewModelScope,
         )

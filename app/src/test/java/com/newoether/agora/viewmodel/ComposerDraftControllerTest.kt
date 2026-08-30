@@ -152,7 +152,14 @@ class ComposerDraftControllerTest {
                 attachments = listOf(attachment),
             )
 
-            assertEquals(listOf(attachment), cleared)
+            assertEquals(
+                DraftClearResult(
+                    attachments = listOf(attachment),
+                    revision = 1L,
+                    succeeded = true,
+                ),
+                cleared,
+            )
             assertEquals(1L, staleTailFlush.revision)
             assertTrue(staleTailFlush.succeeded)
             assertFalse(staleTailFlush.matchesRequested)

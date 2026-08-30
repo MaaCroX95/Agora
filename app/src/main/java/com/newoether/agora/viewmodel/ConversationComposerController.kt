@@ -67,7 +67,10 @@ internal class ConversationComposerController(
             session.durable = loaded
             session.state.value = loaded
             loaded.attachments
-                .filter { it.importState == AttachmentImportState.PROCESSING }
+                .filter {
+                    it.importState == AttachmentImportState.PROCESSING &&
+                        it.isConfiguredForProcessing()
+                }
                 .forEach { attachment ->
                     val generation = nextGeneration(session, attachment.localId)
                     registerJobLocked(
@@ -100,6 +103,69 @@ internal class ConversationComposerController(
                 generation = generation,
                 job = stagingJob(ownerId, session, processing, generation),
             )
+        }
+    }
+
+    suspend fun persistText(ownerId: String, text: String): Boolean {
+        load(ownerId)
+        val session = session(ownerId)
+        return withContext(NonCancellable) {
+            session.mutex.withLock {
+                val current = session.state.value
+                session.state.value = current.copy(text = text)
+                val result = drafts.persist(
+                    conversationId = ownerId,
+                    expectedRevision = session.durable.revision,
+                    text = text,
+                    attachments = session.durable.attachments,
+                )
+                if (!result.succeeded) return@withLock false
+                if (!result.matchesRequested) {
+                    reloadAndMergeLocked(ownerId, session)
+                    return@withLock false
+                }
+                session.durable = session.durable.copy(text = text, revision = result.revision)
+                session.state.value = session.state.value.copy(revision = result.revision)
+                true
+            }
+        }
+    }
+
+    suspend fun configurePdf(
+        ownerId: String,
+        attachmentId: String,
+        selectedPages: Set<Int>,
+    ): Boolean = configureAttachment(ownerId, attachmentId, expectedType = "pdf") { attachment ->
+        attachment.copy(selectedPages = selectedPages)
+    }
+
+    suspend fun configureVideo(
+        ownerId: String,
+        attachmentId: String,
+        frameCount: Int,
+        intervalMs: Long,
+    ): Boolean = configureAttachment(ownerId, attachmentId, expectedType = "video") { attachment ->
+        attachment.copy(frameCount = frameCount, sliceIntervalMs = intervalMs)
+    }
+
+    suspend fun clearAccepted(ownerId: String): DraftClearResult {
+        load(ownerId)
+        val session = session(ownerId)
+        return withContext(NonCancellable) {
+            session.mutex.withLock {
+                val result = drafts.clearAccepted(ownerId)
+                if (!result.succeeded) return@withLock result
+                session.jobs.values.forEach(Job::cancel)
+                session.jobs.clear()
+                session.generations.clear()
+                session.transientAttachmentIds.clear()
+                session.durable = ConversationComposerSnapshot(
+                    revision = result.revision,
+                    loaded = true,
+                )
+                session.state.value = session.durable
+                result
+            }
         }
     }
 
@@ -205,11 +271,72 @@ internal class ConversationComposerController(
                 session.jobs.filterKeys(selected).values.toList() to
                     session.state.value.attachments.any { attachment ->
                         selected(attachment.localId) &&
-                            attachment.importState == AttachmentImportState.PROCESSING
+                            attachment.importState == AttachmentImportState.PROCESSING &&
+                            attachment.isConfiguredForProcessing()
                     }
             }
             if (jobs.isEmpty() && !processingRemains) return
             if (jobs.isEmpty()) yield() else jobs.joinAll()
+        }
+    }
+
+    private suspend fun configureAttachment(
+        ownerId: String,
+        attachmentId: String,
+        expectedType: String,
+        configure: (SelectedAttachment) -> SelectedAttachment,
+    ): Boolean {
+        load(ownerId)
+        val session = session(ownerId)
+        return withContext(NonCancellable) {
+            var configuredBeforeStagingCompleted = false
+            val pending = session.mutex.withLock {
+                val current = session.state.value.attachments
+                    .firstOrNull { it.localId == attachmentId }
+                    ?.takeIf {
+                        it.type == expectedType &&
+                            it.importState == AttachmentImportState.PROCESSING
+                    }
+                    ?: return@withLock null
+                val configured = configure(current)
+                session.state.value = session.state.value.replaceAttachment(configured)
+                if (attachmentId in session.transientAttachmentIds) {
+                    configuredBeforeStagingCompleted = true
+                    null
+                } else {
+                    configured to nextGeneration(session, attachmentId)
+                }
+            }
+            if (configuredBeforeStagingCompleted) return@withContext true
+            val (configured, generation) = pending ?: return@withContext false
+            val durable = persistReplacement(
+                ownerId = ownerId,
+                attachmentId = attachmentId,
+                generation = generation,
+                replacement = configured,
+            ) ?: return@withContext false
+            session.mutex.withLock {
+                registerJobLocked(
+                    session = session,
+                    attachmentId = attachmentId,
+                    generation = generation,
+                    job = processingJob(ownerId, session, durable, generation),
+                )
+            }
+            true
+        }
+    }
+
+    private suspend fun currentProcessingAttachment(
+        session: OwnerSession,
+        attachmentId: String,
+        generation: Long,
+    ): SelectedAttachment? = session.mutex.withLock {
+        session.state.value.attachments.firstOrNull { attachment ->
+            attachment.localId == attachmentId &&
+                session.generations[attachmentId] == generation &&
+                attachment.importState == AttachmentImportState.PROCESSING &&
+                attachment.isConfiguredForProcessing()
         }
     }
 
@@ -230,7 +357,15 @@ internal class ConversationComposerController(
                         obsoleteTransient = source,
                         createdPaths = staged.createdPaths,
                     )
-                    if (durable != null) runProcessing(ownerId, durable, generation)
+                    if (durable != null) {
+                        currentProcessingAttachment(
+                            session = session,
+                            attachmentId = source.localId,
+                            generation = generation,
+                        )?.let { configured ->
+                            runProcessing(ownerId, configured, generation)
+                        }
+                    }
                 }
                 AttachmentImportProcessor.StageResult.TooLarge ->
                     persistFailure(ownerId, source.localId, generation, source)
@@ -316,13 +451,16 @@ internal class ConversationComposerController(
                     val currentAttachment = current.attachments
                         .firstOrNull { it.localId == attachmentId }
                         ?: return@withLock null
+                    val effectiveReplacement = replacement.withProcessingConfiguration(
+                        currentAttachment,
+                    )
                     val wasDurable = session.durable.attachments.any {
                         it.localId == attachmentId
                     }
                     val requestedAttachments = durableProjectionLocked(
                         session = session,
                         attachmentId = attachmentId,
-                        replacement = replacement,
+                        replacement = effectiveReplacement,
                     )
                     val result = drafts.persist(
                         conversationId = ownerId,
@@ -348,13 +486,13 @@ internal class ConversationComposerController(
                         loaded = true,
                     )
                     session.transientAttachmentIds -= attachmentId
-                    session.state.value = current.replaceAttachment(replacement).copy(
+                    session.state.value = current.replaceAttachment(effectiveReplacement).copy(
                         revision = result.revision,
                     )
                     if (!wasDurable && obsoleteTransient != null) {
                         drafts.reclaimAttachments(listOf(obsoleteTransient))
                     }
-                    return@withLock replacement
+                    return@withLock effectiveReplacement
                 }
                 null
             }
@@ -467,6 +605,26 @@ internal class ConversationComposerController(
         importState = AttachmentImportState.PROCESSING,
         unavailable = false,
     )
+
+    private fun SelectedAttachment.isConfiguredForProcessing(): Boolean = when (type) {
+        "pdf" -> selectedPages != null
+        "video" -> frameCount != null && sliceIntervalMs != null
+        else -> true
+    }
+
+    private fun SelectedAttachment.withProcessingConfiguration(
+        current: SelectedAttachment,
+    ): SelectedAttachment {
+        if (importState != AttachmentImportState.PROCESSING) return this
+        return when (type) {
+            "pdf" -> copy(selectedPages = current.selectedPages ?: selectedPages)
+            "video" -> copy(
+                frameCount = current.frameCount ?: frameCount,
+                sliceIntervalMs = current.sliceIntervalMs ?: sliceIntervalMs,
+            )
+            else -> this
+        }
+    }
 
     private fun deleteCreatedPaths(paths: List<String>) {
         paths.distinct().forEach { path ->

@@ -25,7 +25,7 @@ class ComposerSendAdapterTest {
 
         assertNull(result)
         assertFalse(acknowledged)
-        coVerify(exactly = 0) { fixture.drafts.clearAccepted(any()) }
+        coVerify(exactly = 0) { fixture.composers.clearAccepted(any()) }
         coVerify(exactly = 0) { fixture.drafts.reclaimAttachments(any()) }
     }
 
@@ -80,7 +80,7 @@ class ComposerSendAdapterTest {
             listOf("send:text::", "clear:$NEW_CHAT_WORKSPACE_ID", "ui"),
             fixture.events,
         )
-        coVerify(exactly = 0) { fixture.drafts.clearAccepted("created-conversation") }
+        coVerify(exactly = 0) { fixture.composers.clearAccepted("created-conversation") }
     }
     @Test
     fun stalePendingDraftCannotReclaimSubmittedRuntimeAttachment() = runTest {
@@ -110,6 +110,7 @@ class ComposerSendAdapterTest {
         private val acceptance: SendAcceptance?,
         attachmentsToReclaim: List<SelectedAttachment> = emptyList(),
     ) {
+        val composers = mockk<ConversationComposerController>()
         val drafts = mockk<ComposerDraftController>()
         val events = mutableListOf<String>()
         private val dispatcher = StandardTestDispatcher(testScope.testScheduler)
@@ -119,6 +120,7 @@ class ComposerSendAdapterTest {
                 acceptance?.let { onAccepted(it) }
                 acceptance
             },
+            composers = composers,
             drafts = drafts,
             scope = testScope.backgroundScope,
             mainDispatcher = dispatcher,
@@ -126,9 +128,13 @@ class ComposerSendAdapterTest {
         )
 
         init {
-            coEvery { drafts.clearAccepted(any()) } answers {
+            coEvery { composers.clearAccepted(any()) } answers {
                 events += "clear:${firstArg<String>()}"
-                attachmentsToReclaim
+                DraftClearResult(
+                    attachments = attachmentsToReclaim,
+                    revision = 1L,
+                    succeeded = true,
+                )
             }
             coEvery { drafts.reclaimAttachments(any()) } answers {
                 events += "reclaim"
