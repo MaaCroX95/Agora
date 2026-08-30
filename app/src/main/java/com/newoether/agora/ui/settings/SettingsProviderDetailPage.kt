@@ -523,7 +523,7 @@ fun SettingsProviderDetailPage(
     if (showAddModelDialog && copiedFilePath != null) {
         var modelId by remember { mutableStateOf("") }; var modelAlias by remember { mutableStateOf("") }
         var addMmprojPath by remember { mutableStateOf("") }
-        var nCtx by remember { mutableStateOf("4096") }; var temperature by remember { mutableStateOf("0.7") }; var topP by remember { mutableStateOf("0.9") }; var maxTokens by remember { mutableStateOf("1024") }
+        var nCtx by remember { mutableStateOf("16384") }; var temperature by remember { mutableStateOf("0.7") }; var topP by remember { mutableStateOf("0.9") }; var maxTokens by remember { mutableStateOf("1024") }
         var idError by remember { mutableStateOf<String?>(null) }; var formError by remember { mutableStateOf<String?>(null) }
         val idRegex = remember { Regex("^[a-z0-9._-]+\$") }
         LaunchedEffect(mmprojPickedUri) {

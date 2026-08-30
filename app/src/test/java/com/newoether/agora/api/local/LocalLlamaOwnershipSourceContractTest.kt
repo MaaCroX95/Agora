@@ -474,9 +474,9 @@ class LocalLlamaOwnershipSourceContractTest {
 
         assertEquals(2048, legacyDefaults.nCtx)
         assertEquals(4096, legacyDefaults.maxTokens)
-        assertTrue(settings.contains("var nCtx by remember { mutableStateOf(\"4096\") }"))
+        assertTrue(settings.contains("var nCtx by remember { mutableStateOf(\"16384\") }"))
         assertTrue(settings.contains("mutableStateOf(\"1024\")"))
-        assertTrue(onboarding.contains("nCtx = 4096"))
+        assertTrue(onboarding.contains("nCtx = 16384"))
         assertTrue(onboarding.contains("maxTokens = 1024"))
         assertEquals(2, "Max tokens must not exceed context size".toRegex()
             .findAll(settings).count())

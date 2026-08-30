@@ -48,7 +48,7 @@ Chat and Embedding are different identities even when their canonical model path
 sampling values such as temperature, top P, frequency/presence penalties, and maximum output tokens
 do not construct the native context and therefore do not change identity.
 
-New Local Chat model records created through Settings or onboarding default to `nCtx=4096` and
+New Local Chat model records created through Settings or onboarding default to `nCtx=16384` and
 `maxTokens=1024`. Existing records are not migrated: the serialized `LocalChatModelConfig` fallback
 for a missing legacy `nCtx` remains 2048, and an explicitly stored context size remains unchanged.
 
