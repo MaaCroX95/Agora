@@ -10,6 +10,7 @@ import android.os.Environment
 import com.newoether.agora.MainActivity
 import com.newoether.agora.R
 import com.newoether.agora.data.local.ChatDao
+import com.newoether.agora.data.local.ChatDatabase
 import com.newoether.agora.util.DebugLog
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
@@ -30,6 +31,7 @@ enum class BackupResult { NOT_DUE, SUCCESS, FAILED }
 
 class AutoBackupManager(
     private val context: Context,
+    private val database: ChatDatabase,
     private val settingsManager: SettingsManager,
     private val chatDao: ChatDao,
     private val memoryManager: MemoryManager,
@@ -115,7 +117,14 @@ class AutoBackupManager(
             // shows an explicit warning when that box is checked).
             val includeApiKeys = DataExporter.ExportCategory.API_KEYS in categories
 
-            val exporter = DataExporter(context, chatDao, settingsManager, memoryManager, skillManager)
+            val exporter = DataExporter(
+                context,
+                database,
+                chatDao,
+                settingsManager,
+                memoryManager,
+                skillManager,
+            )
             val exportResult = exporter.export(
                 uri = Uri.fromFile(tmpFile),
                 categories = categories,

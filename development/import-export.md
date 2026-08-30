@@ -53,6 +53,12 @@ The archive cache copy and every selected resource extraction preflight destinat
 space again while streaming, and delete partial files on failure. The custom-font owner retains its
 separate 64 MiB limit. Sandbox and proot payloads remain excluded rather than becoming resources.
 
+A conversation export reads conversation settings before entering Room, then captures Conversations,
+Runs, paged Messages, Tasks, Loops, and every raw media reference into a temporary typed JSONL spool
+inside one `ChatDatabase` transaction. The transaction performs no destination, ZIP, or media I/O.
+Only after it returns may export open the destination, read media, rewrite archive paths, and emit
+`conversations.json`. The spool is deleted on success, failure, and coroutine cancellation.
+
 ## 3. Portable `settings.json` allowlist
 
 The following JSON field names are the complete current portable allowlist.

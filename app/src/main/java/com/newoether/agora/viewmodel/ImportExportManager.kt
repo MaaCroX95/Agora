@@ -164,7 +164,14 @@ class ImportExportManager(
     fun exportData(uri: Uri, categories: Set<DataExporter.ExportCategory>, includeApiKeys: Boolean) {
         scope.launch(Dispatchers.IO) {
             try {
-                val exporter = DataExporter(app, chatDao, settingsManager, memoryManager, skillManager)
+                val exporter = DataExporter(
+                    app,
+                    database,
+                    chatDao,
+                    settingsManager,
+                    memoryManager,
+                    skillManager,
+                )
                 val result = exporter.export(uri, categories, includeApiKeys) { progress ->
                     _exportProgress.value = progress
                 }

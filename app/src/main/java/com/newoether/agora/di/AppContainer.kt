@@ -240,7 +240,7 @@ class AppContainer(
     // ── Auto Backup ───────────────────────────────────────────
 
     val autoBackupManager: AutoBackupManager by lazy {
-        AutoBackupManager(appContext, settingsManager, chatDao, memoryManager, skillManager)
+        AutoBackupManager(appContext, database, settingsManager, chatDao, memoryManager, skillManager)
     }
 
     // ── ViewModel Factory ─────────────────────────────────────
