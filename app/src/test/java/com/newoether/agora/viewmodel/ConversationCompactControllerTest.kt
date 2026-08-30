@@ -97,6 +97,7 @@ class ConversationCompactControllerTest {
         assertTrue(launchRequest.captured.modelMessageId!!.startsWith("compact_"))
         assertEquals(null, launchRequest.captured.replacementMessageId)
         assertEquals("compact", launchRequest.captured.requestKind)
+        assertFalse(launchRequest.captured.touchConversationOnAdmission)
         assertEquals("compact prompt", launchRequest.captured.snapshot.config.effectiveSystemPrompt)
         assertEquals(
             "Create the compact context summary now.",
@@ -193,9 +194,10 @@ class ConversationCompactControllerTest {
         assertEquals(source.id, launchRequest.captured.parentMessageId)
         assertEquals("compact-preflight-run", launchRequest.captured.snapshot.runId)
         assertEquals("compact", launchRequest.captured.requestKind)
+        assertTrue(launchRequest.captured.touchConversationOnAdmission)
         assertEquals(suffix, before.single { it.id == suffix.id })
         coVerify(exactly = 0) {
-            conversations.createRunWithMessages(any(), any(), any(), any(), any())
+            conversations.createRunWithMessages(any(), any(), any(), any(), any(), any())
         }
         state.dispose()
         Unit

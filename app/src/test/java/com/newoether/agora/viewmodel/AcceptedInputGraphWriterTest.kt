@@ -39,13 +39,17 @@ class AcceptedInputGraphWriterTest {
         lateinit var insertedMessages: List<MessageEntity>
         lateinit var insertedSelections: Map<String?, String>
         lateinit var insertedConversationModelId: String
+        var insertedAt = -1L
+        var insertedTouchPolicy = true
         coEvery {
-            repository.createRunWithMessages(any(), any(), any(), any(), any())
+            repository.createRunWithMessages(any(), any(), any(), any(), any(), any())
         } coAnswers {
             insertedRun = firstArg()
             insertedMessages = secondArg()
             insertedSelections = thirdArg()
             insertedConversationModelId = arg(3)
+            insertedAt = arg(4)
+            insertedTouchPolicy = arg(5)
             RunGraphCommit(insertedMessages, insertedSelections, emptyMap())
         }
 
@@ -58,6 +62,7 @@ class AcceptedInputGraphWriterTest {
                 userText = "prompt",
                 modelId = "OpenAI:model",
                 userTimestamp = 100L,
+                touchConversationOnAdmission = false,
             ),
             beforeRoomCommit = { beforeCommitCalled = true },
         )
@@ -69,6 +74,8 @@ class AcceptedInputGraphWriterTest {
         assertEquals("new-user", insertedSelections["selected"])
         assertEquals("new-model", insertedSelections["new-user"])
         assertEquals("OpenAI:model", insertedConversationModelId)
+        assertEquals(100L, insertedAt)
+        assertEquals(false, insertedTouchPolicy)
         assertEquals(insertedSelections, result.messageSelections)
         assertEquals(true, beforeCommitCalled)
     }
@@ -97,6 +104,7 @@ class AcceptedInputGraphWriterTest {
                 userText = "prompt",
                 modelId = "OpenAI:model",
                 userTimestamp = 100L,
+                touchConversationOnAdmission = true,
                 newConversation = com.newoether.agora.data.local.ChatEntity(
                     id = "conversation",
                     title = "New",

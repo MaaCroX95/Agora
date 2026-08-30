@@ -51,6 +51,7 @@ internal class ConversationCompactController(
             snapshot = snapshot,
             state = state,
             awaitCompletion = false,
+            touchConversationOnAdmission = false,
         ).second
     }
 
@@ -68,6 +69,7 @@ internal class ConversationCompactController(
             snapshot = snapshot,
             state = state,
             awaitCompletion = false,
+            touchConversationOnAdmission = false,
         ).first
     }
 
@@ -101,6 +103,7 @@ internal class ConversationCompactController(
             snapshot = snapshot,
             state = state,
             awaitCompletion = true,
+            touchConversationOnAdmission = true,
         ).second
     }
 
@@ -110,6 +113,7 @@ internal class ConversationCompactController(
         snapshot: GenerationAdmissionSnapshot,
         state: ConversationGenerationState,
         awaitCompletion: Boolean,
+        touchConversationOnAdmission: Boolean,
     ): Pair<StandardCompactLaunch?, CompactResult> {
         val topology = conversations.getProviderContextTopologySnapshot(conversationId)
             ?: return null to CompactResult.NotNeeded
@@ -158,6 +162,7 @@ internal class ConversationCompactController(
                 modelMessageId = messageId,
                 replacementMessageId = target?.id,
                 requestKind = "compact",
+                touchConversationOnAdmission = touchConversationOnAdmission,
                 queueDrainRequiresSuccess = true,
                 transformFinalText = transform,
             ),

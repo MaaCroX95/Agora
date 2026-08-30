@@ -85,6 +85,7 @@ class ConversationRegenerationServiceTest {
                 messageSelectionUpdates = mapOf("source-input" to "new-model"),
                 conversationModelId = "provider:model",
                 at = any(),
+                touchConversationOnAdmission = true,
             )
         } answers {
             RunGraphCommit(
@@ -166,6 +167,7 @@ class ConversationRegenerationServiceTest {
                 messageSelectionUpdates = mapOf(upper.id to "new-model"),
                 conversationModelId = "provider:model",
                 at = any(),
+                touchConversationOnAdmission = true,
             )
         } answers {
             RunGraphCommit(

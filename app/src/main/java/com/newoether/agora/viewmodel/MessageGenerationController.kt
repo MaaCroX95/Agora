@@ -501,6 +501,7 @@ internal class MessageGenerationController(
             attachments = attachments,
             modelId = selectedModelId,
             newConversationSettings = capturedNewConversationSettings,
+            touchConversationOnAdmission = true,
             onAccepted = onAccepted,
         )
     }
@@ -527,6 +528,7 @@ internal class MessageGenerationController(
         attachments: List<SelectedAttachment>,
         modelId: String,
         requestKind: String = "chat",
+        touchConversationOnAdmission: Boolean,
         onAccepted: suspend (SendAcceptance) -> Unit,
         newConversationSettings: ConversationSettings? = null,
         scrollPolicy: SendScrollPolicy = SendScrollPolicy.FORCE,
@@ -676,6 +678,7 @@ internal class MessageGenerationController(
                 payloadLease = payloadLease,
                 modelId = modelId,
                 requestKind = requestKind,
+                touchConversationOnAdmission = touchConversationOnAdmission,
                 newConversationSettings = newConversationSettings,
                 alreadyHoldsLock = alreadyHoldsLock,
                 requestScroll = resolveScrollCallback(scrollPolicy),
@@ -730,6 +733,7 @@ internal class MessageGenerationController(
             attachments = emptyList(),
             modelId = modelId,
             requestKind = requestKind,
+            touchConversationOnAdmission = false,
             onAccepted = {},
             scrollPolicy = SendScrollPolicy.ATTACHED_ONLY,
             alreadyHoldsLock = true,
@@ -789,6 +793,7 @@ internal class MessageGenerationController(
                         conversationId = request.generationRequest.conversationId,
                         parentMessageId = compactMessageId,
                         snapshot = request.generationRequest.snapshot,
+                        touchConversationOnAdmission = false,
                     ),
                     state = state,
                 )

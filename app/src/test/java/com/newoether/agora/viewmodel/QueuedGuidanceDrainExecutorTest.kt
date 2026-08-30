@@ -64,13 +64,16 @@ class QueuedGuidanceDrainExecutorTest {
         } returns ProviderContextTopologySnapshot(null, emptyList())
         val createdRun = slot<RunEntity>()
         val createdMessages = slot<List<MessageEntity>>()
+        val commitAt = slot<Long>()
+        val touchPolicy = slot<Boolean>()
         coEvery {
             fixture.conversations.createRunWithMessages(
                 run = capture(createdRun),
                 messages = capture(createdMessages),
                 messageSelectionUpdates = any(),
                 conversationModelId = "provider:model-2",
-                at = any(),
+                at = capture(commitAt),
+                touchConversationOnAdmission = capture(touchPolicy),
             )
         } answers {
             val messages = secondArg<List<MessageEntity>>()
@@ -101,6 +104,9 @@ class QueuedGuidanceDrainExecutorTest {
         assertEquals("guidance-1", createdMessages.captured[0].id)
         assertEquals("one\n\ntwo", createdMessages.captured[0].text)
         assertEquals("model-message", createdMessages.captured[1].id)
+        assertEquals(100L, commitAt.captured)
+        assertTrue(touchPolicy.captured)
+        assertTrue(QUEUED.all { it.createdAt != commitAt.captured })
         assertEquals(listOf("indexed:guidance-1:one\n\ntwo", "scroll:guidance-1"), fixture.events)
         assertFalse(state.settleGuidanceClaim(lease.id, durable = false))
         state.dispose()
@@ -149,6 +155,7 @@ class QueuedGuidanceDrainExecutorTest {
                 modelId = "provider:model-1",
                 attachments = emptyList(),
                 runId = "old-run",
+                createdAt = 10L,
             ),
             QueuedSend(
                 id = "guidance-2",
@@ -156,6 +163,7 @@ class QueuedGuidanceDrainExecutorTest {
                 modelId = "provider:model-2",
                 attachments = emptyList(),
                 runId = "old-run",
+                createdAt = 20L,
             ),
         )
 

@@ -64,6 +64,25 @@ boundary exceptions.
 - Deleting a Compact deletes only that row and reparents only its direct message children to the
   deleted row's former parent. It must not merge surviving generation groups.
 
+### 3.1 Conversation recency
+
+`Conversation.lastUpdated` records the time of the most recent durable conversation-tree mutation
+caused directly by a manual user operation. Both conditions are required: the operation must be
+manual, and it must actually modify the durable conversation tree. The stored value is the mutation
+time, not an earlier intent, queue, or UI-event time.
+
+Manual Send, Edit, Regenerate, message deletion, Compact, Recompact, and Compact deletion update
+conversation recency when their durable tree mutation commits. A manually queued Send does not
+update recency when it enters the queue; it updates recency only when the queued input is actually
+sent and committed to the tree, using that commit-time timestamp.
+
+Branch selection does not update recency because it changes only the selected view through an
+existing tree. Conversation-title edits, automatic title generation, and manual title generation do
+not update recency because they do not modify the conversation tree. No automatic Compact lifecycle
+step updates recency, including Compact creation, generation, settlement, handoff, or continuation.
+Task and Loop tree writes never update recency, including Task `Run Now`, because the later durable
+writes are automation-owned rather than direct manual tree edits.
+
 ## 4. Global context-boundary contract
 
 For every ordinary Provider request:

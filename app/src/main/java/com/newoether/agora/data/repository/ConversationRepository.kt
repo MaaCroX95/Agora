@@ -245,7 +245,6 @@ class ConversationRepository(
     fun observeMessage(messageId: String): Flow<MessageEntity?> =
         chatDao.observeMessage(messageId)
 
-
     suspend fun getProviderContextTopologySnapshot(
         conversationId: String,
     ): ProviderContextTopologySnapshot? =
@@ -276,6 +275,7 @@ class ConversationRepository(
         messageSelectionUpdates: Map<String?, String>,
         conversationModelId: String,
         at: Long = System.currentTimeMillis(),
+        touchConversationOnAdmission: Boolean,
     ): RunGraphCommit {
         ensureRunRecovery()
         return chatDao.createRunWithMessages(
@@ -284,6 +284,7 @@ class ConversationRepository(
             messageSelectionUpdates,
             conversationModelId,
             at,
+            touchConversationOnAdmission,
         )
     }
 
@@ -504,7 +505,12 @@ class ConversationRepository(
         val stringKeyMap = selections.mapKeys { it.key ?: "null" }
         val json = Json.encodeToString(stringKeyMap)
         if (conversation.selectedBranchesJson != json) {
-            chatDao.upsertConversation(conversation.copy(selectedBranchesJson = json, lastUpdated = System.currentTimeMillis()))
+            check(
+                chatDao.updateMessageBranchSelections(
+                    conversationId = conversationId,
+                    selectedBranchesJson = json,
+                ) == 1
+            ) { "Conversation $conversationId disappeared during message branch selection" }
         }
     }
 
@@ -529,12 +535,12 @@ class ConversationRepository(
         val conversation = chatDao.getConversation(conversationId) ?: return@withContext
         val stored = Json.encodeToString(selections.mapKeys { it.key ?: "null" })
         if (conversation.selectedRunBranchesJson != stored) {
-            chatDao.upsertConversation(
-                conversation.copy(
+            check(
+                chatDao.updateRunBranchSelections(
+                    conversationId = conversationId,
                     selectedRunBranchesJson = stored,
-                    lastUpdated = System.currentTimeMillis(),
-                )
-            )
+                ) == 1
+            ) { "Conversation $conversationId disappeared during Run branch selection" }
         }
     }
 
@@ -593,16 +599,14 @@ class ConversationRepository(
         parentRunId: String?,
         runId: String,
         messageSelections: Map<String?, String>,
-        at: Long = System.currentTimeMillis(),
     ) = withContext(Dispatchers.Default) {
         val runSelections = restoreRunBranchSelections(conversationId).toMutableMap()
         runSelections[parentRunId] = runId
         check(
-            chatDao.updateSelectionsForRunDeletion(
+            chatDao.updateBranchSelections(
                 conversationId = conversationId,
                 selectedBranchesJson = Json.encodeToString(messageSelections.mapKeys { it.key ?: "null" }),
                 selectedRunBranchesJson = Json.encodeToString(runSelections.mapKeys { it.key ?: "null" }),
-                at = at,
             ) == 1
         ) { "Conversation $conversationId disappeared during branch selection" }
     }

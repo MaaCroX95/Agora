@@ -222,6 +222,7 @@ internal class ConversationEditService(
                             newUser.id to modelEntity.id,
                         ),
                         conversationModelId = generationSnapshot.selectedModelId,
+                        touchConversationOnAdmission = true,
                     )
                     graphCommitted = true
                     transitions.markCommitted(

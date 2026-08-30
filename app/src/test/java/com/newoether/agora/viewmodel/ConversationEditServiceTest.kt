@@ -82,6 +82,7 @@ class ConversationEditServiceTest {
                 messageSelectionUpdates = EXPECTED_SELECTIONS,
                 conversationModelId = "provider:model",
                 at = any(),
+                touchConversationOnAdmission = true,
             )
         } returns RunGraphCommit(
             messages = listOf(EDITED_ENTITY, MODEL_ENTITY),
@@ -96,7 +97,7 @@ class ConversationEditServiceTest {
         val transition = checkNotNull(fixture.transitions.request.value)
         assertEquals("source-assistant", transition.oldMessageId)
         assertEquals("source-input", transition.sourceUserMessageId)
-        coVerify(exactly = 0) { fixture.conversations.createRunWithMessages(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { fixture.conversations.createRunWithMessages(any(), any(), any(), any(), any(), any()) }
 
         fixture.transitions.acknowledgeFade(transition.id)
         assertTrue(result.await())

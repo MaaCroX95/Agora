@@ -41,6 +41,7 @@ class StandardGenerationContinuationLauncherTest {
         )
         val createdRun = slot<com.newoether.agora.data.local.RunEntity>()
         val createdMessages = slot<List<MessageEntity>>()
+        val touchConversationOnAdmission = slot<Boolean>()
         val launchedRequest = slot<BoundRunGenerationRequest>()
         val launched = CompletableDeferred<Unit>()
 
@@ -55,6 +56,7 @@ class StandardGenerationContinuationLauncherTest {
                 messageSelectionUpdates = any(),
                 conversationModelId = any(),
                 at = any(),
+                touchConversationOnAdmission = capture(touchConversationOnAdmission),
             )
         } answers {
             RunGraphCommit(
@@ -89,6 +91,7 @@ class StandardGenerationContinuationLauncherTest {
                         conversationId = "conversation",
                         runId = "origin-run",
                     ),
+                    touchConversationOnAdmission = false,
                 ),
                 state,
             )
@@ -99,6 +102,7 @@ class StandardGenerationContinuationLauncherTest {
         assertEquals("compact-run", createdRun.captured.parentRunId)
         assertEquals(parent.id, createdMessages.captured.single().parentId)
         assertEquals(MessageStatus.SENDING, createdMessages.captured.single().status)
+        assertFalse(touchConversationOnAdmission.captured)
         assertEquals("continuation-run", launchedRequest.captured.runId)
         assertEquals("continuation-message", launchedRequest.captured.modelMessageId)
         coVerify(exactly = 1) { boundLauncher.launch(any(), state) }
@@ -124,7 +128,7 @@ class StandardGenerationContinuationLauncherTest {
         coEvery { conversations.getMessage(parent.id) } returns parent
         coEvery { conversations.restoreBranchSelections("conversation") } returns emptyMap()
         coEvery {
-            conversations.createRunWithMessages(any(), any(), any(), any(), any())
+            conversations.createRunWithMessages(any(), any(), any(), any(), any(), any())
         } coAnswers {
             throw CancellationException("cancelled after Room committed")
         }
@@ -161,6 +165,7 @@ class StandardGenerationContinuationLauncherTest {
                         conversationId = "conversation",
                         runId = "origin-run",
                     ),
+                    touchConversationOnAdmission = false,
                 ),
                 state,
             ),
@@ -213,6 +218,7 @@ class StandardGenerationContinuationLauncherTest {
                         conversationId = "conversation",
                         runId = "origin-run",
                     ),
+                    touchConversationOnAdmission = false,
                 ),
                 state,
             )
@@ -220,7 +226,7 @@ class StandardGenerationContinuationLauncherTest {
         state.awaitSendAvailable()
 
         coVerify(exactly = 0) {
-            conversations.createRunWithMessages(any(), any(), any(), any(), any())
+            conversations.createRunWithMessages(any(), any(), any(), any(), any(), any())
         }
         coVerify(exactly = 0) { boundLauncher.launch(any(), any()) }
         state.dispose()
@@ -318,6 +324,7 @@ class StandardGenerationContinuationLauncherTest {
                     modelMessageId = target.id,
                     replacementMessageId = target.id,
                     requestKind = "compact",
+                    touchConversationOnAdmission = true,
                 ),
                 state,
             ),
@@ -341,7 +348,7 @@ class StandardGenerationContinuationLauncherTest {
             )
         }
         coVerify(exactly = 0) {
-            conversations.createRunWithMessages(any(), any(), any(), any(), any())
+            conversations.createRunWithMessages(any(), any(), any(), any(), any(), any())
         }
         assertEquals(suffix, listOf(parent, target, suffix).last())
         state.dispose()
@@ -463,6 +470,7 @@ class StandardGenerationContinuationLauncherTest {
                 messageSelectionUpdates = any(),
                 conversationModelId = any(),
                 at = any(),
+                touchConversationOnAdmission = false,
             )
         } answers {
             RunGraphCommit(
@@ -494,6 +502,7 @@ class StandardGenerationContinuationLauncherTest {
                         conversationId = "conversation",
                         runId = "origin-run",
                     ),
+                    touchConversationOnAdmission = false,
                     queueDrainRequiresSuccess = true,
                 ),
                 state,

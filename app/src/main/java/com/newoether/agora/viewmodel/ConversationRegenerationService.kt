@@ -157,6 +157,8 @@ internal class ConversationRegenerationService(
                         listOf(modelEntity),
                         messageSelectionUpdates = mapOf(sourceBoundary.id to modelEntity.id),
                         conversationModelId = generationSnapshot.selectedModelId,
+                        at = startTime,
+                        touchConversationOnAdmission = true,
                     )
                     graphCommitted = true
                     transitions.markCommitted(transition.id)

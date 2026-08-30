@@ -90,7 +90,6 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
     @Query("SELECT * FROM messages WHERE id = :messageId")
     fun observeMessage(messageId: String): Flow<MessageEntity?>
 
-
     @Query(
         """
         UPDATE messages
@@ -163,7 +162,10 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         SET selectedBranchesJson = :selectedBranchesJson,
             selectedRunBranchesJson = :selectedRunBranchesJson,
             modelId = :modelId,
-            lastUpdated = :at
+            lastUpdated = CASE
+                WHEN :touchConversationOnAdmission THEN :at
+                ELSE lastUpdated
+            END
         WHERE id = :conversationId
         """
     )
@@ -173,6 +175,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         selectedRunBranchesJson: String,
         modelId: String,
         at: Long,
+        touchConversationOnAdmission: Boolean,
     ): Int
 
     /**
@@ -225,6 +228,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         messageSelectionUpdates: Map<String?, String>,
         conversationModelId: String,
         at: Long,
+        touchConversationOnAdmission: Boolean,
     ): RunGraphCommit {
         require(run.status == RunStatus.ACTIVE)
         require(run.activeSlot == 1)
@@ -258,6 +262,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
                 selectedRunBranchesJson = encodeSelectionMap(runSelections),
                 modelId = conversationModelId,
                 at = at,
+                touchConversationOnAdmission = touchConversationOnAdmission,
             ) == 1
         ) { "Conversation ${run.conversationId} disappeared during Run creation" }
         return RunGraphCommit(messages, messageSelections, runSelections)
@@ -283,7 +288,12 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         }
         require(conversationModelId.isNotBlank())
         deleteNewChatPersist()
-        upsertConversation(conversation.copy(modelId = conversationModelId))
+        upsertConversation(
+            conversation.copy(
+                modelId = conversationModelId,
+                lastUpdated = at,
+            )
+        )
         upsertConversationSettingsTransfer(
             ConversationSettingsTransferEntity(
                 conversationId = conversation.id,
@@ -296,6 +306,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
             messageSelectionUpdates,
             conversationModelId,
             at,
+            touchConversationOnAdmission = true,
         )
     }
 

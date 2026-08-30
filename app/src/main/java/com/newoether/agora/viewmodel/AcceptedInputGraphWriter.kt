@@ -32,6 +32,7 @@ internal class AcceptedInputGraphWriter(
         val attachmentMeta: String? = null,
         val modelId: String,
         val userTimestamp: Long,
+        val touchConversationOnAdmission: Boolean,
         val newConversation: ChatEntity? = null,
         val newConversationSettings: ConversationSettings? = null,
     ) {
@@ -118,12 +119,15 @@ internal class AcceptedInputGraphWriter(
                 messageSelectionUpdates = selectionUpdates,
                 conversationModelId = request.modelId,
                 conversationSettingsJson = request.newConversationSettings?.let(Json::encodeToString),
+                at = request.userTimestamp,
             )
         } ?: conversations.createRunWithMessages(
             run = run,
             messages = listOf(userMessage, modelMessage),
             messageSelectionUpdates = selectionUpdates,
             conversationModelId = request.modelId,
+            at = request.userTimestamp,
+            touchConversationOnAdmission = request.touchConversationOnAdmission,
         )
         check(graph.messages.size == 2) {
             "Accepted-input graph must contain exactly one USER and one MODEL row"

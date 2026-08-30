@@ -54,7 +54,8 @@ class DirectAcceptedInputEffectExecutorTest {
         val fixture = Fixture()
         val state = ConversationGenerationState(CONVERSATION_ID)
         val effect = claimDirectEffect(state)
-        coEvery { fixture.graphWriter.commit(any(), any()) } coAnswers {
+        val graphRequest = io.mockk.slot<AcceptedInputGraphWriter.Request>()
+        coEvery { fixture.graphWriter.commit(capture(graphRequest), any()) } coAnswers {
             fixture.events += "room-commit"
             fixture.commit
         }
@@ -68,6 +69,7 @@ class DirectAcceptedInputEffectExecutorTest {
         execution.job?.join()
 
         assertEquals(SendAcceptance.Direct(USER_ID, CONVERSATION_ID), accepted)
+        assertTrue(graphRequest.captured.touchConversationOnAdmission)
         assertEquals(
             listOf(
                 "capture-snapshot",
@@ -333,6 +335,7 @@ class DirectAcceptedInputEffectExecutorTest {
             wasNewChat: Boolean = false,
             newConversation: ChatEntity? = null,
             newConversationSettings: ConversationSettings? = null,
+            touchConversationOnAdmission: Boolean = true,
         ) = DirectAcceptedInputRequest(
             inputEffect = effect,
             wasNewChat = wasNewChat,
@@ -341,6 +344,7 @@ class DirectAcceptedInputEffectExecutorTest {
             payloadLease = payloadLease,
             modelId = "provider:model",
             requestKind = "chat",
+            touchConversationOnAdmission = touchConversationOnAdmission,
             newConversationSettings = newConversationSettings,
             alreadyHoldsLock = false,
             requestScroll = { _, messageId -> events += "scroll:$messageId" },

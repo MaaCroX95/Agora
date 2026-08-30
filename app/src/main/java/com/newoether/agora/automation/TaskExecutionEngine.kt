@@ -284,6 +284,7 @@ class TaskExecutionEngine(
                         parentMessageId = compactMessageId,
                         snapshot = current.generationRequest.snapshot,
                         alreadyHoldsConversationLock = true,
+                        touchConversationOnAdmission = false,
                     ),
                     state = state,
                 )
@@ -583,6 +584,7 @@ class TaskExecutionEngine(
                     userText = userText,
                     modelId = generationSnapshot.selectedModelId,
                     userTimestamp = now,
+                    touchConversationOnAdmission = false,
                 ),
             )
             runCreated = true

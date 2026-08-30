@@ -271,7 +271,6 @@ class ConversationSelectionControllerTest {
                 parentRunId = "parent-run",
                 runId = "second-run",
                 messageSelections = mapOf("parent" to "second"),
-                at = any(),
             )
         } coAnswers {
             assertFalse(fixture.controller.switchingScrollRequest.value?.readyForUi ?: true)
@@ -292,7 +291,6 @@ class ConversationSelectionControllerTest {
                 "parent-run",
                 "second-run",
                 mapOf("parent" to "second"),
-                any(),
             )
         }
         fixture.registry.remove("conversation")
@@ -332,7 +330,7 @@ class ConversationSelectionControllerTest {
         assertEquals("first", fixture.renderStore.selectedChildren["parent"])
         assertNull(fixture.controller.switchingScrollRequest.value)
         coVerify(exactly = 0) {
-            fixture.conversations.selectRunBranch(any(), any(), any(), any(), any())
+            fixture.conversations.selectRunBranch(any(), any(), any(), any())
         }
         fixture.registry.remove("conversation")
     }

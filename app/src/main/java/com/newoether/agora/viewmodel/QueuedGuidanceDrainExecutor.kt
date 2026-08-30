@@ -208,6 +208,8 @@ internal class QueuedGuidanceDrainExecutor(
                         messages = users + placeholderEntity,
                         messageSelectionUpdates = selectionUpdates,
                         conversationModelId = generationSnapshot.selectedModelId,
+                        at = start,
+                        touchConversationOnAdmission = true,
                     )
                     val committedUsers = graphCommit.messages.dropLast(1)
                     val committedPlaceholder = graphCommit.messages.last()
