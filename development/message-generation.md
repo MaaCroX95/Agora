@@ -250,6 +250,13 @@ failure; only a later explicit user action may resume ordinary queue admission.
 ### 8.6 Compact UI
 
 Compact may own a capsule renderer, message label/menu, haptic exclusion, and stable presentation.
+Every durable Compact is an independent message and owns exactly one standalone LazyColumn item.
+The canonical message-list grouping must end and emit any active ordinary USER/assistant turn before
+the Compact, emit a singleton turn keyed by the Compact message ID, and leave no active turn that
+could absorb a following message. Participant compatibility values, Run association,
+SENDING/THINKING/TOOL_CALLING/terminal/error status, and blank summary text never permit a Compact
+to merge with a preceding or following turn. This UI item boundary does not change Room identity,
+generation boundaries, Provider context, or Compact rendering semantics.
 Its outer row height/padding and internal icon/text/action slots must remain stable across
 SENDING/THINKING/terminal/error transitions. The capsule Row uses a 7 dp horizontal inset and 7 dp
 spacing between each slot so its 32 dp leading icon slot and 32 dp overflow-action touch target are

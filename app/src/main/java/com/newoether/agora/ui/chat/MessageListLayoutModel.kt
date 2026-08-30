@@ -4,6 +4,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageGenerationBoundaryResolver
 import com.newoether.agora.model.Participant
+import com.newoether.agora.model.isContextCompact
 import com.newoether.agora.util.Constants
 
 internal enum class MessageListLayoutMode {
@@ -33,12 +34,13 @@ internal fun calculateTailLayoutHeightPx(
 ): Int = maxOf(minimumHeightPx, contentHeightPx)
 
 /**
- * One stable LazyColumn item per conversation turn.
+ * One stable LazyColumn item per ordinary conversation turn or Compact message.
  *
- * A USER starts a turn and every following non-USER message remains in that turn until the next
- * USER. This identity must not change when a new turn is appended: otherwise the previous
- * assistant is disposed from the tail item and recreated as a standalone item, producing a
- * visible blank/reparse frame on Send.
+ * A real USER starts an ordinary turn and every following non-USER message remains in that turn
+ * until the next real USER or Compact. Each Compact is a singleton item and ends the preceding
+ * turn. Ordinary turn identity must not change when a new turn is appended: otherwise the
+ * previous assistant is disposed from the tail item and recreated as a standalone item, producing
+ * a visible blank/reparse frame on Send.
  */
 internal data class MessageListTurn(
     val key: String,
@@ -169,7 +171,10 @@ internal fun buildMessageListTurns(messages: List<ChatMessage>): List<MessageLis
     }
 
     messages.forEach { message ->
-        if (MessageGenerationBoundaryResolver.isRealUser(message)) {
+        if (message.isContextCompact()) {
+            flushActiveTurn()
+            turns += MessageListTurn(message.id, listOf(message))
+        } else if (MessageGenerationBoundaryResolver.isRealUser(message)) {
             flushActiveTurn()
             activeTurn += message
         } else if (

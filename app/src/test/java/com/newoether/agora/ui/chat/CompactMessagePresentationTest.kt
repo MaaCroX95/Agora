@@ -13,28 +13,54 @@ import com.newoether.agora.ui.chat.message.segmentSheetBackAction
 import com.newoether.agora.ui.chat.message.usesVirtualizedSegmentDetail
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CompactMessagePresentationTest {
     @Test
-    fun compactMessagesRemainInTurnsEvenWhenTheirSummaryIsBlank() {
+    fun compactIsAStandaloneItemAfterAnOrdinaryTurnEvenWhenItsSummaryIsBlank() {
         val compact = message("compact_boundary", Participant.MODEL).copy(text = "")
 
-        val leading = buildMessageListTurns(listOf(compact))
-        val insideTurn = buildMessageListTurns(
-            listOf(message("user", Participant.USER), compact)
+        val turns = buildMessageListTurns(
+            listOf(
+                message("user", Participant.USER),
+                message("assistant", Participant.MODEL),
+                compact,
+            ),
         )
 
-        assertEquals(listOf("compact_boundary"), leading.single().messages.map { it.id })
         assertEquals(
-            listOf("user", "compact_boundary"),
-            insideTurn.single().messages.map { it.id },
+            listOf(
+                listOf("user", "assistant"),
+                listOf("compact_boundary"),
+            ),
+            turns.map { turn -> turn.messages.map { it.id } },
         )
+        assertEquals("compact_boundary", turns.last().key)
     }
 
     @Test
-    fun legacyUserCompactDoesNotCreateAUserFullPageTurn() {
+    fun leadingAndConsecutiveCompactsRemainStandaloneForEveryStatus() {
+        val compacts = MessageStatus.entries.map { status ->
+            message("compact_${status.name.lowercase()}", Participant.MODEL).copy(
+                status = status,
+                text = "",
+            )
+        }
+
+        val turns = buildMessageListTurns(compacts)
+
+        assertEquals(
+            compacts.map { compact -> listOf(compact.id) },
+            turns.map { turn -> turn.messages.map { message -> message.id } },
+        )
+        assertEquals(compacts.map { it.id }, turns.map { it.key })
+    }
+
+    @Test
+    fun legacyUserCompactIsStandaloneAndFollowingMessagesCannotJoinIt() {
         val legacyCompact = message("compact_boundary", Participant.USER)
 
         val turns = buildMessageListTurns(
@@ -47,11 +73,44 @@ class CompactMessagePresentationTest {
         )
 
         assertFalse(MessageGenerationBoundaryResolver.isRealUser(legacyCompact))
-        assertEquals(1, turns.size)
         assertEquals(
-            listOf("user", "assistant", "compact_boundary", "later-assistant"),
-            turns.single().messages.map { it.id },
+            listOf(
+                listOf("user", "assistant"),
+                listOf("compact_boundary"),
+                listOf("later-assistant"),
+            ),
+            turns.map { turn -> turn.messages.map { it.id } },
         )
+    }
+
+    @Test
+    fun compactOwnsAnIndependentIndexAndCacheIdentity() {
+        val cache = MessageListTurnCache()
+        val user = message("user", Participant.USER)
+        val assistant = message("assistant", Participant.MODEL)
+        val compact = message("compact_boundary", Participant.MODEL).copy(
+            status = MessageStatus.SENDING,
+            text = "",
+        )
+        val laterAssistant = message("later-assistant", Participant.MODEL)
+        val before = cache.update(listOf(user, assistant, compact, laterAssistant))
+
+        val after = cache.update(
+            listOf(
+                user,
+                assistant,
+                compact.copy(status = MessageStatus.SUCCESS, text = "summary"),
+                laterAssistant,
+            ),
+        )
+
+        assertEquals(listOf("user", "compact_boundary", "later-assistant"), after.map { it.key })
+        assertEquals(0, messageListTurnIndex(after, "assistant"))
+        assertEquals(1, messageListTurnIndex(after, "compact_boundary"))
+        assertEquals(2, messageListTurnIndex(after, "later-assistant"))
+        assertSame(before.first(), after.first())
+        assertNotSame(before[1], after[1])
+        assertSame(before.last(), after.last())
     }
 
     @Test
