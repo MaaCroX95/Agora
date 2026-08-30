@@ -300,7 +300,6 @@ class ChatViewModel(
         // The engine and the registry are process-scoped while this ViewModel is not, so every
         // reference either of them holds must be released here or the whole graph leaks.
         foregroundAutomationBridge.close()
-        sandboxManager?.close()
         generationRegistry.detachUiCallbacks(generationCallbackOwner)
         dataControl.destroy()
     }

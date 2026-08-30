@@ -673,24 +673,16 @@ fun MainNavigation(
 
     val customProviders by viewModel.settings.customProviders.collectAsState()
 
-    // Keep every flavor-specific snackbar on the same display-only provider-ID boundary.
-    // Uses a launch+Job pattern so a new message cancels the
-    // previous showSnackbar suspension immediately.
+    // Sandbox outcomes are buffered by their manager and displayed in production order.
     LaunchedEffect(Unit) {
-        var snackbarJob: Job? = null
         viewModel.sandboxManager?.snackbarMessage?.collect { msg ->
-            if (msg != null) {
-                snackbarHostState.currentSnackbarData?.dismiss()
-                snackbarJob?.cancel()
-                snackbarJob = launch {
-                    try {
-                        snackbarHostState.showSnackbar(
-                            viewModel.displayText(msg),
-                        )
-                    } finally {
-                        snackbarVersion++
-                    }
-                }
+            snackbarHostState.currentSnackbarData?.dismiss()
+            try {
+                snackbarHostState.showSnackbar(
+                    viewModel.displayText(msg),
+                )
+            } finally {
+                snackbarVersion++
             }
         }
     }

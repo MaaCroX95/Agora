@@ -257,6 +257,20 @@ exists. Saving that seed unchanged does not materialize it in DataStore; editing
 explicit alias, while clearing an explicit alias restores fallback behavior. The new-custom-model
 form remains blank until the user enters an alias.
 
+## 20. Local Sandbox outcome feedback
+
+Local Sandbox install, remove, upgrade, and reset outcomes are process-local buffered one-shot events.
+An outcome produced while no UI collector exists remains queued for the next collector. Pending
+outcomes retain production order, and each outcome is consumed by one collector exactly once. An
+Activity recreation must not replay an outcome that the previous collector already consumed.
+
+The Sandbox manager and its transient queue share the process lifetime owned by `AppContainer`'s
+flavor factory. Foreground ViewModels, generation tools, and headless Task/Loop execution borrow the
+same F-Droid manager and must not cancel or close it when a consumer lifecycle ends. Package
+install, remove, and upgrade work therefore remains available to later consumers in the same process.
+Only an explicit Sandbox reset may cancel the manager scope, and reset must replace that scope before
+continuing. The queue is not persisted or restored after process death, mirrored through a durable
+flag, or represented as retained UI state. The Play flavor exposes an empty outcome stream.
 ## 15. Verification
 
 Focused verification must cover the onboarding action's fixed 32 dp inset and 48 dp height, absence
@@ -282,5 +296,8 @@ multiple image URI paste, mixed image/text pass-through, unsupported content pas
 private-copy routing, and failure cleanup. Model-alias verification covers explicit precedence, all
 approved family-specific suffixes, generic preservation of ambiguous tokens, casing/separator
 normalization, idempotence, inferred search, duplicate-display preservation, raw-ID supporting text,
-and unchanged-fallback non-persistence. The project-defined full build gate remains required after
-final code or resource changes.
+and unchanged-fallback non-persistence. Local Sandbox outcome verification covers emission before
+collection, ordered pending outcomes, one-time sequential display and consumption, absence of replay
+after collector recreation, every install/remove/upgrade/reset success and failure path, the empty
+Play stream, and the absence of persistence or retained UI state. The project-defined full build gate
+remains required after final code or resource changes.
