@@ -2,6 +2,8 @@ package com.newoether.agora.diagnostics
 
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -13,6 +15,10 @@ import java.nio.file.Files
 
 class DiagnosticEventBufferTest {
     private val root = Files.createTempDirectory("agora-diagnostic-buffer").toFile()
+    private val eventJson = Json {
+        classDiscriminator = "payloadType"
+        encodeDefaults = true
+    }
 
     @After
     fun tearDown() {
@@ -133,44 +139,52 @@ class DiagnosticEventBufferTest {
     }
 
     @Test
-    fun `capacity pause rejects resume until clear then preserves sequence`() = runTest {
+    fun `rolling capacity evicts oldest events without pausing capture`() = runTest {
+        var now = 10L
         val dispatcher = StandardTestDispatcher(testScheduler)
+        val budget = serializedBytes(event(sequence = 1L, timestamp = now))
         val store = DiagnosticCaptureStore(
             directory = root,
             maxPayloadBytes = 100,
-            maxRetainedPayloadBytes = 6L,
+            maxRetainedPayloadBytes = budget,
         )
-        val buffer = DiagnosticEventBuffer(queueCapacity = 8, ioDispatcher = dispatcher)
+        val buffer = DiagnosticEventBuffer(
+            queueCapacity = 8,
+            clock = { now++ },
+            ioDispatcher = dispatcher,
+        )
         buffer.initialize(store, backgroundScope)
         buffer.start()
 
         buffer.record(::event)
         buffer.record(::event)
-        val limited = buffer.flush()
-        var invokedWhileLimited = false
+        val rolled = buffer.flush()
+        var invokedAfterRoll = false
         buffer.record { sequence, timestamp ->
-            invokedWhileLimited = true
+            invokedAfterRoll = true
             event(sequence, timestamp)
         }
-        val rejectedResume = buffer.start()
+        val continued = buffer.flush()
         val cleared = buffer.clear()
-        val resumed = buffer.start()
         buffer.record(::event)
-        val recovered = buffer.flush()
+        val afterClear = buffer.flush()
 
-        assertEquals(DiagnosticCaptureState.PAUSED, limited.state)
-        assertEquals(listOf(1L), limited.events.map(DiagnosticEvent::sequence))
-        assertEquals(2L, limited.nextSequence)
-        assertEquals(0L, limited.droppedEventCount)
-        assertTrue(limited.capacityLimitReached)
-        assertFalse(invokedWhileLimited)
-        assertEquals(limited, rejectedResume)
-        assertFalse(cleared.capacityLimitReached)
+        assertEquals(DiagnosticCaptureState.RUNNING, rolled.state)
+        assertEquals(listOf(2L), rolled.events.map(DiagnosticEvent::sequence))
+        assertEquals(3L, rolled.nextSequence)
+        assertEquals(1L, rolled.evictedEventCount)
+        assertEquals(0L, rolled.droppedEventCount)
+        assertFalse(rolled.capacityLimitReached)
+        assertTrue(invokedAfterRoll)
+        assertEquals(DiagnosticCaptureState.RUNNING, continued.state)
+        assertEquals(listOf(3L), continued.events.map(DiagnosticEvent::sequence))
+        assertEquals(4L, continued.nextSequence)
+        assertEquals(2L, continued.evictedEventCount)
         assertTrue(cleared.events.isEmpty())
-        assertEquals(2L, cleared.nextSequence)
-        assertEquals(DiagnosticCaptureState.RUNNING, resumed.state)
-        assertEquals(listOf(2L), recovered.events.map(DiagnosticEvent::sequence))
-        assertEquals(3L, recovered.nextSequence)
+        assertEquals(4L, cleared.nextSequence)
+        assertEquals(0L, cleared.evictedEventCount)
+        assertEquals(listOf(4L), afterClear.events.map(DiagnosticEvent::sequence))
+        assertEquals(5L, afterClear.nextSequence)
     }
 
     @Test
@@ -192,12 +206,12 @@ class DiagnosticEventBufferTest {
 
         assertEquals(DiagnosticCaptureState.PAUSED, failed.state)
         assertEquals(listOf(1L), failed.events.map(DiagnosticEvent::sequence))
-        assertEquals(2L, failed.nextSequence)
+        assertEquals(3L, failed.nextSequence)
         assertEquals(1L, failed.droppedEventCount)
         assertFalse(failed.capacityLimitReached)
         assertEquals(DiagnosticCaptureState.RUNNING, resumed.state)
-        assertEquals(listOf(1L, 2L), recovered.events.map(DiagnosticEvent::sequence))
-        assertEquals(3L, recovered.nextSequence)
+        assertEquals(listOf(1L, 3L), recovered.events.map(DiagnosticEvent::sequence))
+        assertEquals(4L, recovered.nextSequence)
         assertEquals(1L, recovered.droppedEventCount)
         assertEquals(recovered.state, restored.metadata.state)
         assertEquals(recovered.events, restored.events)
@@ -274,6 +288,9 @@ class DiagnosticEventBufferTest {
         assertFalse(attributes.containsKey("endpoint"))
         assertNotNull(attributes["code"])
     }
+
+    private fun serializedBytes(event: DiagnosticEvent): Long =
+        eventJson.encodeToString(event).toByteArray(Charsets.UTF_8).size.toLong()
 
     private fun event(sequence: Long, timestamp: Long) = DiagnosticEvent(
         sequence = sequence,

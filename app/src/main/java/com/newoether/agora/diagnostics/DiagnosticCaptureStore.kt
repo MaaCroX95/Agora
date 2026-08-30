@@ -1,5 +1,7 @@
 package com.newoether.agora.diagnostics
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -7,12 +9,16 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
+import java.nio.file.Files
+import java.util.ArrayDeque
+import java.util.TreeMap
 import kotlin.math.max
 
 internal data class DiagnosticStoredState(
     val metadata: DiagnosticCaptureMetadata = DiagnosticCaptureMetadata(),
     val events: List<DiagnosticEvent> = emptyList(),
     val retainedPayloadBytes: Long = 0L,
+    val retainedEventBytes: List<Long> = emptyList(),
 )
 
 /** Owns the app-private durable representation of the active diagnostic capture session. */
@@ -43,49 +49,109 @@ internal class DiagnosticCaptureStore(
         if (loadedMetadata.schemaVersion != SCHEMA_VERSION) return deleteAll()
 
         var dropped = 0L
-        var newlyTruncated = 0L
-        val events = buildList {
-            eventFiles().forEach { file ->
-                val sequence = file.name.removeSuffix(EVENT_EXTENSION).toLongOrNull()
-                val event = runCatching {
-                    json.decodeFromString<DiagnosticEvent>(file.readText(Charsets.UTF_8))
-                }.getOrNull()
-                if (sequence == null || event == null || event.sequence != sequence) {
-                    dropped++
-                    file.delete()
-                } else {
-                    val normalized = normalize(event)
-                    if (normalized.event != event) {
-                        writeAtomically(file, json.encodeToString(normalized.event))
-                        newlyTruncated += normalized.newlyTruncatedCount
-                    }
-                    add(normalized.event)
-                }
+        var evicted = 0L
+        var maxSequenceSeen = 0L
+        var evictionCutoff = 0L
+        var retainedBytes = 0L
+        val retainedEvents = TreeMap<Long, RetainedEvent>()
+        forEachEventFile { file ->
+            val sequence = file.name.removeSuffix(EVENT_EXTENSION).toLongOrNull()
+            if (
+                sequence == null ||
+                sequence <= 0L ||
+                file.name != eventFile(sequence).name
+            ) {
+                dropped++
+                deleteFile(file)
+                return@forEachEventFile
             }
-        }.sortedBy(DiagnosticEvent::sequence)
+            maxSequenceSeen = max(maxSequenceSeen, sequence)
+            if (file.length() > maxRetainedPayloadBytes) {
+                dropped++
+                deleteFile(file)
+                return@forEachEventFile
+            }
+            val encodedJson = try {
+                file.readText(Charsets.UTF_8)
+            } catch (_: Exception) {
+                null
+            }
+            val event = try {
+                encodedJson?.let { json.decodeFromString<DiagnosticEvent>(it) }
+            } catch (_: Exception) {
+                null
+            }
+            if (event == null || event.sequence != sequence) {
+                dropped++
+                deleteFile(file)
+                return@forEachEventFile
+            }
+            val normalized = normalize(event)
+            val rewriteRequired = normalized.event != event
+            val eventBytes = if (rewriteRequired) normalized.eventBytes else file.length()
+            if (eventBytes > maxRetainedPayloadBytes) {
+                dropped++
+                deleteFile(file)
+                return@forEachEventFile
+            }
+            if (sequence <= evictionCutoff) {
+                evicted++
+                deleteFile(file)
+                return@forEachEventFile
+            }
+            retainedEvents[sequence] = RetainedEvent(
+                file = file,
+                normalized = normalized,
+                eventBytes = eventBytes,
+                rewriteRequired = rewriteRequired,
+            )
+            retainedBytes += eventBytes
+            while (retainedBytes > maxRetainedPayloadBytes) {
+                val oldestEntry = checkNotNull(retainedEvents.pollFirstEntry())
+                retainedBytes -= oldestEntry.value.eventBytes
+                evictionCutoff = max(evictionCutoff, oldestEntry.key)
+                deleteFile(oldestEntry.value.file)
+                evicted++
+            }
+        }
 
-        val retainedPayloadBytes = events.sumOf(::payloadByteSize)
-        val capacityLimitReached =
-            loadedMetadata.capacityLimitReached ||
-                retainedPayloadBytes >= maxRetainedPayloadBytes
+        var newlyTruncated = 0L
+        val loadedEvents = mutableListOf<DiagnosticEvent>()
+        val loadedEventBytes = mutableListOf<Long>()
+        retainedEvents.values.forEach { retained ->
+            if (retained.rewriteRequired) {
+                writeAtomically(retained.file, retained.normalized.encodedJson)
+            }
+            newlyTruncated += retained.normalized.newlyTruncatedCount
+            loadedEvents += retained.normalized.event
+            loadedEventBytes += retained.eventBytes
+        }
+
         val nextSequence = max(
             loadedMetadata.nextSequence,
-            (events.lastOrNull()?.sequence ?: 0L) + 1L,
+            maxSequenceSeen + 1L,
         )
+        val resumedState = if (
+            loadedMetadata.capacityLimitReached &&
+            loadedMetadata.sessionId != null &&
+            loadedMetadata.state == DiagnosticCaptureState.PAUSED
+        ) {
+            DiagnosticCaptureState.RUNNING
+        } else {
+            loadedMetadata.state
+        }
         val state = DiagnosticStoredState(
             metadata = loadedMetadata.copy(
-                state = if (capacityLimitReached && loadedMetadata.sessionId != null) {
-                    DiagnosticCaptureState.PAUSED
-                } else {
-                    loadedMetadata.state
-                },
+                state = resumedState,
                 nextSequence = nextSequence,
                 droppedEventCount = loadedMetadata.droppedEventCount + dropped,
+                evictedEventCount = loadedMetadata.evictedEventCount + evicted,
                 truncatedPayloadCount = loadedMetadata.truncatedPayloadCount + newlyTruncated,
-                capacityLimitReached = capacityLimitReached,
+                capacityLimitReached = false,
             ),
-            events = events,
-            retainedPayloadBytes = retainedPayloadBytes,
+            events = loadedEvents,
+            retainedPayloadBytes = retainedBytes,
+            retainedEventBytes = loadedEventBytes,
         )
         persistMetadata(state)
         return state
@@ -98,8 +164,14 @@ internal class DiagnosticCaptureStore(
         state: DiagnosticStoredState,
         events: List<DiagnosticEvent>,
     ): DiagnosticStoredState {
-        if (events.isEmpty() || state.metadata.capacityLimitReached) return state
+        if (events.isEmpty()) return state
         ensureDirectories()
+        require(state.events.size == state.retainedEventBytes.size) {
+            "Diagnostic event byte accounting is out of sync"
+        }
+        require(state.retainedEventBytes.sum() == state.retainedPayloadBytes) {
+            "Diagnostic retained byte total is out of sync"
+        }
         events.forEachIndexed { index, event ->
             require(event.sequence > 0L) {
                 "Diagnostic event sequence must be positive: ${event.sequence}"
@@ -109,45 +181,51 @@ internal class DiagnosticCaptureStore(
             }
         }
 
-        val accepted = mutableListOf<NormalizedEvent>()
+        val retainedEvents = ArrayDeque<DiagnosticEvent>(state.events.size + events.size)
+        val retainedEventBytes = ArrayDeque<Long>(state.retainedEventBytes.size + events.size)
+        retainedEvents.addAll(state.events)
+        retainedEventBytes.addAll(state.retainedEventBytes)
         var retainedPayloadBytes = state.retainedPayloadBytes
-        var capacityLimitReached = retainedPayloadBytes >= maxRetainedPayloadBytes
+        var dropped = 0L
+        var evicted = 0L
+        var truncated = 0L
         for (event in events) {
-            if (capacityLimitReached) break
-            val normalized = normalize(event)
-            val nextPayloadBytes = retainedPayloadBytes + normalized.payloadBytes
-            if (nextPayloadBytes > maxRetainedPayloadBytes) {
-                capacityLimitReached = true
-                break
-            }
-            val target = eventFile(normalized.event.sequence)
+            val target = eventFile(event.sequence)
             require(!target.exists()) {
-                "Diagnostic event sequence already exists: ${normalized.event.sequence}"
+                "Diagnostic event sequence already exists: ${event.sequence}"
             }
-            writeAtomically(target, json.encodeToString(normalized.event))
-            accepted += normalized
-            retainedPayloadBytes = nextPayloadBytes
-            if (retainedPayloadBytes >= maxRetainedPayloadBytes) {
-                capacityLimitReached = true
+            val normalized = normalize(event)
+            if (normalized.eventBytes > maxRetainedPayloadBytes) {
+                dropped++
+                continue
+            }
+            writeAtomically(target, normalized.encodedJson)
+            retainedEvents.addLast(normalized.event)
+            retainedEventBytes.addLast(normalized.eventBytes)
+            retainedPayloadBytes += normalized.eventBytes
+            truncated += normalized.truncatedCount
+            while (retainedPayloadBytes > maxRetainedPayloadBytes) {
+                val oldestEvent = checkNotNull(retainedEvents.peekFirst())
+                val oldestEventBytes = checkNotNull(retainedEventBytes.peekFirst())
+                deleteFile(eventFile(oldestEvent.sequence))
+                retainedEvents.removeFirst()
+                retainedEventBytes.removeFirst()
+                retainedPayloadBytes -= oldestEventBytes
+                evicted++
             }
         }
 
-        val acceptedEvents = accepted.map(NormalizedEvent::event)
         val next = DiagnosticStoredState(
             metadata = state.metadata.copy(
-                state = if (capacityLimitReached) {
-                    DiagnosticCaptureState.PAUSED
-                } else {
-                    state.metadata.state
-                },
-                nextSequence = acceptedEvents.lastOrNull()?.sequence?.plus(1L)
-                    ?: state.metadata.nextSequence,
-                truncatedPayloadCount = state.metadata.truncatedPayloadCount +
-                    accepted.sumOf(NormalizedEvent::truncatedCount),
-                capacityLimitReached = capacityLimitReached,
+                nextSequence = events.last().sequence + 1L,
+                droppedEventCount = state.metadata.droppedEventCount + dropped,
+                evictedEventCount = state.metadata.evictedEventCount + evicted,
+                truncatedPayloadCount = state.metadata.truncatedPayloadCount + truncated,
+                capacityLimitReached = false,
             ),
-            events = state.events + acceptedEvents,
+            events = retainedEvents.toList(),
             retainedPayloadBytes = retainedPayloadBytes,
+            retainedEventBytes = retainedEventBytes.toList(),
         )
         return persistMetadata(next)
     }
@@ -160,7 +238,7 @@ internal class DiagnosticCaptureStore(
 
     fun clear(state: DiagnosticStoredState): DiagnosticStoredState {
         ensureDirectories()
-        eventFiles().forEach(File::delete)
+        forEachEventFile(::deleteFile)
         cleanupTemporaryFiles(eventsDirectory)
         return persistMetadata(
             DiagnosticStoredState(
@@ -212,34 +290,14 @@ internal class DiagnosticCaptureStore(
             is DiagnosticEventPayload.RuntimeTransition -> current
         }
         val normalized = event.copy(payload = payload)
+        val encodedJson = json.encodeToString(normalized)
         return NormalizedEvent(
             event = normalized,
             truncatedCount = truncatedCount,
             newlyTruncatedCount = newlyTruncatedCount,
-            payloadBytes = payloadByteSize(normalized),
+            encodedJson = encodedJson,
+            eventBytes = encodedJson.toByteArray(Charsets.UTF_8).size.toLong(),
         )
-    }
-
-    private fun payloadByteSize(event: DiagnosticEvent): Long {
-        fun String.bytes(): Long = toByteArray(Charsets.UTF_8).size.toLong()
-        fun Map<String, String>.bytes(): Long = entries.sumOf { (key, value) ->
-            key.bytes() + value.bytes()
-        }
-        return when (val payload = event.payload) {
-            is DiagnosticEventPayload.RuntimeTransition ->
-                payload.oldState.bytes() + payload.commandType.bytes() + payload.newState.bytes() +
-                    payload.effectId.orEmpty().bytes() + payload.effectTypes.sumOf(String::bytes)
-            is DiagnosticEventPayload.HttpStage ->
-                payload.stage.bytes() + payload.attributes.bytes()
-            is DiagnosticEventPayload.HttpRequest ->
-                payload.method.bytes() + payload.url.value.bytes() + payload.headers.bytes() +
-                    payload.body.value.bytes()
-            is DiagnosticEventPayload.HttpResponseBody -> payload.body.value.bytes()
-            is DiagnosticEventPayload.WireLine -> payload.line.value.bytes()
-            is DiagnosticEventPayload.ParsedStreamEvent ->
-                payload.eventType.bytes() + payload.attributes.bytes() +
-                    payload.content?.value.orEmpty().bytes()
-        }
     }
 
     private fun readMetadata(): DiagnosticCaptureMetadata? {
@@ -254,10 +312,26 @@ internal class DiagnosticCaptureStore(
             .firstOrNull()
     }
 
-    private fun eventFiles(): List<File> =
-        eventsDirectory.listFiles { file ->
-            file.isFile && file.name.endsWith(EVENT_EXTENSION)
-        }.orEmpty().sortedBy(File::getName)
+    private fun forEachEventFile(action: (File) -> Unit) {
+        forEachFile(eventsDirectory) { file ->
+            if (file.isFile && file.name.endsWith(EVENT_EXTENSION)) action(file)
+        }
+    }
+
+    private fun forEachFile(parent: File, action: (File) -> Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            forEachFileApi26(parent, action)
+        } else {
+            parent.listFiles().orEmpty().forEach(action)
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun forEachFileApi26(parent: File, action: (File) -> Unit) {
+        Files.newDirectoryStream(parent.toPath()).use { entries ->
+            entries.forEach { path -> action(path.toFile()) }
+        }
+    }
 
     private fun eventFile(sequence: Long): File =
         File(eventsDirectory, sequence.toString().padStart(SEQUENCE_DIGITS, '0') + EVENT_EXTENSION)
@@ -288,9 +362,13 @@ internal class DiagnosticCaptureStore(
     }
 
     private fun cleanupTemporaryFiles(parent: File) {
-        parent.listFiles { file ->
-            file.isFile && file.name.endsWith(TEMPORARY_SUFFIX)
-        }.orEmpty().forEach(File::delete)
+        forEachFile(parent) { file ->
+            if (file.isFile && file.name.endsWith(TEMPORARY_SUFFIX)) deleteFile(file)
+        }
+    }
+
+    private fun deleteFile(file: File) {
+        require(file.delete() || !file.exists()) { "Unable to delete $file" }
     }
 
     private fun temporaryFile(target: File): File = File(target.parentFile, target.name + TEMPORARY_SUFFIX)
@@ -307,12 +385,20 @@ internal class DiagnosticCaptureStore(
         val event: DiagnosticEvent,
         val truncatedCount: Long,
         val newlyTruncatedCount: Long,
-        val payloadBytes: Long,
+        val encodedJson: String,
+        val eventBytes: Long,
+    )
+
+    private data class RetainedEvent(
+        val file: File,
+        val normalized: NormalizedEvent,
+        val eventBytes: Long,
+        val rewriteRequired: Boolean,
     )
 
     internal companion object {
         const val DEFAULT_MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
-        const val DEFAULT_MAX_RETAINED_PAYLOAD_BYTES = 64L * 1024L * 1024L
+        const val DEFAULT_MAX_RETAINED_PAYLOAD_BYTES = 4L * 1024L * 1024L
         private const val SCHEMA_VERSION = 1
         private const val EVENTS_DIRECTORY = "events"
         private const val METADATA_FILE = "capture-metadata.json"

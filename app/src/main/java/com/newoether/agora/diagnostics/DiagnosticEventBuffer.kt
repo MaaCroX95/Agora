@@ -216,27 +216,24 @@ internal class DiagnosticEventBuffer(
     private fun start(
         store: DiagnosticCaptureStore,
         state: DiagnosticStoredState,
-    ): DiagnosticStoredState {
-        if (state.metadata.capacityLimitReached) return state
-        return when (state.metadata.state) {
-            DiagnosticCaptureState.RUNNING -> state
-            DiagnosticCaptureState.PAUSED -> store.persistMetadata(
-                state.copy(
-                    metadata = state.metadata.copy(state = DiagnosticCaptureState.RUNNING),
+    ): DiagnosticStoredState = when (state.metadata.state) {
+        DiagnosticCaptureState.RUNNING -> state
+        DiagnosticCaptureState.PAUSED -> store.persistMetadata(
+            state.copy(
+                metadata = state.metadata.copy(state = DiagnosticCaptureState.RUNNING),
+            ),
+        )
+        DiagnosticCaptureState.IDLE -> {
+            val empty = store.deleteAll()
+            store.persistMetadata(
+                empty.copy(
+                    metadata = DiagnosticCaptureMetadata(
+                        state = DiagnosticCaptureState.RUNNING,
+                        sessionId = sessionIdFactory(),
+                        startedAtMillis = clock(),
+                    ),
                 ),
             )
-            DiagnosticCaptureState.IDLE -> {
-                val empty = store.deleteAll()
-                store.persistMetadata(
-                    empty.copy(
-                        metadata = DiagnosticCaptureMetadata(
-                            state = DiagnosticCaptureState.RUNNING,
-                            sessionId = sessionIdFactory(),
-                            startedAtMillis = clock(),
-                        ),
-                    ),
-                )
-            }
         }
     }
 
@@ -298,6 +295,10 @@ internal class DiagnosticEventBuffer(
         val fallback = reconciled.copy(
             metadata = reconciled.metadata.copy(
                 state = fallbackState,
+                nextSequence = maxOf(
+                    reconciled.metadata.nextSequence,
+                    attemptedRecordSequences.lastOrNull()?.plus(1L) ?: 1L,
+                ),
                 droppedEventCount = maxOf(
                     reconciled.metadata.droppedEventCount,
                     requiredDropped,

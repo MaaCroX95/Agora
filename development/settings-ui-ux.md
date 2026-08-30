@@ -89,14 +89,25 @@ layout, states, density, or interaction design has been approved.
   16 dp tonal elevation, and a 12 dp rounded shape.
 - Summary/Raw event-card height changes use a 250 ms tween when spatial
   transitions are allowed and snap when Reduced Motion disables them.
-- A capture session retains every accepted event in order without an event-count
-  limit or oldest-event eviction. Retained payload is capped at 64 MiB; reaching
-  that boundary pauses capture and persistently marks the session incomplete.
-  The event that would exceed the boundary is rejected whole. Existing 2 MiB
-  per-captured-text truncation remains the only payload truncation policy.
-- Clearing a capacity-limited session removes its retained events and capacity
-  marker while preserving the session identity and monotonic sequence. It is
-  the only path that re-enables capture after the capacity boundary is reached.
+- A capture session retains the newest complete events in sequence order under a
+  4 MiB aggregate budget measured from each retained event's actual serialized
+  UTF-8 JSON bytes, including its envelope, context, attributes, and payload.
+  Accepting a new event evicts the oldest complete retained events until the
+  aggregate fits while capture remains running. The existing
+  `retainedPayloadBytes` snapshot and export field reports this complete-event
+  JSON byte total despite retaining its compatibility name. A normalized event
+  that cannot fit by itself is rejected whole, increments the dropped count, and
+  does not evict the existing retained history. Existing 2 MiB per-captured-text
+  truncation remains the only text truncation policy.
+- Loading a legacy session applies the same newest-complete-event FIFO boundary,
+  deletes the evicted durable files, and preserves monotonic sequence. A legacy
+  capacity marker is cleared; a pause caused by that marker resumes capture,
+  while a manually paused session remains paused. API 26 and newer enumerate
+  event files through a streaming directory iterator; API 24-25 use the approved
+  `File.listFiles()` compatibility fallback.
+- Clear removes retained events and resets dropped, evicted, and truncated
+  counters while preserving the session identity, current running or paused
+  state, and monotonic sequence.
 - All lower-right floating action buttons are explicitly circular. Their stack
   uses 24 dp end and bottom outer margins with a 12 dp gap between buttons.
 - The event list never follows new events automatically. Directional circular
@@ -109,8 +120,9 @@ layout, states, density, or interaction design has been approved.
   transitions are allowed it also expands or shrinks vertically for 250 ms so
   stack placement does not jump. During programmatic scrolling, visible actions
   stay in place with disabled colors and disabled semantics.
-- Capacity-limited capture shows a localized incomplete-status message and the
-  circular start/resume action remains disabled until Clear removes the marker.
+- Rolling capacity never creates a capacity-limited UI state. The legacy
+  incomplete-status resource and disabled resume projection remain only for
+  backward-compatible snapshots before Store reconciliation clears the marker.
 - Public export offers only content-redacted JSON and Summary Text. Raw JSON is
   not an export resource or menu action; the page-local Raw event view retains
   its existing credential-cleaned diagnostic fidelity.
