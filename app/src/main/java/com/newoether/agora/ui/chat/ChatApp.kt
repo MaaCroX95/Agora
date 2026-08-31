@@ -49,10 +49,8 @@ import com.newoether.agora.TopLevelPresentation
 import com.newoether.agora.api.DebugProvider
 import com.newoether.agora.data.forDisplay
 import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
-import com.newoether.agora.util.Constants
 import com.newoether.agora.util.gradientBlur
 import com.newoether.agora.util.verticalBottomOverlayFade
-import com.newoether.agora.model.ContextBudget
 import com.newoether.agora.ui.chat.bottombar.CHAT_BOTTOM_BAR_OUTER_SHAPE
 import com.newoether.agora.ui.chat.bottombar.ChatBottomBar
 import com.newoether.agora.ui.chat.bottombar.LoopStatusBackdrop
@@ -150,72 +148,41 @@ fun ChatApp(
     val isTransitioningToNewChat by viewModel.isTransitioningToNewChat.collectAsState()
     val totalTokens by viewModel.totalTokens.collectAsState()
     val visualizeContextRollout by viewModel.settings.visualizeContextRollout.collectAsState()
-    val maxContextWindow by viewModel.settings.maxContextWindow.collectAsState()
-    val globalCodeExecution by viewModel.settings.codeExecutionEnabled.collectAsState()
-    val globalGoogleSearch by viewModel.settings.googleSearchEnabled.collectAsState()
-    val globalThinkingEnabled by viewModel.settings.thinkingEnabled.collectAsState()
-    val globalThinkingLevel by viewModel.settings.thinkingLevel.collectAsState()
-    val globalThinkingBudgetEnabled by viewModel.settings.thinkingBudgetEnabled.collectAsState()
-    val globalThinkingBudgetTokens by viewModel.settings.thinkingBudgetTokens.collectAsState()
-    val globalLocalLowContextModeEnabled by
-        viewModel.settings.localLowContextModeEnabled.collectAsState()
     val customProviders by viewModel.settings.customProviders.collectAsState()
     val displayConversations = remember(conversations, customProviders) { conversations.orEmpty().map { it.forDisplay(customProviders) } }
     val displayMessagesState = remember(messagesState, customProviders) { derivedStateOf { messagesState.value.map { it.forDisplay(customProviders) } } }
-    val openAiResponsesApiEnabled by viewModel.settings.openAiResponsesApiEnabled.collectAsState()
-    val globalWebSearch by viewModel.settings.webSearchEnabled.collectAsState()
     val webSearchApiKeys by viewModel.settings.webSearchApiKeys.collectAsState()
-    val globalShell by viewModel.settings.shellEnabled.collectAsState()
     val shellDevices by viewModel.settings.shellDevices.collectAsState()
     val toolCallDisplayMode by viewModel.settings.toolCallDisplayMode.collectAsState()
     val thinkingSegmentDisplayMode by viewModel.settings.thinkingSegmentDisplayMode.collectAsState()
     val autoExpandActiveGroup by viewModel.settings.autoExpandActiveGroup.collectAsState()
 
     val parseInlineDollarMath by viewModel.settings.parseInlineDollarMath.collectAsState()
-    val conversationSettings by viewModel.settings.conversationSettings.collectAsState()
-    val pendingSettings by viewModel.pendingConversationSettings.collectAsState()
-    // Resolved per-conversation values: override → global default
-    val settingsOwnerId = conversationSettingsOwnerId(isNewChatMode, currentConversationId)
-    val convOverride = if (isNewChatMode) pendingSettings else settingsOwnerId?.let(conversationSettings::get)
-    val codeExecutionEnabled = convOverride?.codeExecutionEnabled ?: globalCodeExecution
-    val googleSearchEnabled = convOverride?.googleSearchEnabled ?: globalGoogleSearch
-    val thinkingEnabled = convOverride?.thinkingEnabled ?: globalThinkingEnabled
-    val thinkingLevel = convOverride?.thinkingLevel ?: globalThinkingLevel
-    val thinkingBudgetEnabled = convOverride?.thinkingBudgetEnabled ?: globalThinkingBudgetEnabled
-    val thinkingBudgetTokens = convOverride?.thinkingBudgetTokens ?: globalThinkingBudgetTokens
-    val selectedProviderName = viewModel.getProviderForModel(selectedModel)
-    val isEmbeddedLocalModel = selectedProviderName == Constants.PROVIDER_LOCAL
-    val lowContextModeEnabled = isEmbeddedLocalModel &&
-        (convOverride?.lowContextModeEnabled ?: globalLocalLowContextModeEnabled)
-    val openAiServiceTierState = openAiConversationServiceTierState(
-        viewModel, convOverride, selectedProviderName, openAiResponsesApiEnabled, customProviders,
+    val conversationControls = effectiveConversationControls(
+        viewModel = viewModel,
+        isNewChatMode = isNewChatMode,
+        currentConversationId = currentConversationId,
+        selectedModel = selectedModel,
+        customProviders = customProviders,
     )
-    val openAiWebSearchAvailable = resolveOpenAiNativeSearchAvailability(
-        selectedProviderName, openAiResponsesApiEnabled, customProviders,
-    )
-    val openAiWebSearchEnabled = convOverride?.openAiWebSearchEnabled ?: true
-    // Web Search and Shell: global switch OFF → always false, regardless of override
-    val webSearchEnabled = globalWebSearch && (convOverride?.webSearchEnabled ?: true)
-    val shellEnabled = globalShell && (convOverride?.shellEnabled ?: true)
-    val contextWindow = ContextBudget.normalize(convOverride?.contextWindow ?: maxContextWindow)
     val contextProjectionKey = rememberContextProjectionInvalidationKey(
         viewModel,
         listOf(
-            codeExecutionEnabled,
-            googleSearchEnabled,
-            webSearchEnabled,
-            shellEnabled,
+            conversationControls.codeExecutionEnabled,
+            conversationControls.googleSearchEnabled,
+            conversationControls.webSearchEnabled,
+            conversationControls.shellEnabled,
             shellDevices,
             currentConversation?.systemPromptId,
-            lowContextModeEnabled,
+            conversationControls.lowContextModeEnabled,
         ),
     )
     val contextProjection by viewModel.conversationContextProjection.collectAsState()
-    LaunchedEffect(currentConversationId, currentConversation?.selectedBranchesJson, selectedModel, contextWindow, allMessagesState.value, contextProjectionKey) {
-        viewModel.requestConversationContext(currentConversationId, currentConversation?.selectedBranchesJson, selectedModel, contextWindow)
+    LaunchedEffect(currentConversationId, currentConversation?.selectedBranchesJson, selectedModel, conversationControls.contextWindow, allMessagesState.value, contextProjectionKey) {
+        viewModel.requestConversationContext(currentConversationId, currentConversation?.selectedBranchesJson, selectedModel, conversationControls.contextWindow)
     }
     val contextProjectionReady = contextProjection.completed && !contextProjection.loading && !contextProjection.failed && contextProjection.conversationId == currentConversationId && contextProjection.selectedBranchesJson == currentConversation?.selectedBranchesJson
-    val contextUsage = contextProjection.usage ?: com.newoether.agora.api.util.ContextWindowUsage(0, contextWindow, 0, false)
+    val contextUsage = contextProjection.usage ?: com.newoether.agora.api.util.ContextWindowUsage(0, conversationControls.contextWindow, 0, false)
     val blurEffectsEnabled by viewModel.settings.blurEffectsEnabled.collectAsState()
     val stickToBottom by viewModel.settings.stickToBottom.collectAsState()
     val reduceMotion = motionPolicy.reduceMotion
@@ -446,7 +413,7 @@ fun ChatApp(
                         conversationActionsEnabled =
                             !isNewChatMode && currentConversationId != null && !isLoading &&
                                 !shareSelectionActive,
-                        systemPromptEnabled = !lowContextModeEnabled,
+                        systemPromptEnabled = !conversationControls.lowContextModeEnabled,
                         onNavigateBack = onNavigateBack,
                         onOpenDrawer = {
                             if (drawerEnabled) {
@@ -927,35 +894,35 @@ fun ChatApp(
                         selectedModel = selectedModel,
                         modelAliases = chatModelAliases,
                         customProviders = customProviders,
-                        codeExecutionEnabled = codeExecutionEnabled,
-                        googleSearchEnabled = googleSearchEnabled,
-                        thinkingEnabled = thinkingEnabled,
-                        thinkingLevel = thinkingLevel,
-                        thinkingBudgetEnabled = thinkingBudgetEnabled,
-                        thinkingBudgetTokens = thinkingBudgetTokens,
-                        openAiWebSearchAvailable = openAiWebSearchAvailable,
-                        openAiWebSearchEnabled = openAiWebSearchEnabled,
-                        onOpenAiWebSearchToggle = { enabled -> updateOpenAiNativeSearch(viewModel, settingsOwnerId, haptics, enabled) },
-                        openAiServiceTierAvailable = openAiServiceTierState.available,
-                        openAiServiceTierEnabled = openAiServiceTierState.enabled,
-                        openAiServiceTier = openAiServiceTierState.tier,
-                        onOpenAiServiceTierToggle = { enabled -> updateOpenAiConversationServiceTierEnabled(viewModel, settingsOwnerId, haptics, enabled) },
-                        onOpenAiServiceTierChange = { tier -> updateOpenAiConversationServiceTier(viewModel, settingsOwnerId, haptics, tier) },
-                        onCodeExecutionToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(settingsOwnerId) { it.copy(codeExecutionEnabled = enabled) } },
-                        onGoogleSearchToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(settingsOwnerId) { it.copy(googleSearchEnabled = enabled) } },
-                        onThinkingToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(settingsOwnerId) { it.copy(thinkingEnabled = enabled) } },
-                        onThinkingLevelChange = { level -> viewModel.updateConversationSetting(settingsOwnerId) { it.copy(thinkingLevel = level) } },
-                        onThinkingBudgetEnabledChange = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(settingsOwnerId) { it.copy(thinkingBudgetEnabled = enabled) } },
-                        onThinkingBudgetTokensChange = { tokens -> viewModel.updateConversationSetting(settingsOwnerId) { it.copy(thinkingBudgetTokens = tokens) } },
-                        webSearchEnabled = webSearchEnabled,
-                        onWebSearchToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(settingsOwnerId) { it.copy(webSearchEnabled = enabled) } },
-                        shellEnabled = shellEnabled,
-                        onShellToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(settingsOwnerId) { it.copy(shellEnabled = enabled) } },
-                        showLowContextMode = isEmbeddedLocalModel,
-                        lowContextModeEnabled = lowContextModeEnabled,
+                        codeExecutionEnabled = conversationControls.codeExecutionEnabled,
+                        googleSearchEnabled = conversationControls.googleSearchEnabled,
+                        thinkingEnabled = conversationControls.thinkingEnabled,
+                        thinkingLevel = conversationControls.thinkingLevel,
+                        thinkingBudgetEnabled = conversationControls.thinkingBudgetEnabled,
+                        thinkingBudgetTokens = conversationControls.thinkingBudgetTokens,
+                        openAiWebSearchAvailable = conversationControls.openAiWebSearchAvailable,
+                        openAiWebSearchEnabled = conversationControls.openAiWebSearchEnabled,
+                        onOpenAiWebSearchToggle = { enabled -> updateOpenAiNativeSearch(viewModel, conversationControls.settingsOwnerId, haptics, enabled) },
+                        openAiServiceTierAvailable = conversationControls.openAiServiceTierState.available,
+                        openAiServiceTierEnabled = conversationControls.openAiServiceTierState.enabled,
+                        openAiServiceTier = conversationControls.openAiServiceTierState.tier,
+                        onOpenAiServiceTierToggle = { enabled -> updateOpenAiConversationServiceTierEnabled(viewModel, conversationControls.settingsOwnerId, haptics, enabled) },
+                        onOpenAiServiceTierChange = { tier -> updateOpenAiConversationServiceTier(viewModel, conversationControls.settingsOwnerId, haptics, tier) },
+                        onCodeExecutionToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(codeExecutionEnabled = enabled) } },
+                        onGoogleSearchToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(googleSearchEnabled = enabled) } },
+                        onThinkingToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(thinkingEnabled = enabled) } },
+                        onThinkingLevelChange = { level -> viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(thinkingLevel = level) } },
+                        onThinkingBudgetEnabledChange = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(thinkingBudgetEnabled = enabled) } },
+                        onThinkingBudgetTokensChange = { tokens -> viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(thinkingBudgetTokens = tokens) } },
+                        webSearchEnabled = conversationControls.webSearchEnabled,
+                        onWebSearchToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(webSearchEnabled = enabled) } },
+                        shellEnabled = conversationControls.shellEnabled,
+                        onShellToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(shellEnabled = enabled) } },
+                        showLowContextMode = conversationControls.showLowContextMode,
+                        lowContextModeEnabled = conversationControls.lowContextModeEnabled,
                         onLowContextModeToggle = { enabled ->
                             haptics.toggle(enabled)
-                            viewModel.updateConversationSetting(settingsOwnerId) {
+                            viewModel.updateConversationSetting(conversationControls.settingsOwnerId) {
                                 it.copy(lowContextModeEnabled = enabled)
                             }
                         },
@@ -976,8 +943,8 @@ fun ChatApp(
                         isExpandAnimating = isExpandAnimating,
                         onCollapse = { isExpanded = false },
                         onExpand = { isExpanded = true },
-                        showWebSearch = globalWebSearch,
-                        showShell = shellDevices.isNotEmpty() && globalShell,
+                        showWebSearch = conversationControls.webSearchAvailable,
+                        showShell = shellDevices.isNotEmpty() && conversationControls.shellAvailable,
                         onPdfPagesClick = { pages, idx -> onPdfPagesClick?.invoke(pages, idx) },
                         onPdfPreviewSelect = { pages, idx -> onPdfPreviewSelect?.invoke(pages, idx) },
                         pdfViewerSelection = pdfViewerSelection,
