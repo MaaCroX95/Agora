@@ -8,6 +8,7 @@ import com.newoether.agora.api.util.prepareMessages
 import com.newoether.agora.api.util.RequestFormatException
 import com.newoether.agora.api.util.requireValidSerializedRequest
 import com.newoether.agora.api.util.StreamTermination
+import com.newoether.agora.api.util.asRetryableResponseBodyReadError
 import com.newoether.agora.api.util.asRetryableTransportError
 import com.newoether.agora.api.util.carriesModelOutput
 import com.newoether.agora.api.util.ProviderRetryPolicy
@@ -311,6 +312,8 @@ abstract class BaseOpenAiProvider : LlmProvider {
         val router = OpenAiResponsesEventRouter(json)
         var producedContent = false
         var reportedError = false
+        var streamError: GenerationError? = null
+        var responseBodyReadError: GenerationError? = null
         var timedOut = false
         var consecutiveReadTimeouts = 0
 
@@ -324,6 +327,10 @@ abstract class BaseOpenAiProvider : LlmProvider {
                     break
                 }
                 continue
+            } catch (error: Exception) {
+                if (!currentCoroutineContext().isActive) break
+                responseBodyReadError = error.asRetryableResponseBodyReadError() ?: throw error
+                break
             } ?: break
             consecutiveReadTimeouts = 0
             if (!line.startsWith("data: ")) continue
@@ -337,23 +344,23 @@ abstract class BaseOpenAiProvider : LlmProvider {
                     "AgoraAPI",
                     "[$name] malformed Responses payload exception=${error.javaClass.simpleName}",
                 )
-                reportedError = true
-                listOf(
-                    StreamEvent.Error(
-                        GenerationError.SseParse(
-                            rawLine = payload.take(512),
-                            cause = error.localizedMessage ?: "Malformed Responses SSE payload",
-                        )
-                    )
+                streamError = GenerationError.SseParse(
+                    rawLine = payload.take(512),
+                    cause = error.localizedMessage ?: "Malformed Responses SSE payload",
                 )
+                emptyList()
             }
             routed.forEach { event ->
-                if (event.carriesModelOutput()) producedContent = true
-                if (event is StreamEvent.Error) reportedError = true
-                emit(event)
+                if (event is StreamEvent.Error && event.error is GenerationError.SseParse) {
+                    streamError = event.error
+                } else {
+                    if (event.carriesModelOutput()) producedContent = true
+                    if (event is StreamEvent.Error) reportedError = true
+                    emit(event)
+                }
             }
             if (
-                reportedError || router.streamError != null ||
+                streamError != null || reportedError || router.streamError != null ||
                 router.sawTerminalMarker
             ) break
         }
@@ -366,10 +373,10 @@ abstract class BaseOpenAiProvider : LlmProvider {
             stopReason = router.stopReason,
             producedContent = producedContent,
             toolCallInFlight = router.toolCallInFlight,
-            streamError = router.streamError,
-            alreadyReportedError = reportedError || router.reportedError,
+            streamError = responseBodyReadError ?: streamError ?: router.streamError,
+            alreadyReportedError = reportedError,
             timedOut = timedOut,
-            retryableStreamError = !router.sawTerminalMarker,
+            retryableStreamError = responseBodyReadError != null || !router.sawTerminalMarker,
         )
     }
 
@@ -474,6 +481,10 @@ abstract class BaseOpenAiProvider : LlmProvider {
                     break
                 }
                 continue
+            } catch (e: Exception) {
+                if (!currentCoroutineContext().isActive) break
+                streamError = e.asRetryableResponseBodyReadError() ?: throw e
+                break
             } ?: break
             consecutiveReadTimeouts = 0
 

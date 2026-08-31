@@ -438,25 +438,41 @@ object HttpClient {
         liveHandles.clear()
     }
 
-    private fun newCall(request: Request, callTimeoutMillis: Long?): okhttp3.Call =
-        client.newCall(request).also { call ->
+    private fun newCall(
+        request: Request,
+        callTimeoutMillis: Long?,
+        readTimeoutMillis: Long? = null,
+    ): okhttp3.Call {
+        val callClient = readTimeoutMillis?.let { timeoutMillis ->
+            require(timeoutMillis > 0L)
+            client.newBuilder()
+                .readTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+                .build()
+        } ?: client
+        return callClient.newCall(request).also { call ->
             callTimeoutMillis?.let {
                 require(it > 0L)
                 call.timeout().timeout(it, TimeUnit.MILLISECONDS)
             }
         }
+    }
 
     fun post(
         url: String,
         jsonBody: String,
         headers: Map<String, String> = emptyMap(),
         callTimeoutMillis: Long? = null,
+        readTimeoutMillis: Long? = null,
     ): String? {
         guardCleartextCredentials(url, headers)
         val body = jsonBody.toRequestBody(JSON)
         val requestBuilder = Request.Builder().url(url).post(body)
         headers.forEach { (k, v) -> requestBuilder.addHeader(k, v) }
-        val response = newCall(requestBuilder.build(), callTimeoutMillis).execute()
+        val response = newCall(
+            request = requestBuilder.build(),
+            callTimeoutMillis = callTimeoutMillis,
+            readTimeoutMillis = readTimeoutMillis,
+        ).execute()
         return response.use {
             if (it.isSuccessful) it.body?.string()
             else {
@@ -532,11 +548,16 @@ object HttpClient {
         url: String,
         headers: Map<String, String> = emptyMap(),
         callTimeoutMillis: Long? = null,
+        readTimeoutMillis: Long? = null,
     ): ByteArray? {
         guardCleartextCredentials(url, headers)
         val requestBuilder = Request.Builder().url(url).get()
         headers.forEach { (k, v) -> requestBuilder.addHeader(k, v) }
-        val response = newCall(requestBuilder.build(), callTimeoutMillis).execute()
+        val response = newCall(
+            request = requestBuilder.build(),
+            callTimeoutMillis = callTimeoutMillis,
+            readTimeoutMillis = readTimeoutMillis,
+        ).execute()
         return response.use {
             if (it.isSuccessful) it.body?.bytes() else null
         }

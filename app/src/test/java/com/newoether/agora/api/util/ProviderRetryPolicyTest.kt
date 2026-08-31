@@ -22,22 +22,48 @@ class ProviderRetryPolicyTest {
     }
 
     @Test
-    fun failedToGenerateOutcomeIsRecognizedCaseInsensitively() {
+    fun failedToGenerateOutcomeRemainsRecognizedCaseInsensitively() {
         assertTrue(ProviderRetryPolicy.isFailedToGenerateOutcome("Failed to generate"))
-        assertTrue(ProviderRetryPolicy.isFailedToGenerateOutcome("upstream: FAILED TO GENERATE response"))
+        assertTrue(
+            ProviderRetryPolicy.isFailedToGenerateOutcome(
+                "upstream: FAILED TO GENERATE response",
+            )
+        )
         assertFalse(ProviderRetryPolicy.isFailedToGenerateOutcome("completed"))
         assertFalse(ProviderRetryPolicy.isFailedToGenerateOutcome(null))
     }
 
     @Test
-    fun failedToGenerateHttpBodyRetriesEvenOnOtherwiseNonRetryableStatus() {
+    fun transientUpstreamMessagesAreRecognizedCaseInsensitively() {
+        assertTrue(ProviderRetryPolicy.isRetryableUpstreamFailure("Failed to generate"))
         assertTrue(
-            ProviderRetryPolicy.shouldRetryHttp(
-                statusCode = 400,
-                body = "upstream failed to generate",
-                retryableStatusCodes = setOf(429, 502, 503, 504),
+            ProviderRetryPolicy.isRetryableUpstreamFailure(
+                "The server response could not be read.",
             )
         )
+        assertTrue(
+            ProviderRetryPolicy.isRetryableUpstreamFailure(
+                "UPSTREAM: THE SERVER RESPONSE COULD NOT BE READ",
+            )
+        )
+        assertFalse(ProviderRetryPolicy.isRetryableUpstreamFailure("completed"))
+        assertFalse(ProviderRetryPolicy.isRetryableUpstreamFailure(null))
+    }
+
+    @Test
+    fun transientUpstreamHttpBodyRetriesEvenOnOtherwiseNonRetryableStatus() {
+        listOf(
+            "upstream failed to generate",
+            "The server response could not be read",
+        ).forEach { body ->
+            assertTrue(
+                ProviderRetryPolicy.shouldRetryHttp(
+                    statusCode = 400,
+                    body = body,
+                    retryableStatusCodes = setOf(429, 502, 503, 504),
+                )
+            )
+        }
         assertFalse(
             ProviderRetryPolicy.shouldRetryHttp(
                 statusCode = 400,

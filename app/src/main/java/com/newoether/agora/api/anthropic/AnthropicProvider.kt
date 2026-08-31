@@ -12,6 +12,7 @@ import com.newoether.agora.api.util.adaptToolRoundsForProvider
 import com.newoether.agora.api.util.RequestFormatException
 import com.newoether.agora.api.util.requireValidSerializedRequest
 import com.newoether.agora.api.util.StreamTermination
+import com.newoether.agora.api.util.asRetryableResponseBodyReadError
 import com.newoether.agora.api.util.asRetryableTransportError
 import com.newoether.agora.api.util.carriesModelOutput
 import com.newoether.agora.api.util.ProviderRetryPolicy
@@ -462,6 +463,7 @@ class AnthropicProvider(
                     var producedContent = false
                     var timedOut = false
                     var reportedError = false
+                    var responseBodyReadError: GenerationError? = null
 
                     suspend fun emitTracked(event: StreamEvent) {
                         if (event.carriesModelOutput()) producedContent = true
@@ -484,6 +486,11 @@ class AnthropicProvider(
                                 break
                             }
                             continue
+                        } catch (e: Exception) {
+                            if (!currentCoroutineContext().isActive) break
+                            responseBodyReadError =
+                                e.asRetryableResponseBodyReadError() ?: throw e
+                            break
                         }
                         if (line.startsWith("data: ")) {
                             val jsonStr = line.substring(6).trim()
@@ -525,7 +532,7 @@ class AnthropicProvider(
                         stopReason = eventRouter.stopReason,
                         producedContent = producedContent,
                         toolCallInFlight = eventRouter.toolCallInFlight,
-                        streamError = eventRouter.streamError,
+                        streamError = responseBodyReadError ?: eventRouter.streamError,
                         alreadyReportedError = eventRouter.reportedError || reportedError,
                         timedOut = timedOut,
                     )

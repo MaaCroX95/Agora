@@ -69,6 +69,34 @@ class GenerationStatusMessagesTest {
     }
 
     @Test
+    fun multiSentenceVisibleError_isInjectedIntoContextInFullOnce() {
+        val visibleError =
+            "Server_error [server_error]: An error occurred while processing your request. " +
+                "You can retry your request, or contact the help center if the error persists. " +
+                "Please include the request ID test-request-id in your message."
+        val context = mockk<Context>()
+        val error = ChatMessage(
+            id = "error",
+            text = "",
+            status = MessageStatus.ERROR,
+            participant = Participant.MODEL,
+            segments = listOf(MessageSegment(type = "error", content = visibleError)),
+        )
+
+        val projected = projectGenerationStatusesForApi(listOf(error)) { raw ->
+            normalizePersistedGenerationErrorText(context, raw)
+        }.single()
+
+        assertEquals(
+            "[Generation status: ERROR]\n" +
+                "The previous assistant generation failed before completing.\n" +
+                "Details:\n$visibleError",
+            projected.text,
+        )
+        assertEquals(1, Regex(Regex.escape(visibleError)).findAll(projected.text).count())
+    }
+
+    @Test
     fun legacyNetworkWrapper_usesTheSameLocalizedGrayErrorText() {
         val context = mockk<Context>()
         val localized = "Connection closed."

@@ -3,6 +3,7 @@ package com.newoether.agora.api.openai
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import com.newoether.agora.api.GenerationError
+import com.newoether.agora.api.HttpClient
 import com.newoether.agora.api.ProviderConfig
 import com.newoether.agora.api.StreamEvent
 import com.newoether.agora.api.ToolDefinition
@@ -10,9 +11,12 @@ import com.newoether.agora.api.ToolFunction
 import com.newoether.agora.api.ToolParameters
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.Participant
+import com.newoether.agora.model.ToolCallData
 import com.newoether.agora.util.DebugLog
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -27,6 +31,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.BufferedReader
+import java.io.IOException
 import java.io.InputStreamReader
 import java.net.ServerSocket
 import java.net.Socket
@@ -659,13 +664,45 @@ class BaseOpenAiProviderTerminationTest {
     }
 
     @Test
-    fun responsesPartialTextThenEofDoesNotRetryAndReportsOneIncompleteError() = withServer(
+    fun responseBodyReadRetryHonorsCurrentPassOutputBoundary() {
+        val matching = IOException("The server response could not be read.")
+        val success = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"complete\"},\"finish_reason\":\"stop\"}]}"
+
+        val responses = collectWithMockedStream(
+            listOf(matching, "data: {\"type\":\"response.completed\",\"sequence_number\":1,\"response\":{\"status\":\"completed\"}}"),
+            responsesApiEnabled = true,
+        )
+        assertEquals(StreamEvent.Retrying(1, 5), responses.filterIsInstance<StreamEvent.Retrying>().single())
+        val partial = collectWithMockedStream(
+            listOf("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"partial\"}}]}", matching),
+        )
+        assertTrue(partial.none { it is StreamEvent.Retrying })
+        assertTrue(partial.filterIsInstance<StreamEvent.Error>().single().error is GenerationError.Network)
+        val toolCall = ToolCallData("file_edit", "{}", "", toolCallId = "call-1")
+        val afterTool = collectWithMockedStream(
+            reads = listOf(matching, success, "data: [DONE]"),
+            messages = listOf(
+                messages().single(),
+                ChatMessage("tool_call", text = "", participant = Participant.MODEL, toolCall = toolCall),
+                ChatMessage("result_call", text = "done", participant = Participant.USER, toolCall = toolCall.copy(result = "done")),
+            ),
+        )
+        assertEquals(1, afterTool.filterIsInstance<StreamEvent.Retrying>().size)
+        assertEquals("complete", afterTool.filterIsInstance<StreamEvent.TextChunk>().single().text)
+        val nonmatching = collectWithMockedStream(listOf(IOException("unexpected stream reset")))
+        assertTrue(nonmatching.none { it is StreamEvent.Retrying })
+        assertTrue(nonmatching.filterIsInstance<StreamEvent.Error>().single().error is GenerationError.Unknown)
+    }
+
+    @Test
+    fun responsesPartialTextThenMalformedSseDoesNotRetryAndReportsOneParseError() = withServer(
         terminalGraceMillis = 100L,
         responsesApiEnabled = true,
         response = { socket, _ ->
             socket.writeSse(
                 """{"type":"response.output_text.delta","sequence_number":1,"delta":"partial"}"""
             )
+            socket.writeSse("not-json")
         },
     ) { provider, config, server ->
         val events = collect(provider, config)
@@ -673,20 +710,17 @@ class BaseOpenAiProviderTerminationTest {
         assertTrue(events.none { it is StreamEvent.Retrying })
         assertEquals("partial", events.filterIsInstance<StreamEvent.TextChunk>().single().text)
         assertEquals(1, events.filterIsInstance<StreamEvent.Error>().size)
-        assertTrue(events.filterIsInstance<StreamEvent.Error>().single().error is GenerationError.IncompleteStream)
+        assertTrue(events.filterIsInstance<StreamEvent.Error>().single().error is GenerationError.SseParse)
     }
 
     @Test
-    fun responsesMalformedSseReportsOneParseErrorWithoutRetry() = withServer(
-        terminalGraceMillis = 100L,
-        responsesApiEnabled = true,
-        response = { socket, _ -> socket.writeSse("not-json") },
-    ) { provider, config, server ->
-        val events = collect(provider, config)
-        assertEquals(1, server.requests.size)
-        assertTrue(events.none { it is StreamEvent.Retrying })
-        assertEquals(1, events.filterIsInstance<StreamEvent.Error>().size)
-        assertTrue(events.filterIsInstance<StreamEvent.Error>().single().error is GenerationError.SseParse)
+    fun responsesMalformedSseRetriesThenSucceeds() {
+        val retried = collectWithMockedStream(
+            listOf("data: not-json", "data: {\"type\":\"response.completed\",\"sequence_number\":1,\"response\":{\"status\":\"completed\"}}"),
+            responsesApiEnabled = true,
+        )
+        assertEquals(StreamEvent.Retrying(1, 5), retried.filterIsInstance<StreamEvent.Retrying>().single())
+        assertTrue(retried.none { it is StreamEvent.Error })
     }
 
     @Test
@@ -729,12 +763,46 @@ class BaseOpenAiProviderTerminationTest {
         assertEquals("unauthorized", (error as GenerationError.Api).message)
     }
 
+    private fun collectWithMockedStream(
+        reads: List<Any?>,
+        messages: List<ChatMessage> = messages(),
+        responsesApiEnabled: Boolean = false,
+    ): List<StreamEvent> {
+        val readIndex = java.util.concurrent.atomic.AtomicInteger()
+        val handle = mockk<HttpClient.StreamHandle>(relaxed = true)
+        every { handle.code } returns 200
+        every { handle.readLine() } answers {
+            reads.getOrNull(readIndex.getAndIncrement()).let { read ->
+                if (read is Throwable) throw read else read as String?
+            }
+        }
+        mockkObject(HttpClient)
+        every { HttpClient.streamPost(any(), any(), any()) } returns handle
+        return try {
+            collect(
+                object : BaseOpenAiProvider() {
+                    override val name = "test"
+                    override val defaultBaseUrl = "https://example.invalid/v1"
+                    override fun retryDelayMillis(attempt: Int) = 1L
+                },
+                ProviderConfig(
+                    apiKey = "",
+                    modelId = "test-model",
+                    responsesApiEnabled = responsesApiEnabled,
+                ),
+                messages = messages,
+            )
+        } finally {
+            unmockkObject(HttpClient)
+        }
+    }
     private fun collect(
         provider: BaseOpenAiProvider,
         config: ProviderConfig,
         timeoutMillis: Long = 2_000L,
+        messages: List<ChatMessage> = messages(),
     ): List<StreamEvent> = runBlocking {
-        withTimeout(timeoutMillis) { provider.generateResponse(messages(), config).toList() }
+        withTimeout(timeoutMillis) { provider.generateResponse(messages, config).toList() }
     }
 
     private fun messages() = listOf(

@@ -11,6 +11,7 @@ import com.newoether.agora.api.util.RequestFormatException
 import com.newoether.agora.api.util.requireValidSerializedRequest
 import com.newoether.agora.api.util.ProviderRetryPolicy
 import com.newoether.agora.api.util.StreamTermination
+import com.newoether.agora.api.util.asRetryableResponseBodyReadError
 import com.newoether.agora.api.util.asRetryableTransportError
 import com.newoether.agora.api.util.carriesModelOutput
 import com.newoether.agora.api.util.safeWireToolName
@@ -690,6 +691,10 @@ class GeminiProvider(
                                     break
                                 }
                                 continue
+                            } catch (e: Exception) {
+                                if (!currentCoroutineContext().isActive) break
+                                streamError = e.asRetryableResponseBodyReadError() ?: throw e
+                                break
                             } ?: break
                             consecutiveReadTimeouts = 0
                             if (!line.startsWith("data: ")) continue
