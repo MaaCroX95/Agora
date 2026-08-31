@@ -1,6 +1,5 @@
 package com.newoether.agora.viewmodel
 
-import com.newoether.agora.data.local.NewChatDraftAttachmentReference
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.model.AttachmentImportState
 import com.newoether.agora.model.SelectedAttachment
@@ -15,11 +14,13 @@ import io.mockk.mockkObject
 import io.mockk.unmockkObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -80,42 +81,112 @@ class ConversationComposerControllerTest {
     }
 
     @Test
-    fun `startup restores ordinary and new chat processing after process restart`() = runTest {
+    fun `controller startup stays dormant and exact load restores only that owner`() = runTest {
         val ordinary = attachment("ordinary").processing("/stage/ordinary")
-        val newChat = attachment("new-chat").processing("/stage/new-chat")
+        val unopened = attachment("unopened").processing("/stage/unopened")
         val processor = mockk<AttachmentImportProcessor>()
         coEvery { processor.process(any(), any()) } coAnswers {
             AttachmentImportProcessor.ProcessResult.Ready(
                 firstArg<SelectedAttachment>().ready(),
             )
         }
-        val persistence = MemoryDraftPersistence(
-            mapOf(
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(
                 OWNER_A to draft("ordinary text", ordinary),
-                NEW_CHAT_WORKSPACE_ID to draft("new chat text", newChat),
+                OWNER_B to draft("unopened text", unopened),
             ),
         )
-        val repository = repository()
-        coEvery { repository.getConversationDraftAttachmentOwnerIds() } returns listOf(OWNER_A)
-        coEvery { repository.getNewChatDraftAttachmentReference() } returns
-            NewChatDraftAttachmentReference(Json.encodeToString(listOf(newChat)))
-        val controller = controller(processor, persistence, repository)
 
-        controller.start().join()
-        controller.awaitProcessing(OWNER_A)
-        controller.awaitProcessing(NEW_CHAT_WORKSPACE_ID)
+        runCurrent()
+        assertEquals(0, fixture.persistence.loadCount(OWNER_A))
+        assertEquals(0, fixture.persistence.loadCount(OWNER_B))
+        coVerify(exactly = 0) { processor.process(any(), any()) }
 
-        assertEquals(AttachmentImportState.READY, controller.state(OWNER_A).value.single().importState)
-        assertEquals(
-            AttachmentImportState.READY,
-            controller.state(NEW_CHAT_WORKSPACE_ID).value.single().importState,
+        fixture.controller.load(OWNER_A)
+        fixture.controller.awaitProcessing(OWNER_A)
+
+        assertEquals(AttachmentImportState.READY, fixture.state(OWNER_A, ordinary.localId).importState)
+        assertEquals(AttachmentImportState.READY, fixture.persistence.attachment(OWNER_A).importState)
+        assertEquals(1, fixture.persistence.loadCount(OWNER_A))
+        assertEquals(0, fixture.persistence.loadCount(OWNER_B))
+        assertEquals(AttachmentImportState.PROCESSING, fixture.persistence.attachment(OWNER_B).importState)
+        coVerify(exactly = 1) { processor.process(match { it.localId == ordinary.localId }, any()) }
+        coVerify(exactly = 0) { processor.process(match { it.localId == unopened.localId }, any()) }
+    }
+
+    @Test
+    fun `active job and command retain one session until both finish`() = runTest {
+        val processing = attachment("active").processing("/stage/active")
+        val processingStarted = CompletableDeferred<Unit>()
+        val finishProcessing = CompletableDeferred<Unit>()
+        val processor = mockk<AttachmentImportProcessor>()
+        coEvery { processor.process(processing, any()) } coAnswers {
+            processingStarted.complete(Unit)
+            finishProcessing.await()
+            AttachmentImportProcessor.ProcessResult.Ready(processing.ready())
+        }
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(OWNER_A to draft(attachments = arrayOf(processing))),
         )
-        assertEquals(AttachmentImportState.READY, persistence.attachment(OWNER_A).importState)
-        assertEquals(
-            AttachmentImportState.READY,
-            persistence.attachment(NEW_CHAT_WORKSPACE_ID).importState,
+        fixture.controller.load(OWNER_A)
+        processingStarted.await()
+        val awaiting = launch { fixture.controller.awaitProcessing(OWNER_A) }
+        runCurrent()
+
+        fixture.controller.release(OWNER_A)
+        fixture.controller.load(OWNER_A)
+        assertEquals(1, fixture.persistence.loadCount(OWNER_A))
+        assertEquals(AttachmentImportState.PROCESSING, fixture.state(OWNER_A, "active").importState)
+        fixture.controller.release(OWNER_A)
+
+        finishProcessing.complete(Unit)
+        awaiting.join()
+        advanceUntilIdle()
+        assertEquals(AttachmentImportState.READY, fixture.persistence.attachment(OWNER_A).importState)
+
+        val reloaded = fixture.controller.load(OWNER_A)
+        assertEquals(2, fixture.persistence.loadCount(OWNER_A))
+        assertEquals(AttachmentImportState.READY, reloaded.attachments.single().importState)
+    }
+
+    @Test
+    fun `idle release evicts session and unopened commands fail closed`() = runTest {
+        val processor = mockk<AttachmentImportProcessor>()
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(OWNER_A to draft(text = "first")),
         )
-        coVerify(exactly = 2) { processor.process(any(), any()) }
+        fixture.controller.load(OWNER_A)
+        fixture.controller.release(OWNER_A)
+        fixture.persistence.setDraft(OWNER_A, draft(text = "second"))
+
+        val failure = runCatching {
+            fixture.controller.updateText(OWNER_B, "must not admit")
+        }.exceptionOrNull()
+        assertTrue(failure is IllegalStateException)
+        assertEquals(0, fixture.persistence.loadCount(OWNER_B))
+
+        assertEquals("second", fixture.controller.load(OWNER_A).text)
+        assertEquals(2, fixture.persistence.loadCount(OWNER_A))
+    }
+
+    @Test
+    fun `failed load rolls back retain before a later admission`() = runTest {
+        val processor = mockk<AttachmentImportProcessor>()
+        val fixture = fixture(processor)
+        fixture.persistence.failLoads = true
+
+        val failure = runCatching { fixture.controller.load(OWNER_A) }.exceptionOrNull()
+        assertTrue(failure is IllegalStateException)
+
+        fixture.persistence.failLoads = false
+        fixture.persistence.setDraft(OWNER_A, draft(text = "recovered"))
+        assertEquals("recovered", fixture.controller.load(OWNER_A).text)
+        assertEquals(2, fixture.persistence.loadCount(OWNER_A))
+        fixture.controller.release(OWNER_A)
+        assertTrue(runCatching { fixture.controller.state(OWNER_A) }.isFailure)
     }
 
     @Test
@@ -129,10 +200,11 @@ class ConversationComposerControllerTest {
         val fixture = fixture(
             processor = processor,
             initial = mapOf(OWNER_A to draft(attachments = arrayOf(processing))),
-            owners = listOf(OWNER_A),
         )
 
-        fixture.controller.start().join()
+        assertEquals(0, fixture.persistence.loadCount(OWNER_A))
+        assertEquals(AttachmentImportState.PROCESSING, fixture.persistence.attachment(OWNER_A).importState)
+        fixture.controller.load(OWNER_A)
         fixture.controller.awaitProcessing(OWNER_A)
 
         assertEquals(AttachmentImportState.FAILED, fixture.state(OWNER_A, "missing").importState)
@@ -758,7 +830,6 @@ class ConversationComposerControllerTest {
     private fun TestScope.fixture(
         processor: AttachmentImportProcessor,
         initial: Map<String, ConversationWorkspaceDraft> = emptyMap(),
-        owners: List<String> = emptyList(),
     ): Fixture {
         val persistence = MemoryDraftPersistence(initial)
         val repository = repository()
@@ -767,7 +838,6 @@ class ConversationComposerControllerTest {
                 processor = processor,
                 persistence = persistence,
                 repository = repository,
-                owners = owners,
             ),
             persistence = persistence,
             repository = repository,
@@ -778,35 +848,22 @@ class ConversationComposerControllerTest {
         processor: AttachmentImportProcessor,
         persistence: MemoryDraftPersistence,
         repository: ConversationRepository,
-        owners: List<String>? = null,
     ): ConversationComposerController {
         val drafts = ComposerDraftController(
             persistence = persistence,
             conversations = repository,
         )
-        return if (owners == null) {
-            ConversationComposerController(
-                scope = backgroundScope,
-                drafts = drafts,
-                processor = processor,
-                conversations = repository,
-            )
-        } else {
-            ConversationComposerController(
-                scope = backgroundScope,
-                drafts = drafts,
-                processor = processor,
-                conversations = repository,
-                listRestorableOwners = { owners },
-                hasNewChatDraft = { false },
-            )
-        }
+        return ConversationComposerController(
+            scope = backgroundScope,
+            drafts = drafts,
+            processor = processor,
+        )
     }
 
     private fun repository(): ConversationRepository =
         mockk(relaxed = true)
 
-    private fun Fixture.state(ownerId: String, attachmentId: String): SelectedAttachment =
+    private suspend fun Fixture.state(ownerId: String, attachmentId: String): SelectedAttachment =
         controller.state(ownerId).value.attachments.single { it.localId == attachmentId }
 
     private fun ConversationComposerSnapshot.single(): SelectedAttachment = attachments.single()
@@ -850,11 +907,16 @@ class ConversationComposerControllerTest {
         initial: Map<String, ConversationWorkspaceDraft>,
     ) : ComposerDraftPersistence {
         private val drafts = ConcurrentHashMap(initial)
+        private val loads = ConcurrentHashMap<String, AtomicInteger>()
         private val updates = mutableListOf<Pair<String, ConversationWorkspaceDraft>>()
+        var failLoads = false
         var failWrites = false
 
-        override suspend fun loadDraft(ownerId: String): ConversationWorkspaceDraft =
-            drafts[ownerId] ?: ConversationWorkspaceDraft("", null)
+        override suspend fun loadDraft(ownerId: String): ConversationWorkspaceDraft {
+            loads.computeIfAbsent(ownerId) { AtomicInteger() }.incrementAndGet()
+            if (failLoads) throw IllegalStateException("draft read failed")
+            return drafts[ownerId] ?: ConversationWorkspaceDraft("", null)
+        }
 
         override suspend fun updateDraft(
             ownerId: String,
@@ -877,6 +939,12 @@ class ConversationComposerControllerTest {
             ?: emptyList()
 
         fun text(ownerId: String): String = drafts[ownerId]?.text.orEmpty()
+
+        fun loadCount(ownerId: String): Int = loads[ownerId]?.get() ?: 0
+
+        fun setDraft(ownerId: String, draft: ConversationWorkspaceDraft) {
+            drafts[ownerId] = draft
+        }
 
         fun attachment(ownerId: String): SelectedAttachment = attachments(ownerId).single()
 

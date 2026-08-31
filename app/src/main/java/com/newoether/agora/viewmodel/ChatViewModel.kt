@@ -112,7 +112,6 @@ class ChatViewModel(
         scope = viewModelScope,
         drafts = composerDrafts,
         processor = AttachmentImportProcessor(application),
-        conversations = conversationRepository,
         sandboxHomeDir = {
             sandboxFactory?.takeIf { it.isAvailable() }?.let {
                 File(application.filesDir, "sandbox-home")
@@ -775,7 +774,6 @@ class ChatViewModel(
 
     init {
         startInitJobs()
-        conversationComposer.start()
         unreadGenerationAcknowledger.start()
         conversationUi.start()
 

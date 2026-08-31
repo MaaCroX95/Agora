@@ -36,75 +36,81 @@ internal fun ComposerDraftLifecycleEffect(
             throw cancelled
         } catch (failure: Exception) {
             DebugLog.e("AgoraUI", "Failed to load composer draft for $ownerId", failure)
-            controller.state(ownerId).value
+            return@LaunchedEffect
         } finally {
             viewModel.loadingDraft = false
         }
-        if (!loaded.loaded) return@LaunchedEffect
-        if (textFieldState.text.toString() != loaded.text) {
-            textFieldState.edit { replace(0, length, loaded.text) }
-        }
-
-        var projectedTextVersion = loaded.textProjectionVersion
-        var dirtyText: String? = null
-
-        suspend fun projectAuthoritativeText() {
-            val current = controller.state(ownerId).value
-            if (current.textProjectionVersion != projectedTextVersion) {
-                projectedTextVersion = current.textProjectionVersion
-                dirtyText = null
-                if (textFieldState.text.toString() != current.text) {
-                    textFieldState.edit { replace(0, length, current.text) }
-                }
-            }
-        }
-
-        suspend fun persistIfCurrent(text: String): Boolean {
-            var failureCount = 0
-            while (controller.state(ownerId).value.text == text) {
-                if (controller.persistText(ownerId, text)) return true
-                if (controller.state(ownerId).value.text != text) return true
-                if (failureCount >= DRAFT_PERSIST_RETRY_COUNT) return false
-                failureCount += 1
-                delay(DRAFT_PERSIST_RETRY_DELAY_MS * failureCount)
-            }
-            return true
-        }
-
         try {
-            coroutineScope {
-                launch {
-                    controller.state(ownerId)
-                        .map { it.textProjectionVersion }
-                        .distinctUntilChanged()
-                        .collect { textProjectionVersion ->
-                            if (textProjectionVersion != projectedTextVersion) {
-                                projectAuthoritativeText()
+            if (!loaded.loaded) return@LaunchedEffect
+            if (textFieldState.text.toString() != loaded.text) {
+                textFieldState.edit { replace(0, length, loaded.text) }
+            }
+
+            var projectedTextVersion = loaded.textProjectionVersion
+            var dirtyText: String? = null
+
+            suspend fun projectAuthoritativeText() {
+                val current = controller.state(ownerId).value
+                if (current.textProjectionVersion != projectedTextVersion) {
+                    projectedTextVersion = current.textProjectionVersion
+                    dirtyText = null
+                    if (textFieldState.text.toString() != current.text) {
+                        textFieldState.edit { replace(0, length, current.text) }
+                    }
+                }
+            }
+
+            suspend fun persistIfCurrent(text: String): Boolean {
+                var failureCount = 0
+                while (controller.state(ownerId).value.text == text) {
+                    if (controller.persistText(ownerId, text)) return true
+                    if (controller.state(ownerId).value.text != text) return true
+                    if (failureCount >= DRAFT_PERSIST_RETRY_COUNT) return false
+                    failureCount += 1
+                    delay(DRAFT_PERSIST_RETRY_DELAY_MS * failureCount)
+                }
+                return true
+            }
+
+            try {
+                coroutineScope {
+                    launch {
+                        controller.state(ownerId)
+                            .map { it.textProjectionVersion }
+                            .distinctUntilChanged()
+                            .collect { textProjectionVersion ->
+                                if (textProjectionVersion != projectedTextVersion) {
+                                    projectAuthoritativeText()
+                                }
                             }
+                    }
+                    snapshotFlow { textFieldState.text.toString() }
+                        .distinctUntilChanged()
+                        .collectLatest { text ->
+                            if (
+                                controller.state(ownerId).value.textProjectionVersion !=
+                                    projectedTextVersion
+                            ) {
+                                projectAuthoritativeText()
+                                return@collectLatest
+                            }
+                            if (controller.state(ownerId).value.text == text) return@collectLatest
+                            dirtyText = text
+                            controller.updateText(ownerId, text)
+                            delay(DRAFT_TEXT_DEBOUNCE_MS)
+                            if (persistIfCurrent(text) && dirtyText == text) dirtyText = null
                         }
                 }
-                snapshotFlow { textFieldState.text.toString() }
-                    .distinctUntilChanged()
-                    .collectLatest { text ->
-                        if (
-                            controller.state(ownerId).value.textProjectionVersion !=
-                                projectedTextVersion
-                        ) {
-                            projectAuthoritativeText()
-                            return@collectLatest
-                        }
-                        if (controller.state(ownerId).value.text == text) return@collectLatest
-                        dirtyText = text
-                        controller.updateText(ownerId, text)
-                        delay(DRAFT_TEXT_DEBOUNCE_MS)
-                        if (persistIfCurrent(text) && dirtyText == text) dirtyText = null
+            } finally {
+                dirtyText?.let { text ->
+                    withContext(NonCancellable) {
+                        persistIfCurrent(text)
                     }
+                }
             }
         } finally {
-            dirtyText?.let { text ->
-                withContext(NonCancellable) {
-                    persistIfCurrent(text)
-                }
+            withContext(NonCancellable) {
+                controller.release(ownerId)
             }
         }
     }

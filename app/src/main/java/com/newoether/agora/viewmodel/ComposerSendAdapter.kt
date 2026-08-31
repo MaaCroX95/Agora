@@ -29,30 +29,37 @@ internal class ComposerSendAdapter(
         images: List<String> = emptyList(),
         attachments: List<SelectedAttachment> = emptyList(),
         onAccepted: suspend () -> Unit = {},
-        draftOwnerId: String? = null,
+        draftOwnerId: String,
     ): SendAcceptance? {
-        val submittedRuntimeIds = attachments.asSequence()
-            .filterNot { it.storage.reclaimWhenAbandoned }
-            .mapTo(hashSetOf(), SelectedAttachment::localId)
-        return send(text, images, attachments) { acceptance ->
-            // Acceptance transfers ownership before the composer clears. Direct inputs are
-            // Room-owned; queued guidance remains memory-owned until its later drain boundary.
-            val clearResult = withContext(NonCancellable) {
-                composers.clearAccepted(draftOwnerId ?: acceptance.conversationId)
-            }
-            // The durable draft may still contain the pre-submission pending copy. Stable localId
-            // prevents that stale snapshot from deleting a submitted runtime file.
-            val attachmentsToReclaim = clearResult.attachments.filterNot { attachment ->
-                attachment.localId in submittedRuntimeIds
-            }
-            withContext(mainDispatcher + NonCancellable) {
-                onAccepted()
-            }
-            if (attachmentsToReclaim.isNotEmpty() && acceptance.hasDurableAttachmentOwner()) {
-                // UI no longer waits on deletion. Repository cleanup rechecks durable references.
-                scope.launch(ioDispatcher) {
-                    drafts.reclaimAttachments(attachmentsToReclaim)
+        composers.load(draftOwnerId)
+        try {
+            val submittedRuntimeIds = attachments.asSequence()
+                .filterNot { it.storage.reclaimWhenAbandoned }
+                .mapTo(hashSetOf(), SelectedAttachment::localId)
+            return send(text, images, attachments) { acceptance ->
+                // Acceptance transfers ownership before the composer clears. Direct inputs are
+                // Room-owned; queued guidance remains memory-owned until its later drain boundary.
+                val clearResult = withContext(NonCancellable) {
+                    composers.clearAccepted(draftOwnerId)
                 }
+                // The durable draft may still contain the pre-submission pending copy. Stable localId
+                // prevents that stale snapshot from deleting a submitted runtime file.
+                val attachmentsToReclaim = clearResult.attachments.filterNot { attachment ->
+                    attachment.localId in submittedRuntimeIds
+                }
+                withContext(mainDispatcher + NonCancellable) {
+                    onAccepted()
+                }
+                if (attachmentsToReclaim.isNotEmpty() && acceptance.hasDurableAttachmentOwner()) {
+                    // UI no longer waits on deletion. Repository cleanup rechecks durable references.
+                    scope.launch(ioDispatcher) {
+                        drafts.reclaimAttachments(attachmentsToReclaim)
+                    }
+                }
+            }
+        } finally {
+            withContext(NonCancellable) {
+                composers.release(draftOwnerId)
             }
         }
     }

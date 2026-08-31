@@ -195,6 +195,14 @@ internal class ComposerDraftController(
         }
     }
 
+    /** Releases this owner's process-local cache without changing durable draft state. */
+    suspend fun evictCached(conversationId: String): Unit = withContext(Dispatchers.IO) {
+        persistenceMutex.withLock {
+            persistedDrafts.remove(conversationId)
+            Unit
+        }
+    }
+
     private suspend fun read(conversationId: String): PersistedComposerDraft {
         val priorRevision = persistedDrafts[conversationId]?.revision ?: 0L
         val draft = persistence.loadDraft(conversationId)

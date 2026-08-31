@@ -11,6 +11,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -20,11 +21,16 @@ class ComposerSendAdapterTest {
         val fixture = Fixture(this, acceptance = null)
         var acknowledged = false
 
-        val result = fixture.adapter.sendMessage("text", onAccepted = { acknowledged = true })
+        val result = fixture.adapter.sendMessage(
+            "text",
+            onAccepted = { acknowledged = true },
+            draftOwnerId = "conversation",
+        )
         runCurrent()
 
         assertNull(result)
         assertFalse(acknowledged)
+        assertEquals(listOf("load:conversation", "send:text::", "release:conversation"), fixture.events)
         coVerify(exactly = 0) { fixture.composers.clearAccepted(any()) }
         coVerify(exactly = 0) { fixture.drafts.reclaimAttachments(any()) }
     }
@@ -40,14 +46,23 @@ class ComposerSendAdapterTest {
             images = listOf("image"),
             attachments = listOf(attachment),
             onAccepted = { fixture.events += "ui" },
+            draftOwnerId = "draft-owner",
         )
         runCurrent()
 
         assertEquals(acceptance, result)
         assertEquals(
-            listOf("send:text:image:uri", "clear:accepted-conversation", "ui", "reclaim"),
+            listOf(
+                "load:draft-owner",
+                "send:text:image:uri",
+                "clear:draft-owner",
+                "ui",
+                "release:draft-owner",
+                "reclaim",
+            ),
             fixture.events,
         )
+        coVerify(exactly = 0) { fixture.composers.clearAccepted("accepted-conversation") }
         coVerify(exactly = 1) { fixture.drafts.reclaimAttachments(listOf(attachment)) }
     }
 
@@ -57,11 +72,24 @@ class ComposerSendAdapterTest {
         val acceptance = SendAcceptance.Queued("queued", "conversation")
         val fixture = Fixture(this, acceptance, listOf(attachment))
 
-        val result = fixture.adapter.sendMessage("text", onAccepted = { fixture.events += "ui" })
+        val result = fixture.adapter.sendMessage(
+            "text",
+            onAccepted = { fixture.events += "ui" },
+            draftOwnerId = "conversation",
+        )
         runCurrent()
 
         assertEquals(acceptance, result)
-        assertEquals(listOf("send:text::", "clear:conversation", "ui"), fixture.events)
+        assertEquals(
+            listOf(
+                "load:conversation",
+                "send:text::",
+                "clear:conversation",
+                "ui",
+                "release:conversation",
+            ),
+            fixture.events,
+        )
         coVerify(exactly = 0) { fixture.drafts.reclaimAttachments(any()) }
     }
 
@@ -77,7 +105,13 @@ class ComposerSendAdapterTest {
         runCurrent()
         assertEquals(acceptance, result)
         assertEquals(
-            listOf("send:text::", "clear:$NEW_CHAT_WORKSPACE_ID", "ui"),
+            listOf(
+                "load:$NEW_CHAT_WORKSPACE_ID",
+                "send:text::",
+                "clear:$NEW_CHAT_WORKSPACE_ID",
+                "ui",
+                "release:$NEW_CHAT_WORKSPACE_ID",
+            ),
             fixture.events,
         )
         coVerify(exactly = 0) { fixture.composers.clearAccepted("created-conversation") }
@@ -98,17 +132,51 @@ class ComposerSendAdapterTest {
             text = "inspect",
             attachments = listOf(submitted),
             onAccepted = { fixture.events += "ui" },
+            draftOwnerId = "conversation",
         )
         runCurrent()
 
-        assertEquals(listOf("send:inspect::uri", "clear:conversation", "ui"), fixture.events)
+        assertEquals(
+            listOf(
+                "load:conversation",
+                "send:inspect::uri",
+                "clear:conversation",
+                "ui",
+                "release:conversation",
+            ),
+            fixture.events,
+        )
         coVerify(exactly = 0) { fixture.drafts.reclaimAttachments(any()) }
+    }
+
+    @Test
+    fun sendFailureStillReleasesExactDraftOwner() = runTest {
+        val fixture = Fixture(
+            testScope = this,
+            acceptance = null,
+            sendFailure = IllegalStateException("send failed"),
+        )
+
+        val failure = runCatching {
+            fixture.adapter.sendMessage(
+                text = "text",
+                draftOwnerId = "conversation",
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertEquals(
+            listOf("load:conversation", "send:text::", "release:conversation"),
+            fixture.events,
+        )
+        coVerify(exactly = 0) { fixture.composers.clearAccepted(any()) }
     }
 
     private class Fixture(
         testScope: kotlinx.coroutines.test.TestScope,
         private val acceptance: SendAcceptance?,
         attachmentsToReclaim: List<SelectedAttachment> = emptyList(),
+        private val sendFailure: Throwable? = null,
     ) {
         val composers = mockk<ConversationComposerController>()
         val drafts = mockk<ComposerDraftController>()
@@ -117,6 +185,7 @@ class ComposerSendAdapterTest {
         val adapter = ComposerSendAdapter(
             send = { text, images, attachments, onAccepted ->
                 events += "send:$text:${images.joinToString()}:${attachments.joinToString { it.uri }}"
+                sendFailure?.let { throw it }
                 acceptance?.let { onAccepted(it) }
                 acceptance
             },
@@ -128,6 +197,14 @@ class ComposerSendAdapterTest {
         )
 
         init {
+            coEvery { composers.load(any()) } answers {
+                val ownerId = firstArg<String>()
+                events += "load:$ownerId"
+                ConversationComposerSnapshot(loaded = true)
+            }
+            coEvery { composers.release(any()) } answers {
+                events += "release:${firstArg<String>()}"
+            }
             coEvery { composers.clearAccepted(any()) } answers {
                 events += "clear:${firstArg<String>()}"
                 DraftClearResult(

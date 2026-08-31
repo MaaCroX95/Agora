@@ -655,18 +655,6 @@ class ConversationRepository(
     ): List<ConversationDraftAttachmentReference> =
         chatDao.getConversationDraftAttachmentReferencesPage(afterId, limit)
 
-    suspend fun getConversationDraftAttachmentOwnerIds(): List<String> = buildList {
-        var afterId: String? = null
-        do {
-            val page = getConversationDraftAttachmentReferencesPage(
-                afterId = afterId,
-                limit = ATTACHMENT_REFERENCE_PAGE_SIZE,
-            )
-            addAll(page.map(ConversationDraftAttachmentReference::id))
-            afterId = page.lastOrNull()?.id
-        } while (page.size == ATTACHMENT_REFERENCE_PAGE_SIZE)
-    }
-
     suspend fun getNewChatDraftAttachmentReference(): NewChatDraftAttachmentReference? =
         chatDao.getNewChatDraftAttachmentReference()
 

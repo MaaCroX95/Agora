@@ -57,6 +57,34 @@ class ComposerDraftControllerTest {
     }
 
     @Test
+    fun `cache eviction reloads durable state without writing or reclaiming`() = runTest {
+        val repository = mockk<ConversationRepository>()
+        coEvery { repository.getConversation(CONVERSATION_ID) } returnsMany listOf(
+            chat(text = "initial"),
+            chat(text = "external"),
+        )
+        coEvery { repository.updateDraft(any(), any(), any()) } returns Unit
+        coEvery { repository.deleteUnreferencedDraftAttachmentFiles(any()) } returns Unit
+        val controller = ComposerDraftController(repository)
+        val loaded = controller.load(CONVERSATION_ID)
+        val persisted = controller.persist(
+            conversationId = CONVERSATION_ID,
+            expectedRevision = loaded.revision,
+            text = "cached",
+            attachments = emptyList(),
+        )
+
+        controller.evictCached(CONVERSATION_ID)
+        val reloaded = controller.load(CONVERSATION_ID)
+
+        assertEquals(1L, persisted.revision)
+        assertEquals(LoadedComposerDraft("external", emptyList(), 0L), reloaded)
+        coVerify(exactly = 2) { repository.getConversation(CONVERSATION_ID) }
+        coVerify(exactly = 1) { repository.updateDraft(CONVERSATION_ID, "cached", null) }
+        coVerify(exactly = 0) { repository.deleteUnreferencedDraftAttachmentFiles(any()) }
+    }
+
+    @Test
     fun `private clipboard image ownership survives draft persistence and restore`() = runTest {
         val repository = mockk<ConversationRepository>()
         val privatePath = "/private/clipboard.img"
