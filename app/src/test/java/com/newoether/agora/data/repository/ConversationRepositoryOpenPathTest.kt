@@ -52,13 +52,14 @@ class ConversationRepositoryOpenPathTest {
     }
 
     @Test
-    fun `stuck-state repair does not materialize the complete conversation graph`() = runTest {
+    fun `exact runtime recovery stays inside the DAO transaction`() = runTest {
         val dao = mockk<ChatDao>(relaxed = true)
+        coEvery { dao.recoverConversationRuntime("conversation", 99L) } returns 2
         val repository = ConversationRepository(dao, database = null)
 
-        repository.fixStuckMessages("conversation")
+        repository.recoverConversationRuntime("conversation", 99L)
 
+        coVerify(exactly = 1) { dao.recoverConversationRuntime("conversation", 99L) }
         coVerify(exactly = 0) { dao.upsertMessage(any()) }
-        coVerify(exactly = 1) { dao.stopStuckMessagesForConversation("conversation") }
     }
 }

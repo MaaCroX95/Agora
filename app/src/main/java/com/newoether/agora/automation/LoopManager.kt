@@ -240,6 +240,7 @@ class LoopManager(
             return ExecutionResult.NotDue(snapshot.nextFireAt)
         }
 
+        conversationRepository.recoverConversationRuntime(conversationId)
         val conversation = conversationRepository.getConversation(conversationId)
         if (conversation == null) {
             stateMutex.withLock { taskRepository.deleteLoop(conversationId) }

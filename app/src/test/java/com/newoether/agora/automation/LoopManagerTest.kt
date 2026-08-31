@@ -6,6 +6,7 @@ import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.TaskRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
@@ -38,6 +39,7 @@ class LoopManagerTest {
         coEvery { taskRepository.deleteLoop(any()) } coAnswers {
             stored.value = null
         }
+        coEvery { conversationRepository.recoverConversationRuntime("conversation", any()) } returns 0
         coEvery { conversationRepository.getConversation("conversation") } returns
             ChatEntity(id = "conversation", title = "Conversation", modelId = "OpenAI:model")
     }
@@ -98,6 +100,32 @@ class LoopManagerTest {
         assertTrue(stored.value!!.active)
         assertEquals(now + LoopPolicy.MIN_INTERVAL_MS, stored.value!!.nextFireAt)
         assertEquals(3L, stored.value!!.revision)
+        coVerifyOrder {
+            conversationRepository.recoverConversationRuntime("conversation", any())
+            conversationRepository.getConversation("conversation")
+            engine.runOnceWithAutomationGuardsHeld(
+                "conversation", "Continue.", "OpenAI:model", null, true, any(), "loop",
+            )
+        }
+    }
+
+    @Test
+    fun exactRecoveryFailureStopsBeforeConversationLoadClaimOrGeneration() = runTest {
+        stored.value = loop(maxCycles = 2)
+        coEvery { conversationRepository.recoverConversationRuntime("conversation", any()) } throws
+            IllegalStateException("recovery failed")
+        val manager = manager()
+
+        val failure = runCatching {
+            manager.executeByConversationId("conversation")
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertEquals(0, stored.value!!.cycleCount)
+        coVerify(exactly = 0) { conversationRepository.getConversation(any()) }
+        coVerify(exactly = 0) {
+            engine.runOnceWithAutomationGuardsHeld(any(), any(), any(), any(), any(), any())
+        }
     }
 
     @Test

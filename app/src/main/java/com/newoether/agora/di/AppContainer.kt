@@ -214,6 +214,7 @@ class AppContainer(
             },
             refreshScheduling = { automationScheduler.refresh() },
             conversationExecutionCoordinator = conversationExecutionCoordinator,
+            automationExecutionGate = automationExecutionGate,
             titleExecutionConversation = taskExecutionEngine::updateTaskExecutionTitle,
         )
     }

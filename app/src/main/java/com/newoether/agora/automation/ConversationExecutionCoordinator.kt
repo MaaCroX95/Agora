@@ -62,6 +62,32 @@ class ConversationExecutionCoordinator {
         block: suspend () -> T,
     ): T = withPriorityLock(conversationId, automation = true, block = block)
 
+    /** Runs foreground admission only when no process owner already holds or awaits this id. */
+    suspend fun tryWithConversationLock(
+        conversationId: String,
+        block: suspend () -> Unit,
+    ): Boolean {
+        require(conversationId.isNotBlank()) { "conversationId must not be blank" }
+        val waiter = Waiter(automation = false)
+        val entry = synchronized(monitor) {
+            if (entries.containsKey(conversationId)) return@synchronized null
+            Entry().also { created ->
+                created.owner = waiter
+                created.references = 1
+                waiter.granted = true
+                entries[conversationId] = created
+            }
+        } ?: return false
+        val lease = Lease(conversationId, entry, waiter)
+        publishAcquired(lease)
+        return try {
+            block()
+            true
+        } finally {
+            release(lease, published = true)
+        }
+    }
+
     private suspend fun <T> withPriorityLock(
         conversationId: String,
         automation: Boolean,

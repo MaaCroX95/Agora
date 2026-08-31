@@ -525,37 +525,34 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         ) == 1
     }
 
-    @Query(
-        """
-        SELECT * FROM runs
-        WHERE activeSlot = 1 AND status IN ('ACTIVE', 'STOPPING')
-        ORDER BY conversationId, id
-        """
-    )
-    suspend fun getOrphanedLiveRuns(): List<RunEntity>
-
+    /**
+     * Recovers only [conversationId]. The caller must own or have proven the absence of this
+     * conversation's process execution lease, so a live Run here is necessarily process-orphaned.
+     */
     @Transaction
-    suspend fun recoverOrphanedRuns(at: Long): Int {
-        val orphanedRuns = getOrphanedLiveRuns()
-        if (orphanedRuns.isEmpty()) return 0
-        val messagesByRun = getMessagesForRuns(orphanedRuns.map { it.id })
-            .groupBy { it.runId }
-        orphanedRuns.forEach { run ->
+    suspend fun recoverConversationRuntime(
+        conversationId: String,
+        at: Long,
+    ): Int {
+        val conversation = getConversation(conversationId) ?: return 0
+        var changedRows = 0
+        val liveRun = getLiveRun(conversationId)
+        if (liveRun != null) {
             val snapshot = RunRecoverySnapshot(
-                conversationId = run.conversationId,
-                runId = run.id,
-                pass = run.currentPass,
-                status = run.status,
+                conversationId = conversationId,
+                runId = liveRun.id,
+                pass = liveRun.currentPass,
+                status = liveRun.status,
             )
             val requested = ConversationRuntimeReducer.reduce(
-                RunState.Idle(run.conversationId),
+                RunState.Idle(conversationId),
                 ConversationCommand.Recover(snapshot),
             )
             val recoveryEffect = requested.effects
                 .filterIsInstance<RunEffect.RecoverDurableRun>()
                 .single()
-            check(recoveryEffect.priorStatus == run.status)
-            messagesByRun[run.id].orEmpty().forEach { message ->
+            check(recoveryEffect.priorStatus == liveRun.status)
+            getMessagesForRuns(listOf(liveRun.id)).forEach { message ->
                 val recoveredStatus = RunRecoveryPolicy.recoverMessageStatus(
                     message.participant,
                     message.status,
@@ -564,7 +561,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
                     RunRecoveryPolicy.stopIncompleteToolsJson(raw) ?: raw
                 }
                 if (recoveredStatus != message.status || recoveredToolJson != message.toolCallJson) {
-                    updateMessageCheckpoint(
+                    changedRows += updateMessageCheckpoint(
                         MessageStreamCheckpoint(
                             id = message.id,
                             text = message.text,
@@ -599,10 +596,32 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
                 ),
             )
             check(durableSuccess && completed.accepted && completed.newState is RunState.Idle) {
-                "Run recovery transaction lost ownership for ${run.id}"
+                "Run recovery transaction lost ownership for ${liveRun.id}"
+            }
+            changedRows += 1
+        }
+
+        conversation.selectedRunBranchesJson?.let { raw ->
+            val decoded = runCatching {
+                Json.decodeFromString<Map<String, String>>(raw)
+                    .mapKeys { if (it.key == "null") null else it.key }
+            }.getOrNull()
+            if (decoded != null) {
+                val repaired = RunBranchSelectionIntegrity.retainValidEdges(
+                    selections = decoded,
+                    runs = getRunsForConversationSnapshot(conversationId),
+                )
+                if (repaired != decoded) {
+                    changedRows += compareAndSetRunBranchSelections(
+                        conversationId = conversationId,
+                        expected = raw,
+                        replacement = encodeSelectionMap(repaired),
+                    )
+                }
             }
         }
-        return orphanedRuns.size
+        changedRows += stopStuckMessagesForConversation(conversationId)
+        return changedRows
     }
 
     @Update(entity = MessageEntity::class)

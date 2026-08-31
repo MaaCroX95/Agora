@@ -41,6 +41,7 @@ class TaskManager(
     private val refreshScheduling: () -> Unit = {},
     private val conversationExecutionCoordinator: ConversationExecutionCoordinator =
         ConversationExecutionCoordinator(),
+    private val automationExecutionGate: AutomationExecutionGate = AutomationExecutionGate(),
     private val titleExecutionConversation: suspend (
         conversationId: String,
         response: String,
@@ -374,21 +375,49 @@ class TaskManager(
         requestedConversationId: String,
         foregroundServiceManagedExternally: Boolean,
         finishManualSchedule: Boolean,
-    ): ExecutionResult {
-        // Existing deterministic execution IDs are meaningful only after orphaned Runs have been
-        // terminalized. Otherwise recovery can misclassify a live-looking SENDING row and replay
-        // or delete the wrong occurrence.
-        conversationRepository.ensureRunRecovery()
-        var conversationId = requestedConversationId
-        val existing = conversationRepository.getConversation(conversationId)
-        if (existing != null) {
-            if (existing.taskId == task.id) {
-                val recovery = recoverExistingExecution(existing)
-                if (recovery != null) return recovery
-                conversationRepository.deleteConversation(conversationId)
-            } else {
-                conversationId = UUID.randomUUID().toString()
+    ): ExecutionResult = automationExecutionGate.withExecution {
+        val requestedResult = conversationExecutionCoordinator
+            .withAutomationConversationLock(requestedConversationId) {
+                conversationRepository.recoverConversationRuntime(requestedConversationId)
+                val existing = conversationRepository.getConversation(requestedConversationId)
+                if (existing != null && existing.taskId != task.id) {
+                    null
+                } else {
+                    executeConversationLocked(
+                        task = task,
+                        conversationId = requestedConversationId,
+                        existing = existing,
+                        foregroundServiceManagedExternally = foregroundServiceManagedExternally,
+                        finishManualSchedule = finishManualSchedule,
+                    )
+                }
             }
+        if (requestedResult != null) return@withExecution requestedResult
+
+        val conversationId = UUID.randomUUID().toString()
+        conversationExecutionCoordinator.withAutomationConversationLock(conversationId) {
+            conversationRepository.recoverConversationRuntime(conversationId)
+            executeConversationLocked(
+                task = task,
+                conversationId = conversationId,
+                existing = null,
+                foregroundServiceManagedExternally = foregroundServiceManagedExternally,
+                finishManualSchedule = finishManualSchedule,
+            )
+        }
+    }
+
+    private suspend fun executeConversationLocked(
+        task: TaskEntity,
+        conversationId: String,
+        existing: ChatEntity?,
+        foregroundServiceManagedExternally: Boolean,
+        finishManualSchedule: Boolean,
+    ): ExecutionResult {
+        if (existing != null) {
+            val recovery = recoverExistingExecution(existing)
+            if (recovery != null) return recovery
+            conversationRepository.deleteConversation(conversationId)
         }
 
         conversationRepository.upsertConversation(
@@ -401,7 +430,7 @@ class TaskManager(
             )
         )
 
-        val result = engine.runOnce(
+        val result = engine.runOnceWithAutomationGuardsHeld(
             conversationId = conversationId,
             userText = task.prompt,
             modelId = task.modelId,

@@ -364,6 +364,7 @@ class TaskExecutionEngine(
         requestKind: String = "task",
     ): Result = automationExecutionGate.withExecution {
         executionCoordinator.withAutomationConversationLock(conversationId) {
+            convRepo.recoverConversationRuntime(conversationId)
             runOnceLocked(
                 conversationId = conversationId,
                 userText = userText,
@@ -411,7 +412,6 @@ class TaskExecutionEngine(
         require(requestKind.isNotBlank())
         settings.awaitInitialLoad()
         providerRegistry.awaitInitialSync()
-        convRepo.ensureRunRecovery()
         if (!precondition()) return Result.Failure("Execution cancelled")
         val conversation = convRepo.getConversation(conversationId)
             ?: return Result.Failure("Conversation not found: $conversationId")

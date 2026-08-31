@@ -20,7 +20,6 @@ import com.newoether.agora.data.local.NewChatPersistEntity
 import com.newoether.agora.data.local.ProviderContextTopologySnapshot
 import com.newoether.agora.data.local.RunEntity
 import com.newoether.agora.data.local.RunGraphCommit
-import com.newoether.agora.data.local.RunBranchSelectionIntegrity
 import com.newoether.agora.data.local.ToolRoundCommit
 import com.newoether.agora.model.AttachmentMeta
 import com.newoether.agora.model.ChatMessage
@@ -33,15 +32,10 @@ import com.newoether.agora.model.RunStatus
 import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.model.citationRecords
 import com.newoether.agora.model.matchesCitationTitle
-import com.newoether.agora.util.DebugLog
 import com.newoether.agora.util.AttachmentFiles
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -92,33 +86,6 @@ class ConversationRepository(
     /** Non-null in production; null is an explicit DAO-isolated unit-test seam. */
     private val database: ChatDatabase?,
 ) {
-    private val runRecoveryMutex = Mutex()
-    @Volatile private var runRecoveryComplete = false
-
-    suspend fun ensureRunRecovery() {
-        if (runRecoveryComplete) return
-        runRecoveryMutex.withLock {
-            if (runRecoveryComplete) return
-            val retryDelaysMs = longArrayOf(40L, 120L, 500L, 2_000L, 5_000L)
-            var failureCount = 0
-            while (!runRecoveryComplete) {
-                try {
-                    chatDao.recoverOrphanedRuns(System.currentTimeMillis())
-                    runRecoveryComplete = true
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    failureCount += 1
-                    DebugLog.e(
-                        "ConversationRepository",
-                        "Run recovery attempt $failureCount failed; generation remains gated",
-                        e,
-                    )
-                    delay(retryDelaysMs[(failureCount - 1).coerceAtMost(retryDelaysMs.lastIndex)])
-                }
-            }
-        }
-    }
     // ── Conversations ─────────────────────────────────────────
 
     private fun ChatEntity.toConversation() = ChatConversation(
@@ -276,17 +243,14 @@ class ConversationRepository(
         conversationModelId: String,
         at: Long = System.currentTimeMillis(),
         touchConversationOnAdmission: Boolean,
-    ): RunGraphCommit {
-        ensureRunRecovery()
-        return chatDao.createRunWithMessages(
-            run,
-            messages,
-            messageSelectionUpdates,
-            conversationModelId,
-            at,
-            touchConversationOnAdmission,
-        )
-    }
+    ): RunGraphCommit = chatDao.createRunWithMessages(
+        run,
+        messages,
+        messageSelectionUpdates,
+        conversationModelId,
+        at,
+        touchConversationOnAdmission,
+    )
 
     suspend fun createConversationRunWithMessages(
         conversation: ChatEntity,
@@ -296,18 +260,15 @@ class ConversationRepository(
         conversationModelId: String,
         conversationSettingsJson: String?,
         at: Long = System.currentTimeMillis(),
-    ): RunGraphCommit {
-        ensureRunRecovery()
-        return chatDao.createConversationRunWithMessages(
-            conversation,
-            run,
-            messages,
-            messageSelectionUpdates,
-            conversationModelId,
-            conversationSettingsJson,
-            at,
-        )
-    }
+    ): RunGraphCommit = chatDao.createConversationRunWithMessages(
+        conversation,
+        run,
+        messages,
+        messageSelectionUpdates,
+        conversationModelId,
+        conversationSettingsJson,
+        at,
+    )
 
     suspend fun importRunGraph(runs: List<RunEntity>, messages: List<MessageEntity>) =
         chatDao.importRunGraph(runs, messages)
@@ -323,10 +284,17 @@ class ConversationRepository(
         messages: List<MessageEntity>,
         expectedPass: Int,
     ): ToolRoundCommit {
-        ensureRunRecovery()
         require(messages.isNotEmpty() && messages.all { it.runId.isNotBlank() })
         return chatDao.appendToolRoundToRun(messages, expectedPass)
     }
+
+    suspend fun recoverConversationRuntime(
+        conversationId: String,
+        at: Long = System.currentTimeMillis(),
+    ): Int = chatDao.recoverConversationRuntime(
+        conversationId = conversationId,
+        at = at,
+    )
 
     suspend fun getRun(runId: String): RunEntity? = chatDao.getRun(runId)
 
@@ -555,34 +523,6 @@ class ConversationRepository(
         }.getOrDefault(emptyMap())
     }
 
-    /**
-     * Removes impossible parent->child Run-selection edges left by the historical v17->v18 data
-     * repair. The compare-and-set protects a concurrent user branch selection, and the update does
-     * not touch conversation recency because selection metadata is derived from the Run tree.
-     */
-    suspend fun repairInvalidRunBranchSelections(): Int {
-        var repairedConversations = 0
-        chatDao.getAllConversationsList().forEach { conversation ->
-            val raw = conversation.selectedRunBranchesJson ?: return@forEach
-            val decoded = runCatching {
-                Json.decodeFromString<Map<String, String>>(raw)
-                    .mapKeys { if (it.key == "null") null else it.key }
-            }.getOrNull() ?: return@forEach
-            val repaired = RunBranchSelectionIntegrity.retainValidEdges(
-                selections = decoded,
-                runs = chatDao.getRunsForConversationSnapshot(conversation.id),
-            )
-            if (repaired == decoded) return@forEach
-            val replacement = Json.encodeToString(repaired.mapKeys { it.key ?: "null" })
-            repairedConversations += chatDao.compareAndSetRunBranchSelections(
-                conversationId = conversation.id,
-                expected = raw,
-                replacement = replacement,
-            )
-        }
-        return repairedConversations
-    }
-
     suspend fun selectRunBranch(
         conversationId: String,
         parentRunId: String?,
@@ -609,12 +549,6 @@ class ConversationRepository(
                 selectedRunBranchesJson = Json.encodeToString(runSelections.mapKeys { it.key ?: "null" }),
             ) == 1
         ) { "Conversation $conversationId disappeared during branch selection" }
-    }
-
-    // ── Stuck Message Fixer ───────────────────────────────────
-
-    suspend fun fixStuckMessages(conversationId: String) {
-        chatDao.stopStuckMessagesForConversation(conversationId)
     }
 
     // ── Embeddings ────────────────────────────────────────────

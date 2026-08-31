@@ -193,13 +193,10 @@ internal class ConversationUiStateAssembler(
     }
 
     private suspend fun collectConversation(id: String) = coroutineScope {
-        conversations.ensureRunRecovery()
-        val state = registry.getOrCreate(id)
-        val automationRunning =
-            id in executionCoordinator.activeAutomationConversationIds.value
-        if (!state.generating.value && !automationRunning) {
-            conversations.fixStuckMessages(id)
+        executionCoordinator.tryWithConversationLock(id) {
+            conversations.recoverConversationRuntime(id)
         }
+        val state = registry.getOrCreate(id)
 
         val conversation = conversations.getConversation(id)
         val restoredChildren = withContext(projectionDispatcher) {
