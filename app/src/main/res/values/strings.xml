@@ -607,7 +607,7 @@
     <string name="memory_create">Create</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">Fetching available models...</string>
+    <string name="models_syncing">Syncing...</string>
     <string name="snackbar_generating_title">Generating title...</string>
     <string name="snackbar_title_generated">Title generated.</string>
     <string name="snackbar_title_error">Error encountered when generating title.</string>
@@ -898,6 +898,7 @@
     <string name="import_api_keys_warning">This export contains credentials and secrets in plain text. Only proceed if you trust the source.</string>
     <string name="import_button">Import</string>
     <string name="importing_label">Importing…</string>
+    <string name="loading_label">Loading…</string>
     <string name="import_success">Import complete: %1$s</string>
     <string name="import_failed">Import failed: %1$s</string>
     <string name="import_invalid_file">Invalid .agora file. Please select a valid export.</string>

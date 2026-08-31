@@ -563,7 +563,7 @@
     <string name="memory_create">إنشاء</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">جارٍ جلب النماذج المتاحة...</string>
+    <string name="models_syncing">جارٍ المزامنة...</string>
     <string name="snackbar_generating_title">جارٍ توليد العنوان...</string>
     <string name="snackbar_title_generated">تم توليد العنوان.</string>
     <string name="snackbar_title_error">حدث خطأ أثناء توليد العنوان.</string>
@@ -843,6 +843,7 @@
     <string name="import_api_keys_warning">تحتوي هذه النسخة الاحتياطية على بيانات اعتماد وأسرار. سيتم استيرادها كنص عادي. تابع فقط إذا كنت تثق بالمصدر.</string>
     <string name="import_button">استيراد</string>
     <string name="importing_label">جارٍ الاستيراد…</string>
+    <string name="loading_label">جارٍ التحميل…</string>
     <string name="import_success">اكتمل الاستيراد: %1$s</string>
     <string name="import_failed">فشل الاستيراد: %1$s</string>
     <string name="import_invalid_file">ملف .agora غير صالح. يرجى اختيار تصدير صالح.</string>

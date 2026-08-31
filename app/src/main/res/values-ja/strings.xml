@@ -563,7 +563,7 @@
     <string name="memory_create">作成</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">利用可能なモデルを取得中...</string>
+    <string name="models_syncing">同期中...</string>
     <string name="snackbar_generating_title">タイトルを生成中...</string>
     <string name="snackbar_title_generated">タイトルを生成しました。</string>
     <string name="snackbar_title_error">タイトルの生成中にエラーが発生しました。</string>
@@ -843,6 +843,7 @@
     <string name="import_api_keys_warning">このバックアップには認証情報とシークレットが含まれています。これらは平文でインポートされます。送信元を信頼できる場合のみ続行してください。</string>
     <string name="import_button">インポート</string>
     <string name="importing_label">インポート中…</string>
+    <string name="loading_label">読み込み中…</string>
     <string name="import_success">インポートが完了しました: %1$s</string>
     <string name="import_failed">インポートに失敗しました: %1$s</string>
     <string name="import_invalid_file">無効な .agora ファイルです。有効なエクスポートを選択してください。</string>

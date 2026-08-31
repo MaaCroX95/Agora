@@ -71,6 +71,7 @@ fun SettingsProviderDetailPage(
     val localChatModels by viewModel.settings.localChatModels.collectAsState()
     val localModelIdleRetentionMinutes by
         viewModel.settings.localModelIdleRetentionMinutes.collectAsState()
+    val showDocFab by viewModel.settings.showDocumentationFab.collectAsState()
 
     var currentName by rememberSaveable(providerName) { mutableStateOf(providerName) }
 
@@ -182,7 +183,8 @@ fun SettingsProviderDetailPage(
                     }
                 }
             }
-        }
+        },
+        floatingActionButton = { if (showDocFab) DocumentationFab("provider.md") },
     ) {
             SettingsGroupColumn {
                 // Base URL (non-Local only)
@@ -512,6 +514,7 @@ fun SettingsProviderDetailPage(
                 }
             }
             }
+            if (showDocFab) Spacer(modifier = Modifier.height(80.dp))
     }
 
     // --- Dialogs ---

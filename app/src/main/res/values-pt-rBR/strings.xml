@@ -563,7 +563,7 @@
     <string name="memory_create">Criar</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">Buscando modelos disponíveis...</string>
+    <string name="models_syncing">Sincronizando...</string>
     <string name="snackbar_generating_title">Gerando título...</string>
     <string name="snackbar_title_generated">Título gerado.</string>
     <string name="snackbar_title_error">Erro ao gerar o título.</string>
@@ -843,6 +843,7 @@
     <string name="import_api_keys_warning">Este backup contém credenciais e segredos. Eles serão importados em texto simples. Continue apenas se confiar na origem.</string>
     <string name="import_button">Importar</string>
     <string name="importing_label">Importando…</string>
+    <string name="loading_label">Carregando…</string>
     <string name="import_success">Importação concluída: %1$s</string>
     <string name="import_failed">Falha na importação: %1$s</string>
     <string name="import_invalid_file">Arquivo .agora inválido. Selecione uma exportação válida.</string>

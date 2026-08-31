@@ -211,6 +211,24 @@ class SettingsResourceContractTest {
     }
 
     @Test
+    fun providerDocumentationEntryBelongsToTheDetailEditor() {
+        val providerList = readSettingsSource("SettingsProviderPage.kt")
+        val providerDetail = readSettingsSource("SettingsProviderDetailPage.kt")
+
+        assertFalse(providerList.contains("DocumentationFab(\"provider.md\")"))
+        assertFalse(providerList.contains("showDocumentationFab.collectAsState()"))
+        assertTrue(providerDetail.contains(
+            "val showDocFab by viewModel.settings.showDocumentationFab.collectAsState()",
+        ))
+        assertTrue(providerDetail.contains(
+            "floatingActionButton = { if (showDocFab) DocumentationFab(\"provider.md\") }",
+        ))
+        assertTrue(providerDetail.contains(
+            "if (showDocFab) Spacer(modifier = Modifier.height(80.dp))",
+        ))
+    }
+
+    @Test
     fun complexVectorTopologyIsPreserved() {
         val resourceDirectory = locateResourceDirectory()
         val drawableDirectory = File(resourceDirectory, "drawable")
@@ -339,6 +357,15 @@ class SettingsResourceContractTest {
             .apply { isNamespaceAware = true }
             .newDocumentBuilder()
             .parse(file)
+
+    private fun readSettingsSource(fileName: String): String {
+        val file = File(
+            locateResourceDirectory().parentFile,
+            "java/com/newoether/agora/ui/settings/$fileName",
+        )
+        assertTrue("Missing Settings source: ${file.path}", file.isFile)
+        return file.readText()
+    }
 
     private fun locateResourceDirectory(): File {
         var cursor: File? = File(System.getProperty("user.dir")).canonicalFile

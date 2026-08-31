@@ -67,7 +67,10 @@
     <string name="settings_automation_desc">작업, 루프 및 일정 정밀도</string>
     <string name="automation_ai_tools">작업 및 루프에 접근</string>
     <string name="automation_ai_tools_desc">모델이 작업을 만들고 관리하거나 대화 루프를 시작하고 중지하도록 허용합니다. 기본적으로 꺼져 있습니다.</string>
-    <string name="automation_scheduling">일정</string>
+    <string name="automation_background_execution">백그라운드 실행</string>
+    <string name="automation_battery_optimization">배터리 최적화</string>
+    <string name="automation_battery_optimization_ignored_desc">최적화되지 않음. Android에서 Agora를 배터리 최적화 없이 실행할 수 있습니다</string>
+    <string name="automation_battery_optimization_active_desc">최적화됨. Android에서 백그라운드 실행을 제한할 수 있습니다</string>
     <string name="automation_exact_execution">정확한 실행</string>
     <string name="automation_exact_execution_on_desc">작업과 루프에 정확한 알람을 사용합니다. Android에서 시스템 제한을 적용할 수 있습니다.</string>
     <string name="automation_exact_execution_off_desc">배터리를 절약하는 부정확한 알람을 사용합니다. 사용 설정하면 알람 및 리마인더 접근 권한을 요청합니다.</string>

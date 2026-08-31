@@ -557,7 +557,7 @@
     <string name="memory_create">Tạo</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">Đang lấy danh sách các mô hình khả dụng...</string>
+    <string name="models_syncing">Đang đồng bộ...</string>
     <string name="snackbar_generating_title">Đang tạo tiêu đề...</string>
     <string name="snackbar_title_generated">Đã tạo tiêu đề.</string>
     <string name="snackbar_title_error">Gặp lỗi khi tạo tiêu đề.</string>
@@ -845,6 +845,7 @@
     <string name="import_api_keys_warning">Bản sao lưu này chứa thông tin xác thực và bí mật. Chúng sẽ được nhập dưới dạng văn bản thuần. Chỉ tiếp tục nếu bạn tin tưởng nguồn.</string>
     <string name="import_button">Nhập</string>
     <string name="importing_label">Đang nhập…</string>
+    <string name="loading_label">Đang tải…</string>
     <string name="import_success">Nhập hoàn tất: %1$s</string>
     <string name="import_failed">Nhập thất bại: %1$s</string>
     <string name="import_invalid_file">Tệp .agora không hợp lệ. Vui lòng chọn bản xuất hợp lệ.</string>

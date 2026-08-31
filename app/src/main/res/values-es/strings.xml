@@ -563,7 +563,7 @@
     <string name="memory_create">Crear</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">Obteniendo modelos disponibles...</string>
+    <string name="models_syncing">Sincronizando...</string>
     <string name="snackbar_generating_title">Generando título...</string>
     <string name="snackbar_title_generated">Título generado.</string>
     <string name="snackbar_title_error">Error al generar el título.</string>
@@ -843,6 +843,7 @@
     <string name="import_api_keys_warning">Esta copia de seguridad contiene credenciales y secretos. Se importarán en texto plano. Continúa solo si confías en el origen.</string>
     <string name="import_button">Importar</string>
     <string name="importing_label">Importando…</string>
+    <string name="loading_label">Cargando…</string>
     <string name="import_success">Importación completada: %1$s</string>
     <string name="import_failed">Error al importar: %1$s</string>
     <string name="import_invalid_file">Archivo .agora no válido. Selecciona una exportación válida.</string>

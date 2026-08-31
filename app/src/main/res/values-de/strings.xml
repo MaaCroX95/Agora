@@ -563,7 +563,7 @@
     <string name="memory_create">Erstellen</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">Verfügbare Modelle werden abgerufen...</string>
+    <string name="models_syncing">Synchronisierung...</string>
     <string name="snackbar_generating_title">Titel wird generiert...</string>
     <string name="snackbar_title_generated">Titel generiert.</string>
     <string name="snackbar_title_error">Fehler bei der Titelgenerierung.</string>
@@ -843,6 +843,7 @@
     <string name="import_api_keys_warning">Diese Sicherung enthält Zugangsdaten und Geheimnisse. Sie werden im Klartext importiert. Fahre nur fort, wenn du der Quelle vertraust.</string>
     <string name="import_button">Importieren</string>
     <string name="importing_label">Importieren…</string>
+    <string name="loading_label">Wird geladen…</string>
     <string name="import_success">Import abgeschlossen: %1$s</string>
     <string name="import_failed">Import fehlgeschlagen: %1$s</string>
     <string name="import_invalid_file">Ungültige .agora-Datei. Bitte wähle einen gültigen Export.</string>

@@ -134,7 +134,10 @@
     <string name="settings_automation_desc">任务、会话循环与调度精度</string>
     <string name="automation_ai_tools">访问任务与循环</string>
     <string name="automation_ai_tools_desc">允许模型创建和管理任务，或启动、停止会话循环。默认关闭。</string>
-    <string name="automation_scheduling">调度</string>
+    <string name="automation_background_execution">后台运行</string>
+    <string name="automation_battery_optimization">电池优化</string>
+    <string name="automation_battery_optimization_ignored_desc">未优化；Android 允许 Agora 不受电池优化限制地运行</string>
+    <string name="automation_battery_optimization_active_desc">已优化；Android 可能限制后台运行</string>
     <string name="automation_exact_execution">精确执行</string>
     <string name="automation_exact_execution_on_desc">为任务和循环使用精确闹钟；Android 仍可能施加系统限制。</string>
     <string name="automation_exact_execution_off_desc">使用更省电的非精确闹钟；开启后需授予“闹钟和提醒”权限。</string>
@@ -568,7 +571,7 @@
     <string name="memory_create">创建</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">正在获取可用模型...</string>
+    <string name="models_syncing">正在同步...</string>
     <string name="snackbar_generating_title">正在生成标题...</string>
     <string name="snackbar_title_generated">标题已生成。</string>
     <string name="snackbar_title_error">生成标题时遇到错误。</string>
@@ -1012,6 +1015,7 @@
     <string name="import_unsupported_backup_version">不支持备份格式 v%1$d；当前应用最高支持 v%2$d。</string>
     <string name="import_button">导入</string>
     <string name="importing_label">导入中…</string>
+    <string name="loading_label">加载中…</string>
     <string name="import_success">导入完成: %1$s</string>
     <string name="import_failed">导入失败: %1$s</string>
     <string name="import_invalid_file">无效的 .agora 文件。请选择有效的导出文件。</string>

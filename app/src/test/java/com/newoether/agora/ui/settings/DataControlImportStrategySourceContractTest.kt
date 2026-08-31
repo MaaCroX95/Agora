@@ -93,6 +93,119 @@ class DataControlImportStrategySourceContractTest {
     }
 
     @Test
+    fun nativePreviewAndOperationsUseNonDismissibleCircularProgress() {
+        val page = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/settings/datacontrol/SettingsDataControlPage.kt",
+        ).readText().normalizeLines()
+        val dialog = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/settings/datacontrol/NativeDataProgressDialog.kt",
+        ).readText().normalizeLines()
+        val manager = sourceFile(
+            "app/src/main/java/com/newoether/agora/viewmodel/ImportExportManager.kt",
+        ).readText().normalizeLines()
+
+        assertTrue(
+            manager.contains(
+                "fun exportData(uri: Uri, categories: Set<DataExporter.ExportCategory>, " +
+                    "includeApiKeys: Boolean) {\n        _exportProgress.value = 0f\n" +
+                    "        scope.launch(Dispatchers.IO)",
+            ),
+        )
+        assertTrue(
+            manager.contains(
+                "fun importData(uri: Uri, decisions: Map<DataExporter.ExportCategory, " +
+                    "DataImporter.ImportStrategy>) {\n        _importProgress.value = 0f\n" +
+                    "        scope.launch(Dispatchers.IO)",
+            ),
+        )
+        assertTrue(manager.contains("val importPreviewLoading: StateFlow<Boolean>"))
+        val previewImport = manager.substringAfter("fun previewImport(uri: Uri)")
+            .substringBefore("fun clearImportState()")
+        assertTrue(
+            previewImport.startsWith(
+                " {\n        _importPreviewLoading.value = true\n" +
+                    "        clearImportState()\n" +
+                    "        scope.launch(Dispatchers.IO)",
+            ),
+        )
+        assertTrue(
+            previewImport.contains(
+                "finally {\n                _importPreviewLoading.value = false\n            }",
+            ),
+        )
+        assertFalse(previewImport.contains("_importProgress.value"))
+
+        assertTrue(
+            page.contains(
+                "val importPreviewLoading by viewModel.importExport.importPreviewLoading." +
+                    "collectAsState()",
+            ),
+        )
+        assertTrue(
+            page.contains(
+                "LaunchedEffect(importPreview, importPreviewLoading) {\n" +
+                    "        if (importPreview != null && !importPreviewLoading)",
+            ),
+        )
+        assertTrue(
+            page.contains(
+                "isNativeProgressVisible = importPreviewLoading || isExporting || isImporting",
+            ),
+        )
+        assertTrue(page.contains("importPreviewLoading -> R.string.loading_label"))
+        assertTrue(page.contains("isExporting -> R.string.exporting_label"))
+        assertTrue(page.contains("else -> R.string.importing_label"))
+        assertTrue(
+            page.contains(
+                "NativeDataProgressDialog(title = stringResource(nativeProgressTitle))",
+            ),
+        )
+
+        assertTrue(dialog.contains("dismissOnBackPress = false"))
+        assertTrue(dialog.contains("dismissOnClickOutside = false"))
+        assertTrue(dialog.contains("MotionAwareCircularProgressIndicator()"))
+        assertFalse(dialog.contains("LinearProgressIndicator"))
+
+        val thirdPartyProgress = page.substringAfter("if (isThirdPartyImporting)")
+            .substringBefore("// Export dialog")
+        assertTrue(thirdPartyProgress.contains("LinearProgressIndicator"))
+        assertTrue(thirdPartyProgress.contains("${'$'}{(progress * 100).toInt()}%"))
+        assertFalse(thirdPartyProgress.contains("exportProgress ?: importProgress"))
+    }
+
+    @Test
+    fun nativeLoadingTitleHasSupportedLocaleParity() {
+        val directories = listOf(
+            "values", "values-ar", "values-de", "values-es", "values-fr", "values-ja",
+            "values-ko", "values-pt-rBR", "values-ru", "values-vi", "values-zh",
+            "values-zh-rTW",
+        )
+
+        directories.forEach { directory ->
+            val strings = sourceFile("app/src/main/res/$directory/strings.xml").readText()
+            assertEquals(
+                "$directory must contain exactly one loading_label",
+                1,
+                Regex("""name="loading_label"""").findAll(strings).count(),
+            )
+        }
+
+        val defaults = sourceFile("app/src/main/res/values/strings.xml").readText()
+        assertTrue(defaults.contains("<string name=\"loading_label\">Loading…</string>"))
+    }
+
+    @Test
+    fun nativePreviewSeparatesCategoryBlocksWithoutChangingInternalGap() {
+        val page = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/settings/datacontrol/SettingsDataControlPage.kt",
+        ).readText().normalizeLines()
+
+        assertTrue(page.contains("Column(verticalArrangement = Arrangement.spacedBy(16.dp))"))
+        val strategyRow = page.substringAfter("private fun StrategyRow(")
+        assertTrue(strategyRow.contains("Spacer(Modifier.height(4.dp))"))
+    }
+
+    @Test
     fun unavailableResourcesUseDisabledLocalizedRenderingAndSuccessReporting() {
         val manager = sourceFile(
             "app/src/main/java/com/newoether/agora/viewmodel/ImportExportManager.kt",

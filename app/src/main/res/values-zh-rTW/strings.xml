@@ -466,7 +466,7 @@
     <string name="memory_create">建立</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">正在取得可用模型…</string>
+    <string name="models_syncing">正在同步…</string>
     <string name="snackbar_generating_title">正在生成標題…</string>
     <string name="snackbar_title_generated">標題已生成。</string>
     <string name="snackbar_title_error">生成標題時遇到錯誤。</string>
@@ -902,6 +902,7 @@
     <string name="import_unsupported_backup_version">不支援備份格式 v%1$d；目前應用程式最高支援 v%2$d。</string>
     <string name="import_button">匯入</string>
     <string name="importing_label">匯入中…</string>
+    <string name="loading_label">載入中…</string>
     <string name="import_success">匯入完成: %1$s</string>
     <string name="import_failed">匯入失敗: %1$s</string>
     <string name="import_invalid_file">無效的 .agora 檔案。請選擇有效的匯出檔案。</string>

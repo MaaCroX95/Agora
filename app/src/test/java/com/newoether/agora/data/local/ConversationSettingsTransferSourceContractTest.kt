@@ -49,8 +49,8 @@ class ConversationSettingsTransferSourceContractTest {
             "app/src/main/java/com/newoether/agora/data/DataImporter.kt",
         ).replace("\r\n", "\n")
         val conversations = dataImporter.substringAfter(
-            "val convDecision = decisions[DataExporter.ExportCategory.CONVERSATIONS]",
-        ).substringBefore("val memDecision = decisions[DataExporter.ExportCategory.MEMORIES]")
+            "if (convDecision != null && convDecision != ImportStrategy.SKIP) {",
+        ).substringBefore("if (memDecision != null && memDecision != ImportStrategy.SKIP) {")
         val finishPrevious = conversations.indexOf(
             "conversationSettingsTransfers.completePendingImport()",
         )

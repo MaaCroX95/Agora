@@ -48,6 +48,7 @@ fun SettingsDataControlPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     val promptCount by viewModel.dataControl.systemPromptCount.collectAsState()
     val exportProgress by viewModel.importExport.exportProgress.collectAsState()
     val importProgress by viewModel.importExport.importProgress.collectAsState()
+    val importPreviewLoading by viewModel.importExport.importPreviewLoading.collectAsState()
     val importManifest by viewModel.importExport.importManifest.collectAsState()
     val importPreview by viewModel.importExport.importPreview.collectAsState()
 
@@ -152,15 +153,21 @@ fun SettingsDataControlPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     }
 
     // Show import preview dialog when preview is loaded
-    LaunchedEffect(importPreview) {
-        if (importPreview != null) {
+    LaunchedEffect(importPreview, importPreviewLoading) {
+        if (importPreview != null && !importPreviewLoading) {
             showImportPreviewDialog = true
         }
     }
 
     val isClaudeImporting = claudeImportProgress != null
     val isGptImporting = gptImportProgress != null
-    val isProgressVisible = isExporting || isImporting || isClaudeImporting || isGptImporting
+    val isNativeProgressVisible = importPreviewLoading || isExporting || isImporting
+    val nativeProgressTitle = when {
+        importPreviewLoading -> R.string.loading_label
+        isExporting -> R.string.exporting_label
+        else -> R.string.importing_label
+    }
+    val isThirdPartyImporting = isClaudeImporting || isGptImporting
 
     val showDocFab by viewModel.settings.showDocumentationFab.collectAsState()
     Box(modifier = Modifier.fillMaxSize()) {
@@ -261,14 +268,17 @@ fun SettingsDataControlPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                 if (showDocFab) { Spacer(modifier = Modifier.height(80.dp)) }
         }
 
-        // Progress dialog
-        if (isProgressVisible) {
-            val progress = claudeImportProgress ?: gptImportProgress ?: exportProgress ?: importProgress ?: 0f
-            val label = if (isClaudeImporting) stringResource(R.string.claude_import_progress)
-                        else if (isGptImporting) stringResource(R.string.gpt_import_progress)
-                        else if (isExporting) stringResource(R.string.exporting_label)
-                        else stringResource(R.string.importing_label)
+        if (isNativeProgressVisible) {
+            NativeDataProgressDialog(title = stringResource(nativeProgressTitle))
+        }
 
+        if (isThirdPartyImporting) {
+            val progress = claudeImportProgress ?: gptImportProgress ?: 0f
+            val label = if (isClaudeImporting) {
+                stringResource(R.string.claude_import_progress)
+            } else {
+                stringResource(R.string.gpt_import_progress)
+            }
             AlertDialog(
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 onDismissRequest = { },
@@ -278,17 +288,17 @@ fun SettingsDataControlPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                         Spacer(Modifier.height(8.dp))
                         LinearProgressIndicator(
                             progress = { progress },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
                             "${(progress * 100).toInt()}%",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 },
-                confirmButton = { }
+                confirmButton = { },
             )
         }
     }
@@ -869,49 +879,49 @@ private fun ImportPreviewDialog(
                 }
                 Spacer(Modifier.height(24.dp))
 
-                if (preview.hasConversationGraph) {
-                    StrategyRow(
-                        stringResource(
-                            R.string.import_conversation_graph_counts,
-                            preview.conversationCount,
-                            preview.taskCount,
-                            preview.loopCount,
-                        ),
-                        convStrategy, { convStrategy = it })
-                    Spacer(Modifier.height(8.dp))
-                }
-                if (preview.memoryCount > 0) {
-                    StrategyRow(
-                        "${stringResource(R.string.export_category_memories)} (${preview.memoryCount})",
-                        memStrategy, { memStrategy = it })
-                    Spacer(Modifier.height(8.dp))
-                }
-                if (preview.systemPromptCount > 0) {
-                    StrategyRow(
-                        "${stringResource(R.string.export_category_system_prompts)} (${preview.systemPromptCount})",
-                        promptStrategy, { promptStrategy = it })
-                    Spacer(Modifier.height(8.dp))
-                }
-                if (preview.settingsPresent) {
-                    StrategyRow(
-                        stringResource(R.string.export_category_settings),
-                        settingsStrategy, { settingsStrategy = it })
-                    Spacer(Modifier.height(8.dp))
-                }
-                if (preview.apiKeysPresent) {
-                    StrategyRow(
-                        stringResource(R.string.export_category_api_keys),
-                        keysStrategy, { keysStrategy = it })
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Warning, null, modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.error)
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            stringResource(R.string.import_api_keys_warning),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    if (preview.hasConversationGraph) {
+                        StrategyRow(
+                            stringResource(
+                                R.string.import_conversation_graph_counts,
+                                preview.conversationCount,
+                                preview.taskCount,
+                                preview.loopCount,
+                            ),
+                            convStrategy, { convStrategy = it })
+                    }
+                    if (preview.memoryCount > 0) {
+                        StrategyRow(
+                            "${stringResource(R.string.export_category_memories)} (${preview.memoryCount})",
+                            memStrategy, { memStrategy = it })
+                    }
+                    if (preview.systemPromptCount > 0) {
+                        StrategyRow(
+                            "${stringResource(R.string.export_category_system_prompts)} (${preview.systemPromptCount})",
+                            promptStrategy, { promptStrategy = it })
+                    }
+                    if (preview.settingsPresent) {
+                        StrategyRow(
+                            stringResource(R.string.export_category_settings),
+                            settingsStrategy, { settingsStrategy = it })
+                    }
+                    if (preview.apiKeysPresent) {
+                        Column {
+                            StrategyRow(
+                                stringResource(R.string.export_category_api_keys),
+                                keysStrategy, { keysStrategy = it })
+                            Spacer(Modifier.height(8.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Warning, null, modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.error)
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    stringResource(R.string.import_api_keys_warning),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
                     }
                 }
             }

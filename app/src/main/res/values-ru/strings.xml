@@ -563,7 +563,7 @@
     <string name="memory_create">Создать</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">Получение доступных моделей...</string>
+    <string name="models_syncing">Синхронизация...</string>
     <string name="snackbar_generating_title">Генерация заголовка...</string>
     <string name="snackbar_title_generated">Заголовок сгенерирован.</string>
     <string name="snackbar_title_error">Ошибка при генерации заголовка.</string>
@@ -843,6 +843,7 @@
     <string name="import_api_keys_warning">Эта резервная копия содержит учетные данные и секреты. Они будут импортированы в открытом виде. Продолжайте, только если доверяете источнику.</string>
     <string name="import_button">Импорт</string>
     <string name="importing_label">Импорт…</string>
+    <string name="loading_label">Загрузка…</string>
     <string name="import_success">Импорт завершён: %1$s</string>
     <string name="import_failed">Не удалось импортировать: %1$s</string>
     <string name="import_invalid_file">Недопустимый файл .agora. Выберите корректный экспорт.</string>

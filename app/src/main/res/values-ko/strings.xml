@@ -563,7 +563,7 @@
     <string name="memory_create">만들기</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">사용 가능한 모델 가져오는 중...</string>
+    <string name="models_syncing">동기화 중...</string>
     <string name="snackbar_generating_title">제목 생성 중...</string>
     <string name="snackbar_title_generated">제목이 생성되었습니다.</string>
     <string name="snackbar_title_error">제목 생성 중 오류가 발생했습니다.</string>
@@ -843,6 +843,7 @@
     <string name="import_api_keys_warning">이 백업에는 자격 증명 및 비밀 정보가 포함되어 있습니다. 평문으로 가져오므로 출처를 신뢰하는 경우에만 계속하세요.</string>
     <string name="import_button">가져오기</string>
     <string name="importing_label">가져오는 중…</string>
+    <string name="loading_label">불러오는 중…</string>
     <string name="import_success">가져오기 완료: %1$s</string>
     <string name="import_failed">가져오기 실패: %1$s</string>
     <string name="import_invalid_file">잘못된 .agora 파일입니다. 유효한 내보내기를 선택하세요.</string>
