@@ -89,9 +89,16 @@ object PdfPageRenderer {
         context: Context,
         uri: Uri,
         maxPages: Int = 200,
-        onProgress: ((current: Int, total: Int) -> Unit)? = null,
+        onProgress: (suspend (current: Int, total: Int) -> Unit)? = null,
+    ): List<String> = renderAllPages(context, uri.toString(), maxPages, onProgress)
+
+    suspend fun renderAllPages(
+        context: Context,
+        source: String,
+        maxPages: Int = 200,
+        onProgress: (suspend (current: Int, total: Int) -> Unit)? = null,
     ): List<String> {
-        val descriptor = context.contentResolver.openFileDescriptor(uri, "r") ?: return emptyList()
+        val descriptor = openDescriptor(context, source) ?: return emptyList()
         val renderer = runCatching { PdfRenderer(descriptor) }
             .onFailure { runCatching { descriptor.close() } }.getOrThrow()
         val paths = mutableListOf<String>()

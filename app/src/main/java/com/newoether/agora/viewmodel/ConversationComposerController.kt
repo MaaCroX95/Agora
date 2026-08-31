@@ -20,6 +20,7 @@ import kotlinx.coroutines.yield
 internal data class ConversationComposerSnapshot(
     val text: String = "",
     val attachments: List<SelectedAttachment> = emptyList(),
+    val pdfPreviewProgress: Map<String, Pair<Int, Int>> = emptyMap(),
     val revision: Long = 0L,
     val textProjectionVersion: Long = 0L,
     val loaded: Boolean = false,
@@ -68,10 +69,7 @@ internal class ConversationComposerController(
             session.durable = loaded
             session.state.value = loaded
             loaded.attachments
-                .filter {
-                    it.importState == AttachmentImportState.PROCESSING &&
-                        it.isConfiguredForProcessing()
-                }
+                .filter { it.shouldStartProcessingJob() }
                 .forEach { attachment ->
                     val generation = nextGeneration(session, attachment.localId)
                     registerJobLocked(
@@ -241,6 +239,7 @@ internal class ConversationComposerController(
                         attachments = current.attachments.filterNot {
                             it.localId == attachmentId
                         },
+                        pdfPreviewProgress = current.pdfPreviewProgress - attachmentId,
                         revision = result.revision,
                     )
                     completeRemovalLocked(session, attachmentId)
@@ -262,9 +261,7 @@ internal class ConversationComposerController(
                 }
                 session.jobs.filterKeys(selected).values.toList() to
                     session.state.value.attachments.any { attachment ->
-                        selected(attachment.localId) &&
-                            attachment.importState == AttachmentImportState.PROCESSING &&
-                            attachment.isConfiguredForProcessing()
+                        selected(attachment.localId) && attachment.shouldStartProcessingJob()
                     }
             }
             if (jobs.isEmpty() && !processingRemains) return
@@ -291,12 +288,18 @@ internal class ConversationComposerController(
                     }
                     ?: return@withLock null
                 val configured = configure(current)
-                session.state.value = session.state.value.replaceAttachment(configured)
+                session.state.value = session.state.value
+                    .replaceAttachment(configured)
+                    .copy(
+                        pdfPreviewProgress = session.state.value.pdfPreviewProgress - attachmentId,
+                    )
                 if (attachmentId in session.transientAttachmentIds) {
                     configuredBeforeStagingCompleted = true
                     null
                 } else {
-                    configured to nextGeneration(session, attachmentId)
+                    val generation = nextGeneration(session, attachmentId)
+                    session.jobs.remove(attachmentId)?.cancel()
+                    configured to generation
                 }
             }
             if (configuredBeforeStagingCompleted) return@withContext true
@@ -327,8 +330,7 @@ internal class ConversationComposerController(
         session.state.value.attachments.firstOrNull { attachment ->
             attachment.localId == attachmentId &&
                 session.generations[attachmentId] == generation &&
-                attachment.importState == AttachmentImportState.PROCESSING &&
-                attachment.isConfiguredForProcessing()
+                attachment.shouldStartProcessingJob()
         }
     }
 
@@ -405,6 +407,10 @@ internal class ConversationComposerController(
         attachment: SelectedAttachment,
         generation: Long,
     ) {
+        if (attachment.shouldPreparePdfPreview()) {
+            runPdfPreview(ownerId, attachment, generation)
+            return
+        }
         when (val result = processor.process(attachment, sandboxHomeDir())) {
             is AttachmentImportProcessor.ProcessResult.Ready ->
                 persistReplacement(
@@ -416,6 +422,63 @@ internal class ConversationComposerController(
                 )
             is AttachmentImportProcessor.ProcessResult.Failure ->
                 persistFailure(ownerId, attachment.localId, generation)
+        }
+    }
+
+    private suspend fun runPdfPreview(
+        ownerId: String,
+        attachment: SelectedAttachment,
+        generation: Long,
+    ) {
+        updatePdfPreviewProgress(
+            ownerId = ownerId,
+            attachmentId = attachment.localId,
+            generation = generation,
+            current = 0,
+            total = attachment.pageCount ?: 0,
+        )
+        when (
+            val result = processor.preparePdfPreview(attachment) { current, total ->
+                updatePdfPreviewProgress(
+                    ownerId = ownerId,
+                    attachmentId = attachment.localId,
+                    generation = generation,
+                    current = current,
+                    total = total,
+                )
+            }
+        ) {
+            is AttachmentImportProcessor.ProcessResult.Ready ->
+                persistReplacement(
+                    ownerId = ownerId,
+                    attachmentId = attachment.localId,
+                    generation = generation,
+                    replacement = result.attachment,
+                    createdPaths = result.createdPaths,
+                )
+            is AttachmentImportProcessor.ProcessResult.Failure ->
+                persistFailure(ownerId, attachment.localId, generation)
+        }
+    }
+
+    private suspend fun updatePdfPreviewProgress(
+        ownerId: String,
+        attachmentId: String,
+        generation: Long,
+        current: Int,
+        total: Int,
+    ) {
+        val session = session(ownerId)
+        session.mutex.withLock {
+            if (session.generations[attachmentId] != generation) return@withLock
+            val attachment = session.state.value.attachments
+                .firstOrNull { it.localId == attachmentId }
+                ?.takeIf { it.shouldPreparePdfPreview() }
+                ?: return@withLock
+            session.state.value = session.state.value.copy(
+                pdfPreviewProgress = session.state.value.pdfPreviewProgress +
+                    (attachment.localId to (current to total)),
+            )
         }
     }
 
@@ -491,6 +554,7 @@ internal class ConversationComposerController(
                     )
                     session.transientAttachmentIds -= attachmentId
                     session.state.value = current.replaceAttachment(effectiveReplacement).copy(
+                        pdfPreviewProgress = current.pdfPreviewProgress - attachmentId,
                         revision = result.revision,
                     )
                     if (!wasDurable && obsoleteTransient != null) {
@@ -619,6 +683,16 @@ internal class ConversationComposerController(
         "video" -> frameCount != null && sliceIntervalMs != null
         else -> true
     }
+
+    private fun SelectedAttachment.shouldPreparePdfPreview(): Boolean =
+        type == "pdf" &&
+            importState == AttachmentImportState.PROCESSING &&
+            selectedPages == null &&
+            preRenderedPaths.isNullOrEmpty()
+
+    private fun SelectedAttachment.shouldStartProcessingJob(): Boolean =
+        importState == AttachmentImportState.PROCESSING &&
+            (isConfiguredForProcessing() || shouldPreparePdfPreview())
 
     private fun SelectedAttachment.withProcessingConfiguration(
         current: SelectedAttachment,

@@ -30,6 +30,13 @@ internal class AttachmentImportProcessor(
     },
     private val renderPdf: suspend (source: String, pages: Set<Int>?) -> List<String> =
         { source, pages -> PdfPageRenderer.renderAsImages(app, source, pages) },
+    private val renderAllPdfPages: suspend (
+        source: String,
+        maxPages: Int,
+        onProgress: (suspend (current: Int, total: Int) -> Unit)?,
+    ) -> List<String> = { source, maxPages, onProgress ->
+        PdfPageRenderer.renderAllPages(app, source, maxPages, onProgress)
+    },
     private val readText: (source: String, maxChars: Int) -> String? =
         { source, maxChars -> AttachmentSourceReader.readText(app, source, maxChars) },
     private val openSource: (source: String) -> InputStream? =
@@ -156,6 +163,55 @@ internal class AttachmentImportProcessor(
         } finally {
             partial.delete()
             if (directory.isDirectory && directory.list().isNullOrEmpty()) directory.delete()
+        }
+    }
+
+    suspend fun preparePdfPreview(
+        attachment: SelectedAttachment,
+        onProgress: (suspend (current: Int, total: Int) -> Unit)? = null,
+    ): ProcessResult = withContext(Dispatchers.IO) {
+        if (
+            attachment.type != "pdf" ||
+            attachment.importState != AttachmentImportState.PROCESSING ||
+            attachment.selectedPages != null
+        ) {
+            return@withContext ProcessResult.Failure(
+                IllegalArgumentException("PDF preview requires an unconfigured processing PDF"),
+            )
+        }
+        val stagedPath = attachment.localPath
+            ?: return@withContext ProcessResult.Failure(
+                IllegalStateException("Attachment has no private staged source"),
+            )
+        val pageCount = attachment.pageCount
+            ?.takeIf { it > 0 }
+            ?: return@withContext ProcessResult.Failure(
+                IllegalStateException("PDF page count is unavailable"),
+            )
+        if (!File(stagedPath).isFile) {
+            return@withContext ProcessResult.Failure(
+                IllegalStateException("Attachment staged source is unavailable"),
+            )
+        }
+
+        try {
+            val pages = renderAllPdfPages(stagedPath, pageCount, onProgress)
+            if (pages.size != pageCount) {
+                pages.forEach { File(it).delete() }
+                ProcessResult.Failure(IllegalStateException("PDF preview rendering failed"))
+            } else {
+                ProcessResult.Ready(
+                    attachment = attachment.copy(
+                        preRenderedPaths = pages,
+                        importState = AttachmentImportState.PROCESSING,
+                    ),
+                    createdPaths = pages,
+                )
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            ProcessResult.Failure(failure)
         }
     }
 

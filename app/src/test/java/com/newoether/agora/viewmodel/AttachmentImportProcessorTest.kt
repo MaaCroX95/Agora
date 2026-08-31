@@ -283,6 +283,89 @@ class AttachmentImportProcessorTest {
     }
 
     @Test
+    fun pdfPreviewUsesPrivateStageReportsProgressAndKeepsProcessing() = runTest {
+        val stagedPdf = temporaryFolder.newFile("preview.pdf")
+        val pages = listOf("preview-0", "preview-1", "preview-2")
+        val progress = mutableListOf<Pair<Int, Int>>()
+        var renderedSource: String? = null
+        var renderedLimit = 0
+        val processor = processor(
+            renderAllPdfPages = { source, maxPages, onProgress ->
+                renderedSource = source
+                renderedLimit = maxPages
+                pages.indices.forEach { index -> onProgress?.invoke(index + 1, pages.size) }
+                pages
+            },
+        )
+
+        val result = processor.preparePdfPreview(
+            attachment(
+                type = "pdf",
+                localPath = stagedPdf.absolutePath,
+            ).copy(
+                pageCount = pages.size,
+                importState = AttachmentImportState.PROCESSING,
+            ),
+        ) { current, total -> progress += current to total }
+            as AttachmentImportProcessor.ProcessResult.Ready
+
+        assertEquals(stagedPdf.absolutePath, renderedSource)
+        assertEquals(pages.size, renderedLimit)
+        assertEquals(listOf(1 to 3, 2 to 3, 3 to 3), progress)
+        assertEquals(AttachmentImportState.PROCESSING, result.attachment.importState)
+        assertNull(result.attachment.selectedPages)
+        assertEquals(pages, result.attachment.preRenderedPaths)
+        assertEquals(pages, result.createdPaths)
+    }
+
+    @Test
+    fun pdfPreviewRejectsNonProcessingAttachmentWithoutRendering() = runTest {
+        val stagedPdf = temporaryFolder.newFile("preview-ready.pdf")
+        var renderCalls = 0
+        val processor = processor(
+            renderAllPdfPages = { _, _, _ ->
+                renderCalls += 1
+                emptyList()
+            },
+        )
+
+        val result = processor.preparePdfPreview(
+            attachment(
+                type = "pdf",
+                localPath = stagedPdf.absolutePath,
+            ).copy(
+                pageCount = 1,
+                importState = AttachmentImportState.READY,
+            ),
+        )
+
+        assertTrue(result is AttachmentImportProcessor.ProcessResult.Failure)
+        assertEquals(0, renderCalls)
+    }
+
+    @Test
+    fun pdfPreviewRejectsPartialOutput() = runTest {
+        val stagedPdf = temporaryFolder.newFile("preview-partial.pdf")
+        val partialPage = temporaryFolder.newFile("preview-0.jpg")
+        val processor = processor(
+            renderAllPdfPages = { _, _, _ -> listOf(partialPage.absolutePath) },
+        )
+
+        val result = processor.preparePdfPreview(
+            attachment(
+                type = "pdf",
+                localPath = stagedPdf.absolutePath,
+            ).copy(
+                pageCount = 2,
+                importState = AttachmentImportState.PROCESSING,
+            ),
+        )
+
+        assertTrue(result is AttachmentImportProcessor.ProcessResult.Failure)
+        assertFalse(partialPage.exists())
+    }
+
+    @Test
     fun sandboxProcessingCopiesFromStageAndReportsPromotionPaths() = runTest {
         val staged = temporaryFolder.newFile("archive.bin").apply { writeBytes(byteArrayOf(4, 5)) }
         val sandboxHome = temporaryFolder.newFolder("sandbox-home")
@@ -311,6 +394,11 @@ class AttachmentImportProcessorTest {
         normalizeImage: suspend (String) -> String? = { null },
         extractVideoFrames: suspend (String, VideoSliceConfig) -> List<String> = { _, _ -> emptyList() },
         renderPdf: suspend (String, Set<Int>?) -> List<String> = { _, _ -> emptyList() },
+        renderAllPdfPages: suspend (
+            String,
+            Int,
+            (suspend (current: Int, total: Int) -> Unit)?,
+        ) -> List<String> = { _, _, _ -> emptyList() },
         readText: (String, Int) -> String? = { _, _ -> null },
         openSource: (String) -> InputStream? = { source -> File(source).inputStream() },
         readPdfPageCount: (String) -> Int = { 0 },
@@ -324,6 +412,7 @@ class AttachmentImportProcessorTest {
             normalizeImage = normalizeImage,
             extractVideoFrames = extractVideoFrames,
             renderPdf = renderPdf,
+            renderAllPdfPages = renderAllPdfPages,
             readText = readText,
             openSource = openSource,
             readPdfPageCount = readPdfPageCount,

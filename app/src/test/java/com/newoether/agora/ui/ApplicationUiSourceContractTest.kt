@@ -137,7 +137,7 @@ class ApplicationUiSourceContractTest {
         assertTrue(source.contains("eraseColor(Color.WHITE)"))
         assertEquals(
             2,
-            Regex("val bitmap = createPageBitmap\\(scaledWidth, scaledHeight\\)")
+            Regex("bitmap = createPageBitmap\\(width, height\\)")
                 .findAll(source)
                 .count(),
         )
@@ -152,9 +152,14 @@ class ApplicationUiSourceContractTest {
             2,
             Regex("Bitmap\\.CompressFormat\\.JPEG, 80").findAll(source).count(),
         )
-        assertTrue(source.contains("for (i in selectedPages.sorted())"))
-        assertTrue(source.contains("onProgress?.invoke(i + 1, effectiveTotal)"))
-        assertTrue(source.contains("paths.forEach { runCatching { File(it).delete() } }"))
+        assertTrue(source.contains("for (index in selectedPages.sorted())"))
+        assertTrue(source.contains("onProgress?.invoke(index + 1, effectiveTotal)"))
+        assertEquals(4, Regex("paths\\.forEach \\{ File\\(it\\)\\.delete\\(\\) \\}")
+            .findAll(source).count())
+        assertTrue(source.contains(
+            "): List<String> = renderAllPages(context, uri.toString(), maxPages, onProgress)",
+        ))
+        assertTrue(source.contains("val descriptor = openDescriptor(context, source) ?: return emptyList()"))
     }
 
     @Test
