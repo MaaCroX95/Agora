@@ -206,7 +206,8 @@ class LocalProvider(
                                 LlamaGenerationStopReason.MAX_TOKENS ->
                                     GenerationError.OutputTruncated(name, "max_tokens")
                                 LlamaGenerationStopReason.CONTEXT_FULL -> GenerationError.LocalModel(
-                                    "Local context window was exhausted before generation completed."
+                                    message = "Local context window was exhausted before generation completed.",
+                                    code = LOCAL_CONTEXT_CAPACITY_ERROR_CODE,
                                 )
                                 LlamaGenerationStopReason.CANCELLED -> GenerationError.Cancelled
                             }
@@ -234,7 +235,18 @@ class LocalProvider(
             throw e
         } catch (e: Exception) {
             DebugLog.e(TAG, "Generation failed", e)
-            emit(StreamEvent.Error(GenerationError.LocalModel(formatGenerationError(e, modelConfig))))
+            emit(
+                StreamEvent.Error(
+                    GenerationError.LocalModel(
+                        message = formatGenerationError(e, modelConfig),
+                        code = if (e.message?.startsWith(CONTEXT_EXCEEDED_PREFIX) == true) {
+                            LOCAL_CONTEXT_CAPACITY_ERROR_CODE
+                        } else {
+                            null
+                        },
+                    )
+                )
+            )
             return@runChat
         }
 

@@ -85,6 +85,8 @@ data class MessageSegment(
     val responseOutputItems: List<JsonObject> = emptyList(),
     /** Provider identity that owns [responseOutputItems]; foreign transports must ignore them. */
     val responseOutputItemProvider: String? = null,
+    /** Stable semantic cause for terminal error segments. Null keeps old rows backward-compatible. */
+    val errorCode: String? = null,
     /** In-memory Provider delta boundaries for the active answer; never persisted to Room JSON. */
     @Transient
     val streamingTextDeltas: List<StreamingTextDelta> = emptyList(),

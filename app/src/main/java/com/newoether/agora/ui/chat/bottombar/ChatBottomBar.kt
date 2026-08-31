@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material3.*
@@ -127,6 +128,8 @@ fun ChatBottomBar(
     openAiServiceTier: String = "auto",
     webSearchEnabled: Boolean = false,
     shellEnabled: Boolean = false,
+    showLowContextMode: Boolean = false,
+    lowContextModeEnabled: Boolean = false,
     onCodeExecutionToggle: (Boolean) -> Unit = {},
     onGoogleSearchToggle: (Boolean) -> Unit = {},
     onOpenAiWebSearchToggle: (Boolean) -> Unit = {},
@@ -138,6 +141,7 @@ fun ChatBottomBar(
     onOpenAiServiceTierChange: (String) -> Unit = {},
     onWebSearchToggle: (Boolean) -> Unit = {},
     onShellToggle: (Boolean) -> Unit = {},
+    onLowContextModeToggle: (Boolean) -> Unit = {},
     onModelSelect: (String) -> Unit,
     onImageClick: (String) -> Unit = {},
     onAllMediaClick: ((urls: List<String>, index: Int) -> Unit)? = null,
@@ -419,6 +423,7 @@ fun ChatBottomBar(
                     com.newoether.agora.model.ModelId.parse(selectedModel).providerName,
                     customProviders,
                 )
+                val capabilityControlsEnabled = !lowContextModeEnabled
                 val displayText = when {
                     isModelValid -> modelDisplayName(selectedModel, modelAliases, customProviders)
                     enabledModels.isNotEmpty() -> stringResource(R.string.select_model)
@@ -625,6 +630,29 @@ fun ChatBottomBar(
                         matchTextFieldWidth = false,
                         shape = CHAT_DROPDOWN_MENU_SHAPE,
                     ) {
+                        if (showLowContextMode) {
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            Icons.Default.Memory,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp),
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(stringResource(R.string.low_context_mode))
+                                    }
+                                },
+                                trailingIcon = {
+                                    Switch(
+                                        checked = lowContextModeEnabled,
+                                        onCheckedChange = onLowContextModeToggle,
+                                        modifier = Modifier.scale(0.7f),
+                                    )
+                                },
+                                onClick = { onLowContextModeToggle(!lowContextModeEnabled) },
+                            )
+                        }
                         DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -673,9 +701,11 @@ fun ChatBottomBar(
                                     Switch(
                                         checked = codeExecutionEnabled,
                                         onCheckedChange = { onCodeExecutionToggle(it) },
+                                        enabled = capabilityControlsEnabled,
                                         modifier = Modifier.scale(0.7f)
                                     )
                                 },
+                                enabled = capabilityControlsEnabled,
                                 onClick = { onCodeExecutionToggle(!codeExecutionEnabled) }
                             )
                             DropdownMenuItem(
@@ -697,9 +727,11 @@ fun ChatBottomBar(
                                     Switch(
                                         checked = googleSearchEnabled,
                                         onCheckedChange = { onGoogleSearchToggle(it) },
+                                        enabled = capabilityControlsEnabled,
                                         modifier = Modifier.scale(0.7f)
                                     )
                                 },
+                                enabled = capabilityControlsEnabled,
                                 onClick = { onGoogleSearchToggle(!googleSearchEnabled) }
                             )
                         }
@@ -730,9 +762,11 @@ fun ChatBottomBar(
                                     Switch(
                                         checked = openAiServiceTierEnabled,
                                         onCheckedChange = onOpenAiServiceTierToggle,
+                                        enabled = capabilityControlsEnabled,
                                         modifier = Modifier.scale(0.7f),
                                     )
                                 },
+                                enabled = capabilityControlsEnabled,
                                 onClick = {
                                     activeMenu = null
                                     showOpenAiServiceTierSheet = true
@@ -743,6 +777,7 @@ fun ChatBottomBar(
                             NativeSearchMenuItem(
                                 checked = openAiWebSearchEnabled,
                                 provider = "OpenAI",
+                                enabled = capabilityControlsEnabled,
                                 onCheckedChange = onOpenAiWebSearchToggle,
                             )
                         }
@@ -759,9 +794,11 @@ fun ChatBottomBar(
                                     Switch(
                                         checked = webSearchEnabled,
                                         onCheckedChange = { onWebSearchToggle(it) },
+                                        enabled = capabilityControlsEnabled,
                                         modifier = Modifier.scale(0.7f)
                                     )
                                 },
+                                enabled = capabilityControlsEnabled,
                                 onClick = { onWebSearchToggle(!webSearchEnabled) }
                             )
                         }
@@ -778,9 +815,11 @@ fun ChatBottomBar(
                                     Switch(
                                         checked = shellEnabled,
                                         onCheckedChange = { onShellToggle(it) },
+                                        enabled = capabilityControlsEnabled,
                                         modifier = Modifier.scale(0.7f)
                                     )
                                 },
+                                enabled = capabilityControlsEnabled,
                                 onClick = { onShellToggle(!shellEnabled) }
                             )
                         }

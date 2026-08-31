@@ -49,6 +49,7 @@ import com.newoether.agora.TopLevelPresentation
 import com.newoether.agora.api.DebugProvider
 import com.newoether.agora.data.forDisplay
 import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
+import com.newoether.agora.util.Constants
 import com.newoether.agora.util.gradientBlur
 import com.newoether.agora.util.verticalBottomOverlayFade
 import com.newoether.agora.model.ContextBudget
@@ -156,6 +157,8 @@ fun ChatApp(
     val globalThinkingLevel by viewModel.settings.thinkingLevel.collectAsState()
     val globalThinkingBudgetEnabled by viewModel.settings.thinkingBudgetEnabled.collectAsState()
     val globalThinkingBudgetTokens by viewModel.settings.thinkingBudgetTokens.collectAsState()
+    val globalLocalLowContextModeEnabled by
+        viewModel.settings.localLowContextModeEnabled.collectAsState()
     val customProviders by viewModel.settings.customProviders.collectAsState()
     val displayConversations = remember(conversations, customProviders) { conversations.orEmpty().map { it.forDisplay(customProviders) } }
     val displayMessagesState = remember(messagesState, customProviders) { derivedStateOf { messagesState.value.map { it.forDisplay(customProviders) } } }
@@ -181,6 +184,9 @@ fun ChatApp(
     val thinkingBudgetEnabled = convOverride?.thinkingBudgetEnabled ?: globalThinkingBudgetEnabled
     val thinkingBudgetTokens = convOverride?.thinkingBudgetTokens ?: globalThinkingBudgetTokens
     val selectedProviderName = viewModel.getProviderForModel(selectedModel)
+    val isEmbeddedLocalModel = selectedProviderName == Constants.PROVIDER_LOCAL
+    val lowContextModeEnabled = isEmbeddedLocalModel &&
+        (convOverride?.lowContextModeEnabled ?: globalLocalLowContextModeEnabled)
     val openAiServiceTierState = openAiConversationServiceTierState(
         viewModel, convOverride, selectedProviderName, openAiResponsesApiEnabled, customProviders,
     )
@@ -192,7 +198,18 @@ fun ChatApp(
     val webSearchEnabled = globalWebSearch && (convOverride?.webSearchEnabled ?: true)
     val shellEnabled = globalShell && (convOverride?.shellEnabled ?: true)
     val contextWindow = ContextBudget.normalize(convOverride?.contextWindow ?: maxContextWindow)
-    val contextProjectionKey = rememberContextProjectionInvalidationKey(viewModel, listOf(codeExecutionEnabled, googleSearchEnabled, webSearchEnabled, shellEnabled, shellDevices, currentConversation?.systemPromptId))
+    val contextProjectionKey = rememberContextProjectionInvalidationKey(
+        viewModel,
+        listOf(
+            codeExecutionEnabled,
+            googleSearchEnabled,
+            webSearchEnabled,
+            shellEnabled,
+            shellDevices,
+            currentConversation?.systemPromptId,
+            lowContextModeEnabled,
+        ),
+    )
     val contextProjection by viewModel.conversationContextProjection.collectAsState()
     LaunchedEffect(currentConversationId, currentConversation?.selectedBranchesJson, selectedModel, contextWindow, allMessagesState.value, contextProjectionKey) {
         viewModel.requestConversationContext(currentConversationId, currentConversation?.selectedBranchesJson, selectedModel, contextWindow)
@@ -429,6 +446,7 @@ fun ChatApp(
                         conversationActionsEnabled =
                             !isNewChatMode && currentConversationId != null && !isLoading &&
                                 !shareSelectionActive,
+                        systemPromptEnabled = !lowContextModeEnabled,
                         onNavigateBack = onNavigateBack,
                         onOpenDrawer = {
                             if (drawerEnabled) {
@@ -933,6 +951,14 @@ fun ChatApp(
                         onWebSearchToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(settingsOwnerId) { it.copy(webSearchEnabled = enabled) } },
                         shellEnabled = shellEnabled,
                         onShellToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(settingsOwnerId) { it.copy(shellEnabled = enabled) } },
+                        showLowContextMode = isEmbeddedLocalModel,
+                        lowContextModeEnabled = lowContextModeEnabled,
+                        onLowContextModeToggle = { enabled ->
+                            haptics.toggle(enabled)
+                            viewModel.updateConversationSetting(settingsOwnerId) {
+                                it.copy(lowContextModeEnabled = enabled)
+                            }
+                        },
                         // The model row owns its selection tick. Repeating it here produced the
                         // previous double buzz for one physical tap.
                         onModelSelect = { viewModel.setActiveModel(it) },

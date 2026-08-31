@@ -67,6 +67,7 @@ internal fun ChatTopBar(
     searchMatchIndex: Int = -1,
     searchMatchCount: Int = 0,
     conversationActionsEnabled: Boolean = false,
+    systemPromptEnabled: Boolean = true,
     onNavigateBack: (() -> Unit)? = null,
     onOpenDrawer: () -> Unit,
     onSearchQueryChange: (String) -> Unit = {},
@@ -364,6 +365,7 @@ internal fun ChatTopBar(
                                     leadingIcon = {
                                         Icon(Icons.Default.Psychology, contentDescription = null)
                                     },
+                                    enabled = systemPromptEnabled,
                                     onClick = {
                                         moreMenuOpen = false
                                         onSystemPromptClick()

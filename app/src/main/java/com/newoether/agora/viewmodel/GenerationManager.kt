@@ -3,6 +3,7 @@ package com.newoether.agora.viewmodel
 import android.app.Application
 import com.newoether.agora.util.DebugLog
 import com.newoether.agora.api.LlmProvider
+import com.newoether.agora.api.GenerationError
 import com.newoether.agora.api.ProviderConfig
 import com.newoether.agora.api.StreamEvent
 import com.newoether.agora.api.resolveRequest
@@ -198,6 +199,7 @@ class GenerationManager(
         val thoughtTiming = GenerationThoughtTiming()
         var currentStatus = MessageStatus.SENDING
         var generationErrorMessage: String? = null
+        var generationErrorCode: String? = null
         var retryText: String? = null
         val toolOverlay = GenerationToolOverlay(toolExecutor, config.providerName)
         val generatedImages = mutableListOf<String>()
@@ -342,6 +344,7 @@ class GenerationManager(
                     currentThoughtSignatureProvider,
                     thoughtTiming.liveDurationMs(),
                     generationErrorMessage,
+                    generationErrorCode,
                     answerDeltas = currentAnswerDeltas,
                 ),
                 retryText = retryText,
@@ -548,6 +551,7 @@ class GenerationManager(
                         toolOverlay.failIncompleteStreams(completedToolCalls.keys)
                         currentStatus = MessageStatus.ERROR
                         generationErrorMessage = localizedGenerationError(context, event.error)
+                        generationErrorCode = (event.error as? GenerationError.LocalModel)?.code
                     }
                     is StreamEvent.HostedToolCallUpdate -> {
                         if (!toolOverlay.hasStream(event.streamKey)) {
@@ -897,6 +901,7 @@ class GenerationManager(
                             thoughtSignatureProvider = currentThoughtSignatureProvider,
                             thoughtDurationMs = thoughtTiming.currentDurationMs.takeIf { it > 0L },
                             errorMessage = generationErrorMessage,
+                            errorCode = generationErrorCode,
                             runId = runId,
                             runSequence = modelRunSequence,
                             answerDeltas = currentAnswerDeltas.toList(),

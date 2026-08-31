@@ -52,6 +52,7 @@ fun Modifier.verticalScrollbar(
 internal fun NativeSearchMenuItem(
     checked: Boolean,
     provider: String,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     DropdownMenuItem(
@@ -73,9 +74,11 @@ internal fun NativeSearchMenuItem(
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
+                enabled = enabled,
                 modifier = Modifier.scale(0.7f),
             )
         },
+        enabled = enabled,
         onClick = { onCheckedChange(!checked) },
     )
 }

@@ -1,5 +1,7 @@
 package com.newoether.agora.api
 
+const val LOCAL_CONTEXT_CAPACITY_ERROR_CODE = "local_context_capacity"
+
 /**
  * Typed error hierarchy for LLM generation failures.
  *
@@ -77,7 +79,8 @@ sealed class GenerationError {
 
     /** On-device GGUF model error (file not found, failed to load, etc.). */
     data class LocalModel(
-        val message: String
+        val message: String,
+        val code: String? = null,
     ) : GenerationError()
 
     /** Missing or invalid configuration (no API key, no base URL, etc.). */
