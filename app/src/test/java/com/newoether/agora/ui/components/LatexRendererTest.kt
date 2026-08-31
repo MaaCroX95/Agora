@@ -1,6 +1,8 @@
 package com.newoether.agora.ui.components
 
+import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -166,6 +168,47 @@ class LatexRendererTest {
 
         assertEquals(listOf("y"), spans.filter { it.isLatex }.map { it.content })
         assertTrue(textContent.contains("`echo \$HOME and \$x\$"))
+    }
+
+    @Test
+    fun absoluteDelimiterIndicesPreserveRecoveryAndCodeProtection() {
+        val text = "prefix \$a \\\$ b\$ then \$x\$\n`code \$z\$` and \\[y + 1\\]"
+        val spans = parseLatexSpans(text, parseInlineDollarMath = true)
+        val textContent = spans.filterNot { it.isLatex }.joinToString("") { it.content }
+
+        assertEquals(listOf("a \\\$ b", "x", "y + 1"), spans.filter { it.isLatex }.map { it.content })
+        assertEquals(listOf(false, false, true), spans.filter { it.isLatex }.map { it.display })
+        assertTrue(textContent.contains("`code \$z\$`"))
+    }
+
+    @Test
+    fun markdownPreprocessingUsesIndexedSourceAccessWithoutFullSuffixSlices() {
+        val source = File(
+            locateMainSourceRoot(),
+            "com/newoether/agora/ui/components/LatexRenderer.kt",
+        ).readText()
+        val scanners = source
+            .substringAfter("fun String.escapeDollarForMarkdown()")
+            .substringBefore("// ── Rendering")
+
+        assertFalse(scanners.contains("substring(i)"))
+        assertFalse(Regex("""remaining\s*=\s*(src|text)\.substring\(i\)""").containsMatchIn(scanners))
+        assertTrue(scanners.contains("append(src, i, protected.endExclusive)"))
+        assertTrue(scanners.contains("buf.append(text, i, protected.endExclusive)"))
+        assertTrue(scanners.contains("text.startsWith(\"\$\$\", i)"))
+        assertTrue(scanners.contains("text.indexOf('$', startIndex = i + 1)"))
+    }
+
+    private fun locateMainSourceRoot(): File {
+        var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
+        repeat(8) {
+            listOf(
+                File(directory, "app/src/main/java"),
+                File(directory, "src/main/java"),
+            ).firstOrNull(File::isDirectory)?.let { return it }
+            directory = directory.parentFile ?: error("Reached filesystem root")
+        }
+        error("Unable to locate the main Java source directory")
     }
 
 }

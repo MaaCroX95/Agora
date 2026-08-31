@@ -77,7 +77,7 @@ class StreamingMarkdownMessageSourceContractTest {
     }
 
     @Test
-    fun `terminal citation projection keeps one Markdown subtree and anchors size handoff`() {
+    fun `terminal citation projection keeps one Markdown subtree and anchors immediate handoff`() {
         val root = locateMainSourceRoot()
         val assistant = source(root, "AssistantMessageContent.kt")
         val timeline = source(root, "MessageItemTimeline.kt")
@@ -93,18 +93,22 @@ class StreamingMarkdownMessageSourceContractTest {
         assertTrue(timeline.contains("presentedProjection, presentedIsStreaming"))
         assertTrue(
             handoff.contains(
-                "LaunchedEffect(animationKey, isStreaming, projection, allowSpatialTransitions)",
+                "LaunchedEffect(animationKey, isStreaming, projection)",
             ),
         )
-        assertTrue(handoff.contains("currentLayoutMutationStarted(mutationKey)"))
-        assertTrue(handoff.contains("withFrameNanos { }"))
-        assertTrue(handoff.contains("animateContentSize("))
-        assertTrue(
-            handoff.contains(
-                "durationMillis = CITATION_TERMINAL_PROJECTION_SIZE_DURATION_MS",
-            ),
-        )
-        assertTrue(handoff.contains("currentLayoutMutationSettled(mutationKey)"))
+        val startIndex = handoff.indexOf("currentLayoutMutationStarted(mutationKey)")
+        val commitFrameIndex = handoff.indexOf("withFrameNanos { }", startIndex)
+        val commitIndex = handoff.indexOf("presentedProjection = projection", commitFrameIndex)
+        val settleIndex = handoff.indexOf("currentLayoutMutationSettled(mutationKey)", commitIndex)
+        assertTrue(startIndex >= 0)
+        assertTrue(commitFrameIndex > startIndex)
+        assertTrue(commitIndex > commitFrameIndex)
+        assertTrue(settleIndex > commitIndex)
+        assertTrue(handoff.contains("Box(modifier = modifier)"))
+        assertFalse(handoff.contains("animateContentSize("))
+        assertFalse(handoff.contains("CITATION_TERMINAL_PROJECTION_SIZE_DURATION_MS"))
+        assertFalse(handoff.contains("CITATION_TERMINAL_PROJECTION_SETTLE_FALLBACK_MS"))
+        assertFalse(handoff.contains("delay("))
         assertFalse(handoff.contains("AnimatedContent("))
         assertFalse(handoff.contains("Crossfade("))
         assertFalse(Regex("content\\(\\)\\s*return").containsMatchIn(inlineHost))

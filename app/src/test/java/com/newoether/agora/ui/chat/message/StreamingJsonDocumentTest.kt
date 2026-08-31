@@ -1,5 +1,6 @@
 package com.newoether.agora.ui.chat.message
 
+import com.newoether.agora.model.MessagePersistenceGuard
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -125,6 +126,49 @@ class StreamingJsonDocumentTest {
 
         assertEquals(StreamingJsonStatus.INVALID, document.status)
         assertEquals(11, document.errorOffset)
+    }
+
+    @Test
+    fun persistenceTruncationMarker_keepsNestedOpenStringStructured() {
+        val raw = """{"outer":{"message":"partial""" +
+            MessagePersistenceGuard.TRUNCATION_MARKER
+        val source = persistenceAwareJsonSource(raw)
+        val document = StreamingJsonParser.parse(source)
+        val root = document.root as StreamingJsonObject
+        val nested = root.entries.single().value as StreamingJsonObject
+        val value = nested.entries.single().value as StreamingJsonScalar
+
+        assertEquals("""{"outer":{"message":"partial""", source)
+        assertEquals(StreamingJsonStatus.INCOMPLETE, document.status)
+        assertEquals("partial", value.content)
+        assertFalse(value.complete)
+    }
+
+    @Test
+    fun persistenceTruncationMarker_keepsArrayAndNumberPrefixStructured() {
+        val raw = """{"values":[1,2.5e+""" +
+            MessagePersistenceGuard.TRUNCATION_MARKER
+        val document = StreamingJsonParser.parse(persistenceAwareJsonSource(raw))
+        val root = document.root as StreamingJsonObject
+        val values = root.entries.single().value as StreamingJsonArray
+        val number = values.values.last() as StreamingJsonScalar
+
+        assertEquals(StreamingJsonStatus.INCOMPLETE, document.status)
+        assertEquals(2, values.values.size)
+        assertEquals("2.5e+", number.content)
+        assertFalse(number.complete)
+    }
+
+    @Test
+    fun arbitraryTrailingText_isNotTreatedAsPersistenceTruncation() {
+        val raw = """{"ok":true}
+            trailing text""".trimIndent()
+
+        assertEquals(raw, persistenceAwareJsonSource(raw))
+        assertEquals(
+            StreamingJsonStatus.INVALID,
+            StreamingJsonParser.parse(persistenceAwareJsonSource(raw)).status,
+        )
     }
 
     @Test
