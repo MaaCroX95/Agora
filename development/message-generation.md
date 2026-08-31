@@ -1039,6 +1039,20 @@ resolve variables, restore omitted content, or append their own system text.
 This contract applies only to ordinary conversation generation. Dedicated internal generations,
 including Context Compact and title generation, continue to use their own explicitly configured
 special-purpose prompts and are outside this subsection.
+
+Embedded Local Low Context Mode is the sole ordinary-generation exception to the structured Prompt
+projection above. Its effective value is the nullable conversation/New Chat override when present,
+otherwise the device-local Local Provider default. It applies only when the admitted Provider is the
+embedded `Local` Provider; Ollama, custom Providers, and every remote Provider ignore the value.
+When effective, admission and context projection treat the current structured System Prompt as
+completely empty: they do not capture, compile, or resolve its template, predefined variables, Active
+Memory, Skill catalog, or User/Assistant prepend/postpend items. The frozen ordinary request has no
+system prompt, no prompt resolver, no ordinary tool definitions, and no Provider-native search or
+code-execution tool declaration. Fixed-cost/context estimation must use that exact empty-prompt,
+empty-tools request shape. The underlying settings and selected Prompt remain stored, so disabling
+the mode restores normal projection. Compact and other dedicated internal generations keep their
+own prompts and declared tool policy.
+
 ### 9.3 Canonical history and soft token window
 
 The shared Provider preparation order is deterministic:

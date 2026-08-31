@@ -60,7 +60,11 @@ class ConversationWorkspaceStoreTest {
     @Test
     fun queuedBarrierReturnsOneAuthoritativeWorkspaceSnapshot() = runTest {
         val fixture = Fixture(backgroundScope, StandardTestDispatcher(testScheduler))
-        val capturedSettings = ConversationSettings(temperature = 0.35f, maxTokens = 768)
+        val capturedSettings = ConversationSettings(
+            temperature = 0.35f,
+            maxTokens = 768,
+            lowContextModeEnabled = true,
+        )
         runCurrent()
 
         fixture.store.setModel(NEW_CHAT_WORKSPACE_ID, "provider:model")
@@ -77,7 +81,11 @@ class ConversationWorkspaceStoreTest {
     @Test
     fun queuedCrossFieldMutationsPreserveCompleteRow() = runTest {
         val fixture = Fixture(backgroundScope, StandardTestDispatcher(testScheduler))
-        val capturedSettings = ConversationSettings(temperature = 0.4f, maxTokens = 512)
+        val capturedSettings = ConversationSettings(
+            temperature = 0.4f,
+            maxTokens = 512,
+            lowContextModeEnabled = true,
+        )
         runCurrent()
 
         fixture.store.setModel(NEW_CHAT_WORKSPACE_ID, "provider:model")

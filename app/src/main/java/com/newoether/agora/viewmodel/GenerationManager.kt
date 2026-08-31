@@ -120,7 +120,8 @@ class GenerationManager(
         context: GenerationContext,
     ): Int = ContextTokenEstimator.estimateFixed(
         systemPrompt = config.effectiveSystemPrompt,
-        tools = toolExecutor.definitions(context),
+        tools = if (config.lowContextModeEnabled) emptyList()
+        else toolExecutor.definitions(context),
         initialUserPrompt = config.initialUserPrompt,
         codeExecutionEnabled = config.codeExecutionEnabled,
         googleSearchEnabled = config.googleSearchEnabled,
@@ -132,7 +133,8 @@ class GenerationManager(
         context: GenerationContext,
     ): Int {
         val resolver = config.requestResolver ?: return fixedContextTokenCost(config, context)
-        val definitions = toolExecutor.definitions(context)
+        val definitions = if (config.lowContextModeEnabled) emptyList()
+        else toolExecutor.definitions(context)
         val providerConfig = ProviderConfig(
             apiKey = config.apiKey,
             modelId = config.modelId,

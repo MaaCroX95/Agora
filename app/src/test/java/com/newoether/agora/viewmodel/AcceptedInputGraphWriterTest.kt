@@ -83,7 +83,11 @@ class AcceptedInputGraphWriterTest {
     @Test
     fun newConversation_startsAtTheRootWithoutReadingAStaleGraph() = runTest {
         val repository = mockk<ConversationRepository>()
-        val capturedSettings = ConversationSettings(temperature = 0.3f, maxTokens = 640)
+        val capturedSettings = ConversationSettings(
+            temperature = 0.3f,
+            maxTokens = 640,
+            lowContextModeEnabled = true,
+        )
         var insertedSettingsJson: String? = null
         coEvery {
             repository.createConversationRunWithMessages(

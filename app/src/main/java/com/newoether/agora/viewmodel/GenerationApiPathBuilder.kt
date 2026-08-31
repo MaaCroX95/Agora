@@ -45,7 +45,11 @@ internal class GenerationApiPathBuilder(
     suspend fun build(request: GenerationApiPathRequest): GenerationApiPath =
         withContext(Dispatchers.Default) {
             val config = request.config
-            val definitions = toolDefinitions.definitions(request.context)
+            val definitions = if (config.lowContextModeEnabled) {
+                emptyList()
+            } else {
+                toolDefinitions.definitions(request.context)
+            }
             val fixedTokenCost = if (config.requestResolver == null) {
                 ContextTokenEstimator.estimateFixed(
                     systemPrompt = config.effectiveSystemPrompt,

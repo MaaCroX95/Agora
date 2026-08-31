@@ -42,6 +42,8 @@ data class GenerationConfig(
     /** Frozen template structure with values resolved independently for every dispatch attempt. */
     val promptTemplate: GenerationPromptTemplate? = null,
     val requestResolver: ProviderRequestResolver? = null,
+    /** Omits the selected structured prompt and every tool definition for embedded Local requests. */
+    val lowContextModeEnabled: Boolean = false,
     val temperature: Float? = null,
     val maxTokens: Int? = null,
     val topP: Float? = null,

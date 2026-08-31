@@ -21,6 +21,7 @@ internal const val DEFAULT_CONTEXT_COMPACT_RETAIN_COUNT = 0
 internal const val DEFAULT_CONTEXT_COMPACT_THRESHOLD_PERCENT = 90
 internal val CONTEXT_COMPACT_THRESHOLD_PERCENT_RANGE = 50..100
 internal const val DEFAULT_LOCAL_MODEL_IDLE_RETENTION_MINUTES = 5
+internal const val DEFAULT_LOCAL_LOW_CONTEXT_MODE_ENABLED = false
 internal val LOCAL_MODEL_IDLE_RETENTION_PRESETS = intArrayOf(0, 1, 2, 5, 10, 15, 30)
 
 internal fun normalizeLocalModelIdleRetentionMinutes(value: Int?): Int =
@@ -190,6 +191,9 @@ class SettingsManager(private val context: Context) {
     val localChatModels: Flow<List<LocalChatModelConfig>> = modelPreferenceStore.localChatModels
     val localModelIdleRetentionMinutes: Flow<Int> = context.dataStore.data.map {
         normalizeLocalModelIdleRetentionMinutes(it[LOCAL_MODEL_IDLE_RETENTION_MINUTES])
+    }
+    val localLowContextModeEnabled: Flow<Boolean> = context.dataStore.data.map {
+        it[LOCAL_LOW_CONTEXT_MODE_ENABLED] ?: DEFAULT_LOCAL_LOW_CONTEXT_MODE_ENABLED
     }
     val customProviders: Flow<List<CustomProviderConfig>> = modelPreferenceStore.customProviders
 
@@ -637,6 +641,10 @@ class SettingsManager(private val context: Context) {
             it[LOCAL_MODEL_IDLE_RETENTION_MINUTES] =
                 normalizeLocalModelIdleRetentionMinutes(minutes)
         }
+    }
+
+    suspend fun saveLocalLowContextModeEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[LOCAL_LOW_CONTEXT_MODE_ENABLED] = enabled }
     }
 
     suspend fun saveCustomProviders(providers: List<CustomProviderConfig>) =

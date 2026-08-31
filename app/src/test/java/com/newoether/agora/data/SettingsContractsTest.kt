@@ -188,6 +188,14 @@ class SettingsContractsTest {
         assertFalse(ConversationSettings(shellEnabled = false).isAllNull())
     }
     @Test
+    fun lowContextModeDefaultsOffAndCountsAsConversationOverride() {
+        assertFalse(DEFAULT_LOCAL_LOW_CONTEXT_MODE_ENABLED)
+        assertEquals(null, ConversationSettings().lowContextModeEnabled)
+        assertFalse(ConversationSettings(lowContextModeEnabled = false).isAllNull())
+        assertFalse(ConversationSettings(lowContextModeEnabled = true).isAllNull())
+    }
+
+    @Test
     fun removedOpenAiGenericSearchProviderFallsBackToDuckDuckGo() {
         assertEquals("duckduckgo", normalizeWebSearchProvider(" OpenAI "))
         assertEquals("duckduckgo", normalizeWebSearchProvider(" unknown "))

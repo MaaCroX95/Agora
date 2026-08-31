@@ -9,6 +9,7 @@ import com.newoether.agora.data.DEFAULT_CONTEXT_COMPACT_ENABLED
 import com.newoether.agora.data.DEFAULT_CONTEXT_COMPACT_RETAIN_COUNT
 import com.newoether.agora.data.DEFAULT_CONTEXT_COMPACT_THRESHOLD_PERCENT
 import com.newoether.agora.data.DEFAULT_LOCAL_MODEL_IDLE_RETENTION_MINUTES
+import com.newoether.agora.data.DEFAULT_LOCAL_LOW_CONTEXT_MODE_ENABLED
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.CustomEndpointProtocol
 import com.newoether.agora.data.CustomEndpointResolution
@@ -242,6 +243,10 @@ class SettingsRepository(
     val localModelIdleRetentionMinutes: StateFlow<Int> = hot(
         settingsManager.localModelIdleRetentionMinutes,
         DEFAULT_LOCAL_MODEL_IDLE_RETENTION_MINUTES,
+    )
+    val localLowContextModeEnabled: StateFlow<Boolean> = hot(
+        settingsManager.localLowContextModeEnabled,
+        DEFAULT_LOCAL_LOW_CONTEXT_MODE_ENABLED,
     )
     val customProviders: StateFlow<List<CustomProviderConfig>> = hot(settingsManager.customProviders, emptyList())
     val lastModelsFetchFingerprint: StateFlow<String> = hot(settingsManager.lastModelsFetchFingerprint, "")
@@ -762,6 +767,9 @@ class SettingsRepository(
     suspend fun saveLocalChatModels(models: List<LocalChatModelConfig>) = settingsManager.saveLocalChatModels(models)
     fun setLocalModelIdleRetentionMinutes(minutes: Int) = scope.launch {
         settingsManager.saveLocalModelIdleRetentionMinutes(minutes)
+    }
+    fun setLocalLowContextModeEnabled(enabled: Boolean) = scope.launch {
+        settingsManager.saveLocalLowContextModeEnabled(enabled)
     }
     suspend fun saveEmbeddingModels(models: List<EmbeddingModelConfig>) = settingsManager.saveEmbeddingModels(models)
     suspend fun setActiveEmbeddingModelId(id: String) = settingsManager.setActiveEmbeddingModelId(id)

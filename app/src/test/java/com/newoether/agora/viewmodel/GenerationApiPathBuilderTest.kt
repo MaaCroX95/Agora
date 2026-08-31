@@ -1,5 +1,9 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.api.ToolDefinition
+import com.newoether.agora.api.ToolFunction
+import com.newoether.agora.api.ToolParameters
+import com.newoether.agora.api.ToolProperty
 import com.newoether.agora.api.util.convertToOpenAiMessages
 import com.newoether.agora.api.util.prepareMessages
 import com.newoether.agora.data.local.MessageEntity
@@ -25,7 +29,7 @@ class GenerationApiPathBuilderTest {
         val builder = GenerationApiPathBuilder(
             conversations = repository,
             generationErrorFormatter = { it },
-            toolDefinitions = { emptyList() },
+            toolDefinitions = { listOf(toolDefinition()) },
         )
         val compact = message("${Constants.COMPACT_MSG_PREFIX}boundary", parentId = "old", sequence = 1)
         val user = message("user", parentId = compact.id, sequence = 2, participant = Participant.USER)
@@ -44,10 +48,48 @@ class GenerationApiPathBuilderTest {
         assertEquals(listOf(compact.id, user.id, model.id), path.messages.map { it.id })
         assertEquals("model-id", path.providerConfig.modelId)
         assertEquals("system", path.providerConfig.systemPrompt)
-        assertTrue(path.providerConfig.tools.orEmpty().isEmpty())
+        assertEquals(listOf(toolDefinition()), path.providerConfig.tools)
         assertEquals(
             generationConfig().maxContextWindow -
-                ContextTokenEstimator.estimateFixed("system", emptyList()),
+                ContextTokenEstimator.estimateFixed("system", listOf(toolDefinition())),
+            path.providerConfig.maxContextWindow,
+        )
+    }
+
+    @Test
+    fun `low context mode omits system prompt tools and their fixed token cost`() = runTest {
+        val repository = mockk<ConversationRepository>(relaxed = true)
+        var definitionReads = 0
+        val builder = GenerationApiPathBuilder(
+            conversations = repository,
+            generationErrorFormatter = { it },
+            toolDefinitions = {
+                definitionReads++
+                error("Low Context Mode must not read tool definitions")
+            },
+        )
+        val user = message("user", null, 0, Participant.USER)
+        val config = generationConfig().copy(
+            effectiveSystemPrompt = null,
+            lowContextModeEnabled = true,
+        )
+
+        val path = builder.build(
+            GenerationApiPathRequest(
+                parentId = user.id,
+                conversationId = "conversation",
+                config = config,
+                context = GenerationContext(),
+                loadedMessages = listOf(user),
+            ),
+        )
+
+        assertEquals(0, definitionReads)
+        assertEquals(null, path.providerConfig.systemPrompt)
+        assertTrue(path.providerConfig.tools.orEmpty().isEmpty())
+        assertEquals(
+            config.maxContextWindow -
+                ContextTokenEstimator.estimateFixed(null, emptyList()),
             path.providerConfig.maxContextWindow,
         )
     }
@@ -338,6 +380,22 @@ class GenerationApiPathBuilderTest {
         googleSearchEnabled = false,
         thinkingEnabled = false,
         baseUrl = null,
+    )
+
+    private fun toolDefinition() = ToolDefinition(
+        function = ToolFunction(
+            name = "test_tool",
+            description = "Test tool",
+            parameters = ToolParameters(
+                properties = mapOf(
+                    "value" to ToolProperty(
+                        type = "string",
+                        description = "Test value",
+                    )
+                ),
+                required = listOf("value"),
+            ),
+        ),
     )
 
     private fun message(

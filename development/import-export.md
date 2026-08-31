@@ -106,6 +106,11 @@ Settings `REPLACE` import unless a separate selected category owns it:
   and imported model files.
 - `local_model_idle_retention_minutes` / Local model idle retention. It persists in this device's
   DataStore, defaults to five minutes, and is not exported, imported, or cleared by Replace.
+- `local_low_context_mode_enabled` / the Local Provider's Low Context Mode default. It persists in
+  this device's DataStore, defaults off, and is not exported, imported, or cleared by Replace.
+  Nullable conversation/New Chat overrides are separate conversation-scoped settings and therefore
+  travel only with their conversation; a null override continues to inherit the destination device's
+  current Local Provider default.
 - Sandbox enabled/shared-storage state, sandbox files, and pending/runtime Sandbox attachment state.
 - Developer Options, first-launch/onboarding/rating state, message counters, and other installation
   lifecycle metadata.

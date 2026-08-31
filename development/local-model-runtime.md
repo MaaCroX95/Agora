@@ -145,6 +145,14 @@ The default resource and every supported locale define the same localized key an
 The setting is device-local: it is excluded from portable Settings export/import and survives a
 Settings `REPLACE`, as specified by [import-export.md](import-export.md).
 
+`local_low_context_mode_enabled` is a separate device-local Boolean and defaults to `false`. It is
+exposed at Provider -> Local -> Advanced as the default for new and existing conversations that have
+no explicit override. A conversation or New Chat stores a nullable override: `null` inherits the
+current Provider default, while an explicit `true` or `false` continues to win if the default later
+changes. The request effect remains limited to ordinary embedded Local Chat as specified by
+[message-generation.md](message-generation.md); it does not change model residency, native context
+identity, Compact/title prompts, Ollama, or remote Providers.
+
 ## 7. Native streaming and telemetry
 
 Native text and multimodal decoding check cancellation after every decoded token. Complete UTF-8 is
