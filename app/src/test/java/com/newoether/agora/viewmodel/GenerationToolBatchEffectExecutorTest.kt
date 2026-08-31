@@ -227,7 +227,6 @@ class GenerationToolBatchEffectExecutorTest {
         assertEquals(4, publishedAt.size)
         assertEquals("done", outcome.calls.single().result)
         assertEquals(ToolExecutionStates.SUCCEEDED, outcome.segments.single().toolState)
-        assertTrue(outcome.generatedImages.isEmpty())
     }
 
     @Test
@@ -352,6 +351,14 @@ class GenerationToolBatchEffectExecutorTest {
         // (ToolCallData.transcription / segment.toolTranscription) and reaches the model via
         // the image-context row (ToolMessagesTest).
         assertEquals(listOf("done", "done"), outcome.calls.map { it.result })
+        assertEquals(
+            listOf("/private/a.png", "/private/b.png"),
+            outcome.calls.map { call -> call.resultImages.single().path },
+        )
+        assertEquals(
+            listOf("/private/a.png", "/private/b.png"),
+            outcome.segments.map { segment -> segment.toolImages.single().path },
+        )
         assertEquals(
             listOf(
                 "description of /private/a.png",

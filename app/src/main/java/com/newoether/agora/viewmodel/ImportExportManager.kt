@@ -135,6 +135,9 @@ class ImportExportManager(
     private val _importProgress = MutableStateFlow<Float?>(null)
     val importProgress: StateFlow<Float?> = _importProgress.asStateFlow()
 
+    private val _importPreviewLoading = MutableStateFlow(false)
+    val importPreviewLoading: StateFlow<Boolean> = _importPreviewLoading.asStateFlow()
+
     private val _importManifest = MutableStateFlow<DataImporter.ImportManifest?>(null)
     val importManifest: StateFlow<DataImporter.ImportManifest?> = _importManifest.asStateFlow()
 
@@ -162,6 +165,7 @@ class ImportExportManager(
     val gptImportResult: StateFlow<GptChatImporter.ImportResult?> = _gptImportResult.asStateFlow()
 
     fun exportData(uri: Uri, categories: Set<DataExporter.ExportCategory>, includeApiKeys: Boolean) {
+        _exportProgress.value = 0f
         scope.launch(Dispatchers.IO) {
             try {
                 val exporter = DataExporter(
@@ -198,6 +202,8 @@ class ImportExportManager(
     }
 
     fun previewImport(uri: Uri) {
+        _importPreviewLoading.value = true
+        clearImportState()
         scope.launch(Dispatchers.IO) {
             try {
                 val importer = DataImporter(
@@ -223,6 +229,8 @@ class ImportExportManager(
                 _importPreview.value = preview
             } catch (e: Exception) {
                 emitSnackbar(SnackbarEvent(app.getString(R.string.import_failed, e.localizedMessage ?: "")))
+            } finally {
+                _importPreviewLoading.value = false
             }
         }
     }
@@ -449,6 +457,7 @@ class ImportExportManager(
     }
 
     fun importData(uri: Uri, decisions: Map<DataExporter.ExportCategory, DataImporter.ImportStrategy>) {
+        _importProgress.value = 0f
         scope.launch(Dispatchers.IO) {
             try {
                 val importer = DataImporter(

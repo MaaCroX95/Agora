@@ -9,6 +9,7 @@ import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.StreamingTextDelta
 import com.newoether.agora.model.citationRecords
 import com.newoether.agora.model.toMessageSegment
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -335,5 +336,40 @@ class GenerationStreamingSegmentsTest {
             "Connection closed before a valid terminator",
             message.segments?.last()?.content,
         )
+    }
+
+    @Test
+    fun `generation answer accumulation uses one mutable buffer and immutable snapshots`() {
+        val source = File(
+            locateMainSourceRoot(),
+            "com/newoether/agora/viewmodel/GenerationManager.kt",
+        ).readText()
+
+        assertEquals(1, Regex("""val totalText = StringBuilder\(\)""").findAll(source).count())
+        assertTrue(
+            Regex("""totalText\.clear\(\)\s+totalText\.append\(snapshot\.text\)""")
+                .containsMatchIn(source),
+        )
+        assertTrue(source.contains("totalText.append(answerText)"))
+        assertFalse(source.contains("totalText += answerText"))
+        assertTrue(source.contains("text = totalText.toString(), thoughts ="))
+        assertTrue(source.contains("finalAnswer = totalText.toString()"))
+        assertTrue(
+            Regex("""text = totalText\.toString\(\),\s+images =""")
+                .containsMatchIn(source),
+        )
+        assertTrue(source.contains("val providerAnswerStart = totalText.length"))
+    }
+
+    private fun locateMainSourceRoot(): File {
+        var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
+        repeat(8) {
+            listOf(
+                File(directory, "app/src/main/java"),
+                File(directory, "src/main/java"),
+            ).firstOrNull(File::isDirectory)?.let { return it }
+            directory = directory.parentFile ?: error("Reached filesystem root")
+        }
+        error("Unable to locate the main Java source directory")
     }
 }

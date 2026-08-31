@@ -4,6 +4,9 @@ import com.newoether.agora.data.repository.ConversationRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
@@ -28,7 +31,7 @@ class ConversationLifecycleControllerTest {
     }
 
     @Test
-    fun visibleDeletionPreservesStopLockCleanupAndNewChatOrder() = runTest {
+    fun visibleDeletionPreservesStopLockCleanupAndSelectionSettlementOrder() = runTest {
         val fixture = Fixture(this)
         coEvery { fixture.conversations.deleteConversation("conversation") } answers {
             fixture.events += "delete"
@@ -39,7 +42,15 @@ class ConversationLifecycleControllerTest {
         runCurrent()
 
         assertEquals(
-            listOf("stop", "stop-loop", "lock-start", "delete", "lock-end", "remove", "new"),
+            listOf(
+                "stop",
+                "stop-loop",
+                "lock-start",
+                "delete",
+                "lock-end",
+                "remove",
+                "settle:conversation",
+            ),
             fixture.events,
         )
     }
@@ -56,11 +67,11 @@ class ConversationLifecycleControllerTest {
 
         assertEquals(listOf("stop-loop", "lock-start", "delete", "lock-end", "remove"), fixture.events)
         assertTrue("stop" !in fixture.events)
-        assertTrue("new" !in fixture.events)
+        assertTrue(fixture.events.none { it.startsWith("settle:") })
     }
 
     @Test
-    fun visibilityIsRecheckedAfterDurableDeletion() = runTest {
+    fun lifecycleSettlesTheOriginallySelectedDeletionAfterCleanup() = runTest {
         val fixture = Fixture(this)
         coEvery { fixture.conversations.deleteConversation("conversation") } answers {
             fixture.events += "delete"
@@ -71,12 +82,34 @@ class ConversationLifecycleControllerTest {
         runCurrent()
 
         assertTrue("stop" in fixture.events)
-        assertTrue("new" !in fixture.events)
+        assertEquals("settle:conversation", fixture.events.last())
+    }
+
+    @Test
+    fun failedDurableDeletionDoesNotCleanupOrSettleSelection() = runTest {
+        val failures = mutableListOf<Throwable>()
+        val controllerScope = CoroutineScope(
+            SupervisorJob() +
+                StandardTestDispatcher(testScheduler) +
+                CoroutineExceptionHandler { _, error -> failures += error },
+        )
+        val fixture = Fixture(this, controllerScope = controllerScope)
+        coEvery { fixture.conversations.deleteConversation("conversation") } throws
+            IllegalStateException("delete failed")
+
+        fixture.controller.delete("conversation")
+        runCurrent()
+
+        assertEquals(1, failures.size)
+        assertEquals("delete failed", failures.single().message)
+        assertTrue("remove" !in fixture.events)
+        assertTrue(fixture.events.none { it.startsWith("settle:") })
     }
 
     private class Fixture(
         testScope: kotlinx.coroutines.test.TestScope,
         currentConversationId: String? = "conversation",
+        controllerScope: CoroutineScope = testScope,
     ) {
         val conversations = mockk<ConversationRepository>()
         val currentConversationId = MutableStateFlow(currentConversationId)
@@ -86,7 +119,7 @@ class ConversationLifecycleControllerTest {
         val controller = ConversationLifecycleController(
             currentConversationId = this.currentConversationId,
             conversations = conversations,
-            scope = testScope,
+            scope = controllerScope,
             stopLoop = { events += "stop-loop" },
             withConversationLock = { _, block ->
                 events += "lock-start"
@@ -98,7 +131,9 @@ class ConversationLifecycleControllerTest {
                 onRemove()
             },
             stopVisibleGeneration = { events += "stop" },
-            openNewChat = { events += "new" },
+            settleDeletedSelectedConversation = { conversationId ->
+                events += "settle:$conversationId"
+            },
             ioDispatcher = dispatcher,
             mainDispatcher = dispatcher,
         )

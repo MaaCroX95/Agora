@@ -80,6 +80,12 @@ internal class ConversationSelectionController(
 
     private val _currentConversationId = MutableStateFlow<String?>(null)
     val currentConversationId: StateFlow<String?> = _currentConversationId.asStateFlow()
+    private val _selectedConversationGenerationSnapshot =
+        MutableStateFlow(ConversationGenerationSnapshot())
+    val selectedConversationGenerationSnapshot: StateFlow<ConversationGenerationSnapshot> =
+        _selectedConversationGenerationSnapshot.asStateFlow()
+    private var selectedRuntimeCollectorJob: Job? = null
+    private var selectedRuntimeBindingGeneration = 0L
 
     private val _isNewChatMode = MutableStateFlow(true)
     val isNewChatMode: StateFlow<Boolean> = _isNewChatMode.asStateFlow()
@@ -169,12 +175,37 @@ internal class ConversationSelectionController(
     val isSwitching: StateFlow<Boolean> = switching.isSwitching
     val switchingScrollRequest: StateFlow<SwitchingScrollRequest?> = switching.request
 
+    private fun publishSelectedConversation(conversationId: String?) {
+        selectedRuntimeBindingGeneration += 1L
+        val bindingGeneration = selectedRuntimeBindingGeneration
+        selectedRuntimeCollectorJob?.cancel()
+        if (conversationId == null) {
+            _selectedConversationGenerationSnapshot.value = ConversationGenerationSnapshot()
+            _currentConversationId.value = null
+            selectedRuntimeCollectorJob = null
+            return
+        }
+        val runtimeSnapshot = registry.getOrCreate(conversationId).generationSnapshot
+        _selectedConversationGenerationSnapshot.value = runtimeSnapshot.value
+        _currentConversationId.value = conversationId
+        selectedRuntimeCollectorJob = scope.launch {
+            runtimeSnapshot.collect { snapshot ->
+                if (
+                    _currentConversationId.value == conversationId &&
+                    selectedRuntimeBindingGeneration == bindingGeneration
+                ) {
+                    _selectedConversationGenerationSnapshot.value = snapshot
+                }
+            }
+        }
+    }
+
     /** Publish a first Send only after its conversation/Run/message graph is durable. */
     fun publishAcceptedConversation(conversationId: String, modelId: String) {
         require(conversationId.isNotBlank())
         require(modelId.isNotBlank())
         _activeModelOverride.value = modelId
-        _currentConversationId.value = conversationId
+        publishSelectedConversation(conversationId)
         _isNewChatMode.value = false
     }
 
@@ -209,7 +240,7 @@ internal class ConversationSelectionController(
             try {
                 fadeDelay()
                 if (!switching.isCurrent(request.id)) return@launch
-                _currentConversationId.value = null
+                publishSelectedConversation(null)
                 _activeModelOverride.value = null
                 clearConversationGraph()
             } finally {
@@ -218,6 +249,25 @@ internal class ConversationSelectionController(
                 }
             }
         }
+    }
+
+    fun settleDeletedSelectedConversation(conversationId: String) {
+        require(conversationId.isNotBlank())
+        if (_isNewChatMode.value) return
+        val pendingRequest = switching.request.value
+        if (
+            pendingRequest?.kind == SwitchingRequestKind.CONVERSATION &&
+            pendingRequest.conversationId != conversationId
+        ) {
+            return
+        }
+        if (
+            pendingRequest?.kind != SwitchingRequestKind.CONVERSATION &&
+            _currentConversationId.value?.let { it != conversationId } == true
+        ) {
+            return
+        }
+        createNewChat()
     }
 
     fun selectConversation(
@@ -247,7 +297,7 @@ internal class ConversationSelectionController(
                     return@launch
                 }
                 _isNewChatMode.value = false
-                _currentConversationId.value = conversationId
+                publishSelectedConversation(conversationId)
                 _activeModelOverride.value = conversation.modelId
                 switching.markConversationReady(request.id)
             } catch (error: CancellationException) {

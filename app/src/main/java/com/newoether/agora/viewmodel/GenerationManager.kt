@@ -186,7 +186,7 @@ class GenerationManager(
         var endedAtGuidanceBoundary = false
         var endedForFollowUp = false
         var followUpParentMessageId: String? = null
-        var totalText = ""
+        val totalText = StringBuilder()
         var totalThoughts = ""
         var thinkingPlaceholder = ""
         var totalThoughtTitle: String? = null
@@ -230,7 +230,8 @@ class GenerationManager(
 
         fun adoptIncompleteTranscriptionSnapshot() {
             transcriptionExecution.incompleteSnapshot()?.let { snapshot ->
-                totalText = snapshot.text
+                totalText.clear()
+                totalText.append(snapshot.text)
                 totalThoughts = snapshot.thoughts.orEmpty()
                 totalThoughtTitle = snapshot.thoughtTitle
                 totalTokenCount = snapshot.tokenCount
@@ -324,7 +325,7 @@ class GenerationManager(
 
             fun modelMessage() = ChatMessage(
                 id = modelMessageId, parentId = parentId,
-                text = totalText, thoughts = totalThoughts.ifBlank { null },
+                text = totalText.toString(), thoughts = totalThoughts.ifBlank { null },
                 thoughtTitle = totalThoughtTitle, tokenCount = totalTokenCount,
                 tokenUsage = totalTokenUsage,
                 status = currentStatus, participant = Participant.MODEL,
@@ -447,7 +448,6 @@ class GenerationManager(
                     ),
                 )
                 check(outcome.identity == batchEffect.identity)
-                generatedImages.addAll(outcome.generatedImages)
                 roundToolSegments.addAll(outcome.segments)
                 toolCallData = outcome.calls.firstOrNull()
                 toolCallDataList = outcome.calls
@@ -471,7 +471,7 @@ class GenerationManager(
                         if (currentStatus == MessageStatus.THINKING) {
                             flushThoughtSegment()
                         }
-                        totalText += answerText
+                        totalText.append(answerText)
                         currentAnswerBuf.append(answerText)
                         val deltaCodePointCount =
                             answerText.codePointCount(0, answerText.length)
@@ -491,7 +491,7 @@ class GenerationManager(
                             rebaseCitationForFinalAnswer(
                                 citation = event.citation,
                                 providerAnswerStart = providerAnswerStart,
-                                finalAnswer = totalText,
+                                finalAnswer = totalText.toString(),
                             ),
                         )
                     }
@@ -869,9 +869,6 @@ class GenerationManager(
             // one terminal effect that may write Room. A concurrent Stop wins by entering
             // Stopping first; a natural completion wins by entering Finalizing first.
             withContext(NonCancellable) {
-                // A cancellation can arrive as ImageGenToolProvider's withContext returns,
-                // after the file was queued but before the normal post-tool drain ran.
-                generatedImages.addAll(toolExecutor.drainGeneratedImages(conversationId))
                 try {
                     val conversationExists = conversations.getConversation(conversationId) != null
                     if (conversationExists) {
@@ -881,7 +878,7 @@ class GenerationManager(
                         val generatedMessage = GenerationFinalSnapshot(
                             messageId = modelMessageId,
                             parentId = parentId,
-                            text = totalText,
+                            text = totalText.toString(),
                             images = generatedImages.toList(),
                             thoughts = totalThoughts,
                             thoughtTitle = totalThoughtTitle,

@@ -2,6 +2,7 @@ package com.newoether.agora.viewmodel
 
 import android.app.Application
 import android.media.MediaMetadataRetriever
+import android.net.Uri
 import com.newoether.agora.model.AttachmentImportState
 import com.newoether.agora.model.AttachmentStorage
 import com.newoether.agora.model.SelectedAttachment

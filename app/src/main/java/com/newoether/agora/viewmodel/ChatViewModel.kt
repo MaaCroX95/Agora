@@ -160,7 +160,8 @@ class ChatViewModel(
             },
             removeRuntime = generationRegistry::remove,
             stopVisibleGeneration = generationStopAdapter::stopVisibleConversation,
-            openNewChat = selectionController::createNewChat,
+            settleDeletedSelectedConversation =
+                selectionController::settleDeletedSelectedConversation,
         )
     }
 
@@ -414,6 +415,8 @@ class ChatViewModel(
     val conversations: StateFlow<List<ChatConversation>?> = convRepo.getAllConversations()
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val currentConversationId: StateFlow<String?> get() = selectionController.currentConversationId
+    val selectedConversationGenerationSnapshot: StateFlow<ConversationGenerationSnapshot>
+        get() = selectionController.selectedConversationGenerationSnapshot
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val currentConversation: StateFlow<ChatConversation?> = currentConversationId
         .flatMapLatest { id -> if (id == null) flowOf(null) else convRepo.observeConversation(id) }

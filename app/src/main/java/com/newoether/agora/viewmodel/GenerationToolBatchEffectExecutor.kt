@@ -340,7 +340,6 @@ internal data class AuthorizedToolBatchOutcome(
     val identity: RunEffectIdentity,
     val calls: List<ToolCallData>,
     val segments: List<MessageSegment>,
-    val generatedImages: List<String>,
 )
 
 internal data class ToolBatchProgressCallbacks(
@@ -368,7 +367,6 @@ internal class GenerationToolBatchEffectExecutor(
     ): AuthorizedToolBatchOutcome {
         val results = mutableListOf<ToolCallData>()
         val completedSegments = mutableListOf<MessageSegment>()
-        val generatedImages = mutableListOf<String>()
 
         request.calls.forEach { call ->
             overlay.start(call)
@@ -404,7 +402,6 @@ internal class GenerationToolBatchEffectExecutor(
             }
             check(executed.batchIdentity == request.effect.identity)
             check(executed.callId == call.id)
-            generatedImages += tools.drainGeneratedImages(request.conversationId)
             val result = executed.result
             val transcriber = request.toolImageTranscriber
             val toolImage = result.images.firstOrNull()
@@ -453,7 +450,6 @@ internal class GenerationToolBatchEffectExecutor(
             identity = request.effect.identity,
             calls = results,
             segments = completedSegments,
-            generatedImages = generatedImages,
         )
     }
 }

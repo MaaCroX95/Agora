@@ -1,6 +1,7 @@
 package com.newoether.agora.viewmodel
 
 import com.newoether.agora.api.ProviderConfig
+import com.newoether.agora.data.BuiltInPrompts
 import com.newoether.agora.data.local.MessageContextTopology
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.data.local.ProviderContextTopologySnapshot
@@ -100,7 +101,7 @@ class ConversationCompactControllerTest {
         assertFalse(launchRequest.captured.touchConversationOnAdmission)
         assertEquals("compact prompt", launchRequest.captured.snapshot.config.effectiveSystemPrompt)
         assertEquals(
-            "Create the compact context summary now.",
+            BuiltInPrompts.CONTEXT_COMPACT_USER,
             launchRequest.captured.snapshot.config.initialUserPrompt,
         )
         assertTrue(launchRequest.captured.queueDrainRequiresSuccess)
