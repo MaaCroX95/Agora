@@ -44,6 +44,8 @@ class AttachmentFoundationTest {
 
         assertEquals(AttachmentImportState.READY, decoded.importState)
         assertNull(decoded.preparedText)
+        assertNull(decoded.pageCount)
+        assertNull(decoded.videoDurationMs)
         assertFalse(decoded.unavailable)
     }
 

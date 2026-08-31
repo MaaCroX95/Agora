@@ -140,12 +140,121 @@ class ConversationComposerControllerTest {
     }
 
     @Test
-    fun `failed attachment retry resumes from private staged source`() = runTest {
-        val failed = attachment("retry").copy(
-            localPath = "/stage/retry",
+    fun `staging failure preserves private ingress source for retry`() = runTest {
+        val privateSource = temporaryFolder.newFile("camera-source.jpg").apply {
+            writeText("camera")
+        }
+        val source = attachment("private-retry").copy(localPath = privateSource.absolutePath)
+        val processor = mockk<AttachmentImportProcessor>()
+        var stageAttempts = 0
+        coEvery { processor.stage(match { it.localId == source.localId }) } coAnswers {
+            stageAttempts += 1
+            if (stageAttempts == 1) {
+                AttachmentImportProcessor.StageResult.Failure(
+                    IllegalStateException("staging interrupted"),
+                )
+            } else {
+                AttachmentImportProcessor.StageResult.Success(
+                    attachment = source.processing("/stage/private-retry"),
+                    createdPaths = emptyList(),
+                )
+            }
+        }
+        coEvery { processor.process(any(), any()) } coAnswers {
+            AttachmentImportProcessor.ProcessResult.Ready(
+                firstArg<SelectedAttachment>().ready("/final/private-retry.jpg"),
+            )
+        }
+        val fixture = fixture(processor)
+        fixture.controller.load(OWNER_A)
+
+        fixture.controller.importAttachment(OWNER_A, source)
+        fixture.controller.awaitProcessing(OWNER_A)
+
+        assertEquals(AttachmentImportState.FAILED, fixture.state(OWNER_A, source.localId).importState)
+        assertEquals(privateSource.absolutePath, fixture.persistence.attachment(OWNER_A).localPath)
+        assertTrue(privateSource.isFile)
+        coVerify(exactly = 0) {
+            fixture.repository.deleteUnreferencedDraftAttachmentFiles(listOf(source))
+        }
+
+        assertTrue(fixture.controller.retry(OWNER_A, source.localId))
+        fixture.controller.awaitProcessing(OWNER_A)
+
+        assertEquals(AttachmentImportState.READY, fixture.state(OWNER_A, source.localId).importState)
+        coVerify(exactly = 2) { processor.stage(any()) }
+        coVerify(exactly = 1) {
+            processor.process(match { it.localPath == "/stage/private-retry" }, any())
+        }
+    }
+
+    @Test
+    fun `pdf metadata failure durably replaces private ingress source`() = runTest {
+        val ingress = temporaryFolder.newFile("pdf-ingress.pdf").apply { writeText("ingress") }
+        val failedStage = temporaryFolder.newFile("pdf-failed-stage.pdf").apply {
+            writeText("staged")
+        }
+        val source = attachment("pdf-failure").copy(
+            type = "pdf",
+            fileName = "document.pdf",
+            localPath = ingress.absolutePath,
+        )
+        val failed = source.copy(
+            localPath = failedStage.absolutePath,
             importState = AttachmentImportState.FAILED,
         )
         val processor = mockk<AttachmentImportProcessor>()
+        coEvery { processor.stage(match { it.localId == source.localId }) } returns
+            AttachmentImportProcessor.StageResult.Failure(
+                cause = IllegalStateException("missing page count"),
+                attachment = failed,
+                createdPaths = listOf(failedStage.absolutePath),
+            )
+        val fixture = fixture(processor)
+        fixture.controller.load(OWNER_A)
+
+        fixture.controller.importAttachment(OWNER_A, source)
+        fixture.controller.awaitProcessing(OWNER_A)
+
+        assertEquals(failed, fixture.persistence.attachment(OWNER_A))
+        assertEquals(failed, fixture.state(OWNER_A, source.localId))
+        assertTrue(failedStage.isFile)
+        coVerify(exactly = 1) {
+            fixture.repository.deleteUnreferencedDraftAttachmentFiles(
+                match { removed ->
+                    removed.singleOrNull()?.let {
+                        it.localId == source.localId && it.localPath == source.localPath
+                    } == true
+                },
+            )
+        }
+        coVerify(exactly = 0) { processor.process(any(), any()) }
+    }
+
+    @Test
+    fun `failed attachment retry restages private source before processing`() = runTest {
+        val retrySource = temporaryFolder.newFile("retry-source.jpg").apply {
+            writeText("retry")
+        }
+        val failed = attachment("retry").copy(
+            localPath = retrySource.absolutePath,
+            importState = AttachmentImportState.FAILED,
+        )
+        val processor = mockk<AttachmentImportProcessor>()
+        val stagedAttempts = mutableListOf<File>()
+        coEvery { processor.stage(any()) } coAnswers {
+            val source = firstArg<SelectedAttachment>()
+            val staged = File(
+                temporaryFolder.root,
+                "retry-stage-${stagedAttempts.size}.jpg",
+            ).apply { writeText("restaged") }
+            stagedAttempts += staged
+            AttachmentImportProcessor.StageResult.Success(
+                attachment = source.processing(staged.absolutePath),
+                createdPaths = listOf(staged.absolutePath),
+                obsoletePaths = listOf(retrySource.absolutePath),
+            )
+        }
         coEvery { processor.process(any(), any()) } coAnswers {
             AttachmentImportProcessor.ProcessResult.Ready(
                 firstArg<SelectedAttachment>().ready(),
@@ -161,8 +270,13 @@ class ConversationComposerControllerTest {
         every { DebugLog.e(any(), any(), any()) } just Runs
 
         try {
-            assertFalse(fixture.controller.retry(OWNER_A, "retry"))
+            assertTrue(fixture.controller.retry(OWNER_A, "retry"))
+            fixture.controller.awaitProcessing(OWNER_A)
             assertEquals(AttachmentImportState.FAILED, fixture.state(OWNER_A, "retry").importState)
+            assertEquals(AttachmentImportState.FAILED, fixture.persistence.attachment(OWNER_A).importState)
+            assertEquals(1, stagedAttempts.size)
+            assertFalse(stagedAttempts.single().exists())
+            assertTrue(retrySource.isFile)
             fixture.persistence.failWrites = false
             assertTrue(fixture.controller.retry(OWNER_A, "retry"))
             fixture.controller.awaitProcessing(OWNER_A)
@@ -175,7 +289,7 @@ class ConversationComposerControllerTest {
             fixture.persistence.updatedStates(OWNER_A),
         )
         assertEquals(AttachmentImportState.READY, fixture.state(OWNER_A, "retry").importState)
-        coVerify(exactly = 0) { processor.stage(any()) }
+        coVerify(exactly = 2) { processor.stage(any()) }
         coVerify(exactly = 1) { processor.process(any(), any()) }
     }
 

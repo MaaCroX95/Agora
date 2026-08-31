@@ -80,6 +80,8 @@ data class SelectedAttachment(
     val type: String,               // "image", "video", "file", "pdf"
     val frameCount: Int? = null,
     val sliceIntervalMs: Long? = null,
+    val pageCount: Int? = null,
+    val videoDurationMs: Long? = null,
     val fileName: String? = null,
     val mimeType: String? = null,
     val fileSize: Long? = null,

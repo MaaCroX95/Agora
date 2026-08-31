@@ -160,9 +160,12 @@ object PdfPageRenderer {
             eraseColor(Color.WHITE)
         }
 
-    fun getPageCount(context: Context, uri: Uri): Int {
+    fun getPageCount(context: Context, uri: Uri): Int =
+        getPageCount(context, uri.toString())
+
+    fun getPageCount(context: Context, source: String): Int {
         return try {
-            val descriptor = context.contentResolver.openFileDescriptor(uri, "r") ?: return 0
+            val descriptor = openDescriptor(context, source) ?: return 0
             val renderer = runCatching { PdfRenderer(descriptor) }
                 .onFailure { runCatching { descriptor.close() } }.getOrThrow()
             val count = renderer.pageCount

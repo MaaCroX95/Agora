@@ -183,42 +183,23 @@ internal class ConversationComposerController(
     suspend fun retry(ownerId: String, attachmentId: String): Boolean {
         load(ownerId)
         val session = session(ownerId)
-        val retry = session.mutex.withLock {
+        return session.mutex.withLock {
             val failed = session.state.value.attachments
                 .firstOrNull { it.localId == attachmentId }
                 ?.takeIf { it.importState == AttachmentImportState.FAILED }
                 ?: return false
             val processing = failed.asProcessing()
             val generation = nextGeneration(session, attachmentId)
+            session.transientAttachmentIds += attachmentId
             session.state.value = session.state.value.replaceAttachment(processing)
-            if (processing.localPath == null) {
-                registerJobLocked(
-                    session = session,
-                    attachmentId = attachmentId,
-                    generation = generation,
-                    job = stagingJob(ownerId, session, processing, generation),
-                )
-                return true
-            }
-            processing to generation
+            registerJobLocked(
+                session = session,
+                attachmentId = attachmentId,
+                generation = generation,
+                job = stagingJob(ownerId, session, processing, generation),
+            )
+            true
         }
-        val durable = persistReplacement(
-            ownerId = ownerId,
-            attachmentId = attachmentId,
-            generation = retry.second,
-            replacement = retry.first,
-        ) ?: return false
-        withContext(NonCancellable) {
-            session.mutex.withLock {
-                registerJobLocked(
-                    session = session,
-                    attachmentId = attachmentId,
-                    generation = retry.second,
-                    job = processingJob(ownerId, session, durable, retry.second),
-                )
-            }
-        }
-        return true
     }
 
     suspend fun remove(ownerId: String, attachmentId: String): Boolean {
@@ -379,15 +360,28 @@ internal class ConversationComposerController(
                     }
                 }
                 AttachmentImportProcessor.StageResult.TooLarge ->
-                    persistFailure(ownerId, source.localId, generation, source)
-                is AttachmentImportProcessor.StageResult.Failure ->
-                    persistFailure(ownerId, source.localId, generation, source)
+                    persistFailure(ownerId, source.localId, generation)
+                is AttachmentImportProcessor.StageResult.Failure -> {
+                    val replacement = staged.attachment
+                    if (replacement == null) {
+                        persistFailure(ownerId, source.localId, generation)
+                    } else {
+                        persistReplacement(
+                            ownerId = ownerId,
+                            attachmentId = source.localId,
+                            generation = generation,
+                            replacement = replacement,
+                            obsoleteTransient = source,
+                            createdPaths = staged.createdPaths,
+                        )
+                    }
+                }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
             DebugLog.w("ChatViewModel", "Attachment staging failed", failure)
-            persistFailure(ownerId, source.localId, generation, source)
+            persistFailure(ownerId, source.localId, generation)
         } finally {
             finishJob(session, source.localId, generation)
         }
@@ -429,7 +423,6 @@ internal class ConversationComposerController(
         ownerId: String,
         attachmentId: String,
         generation: Long,
-        obsoleteTransient: SelectedAttachment? = null,
     ) {
         val session = session(ownerId)
         val current = session.mutex.withLock {
@@ -440,7 +433,6 @@ internal class ConversationComposerController(
             attachmentId = attachmentId,
             generation = generation,
             replacement = current.copy(importState = AttachmentImportState.FAILED),
-            obsoleteTransient = obsoleteTransient,
         )
     }
 

@@ -53,6 +53,83 @@ class AttachmentImportProcessorTest {
         assertFalse(result.attachment.unavailable)
         assertEquals(listOf(staged.absolutePath), result.createdPaths)
         assertEquals(listOf(source.absolutePath), result.obsoletePaths)
+        assertNull(result.attachment.pageCount)
+        assertNull(result.attachment.videoDurationMs)
+    }
+
+    @Test
+    fun stageRestagesExistingPrivatePathWithoutOverwritingIt() = runTest {
+        val staged = File(temporaryFolder.root, "attachments/staged/id/source.jpg").apply {
+            parentFile?.mkdirs()
+            writeBytes(byteArrayOf(1, 2, 3, 4))
+        }
+        val processor = processor()
+
+        val result = processor.stage(
+            attachment(
+                type = "image",
+                fileName = "photo.jpg",
+                localPath = staged.absolutePath,
+            ),
+        ) as AttachmentImportProcessor.StageResult.Success
+
+        val restaged = File(requireNotNull(result.attachment.localPath))
+        assertTrue(staged.isFile)
+        assertTrue(restaged.isFile)
+        assertFalse(staged.absolutePath == restaged.absolutePath)
+        assertEquals(listOf(1, 2, 3, 4), restaged.readBytes().map(Byte::toInt))
+        assertEquals(listOf(restaged.absolutePath), result.createdPaths)
+        assertEquals(listOf(staged.absolutePath), result.obsoletePaths)
+    }
+
+    @Test
+    fun stagePersistsPdfPageCountAndVideoDurationFromPrivateCopies() = runTest {
+        val processor = processor(
+            openSource = { ByteArrayInputStream(byteArrayOf(1, 2, 3, 4)) },
+            readPdfPageCount = { source ->
+                assertTrue(File(source).isFile)
+                12
+            },
+            readVideoDurationMs = { source ->
+                assertTrue(File(source).isFile)
+                34_500L
+            },
+        )
+
+        val pdf = processor.stage(
+            attachment(type = "pdf", fileName = "document.pdf"),
+        ) as AttachmentImportProcessor.StageResult.Success
+        val video = processor.stage(
+            attachment(type = "video", fileName = "clip.mp4"),
+        ) as AttachmentImportProcessor.StageResult.Success
+
+        assertEquals(12, pdf.attachment.pageCount)
+        assertNull(pdf.attachment.videoDurationMs)
+        assertEquals(34_500L, video.attachment.videoDurationMs)
+        assertNull(video.attachment.pageCount)
+    }
+
+    @Test
+    fun stageFailsWithoutPdfPageCountAndKeepsUnknownVideoDuration() = runTest {
+        val processor = processor(
+            openSource = { ByteArrayInputStream(byteArrayOf(1, 2, 3, 4)) },
+        )
+
+        val pdfResult = processor.stage(
+            attachment(type = "pdf", fileName = "document.pdf"),
+        )
+        val videoResult = processor.stage(
+            attachment(type = "video", fileName = "clip.mp4"),
+        ) as AttachmentImportProcessor.StageResult.Success
+
+        val pdfFailure = pdfResult as AttachmentImportProcessor.StageResult.Failure
+        val failedPdf = requireNotNull(pdfFailure.attachment)
+        val failedPdfPath = requireNotNull(failedPdf.localPath)
+        assertEquals(AttachmentImportState.FAILED, failedPdf.importState)
+        assertEquals(listOf(failedPdfPath), pdfFailure.createdPaths)
+        assertTrue(File(failedPdfPath).isFile)
+        assertEquals(0L, videoResult.attachment.videoDurationMs)
+        assertTrue(File(temporaryFolder.root, "attachments/staged/id/source.mp4").isFile)
     }
 
     @Test
@@ -236,6 +313,8 @@ class AttachmentImportProcessorTest {
         renderPdf: suspend (String, Set<Int>?) -> List<String> = { _, _ -> emptyList() },
         readText: (String, Int) -> String? = { _, _ -> null },
         openSource: (String) -> InputStream? = { source -> File(source).inputStream() },
+        readPdfPageCount: (String) -> Int = { 0 },
+        readVideoDurationMs: (String) -> Long = { 0L },
         maxAttachmentBytes: Long = Long.MAX_VALUE,
     ): AttachmentImportProcessor {
         val app = mockk<Application>()
@@ -247,6 +326,8 @@ class AttachmentImportProcessorTest {
             renderPdf = renderPdf,
             readText = readText,
             openSource = openSource,
+            readPdfPageCount = readPdfPageCount,
+            readVideoDurationMs = readVideoDurationMs,
             maxAttachmentBytes = maxAttachmentBytes,
         )
     }

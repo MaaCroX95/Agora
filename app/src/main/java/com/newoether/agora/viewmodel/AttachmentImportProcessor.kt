@@ -1,6 +1,7 @@
 package com.newoether.agora.viewmodel
 
 import android.app.Application
+import android.media.MediaMetadataRetriever
 import com.newoether.agora.model.AttachmentImportState
 import com.newoether.agora.model.AttachmentStorage
 import com.newoether.agora.model.SelectedAttachment
@@ -10,6 +11,7 @@ import com.newoether.agora.util.Constants
 import com.newoether.agora.util.PdfPageRenderer
 import java.io.File
 import java.io.InputStream
+import java.util.UUID
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -32,6 +34,19 @@ internal class AttachmentImportProcessor(
         { source, maxChars -> AttachmentSourceReader.readText(app, source, maxChars) },
     private val openSource: (source: String) -> InputStream? =
         { source -> AttachmentSourceReader.open(app, source) },
+    private val readPdfPageCount: (source: String) -> Int =
+        { source -> PdfPageRenderer.getPageCount(app, source) },
+    private val readVideoDurationMs: (source: String) -> Long = { source ->
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(source)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()
+                ?: 0L
+        } finally {
+            retriever.release()
+        }
+    },
     private val maxAttachmentBytes: Long = AttachmentFiles.MAX_ATTACHMENT_BYTES,
 ) {
     sealed interface StageResult {
@@ -41,7 +56,11 @@ internal class AttachmentImportProcessor(
             val obsoletePaths: List<String> = emptyList(),
         ) : StageResult
         data object TooLarge : StageResult
-        data class Failure(val cause: Throwable? = null) : StageResult
+        data class Failure(
+            val cause: Throwable? = null,
+            val attachment: SelectedAttachment? = null,
+            val createdPaths: List<String> = emptyList(),
+        ) : StageResult
     }
 
     sealed interface ProcessResult {
@@ -58,8 +77,13 @@ internal class AttachmentImportProcessor(
         val source = attachment.localPath ?: attachment.uri
         val directory = File(File(app.filesDir, "attachments/staged"), attachment.localId)
         val extension = sourceExtension(attachment)
-        val target = File(directory, "source.$extension")
-        val partial = File(directory, "source.$extension.part")
+        val canonicalTarget = File(directory, "source.$extension")
+        val target = if (canonicalTarget.exists()) {
+            File(directory, "source-${UUID.randomUUID()}.$extension")
+        } else {
+            canonicalTarget
+        }
+        val partial = File(directory, "${target.name}.part")
         try {
             val input = openSource(source)
                 ?: return@withContext StageResult.Failure(
@@ -88,17 +112,37 @@ internal class AttachmentImportProcessor(
                         ?.takeUnless { it == target.absolutePath }
                         ?.let(::listOf)
                         .orEmpty()
+                    val pageCount = if (attachment.type == "pdf") {
+                        runCatching { readPdfPageCount(target.absolutePath) }.getOrDefault(0)
+                            .takeIf { it > 0 }
+                            ?: return@withContext metadataFailure(
+                                attachment = attachment,
+                                target = target,
+                                fileSize = copy.bytesCopied,
+                                message = "Unable to read PDF page count",
+                            )
+                    } else {
+                        attachment.pageCount
+                    }
+                    val videoDurationMs = if (attachment.type == "video") {
+                        runCatching { readVideoDurationMs(target.absolutePath) }.getOrDefault(0L)
+                    } else {
+                        attachment.videoDurationMs
+                    }
                     StageResult.Success(
                         attachment = attachment.copy(
                             fileSize = copy.bytesCopied,
                             processedFrames = null,
                             preRenderedPaths = null,
                             localPath = target.absolutePath,
+                            pageCount = pageCount,
+                            videoDurationMs = videoDurationMs,
                             importState = AttachmentImportState.PROCESSING,
                             preparedText = null,
                             unavailable = false,
                         ),
-                        createdPaths = listOf(target.absolutePath),
+                        createdPaths = listOf(target.absolutePath)
+                            .filterNot { attachment.localPath == it },
                         obsoletePaths = obsoletePaths,
                     )
                 }
@@ -256,6 +300,26 @@ internal class AttachmentImportProcessor(
             is AttachmentFiles.CopyResult.Failure -> ProcessResult.Failure(copy.cause)
         }
     }
+
+    private fun metadataFailure(
+        attachment: SelectedAttachment,
+        target: File,
+        fileSize: Long,
+        message: String,
+    ) = StageResult.Failure(
+        cause = IllegalStateException(message),
+        attachment = attachment.copy(
+            fileSize = fileSize,
+            processedFrames = null,
+            preRenderedPaths = null,
+            localPath = target.absolutePath,
+            importState = AttachmentImportState.FAILED,
+            preparedText = null,
+            unavailable = false,
+        ),
+        createdPaths = listOf(target.absolutePath)
+            .filterNot { attachment.localPath == it },
+    )
 
     private fun sourceExtension(attachment: SelectedAttachment): String {
         val preferred = attachment.fileName?.substringAfterLast('.', "")
