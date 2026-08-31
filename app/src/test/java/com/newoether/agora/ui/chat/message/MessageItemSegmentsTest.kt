@@ -130,6 +130,101 @@ class MessageItemSegmentsTest {
     }
 
     @Test
+    fun imageGenerationEndsGroupedBlocksAndKeepsLaterContentInNewGroups() {
+        val segments = listOf(
+            MessageSegment(type = "thought", content = "Before"),
+            MessageSegment(type = "tool", toolName = "generate_image", toolCallId = "image-1"),
+            MessageSegment(type = "tool", toolName = "web_search", toolCallId = "search"),
+            MessageSegment(type = "tool", toolName = "generate_image", toolCallId = "image-2"),
+            MessageSegment(type = "answer", content = "After"),
+        )
+
+        assertEquals(2, groupedInfoBlockEndExclusive(segments, 0))
+        assertEquals(4, groupedInfoBlockEndExclusive(segments, 2))
+        assertEquals(
+            setOf("message:group:0", "message:group:2"),
+            buildTimelineBlockKeys(
+                messageId = "message",
+                segments = segments,
+                groupAdjacentBlocks = true,
+            ),
+        )
+        assertEquals(
+            "message:generated-image:1",
+            generatedImageAppearanceKey("message", 1),
+        )
+        assertEquals(
+            "message:generated-image:3",
+            generatedImageAppearanceKey("message", 3),
+        )
+    }
+
+    @Test
+    fun imageLifecycleChangesCannotRewriteTheOrderedPrefix() {
+        val pending = listOf(
+            MessageSegment(type = "thought", content = "Before"),
+            MessageSegment(
+                type = "tool",
+                toolName = "generate_image",
+                toolCallId = "image",
+                toolState = "running",
+            ),
+            MessageSegment(type = "answer", content = "After"),
+        )
+        val completed = pending.toMutableList().also { segments ->
+            segments[1] = segments[1].copy(
+                toolState = "succeeded",
+                toolResult = "generated",
+            )
+        }
+
+        assertEquals(
+            groupedInfoBlockEndExclusive(pending, 0),
+            groupedInfoBlockEndExclusive(completed, 0),
+        )
+        assertEquals(
+            buildTimelineBlockKeys("message", pending, groupAdjacentBlocks = true),
+            buildTimelineBlockKeys("message", completed, groupAdjacentBlocks = true),
+        )
+        assertEquals(
+            detailSegmentAppearanceKey("message", 1, pending[1]),
+            detailSegmentAppearanceKey("message", 1, completed[1]),
+        )
+    }
+
+    @Test
+    fun imageBoundaryCollapsesOnceAndManualReExpansionRemainsOwnedByTheUser() {
+        val controller = GroupedSegmentAutoExpansionController()
+        val key = "message:group:0"
+
+        assertTrue(controller.shouldCollapseForImageBoundary(key, hasImageBoundary = true))
+        assertTrue(controller.claimImageBoundaryCollapse(key, hasImageBoundary = true))
+        assertFalse(controller.shouldCollapseForImageBoundary(key, hasImageBoundary = true))
+        assertFalse(
+            controller.shouldPresentInitiallyExpanded(
+                key = key,
+                isActive = true,
+                enabled = true,
+            ),
+        )
+        assertFalse(
+            groupedSegmentExpandedState(
+                persistedExpanded = true,
+                initiallyAutoExpanded = true,
+                collapseForImageBoundary = true,
+            ),
+        )
+        assertFalse(controller.claimImageBoundaryCollapse(key, hasImageBoundary = true))
+        assertTrue(
+            groupedSegmentExpandedState(
+                persistedExpanded = true,
+                initiallyAutoExpanded = false,
+                collapseForImageBoundary = false,
+            ),
+        )
+    }
+
+    @Test
     fun timelineSegmentGroupInvalidIndicesFailClosed() {
         val segments = listOf(MessageSegment(type = "tool"))
 
@@ -321,6 +416,73 @@ class MessageItemSegmentsTest {
     }
 
     @Test
+    fun initialAutoExpansionOverridesAStaleCollapsedMapValue() {
+        assertTrue(
+            groupedSegmentExpandedState(
+                persistedExpanded = false,
+                initiallyAutoExpanded = true,
+            ),
+        )
+        assertTrue(
+            groupedSegmentExpandedState(
+                persistedExpanded = true,
+                initiallyAutoExpanded = false,
+            ),
+        )
+        assertFalse(
+            groupedSegmentExpandedState(
+                persistedExpanded = false,
+                initiallyAutoExpanded = false,
+            ),
+        )
+    }
+
+    @Test
+    fun newActiveGroupedSegmentPresentsExpandedBeforeUpdate() {
+        val controller = GroupedSegmentAutoExpansionController()
+        val key = "message:group:0"
+
+        assertTrue(
+            controller.shouldPresentInitiallyExpanded(
+                key = key,
+                isActive = true,
+                enabled = true,
+            ),
+        )
+        assertEquals(
+            GroupedSegmentAutoExpansionAction.EXPAND,
+            controller.update(key, isActive = true, enabled = true),
+        )
+        assertFalse(
+            controller.shouldPresentInitiallyExpanded(
+                key = key,
+                isActive = true,
+                enabled = true,
+            ),
+        )
+    }
+
+    @Test
+    fun inactiveOrDisabledGroupedSegmentNeverPresentsInitiallyExpanded() {
+        val controller = GroupedSegmentAutoExpansionController()
+
+        assertFalse(
+            controller.shouldPresentInitiallyExpanded(
+                key = "inactive",
+                isActive = false,
+                enabled = true,
+            ),
+        )
+        assertFalse(
+            controller.shouldPresentInitiallyExpanded(
+                key = "disabled",
+                isActive = true,
+                enabled = false,
+            ),
+        )
+    }
+
+    @Test
     fun activeGroupedSegmentExpandsOnlyOnce() {
         val controller = GroupedSegmentAutoExpansionController()
         val key = "message:group:0"
@@ -407,6 +569,13 @@ class MessageItemSegmentsTest {
         assertEquals(
             GroupedSegmentAutoExpansionAction.NONE,
             controller.update(key, isActive = false, enabled = true),
+        )
+        assertFalse(
+            controller.shouldPresentInitiallyExpanded(
+                key = key,
+                isActive = true,
+                enabled = true,
+            ),
         )
         assertEquals(
             GroupedSegmentAutoExpansionAction.NONE,

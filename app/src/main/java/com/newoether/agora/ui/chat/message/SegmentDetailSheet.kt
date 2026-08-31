@@ -365,7 +365,7 @@ internal fun SegmentDetailSheet(
                 )
             },
         ) {
-                        val detailPageContent: @Composable () -> Unit = {
+            val detailPageContent: @Composable () -> Unit = {
                         if (directSelectableTextContent != null) {
                             DetailContentReveal(
                                 revealKey = "${message.id}:select-text",

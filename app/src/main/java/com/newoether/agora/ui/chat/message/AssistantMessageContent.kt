@@ -47,6 +47,7 @@ import com.newoether.agora.util.noOpBringIntoView
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.CitationPolicy
 import com.newoether.agora.model.CitationRecord
+import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.TokenUsage
@@ -421,6 +422,25 @@ internal fun AssistantMessageContent(
                 ) {
                     assistantErrorContent(message, mergedSegments, failedToGenerateText)
                 }
+                val hasImageGenerationBoundary =
+                    mergedSegments.any { it.isImageGenerationSegment() }
+                val orderedFallbackAnswerText =
+                    if (
+                        hasImageGenerationBoundary &&
+                        mergedSegments.none { it.isVisibleAnswerSegment() }
+                    ) {
+                        errorContent?.answerText ?: renderedText.takeIf { !isError }
+                    } else {
+                        null
+                    }
+                val orderedSegments = remember(mergedSegments, orderedFallbackAnswerText) {
+                    orderedFallbackAnswerText
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { fallback ->
+                            mergedSegments + MessageSegment(type = "answer", content = fallback)
+                        }
+                        ?: mergedSegments
+                }
                 val normalizedToolCallDisplayMode = ToolCallDisplayModes.normalize(toolCallDisplayMode)
                 val useThinkingSheet =
                     ThinkingSegmentDisplayModes.effectiveMode(
@@ -428,16 +448,25 @@ internal fun AssistantMessageContent(
                         normalizedToolCallDisplayMode,
                     ) == ThinkingSegmentDisplayModes.BOTTOM_SHEET
                 val groupAdjacentTimelineTools = normalizedToolCallDisplayMode == ToolCallDisplayModes.GROUPED_TIMELINE
-                val useTimelineSegments =
-                    !useThinkingSheet &&
-                    normalizedToolCallDisplayMode != ToolCallDisplayModes.COMPACT &&
+                val groupOrderedInfoBlocks =
+                    groupAdjacentTimelineTools ||
                         (
-                            mergedSegments.any { it.type == "answer" } ||
+                            hasImageGenerationBoundary &&
+                                normalizedToolCallDisplayMode != ToolCallDisplayModes.TIMELINE
+                            )
+                val useTimelineSegments =
+                    hasImageGenerationBoundary ||
+                        (
+                            !useThinkingSheet &&
+                                normalizedToolCallDisplayMode != ToolCallDisplayModes.COMPACT &&
                                 (
-                                    groupAdjacentTimelineTools &&
-                                        mergedSegments.any { it.isInfoSegment() }
-                                )
-                        )
+                                    mergedSegments.any { it.type == "answer" } ||
+                                        (
+                                            groupAdjacentTimelineTools &&
+                                                mergedSegments.any { it.isInfoSegment() }
+                                            )
+                                    )
+                            )
                 val detailSegments = remember(mergedSegments) {
                     mergedSegments.filter { it.type != "answer" && it.type != "error" }
                 }
@@ -460,16 +489,17 @@ internal fun AssistantMessageContent(
 
                 if (useTimelineSegments) {
                     TimelineSegmentsContent(
-                        segments = mergedSegments,
+                        segments = orderedSegments,
                         detailSegments = detailSegments,
                         message = message,
                         isStreaming = isStreaming,
                         generationActive = generationActive,
-                        groupAdjacentBlocks = groupAdjacentTimelineTools,
+                        groupAdjacentBlocks = groupOrderedInfoBlocks,
                         autoExpandActiveGroup =
                             groupAdjacentTimelineTools && autoExpandActiveGroup,
                         autoExpansionController = groupedSegmentAutoExpansionController,
-                        expandedStates = thoughtExpandedStates,
+                        expandedStates =
+                            if (useThinkingSheet) sheetCollapsedStates else thoughtExpandedStates,
                         renderContext = renderContext,
                         searchHighlight = searchHighlight,
                         citations = citations,
@@ -477,6 +507,16 @@ internal fun AssistantMessageContent(
                         segmentAppearanceRegistry = segmentAppearanceRegistry,
                         onLayoutMutationStarted = onLayoutMutationStarted,
                         onLayoutMutationSettled = onLayoutMutationSettled,
+                        onMediaClick = onMediaClick,
+                        opensDetailSheet = useThinkingSheet,
+                        preserveInitialCompactIdentity =
+                            normalizedToolCallDisplayMode == ToolCallDisplayModes.COMPACT ||
+                                useThinkingSheet,
+                        onGroupHeaderClick = if (useThinkingSheet) {
+                            { indices -> onSegmentSelected(indices, true) }
+                        } else {
+                            null
+                        },
                         onSegmentClick = { indices ->
                             onSegmentSelected(indices, false)
                         }
@@ -622,8 +662,8 @@ internal fun AssistantMessageContent(
                                 }
                             }
                         }
-                        }
                     }
+                }
                 }
                 var retainedErrorText by remember { mutableStateOf("") }
                 LaunchedEffect(errorContent) {
@@ -711,19 +751,10 @@ internal fun AssistantMessageContent(
                         MaterialTheme.colorScheme.error.copy(
                             alpha = if (actionAvailability.terminalEnabled) 1f else 0.38f
                         )
-                    CitationSourcesSummaryHost(
-                        animationKey = "${message.id}:citation-summary",
-                        visible = sourcesSummaryVisible,
-                        citations = citations,
-                        onLayoutMutationStarted = onLayoutMutationStarted,
-                        onLayoutMutationSettled = onLayoutMutationSettled,
-                        modifier = Modifier.offset(
-                            x = (-AUXILIARY_CARD_START_EXTENSION_DP).dp,
-                        ),
-                    ) { presentedCitations ->
+                    if (sourcesSummaryVisible || informationActionsAlpha > 0f) {
                         CitationSourcesSummaryCapsule(
                             messageId = message.id,
-                            citations = presentedCitations,
+                            citations = citations,
                             searchSpec = null,
                             visible = sourcesSummaryVisible,
                             enabled = sourcesSummaryVisible,
@@ -731,7 +762,10 @@ internal fun AssistantMessageContent(
                                 groupedCitationSources = null
                                 showCitationSources = true
                             },
-                            modifier = Modifier.padding(top = 12.dp),
+                            modifier = Modifier
+                                .offset(x = (-AUXILIARY_CARD_START_EXTENSION_DP).dp)
+                                .padding(top = 12.dp)
+                                .graphicsLayer { alpha = informationActionsAlpha },
                         )
                     }
                     val answerTailVisible = shouldShowStreamingTailIndicator(isStreaming, isStopping, message)

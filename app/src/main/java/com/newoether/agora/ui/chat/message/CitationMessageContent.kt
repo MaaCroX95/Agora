@@ -731,12 +731,6 @@ internal fun CitationSourcesSummaryCapsule(
         modifier = modifier
             .onGloballyPositioned { coordinates = it }
             .heightIn(min = CITATION_SOURCES_SUMMARY_MIN_HEIGHT_DP.dp)
-            .then(
-                citationCapsuleFadeModifier(
-                    animationKey = "citation-summary:$messageId",
-                    visible = visible,
-                ),
-            )
             .clip(RoundedCornerShape(50))
             .background(citationCapsuleBackgroundColor())
             .clickable(

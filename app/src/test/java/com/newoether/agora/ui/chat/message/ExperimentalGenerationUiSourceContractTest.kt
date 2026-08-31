@@ -251,42 +251,38 @@ class ExperimentalGenerationUiSourceContractTest {
     }
 
     @Test
-    fun `Sources summary uses one anchored measured host without haptics`() {
+    fun `Sources summary shares information action fade without scale or measured host`() {
         val root = locateMainSourceRoot()
         val assistant = source(root, "message/AssistantMessageContent.kt")
         val transitionHost = source(root, "message/CitationTerminalProjectionHost.kt")
-        val summaryGate = assistant
-            .substringBefore("CitationSourcesSummaryHost(")
-            .takeLast(200)
-        val summary = assistant.substringAfter("CitationSourcesSummaryHost(")
-        val summaryClick = summary.substringBefore("modifier = Modifier.padding(top = 12.dp)")
-        val measuredHost = transitionHost
-            .substringAfter("internal fun CitationSourcesSummaryHost(")
-            .substringBefore("internal fun CitationTerminalProjectionHost(")
+        val citations = source(root, "message/CitationMessageContent.kt")
+        val summary = assistant
+            .substringAfter("if (sourcesSummaryVisible || informationActionsAlpha > 0f)")
+            .substringBefore("val answerTailVisible")
+        val capsule = citations
+            .substringAfter("internal fun CitationSourcesSummaryCapsule(")
+            .substringBefore("internal fun CitationSourcesBottomSheet(")
 
-        assertFalse(summaryGate.contains("if (sourcesSummaryVisible)"))
-        assertFalse(summaryGate.contains("if (citations.isNotEmpty())"))
+        assertTrue(summary.contains("CitationSourcesSummaryCapsule("))
         assertTrue(summary.contains("visible = sourcesSummaryVisible"))
-        assertTrue(summary.contains("citations = citations"))
-        assertTrue(summary.contains("onLayoutMutationStarted = onLayoutMutationStarted"))
-        assertTrue(summary.contains("onLayoutMutationSettled = onLayoutMutationSettled"))
-        assertTrue(summaryClick.contains("showCitationSources = true"))
-        assertFalse(summaryClick.contains("haptics."))
-        assertTrue(summary.contains(".offset("))
-        assertTrue(summary.contains("x = (-AUXILIARY_CARD_START_EXTENSION_DP).dp"))
-        assertTrue(measuredHost.contains("MutableTransitionState(visible)"))
-        assertTrue(measuredHost.contains("presentedCitations"))
-        assertTrue(measuredHost.contains("currentLayoutMutationStarted(mutationKey)"))
-        assertTrue(measuredHost.contains("withFrameNanos { }"))
-        assertTrue(measuredHost.contains("AnimatedVisibility("))
-        assertTrue(measuredHost.contains("expandVertically("))
-        assertTrue(measuredHost.contains("shrinkVertically("))
-        assertTrue(measuredHost.contains("visibilityState.isIdle"))
-        assertTrue(measuredHost.contains("CITATION_SOURCES_SUMMARY_SIZE_DURATION_MS"))
-        assertTrue(measuredHost.contains("allowSpatialTransitions"))
-        assertTrue(measuredHost.contains("snap<IntSize>()"))
-        assertFalse(measuredHost.contains("delay("))
-        assertFalse(measuredHost.contains("FALLBACK"))
+        assertTrue(summary.contains("enabled = sourcesSummaryVisible"))
+        assertTrue(summary.contains("showCitationSources = true"))
+        assertFalse(summary.contains("haptics."))
+        assertTrue(summary.contains(".offset(x = (-AUXILIARY_CARD_START_EXTENSION_DP).dp)"))
+        assertTrue(summary.contains(".padding(top = 12.dp)"))
+        assertTrue(summary.contains(".graphicsLayer { alpha = informationActionsAlpha }"))
+        assertTrue(assistant.contains("durationMillis = if (actionAvailability.informationVisible)"))
+        assertTrue(assistant.contains("ACTIONS_ENTER_DURATION_MS"))
+        assertTrue(assistant.contains("ACTIONS_EXIT_DURATION_MS"))
+        assertTrue(assistant.contains("easing = LinearEasing"))
+        assertFalse(assistant.contains("CitationSourcesSummaryHost("))
+        assertFalse(transitionHost.contains("CitationSourcesSummaryHost("))
+        assertFalse(transitionHost.contains("MutableTransitionState"))
+        assertFalse(transitionHost.contains("expandVertically("))
+        assertFalse(transitionHost.contains("shrinkVertically("))
+        assertFalse(transitionHost.contains("CITATION_SOURCES_SUMMARY_SIZE_DURATION_MS"))
+        assertFalse(capsule.contains("citationCapsuleFadeModifier("))
+        assertFalse(summary.contains("scale"))
     }
 
     @Test
@@ -328,9 +324,19 @@ class ExperimentalGenerationUiSourceContractTest {
         val webSearchCompletionOnly = detail
             .substringAfter("presentation.kind == ToolKind.WEB_SEARCH &&")
             .substringBefore("ToolCompletedContent(presentation)")
+        val failedContent = detail
+            .substringAfter("ToolPresentationState.FAILED -> {")
+            .substringBefore("ToolPresentationState.STOPPED ->")
+        val completedContent = toolResult
+            .substringAfter("private fun ToolCompletedContent(")
+            .substringBefore("private fun McpResultContent(")
 
         assertTrue(detail.contains("ToolPresentationState.FAILED ->"))
         assertTrue(detail.contains("ToolErrorContent("))
+        assertFalse(failedContent.contains("McpResultContent("))
+        assertFalse(failedContent.contains("rawTextResult"))
+        assertFalse(failedContent.contains("rawStructuredResult"))
+        assertTrue(completedContent.contains("ToolKind.MCP -> McpResultContent(presentation)"))
         assertTrue(detail.contains("ToolPresentationState.STOPPED -> GenerationTerminalText("))
         assertTrue(errorContent.contains("GenerationTerminalText("))
         assertTrue(errorContent.contains("selectable = true"))
@@ -369,6 +375,14 @@ class ExperimentalGenerationUiSourceContractTest {
         assertTrue(assets.contains("code = scaledMarkdownTextStyle(ChatType.thoughtCode)"))
         assertTrue(assets.contains("plainTextStyle = markdownBodyStyle"))
         assertTrue(assets.contains("plainTextStyle = thoughtMarkdownBodyStyle"))
+    }
+
+    @Test
+    fun `list item paragraph boundaries restore markdown block spacing`() {
+        val assets = source(locateMainSourceRoot(), "message/MessageBubbleAssets.kt")
+
+        assertTrue(assets.contains("model.node.needsListParagraphSpacer()"))
+        assertTrue(assets.contains("Modifier.padding(top = LocalMarkdownPadding.current.block)"))
     }
 
     @Test

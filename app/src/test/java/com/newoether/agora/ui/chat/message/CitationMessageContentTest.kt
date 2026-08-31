@@ -542,21 +542,13 @@ class CitationMessageContentTest {
     }
 
     @Test
-    fun sourceSummaryVisibilityMatchesBottomActionLifecycle() {
+    fun sourceSummaryVisibilityUsesBottomInformationActionBoundary() {
         assertTrue(citationSummaryVisible(showActions = true, informationVisible = true, sourceCount = 54))
         assertFalse(citationSummaryVisible(showActions = false, informationVisible = true, sourceCount = 54))
         assertFalse(citationSummaryVisible(showActions = true, informationVisible = false, sourceCount = 54))
         assertFalse(citationSummaryVisible(showActions = true, informationVisible = true, sourceCount = 0))
-    }
-
-    @Test
-    fun sourceSummaryMeasuredTransitionFollowsVisibilityBoundaryAndCitationTiming() {
-        assertFalse(citationSummaryRequiresMeasuredTransition(false, false))
-        assertFalse(citationSummaryRequiresMeasuredTransition(true, true))
-        assertTrue(citationSummaryRequiresMeasuredTransition(false, true))
-        assertTrue(citationSummaryRequiresMeasuredTransition(true, false))
-        assertEquals(CITATION_CAPSULE_FADE_DURATION_MS, CITATION_SOURCES_SUMMARY_SIZE_DURATION_MS)
-        assertEquals(320, CITATION_SOURCES_SUMMARY_SIZE_DURATION_MS)
+        assertEquals(320, ACTIONS_ENTER_DURATION_MS)
+        assertEquals(220, ACTIONS_EXIT_DURATION_MS)
     }
 
     @Test
@@ -616,7 +608,7 @@ class CitationMessageContentTest {
     }
 
     @Test
-    fun chatLinksProvidePressedFeedbackWithoutUnderline() {
+    fun chatLinksDelegatePressedFeedbackToTimedColorAnimation() {
         val color = Color(0xFF3367D6)
         val styles = chatLinkTextStyles(color)
 
@@ -629,7 +621,9 @@ class CitationMessageContentTest {
             assertEquals(TextDecoration.None, style?.textDecoration)
         }
         assertEquals(TextDecoration.None, styles.pressedStyle?.textDecoration)
-        assertNotEquals(color, styles.pressedStyle?.color)
+        assertEquals(color, styles.pressedStyle?.color)
+        assertEquals(180, MarkdownLinkPressAnimationMillis)
+        assertEquals(0.72f, MarkdownLinkPressedAlpha)
     }
 
     @Test

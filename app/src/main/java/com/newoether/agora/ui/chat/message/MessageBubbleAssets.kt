@@ -110,7 +110,7 @@ internal fun chatLinkTextStyles(color: Color): TextLinkStyles {
         style = style,
         focusedStyle = style,
         hoveredStyle = style,
-        pressedStyle = style.copy(color = color.copy(alpha = 0.72f)),
+        pressedStyle = style,
     )
 }
 
@@ -144,6 +144,15 @@ internal fun scaledMarkdownTextStyle(style: TextStyle): TextStyle = style.copy(
         trim = LineHeightStyle.Trim.Both,
     ),
 )
+
+internal fun ASTNode.needsListParagraphSpacer(): Boolean {
+    if (type != MarkdownElementTypes.PARAGRAPH) return false
+    val listItem = parent?.takeIf { it.type == MarkdownElementTypes.LIST_ITEM } ?: return false
+    return listItem.children
+        .takeWhile { it !== this }
+        .any { it.type == MarkdownElementTypes.PARAGRAPH }
+}
+
 @Composable
 internal fun rememberChatMarkdownAssets(
     textColor: Color,
@@ -230,6 +239,11 @@ internal fun rememberChatMarkdownAssets(
                 SearchHighlightedMarkdownText(
                     model = model,
                     style = model.typography.paragraph,
+                    modifier = if (model.node.needsListParagraphSpacer()) {
+                        Modifier.padding(top = LocalMarkdownPadding.current.block)
+                    } else {
+                        Modifier
+                    },
                     spec = LocalSearchHighlightSpec.current,
                     highlightColor = searchHighlightColor,
                     activeHighlightColor = activeSearchHighlightColor,
@@ -514,11 +528,11 @@ private fun OverflowFriendlyMarkdownTable(model: MarkdownComponentModel) {
 }
 
 @Composable
-private fun SearchHighlightedMarkdownTable(
+internal fun SearchHighlightedMarkdownTable(
     model: MarkdownComponentModel,
-    spec: SearchHighlightSpec?,
-    highlightColor: Color,
-    activeHighlightColor: Color,
+    spec: SearchHighlightSpec? = null,
+    highlightColor: Color = SearchHighlightBackground,
+    activeHighlightColor: Color = ActiveSearchHighlightBackground,
 ) {
     MarkdownTable(
         content = model.content,
@@ -607,15 +621,15 @@ private fun SearchHighlightedMarkdownTableRow(
 }
 
 @Composable
-private fun SearchHighlightedMarkdownText(
+internal fun SearchHighlightedMarkdownText(
     model: MarkdownComponentModel,
     style: TextStyle = model.typography.text,
     textNode: ASTNode = model.node,
     modifier: Modifier = Modifier,
     literalText: String? = null,
-    spec: SearchHighlightSpec?,
-    highlightColor: Color,
-    activeHighlightColor: Color,
+    spec: SearchHighlightSpec? = null,
+    highlightColor: Color = SearchHighlightBackground,
+    activeHighlightColor: Color = ActiveSearchHighlightBackground,
 ) {
     val settings = annotatorSettings()
     val citationTokens = LocalCitationInlineTokens.current
@@ -646,7 +660,7 @@ private fun SearchHighlightedMarkdownText(
             color = fadeColor,
             fade = nodeFade,
         )
-        MarkdownText(
+        AnimatedMarkdownText(
             content = renderedText,
             node = model.node,
             modifier = modifier,
@@ -699,25 +713,25 @@ private fun SearchHighlightedMarkdownText(
         layoutResult = layoutResult,
         coordinates = coordinates,
     )
-    MarkdownText(
+    AnimatedMarkdownText(
         content = renderedText,
         node = model.node,
         modifier = modifier
             .onGloballyPositioned { coordinates = it },
         style = style,
-        onTextLayout = { result, _ -> layoutResult = result },
+        onTextLayout = { layoutResult = it },
         sourceContent = model.content,
     )
 }
 
 @Composable
-private fun SearchHighlightedMarkdownHeading(
+internal fun SearchHighlightedMarkdownHeading(
     model: MarkdownComponentModel,
     style: TextStyle,
     contentType: org.intellij.markdown.IElementType,
-    spec: SearchHighlightSpec?,
-    highlightColor: Color,
-    activeHighlightColor: Color,
+    spec: SearchHighlightSpec? = null,
+    highlightColor: Color = SearchHighlightBackground,
+    activeHighlightColor: Color = ActiveSearchHighlightBackground,
 ) {
     SearchHighlightedMarkdownText(
         model = model,
