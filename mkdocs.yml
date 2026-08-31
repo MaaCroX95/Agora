@@ -56,6 +56,7 @@ plugins:
             Conversation Search: 对话搜索
             Embedding / RAG: 嵌入 / RAG
             Memory & Cache: 记忆与缓存
+            Skills: 技能
             Local Models: 本地模型
             PDF Import: PDF 导入
             Data Portability: 数据迁移
@@ -94,6 +95,7 @@ plugins:
             Conversation Search: 對話搜尋
             Embedding / RAG: 嵌入 / RAG
             Memory & Cache: 記憶與快取
+            Skills: 技能
             Local Models: 本機模型
             PDF Import: PDF 匯入
             Data Portability: 資料可攜性
@@ -132,6 +134,7 @@ plugins:
             Conversation Search: Búsqueda de Conversaciones
             Embedding / RAG: Embedding / RAG
             Memory & Cache: Memoria y Caché
+            Skills: Habilidades
             Local Models: Modelos Locales
             PDF Import: Importación PDF
             Data Portability: Portabilidad de Datos
@@ -169,6 +172,7 @@ plugins:
             Conversation Search: Recherche de Conversations
             Embedding / RAG: Embedding / RAG
             Memory & Cache: Mémoire et Cache
+            Skills: Compétences
             Local Models: Modèles Locaux
             PDF Import: Importation PDF
             Data Portability: Portabilité des Données
@@ -206,6 +210,7 @@ plugins:
             Conversation Search: Unterhaltungssuche
             Embedding / RAG: Embedding / RAG
             Memory & Cache: Speicher & Cache
+            Skills: Fähigkeiten
             Local Models: Lokale Modelle
             PDF Import: PDF-Import
             Data Portability: Datenportabilität
@@ -243,6 +248,7 @@ plugins:
             Conversation Search: Поиск по Диалогам
             Embedding / RAG: Эмбеддинг / RAG
             Memory & Cache: Память и Кэш
+            Skills: Навыки
             Local Models: Локальные Модели
             PDF Import: Импорт PDF
             Data Portability: Переносимость Данных
@@ -280,6 +286,7 @@ plugins:
             Conversation Search: Busca de Conversas
             Embedding / RAG: Embedding / RAG
             Memory & Cache: Memória e Cache
+            Skills: Habilidades
             Local Models: Modelos Locais
             PDF Import: Importação PDF
             Data Portability: Portabilidade de Dados
@@ -317,6 +324,7 @@ plugins:
             Conversation Search: 会話検索
             Embedding / RAG: 埋め込み / RAG
             Memory & Cache: メモリとキャッシュ
+            Skills: スキル
             Local Models: ローカルモデル
             PDF Import: PDF インポート
             Data Portability: データポータビリティ
@@ -354,6 +362,7 @@ plugins:
             Conversation Search: 대화 검색
             Embedding / RAG: 임베딩 / RAG
             Memory & Cache: 메모리 및 캐시
+            Skills: 스킬
             Local Models: 로컬 모델
             PDF Import: PDF 가져오기
             Data Portability: 데이터 이식성
@@ -394,6 +403,7 @@ plugins:
             Conversation Search: بحث المحادثات
             Embedding / RAG: التضمين / RAG
             Memory & Cache: الذاكرة والتخزين المؤقت
+            Skills: المهارات
             Local Models: النماذج المحلية
             PDF Import: استيراد PDF
             Data Portability: نقل البيانات
@@ -453,6 +463,7 @@ nav:
       - Conversation Search: search.md
       - Embedding / RAG: embedding.md
       - Memory & Cache: memory.md
+      - Skills: skills.md
   - Local Models: local-model.md
   - PDF Import: pdf-import.md
   - Data Portability: import-export.md

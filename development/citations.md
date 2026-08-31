@@ -87,10 +87,10 @@ search, or exposed as a fallback title or URL.
   ordinary Markdown is restored. Streaming must not expose the raw wrapper before that decision.
 - When a streaming projection differs from the terminal projection, the final streaming Markdown
   remains mounted until the message-list mutation anchor is armed. The terminal projection commits
-  on the following frame through the same Markdown subtree, and the host interpolates its measured
-  size over 320 ms. Late terminal citation metadata repeats this same handoff. Crossfading duplicate
+  on the following frame through the same Markdown subtree and adopts its measured terminal size
+  immediately. Late terminal citation metadata repeats this same handoff. Crossfading duplicate
   Markdown trees, exposing terminal click targets before commit, and animating ordinary streaming
-  growth are prohibited.
+  growth or the terminal Markdown size change are prohibited.
 - The same projection applies after normal completion, user Stop, or a persisted partial failure.
   Valid citations already received remain available in all three terminal states.
 - Malformed, unsafe, unsupported, or late citation metadata cannot turn an otherwise valid answer
@@ -144,17 +144,18 @@ ordinary Unicode text or standard Markdown links.
   `labelLarge` text. Icon and text share the existing capsule foreground color. Its external left
   edge extends 4 dp into the message list's 8 dp inset, matching the compact Thinking card's 4 dp
   screen-side margin without changing the capsule's internal padding or right-side geometry.
-- Inline/group, summary, numbered-source containers, and bottom-sheet source rows own a draw-only fade
-  from alpha `0f` to `1f` over 320 ms with `LinearEasing`. The opacity layer adds no scale,
-  translation, delayed data, hidden click target, or remeasurement. The Sources summary separately
-  owns one stable measured-height slot: it arms the message-list mutation anchor before a visibility
-  commit, retains the last visible sources through exit, and interpolates the slot between zero and
-  final height over the same 320 ms with `LinearEasing`. Reduced Motion snaps that spatial change
-  while preserving the opacity fade. Stable message/source/group identity prevents ordinary
-  recomposition or count-label updates from replaying either transition; genuinely new/reappearing
-  capsules and false-to-true summary visibility transitions replay the opacity fade. A valid Gemini
-  citation first visible around answer terminalization must start at zero draw alpha and fade in
-  rather than flash at full opacity.
+- Inline/group, numbered-source containers, and bottom-sheet source rows own a draw-only fade from
+  alpha `0f` to `1f` over 320 ms with `LinearEasing`. The opacity layer adds no scale, translation,
+  delayed data, hidden click target, or remeasurement. The Sources summary has no independent fade,
+  scale, measured-height host, retained zero-height slot, or layout-mutation owner. It is composed at
+  the same visibility boundary as the bottom information actions and uses that owner's exact alpha,
+  including the 320 ms enter, 220 ms exit, `LinearEasing`, and interruption behavior. While a shared
+  exit fade is still visible, its fixed content may remain composed but is disabled and exposes no
+  semantics; when the shared alpha reaches zero it leaves layout directly. Stable
+  message/source/group identity prevents ordinary recomposition or count-label updates from replaying
+  capsule transitions. Genuinely new/reappearing inline, numbered, and source-row capsules replay
+  their owned opacity fade. A valid Gemini citation first visible around answer terminalization must
+  start at zero draw alpha and fade in rather than flash at full opacity.
 - Primary inline/group, summary, and numbered-source containers use the thinking-card palette: the
   theme surface color at 2 dp tonal elevation with `primary.copy(alpha = 0.7f)` foreground text.
   Each complete source row in either Sources sheet is transparent at rest. It retains
@@ -184,6 +185,9 @@ ordinary Unicode text or standard Markdown links.
 - Every clickable link rendered in chat answer content uses the theme link/accent color with
   `TextDecoration.None`. Sources-sheet URL titles are the explicit presentation exception: they use
   `onSurface` like non-URL source titles while retaining the same safe link target and activation.
+  Pressing and releasing an ordinary Markdown link interpolates only that link's text color between
+  the normal accent and its existing 72%-alpha pressed color over 180 ms with
+  `FastOutSlowInEasing`; the color-only feedback remains enabled under Reduced Motion.
   Link labels, targets, safe-activation rules, and ordinary Markdown semantics remain unchanged.
   Non-URL file/document sources remain normal text and open the in-app detail surface.
 - A safe HTTP(S) source opens through Agora's existing safe-link interaction path. A non-URL
@@ -264,9 +268,10 @@ Changes touching citations must prove:
    object-replacement glyph, domain/file-label capsules without parenthesized domains, maximal
    adjacent-run grouping with non-ellipsized `+N`, separated-run isolation, content-measured single
    capsules with no absent-suffix reservation, exact action-control lifecycle matching, a 36 dp
-   left-aligned dynamic-count summary capsule, thinking-card capsule colors, 320 ms draw-only opacity
-   fade for initial/reappearing/late-Gemini capsules, one mutation-anchored 320 ms measured-height
-   summary visibility host with Reduced Motion spatial snap, unconditional `N Sources` titles with
+   left-aligned dynamic-count summary capsule, thinking-card capsule colors, shared information-action
+   alpha with 320 ms enter, 220 ms exit, `LinearEasing`, and identical interruption behavior, no
+   Sources scale or measured-height host, 320 ms draw-only opacity fade for initial/reappearing/
+   late-Gemini inline and source capsules, unconditional `N Sources` titles with
    thinking-sheet typography, grouped subset-sheet reuse, full-list summary-sheet preservation,
    complete ordered bottom-sheet contents, transparent rows with pill-clipped ripple, safe
    click/detail behavior, selection fallback, Copy output, and accessibility labels.

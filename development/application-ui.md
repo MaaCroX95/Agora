@@ -228,6 +228,12 @@ Conversation search exposes a separate in-flight state from the moment a nonblan
 
 The drawer's first-list state is not a second conversation authority or a new search architecture; Room remains the durable source and the existing search methods remain authoritative.
 
+The conversation and search-result lists share one edge-fade state rule. The top edge is treated as reached while item `0` is first visible and its scroll offset is at most `2 dp`. The bottom edge is treated as reached for an empty list, or while the final visible item's end is no more than `2 dp` beyond the viewport end. The corresponding fade remains hidden inside that tolerance and appears only after content crosses it. This tolerance changes state judgment only; it does not add or modify list content padding, outer Drawer padding, list geometry, or programmatic scroll targets.
+
+Ordinary conversation rows animate ordering changes with a `600 ms` placement tween when the shared motion policy allows spatial transitions, and use a `300 ms` deletion-only fade-out. Reduced Motion disables placement travel. Stable conversation keys and the search-result branch's whole-list transition remain unchanged.
+
+After durable deletion and runtime cleanup of the conversation that was selected when deletion was admitted, the canonical selection owner enters New Chat unless a newer explicit selection targets another conversation. A pending or completed newer conversation selection remains authoritative. Deleting a nonselected conversation or a deletion that fails before cleanup does not change the visible page.
+
 ## 17. Model alias display fallback
 
 A model alias is presentation text, never a model identity. An explicit nonblank alias stored under
@@ -262,6 +268,42 @@ exists. Saving that seed unchanged does not materialize it in DataStore; editing
 explicit alias, while clearing an explicit alias restores fallback behavior. The new-custom-model
 form remains blank until the user enters an alias.
 
+## 18. Models sync progress and attempt fingerprint
+
+The Models page starts automatic full-provider model sync only when the current provider fingerprint
+differs from the last persisted attempted fingerprint. A full sync presents no in-progress snackbar.
+Its existing sync card owns progress feedback in place: the 24 dp refresh icon crossfades to a 24 dp
+circular progress indicator and the idle headline crossfades to localized `Syncing...`, both over
+250 ms without shifting the row. The existing result snackbar remains the only snackbar and appears
+after a completed sync with the success, no-provider, completed, or failure outcome.
+
+The full-sync controller captures the provider fingerprint when it admits the attempt and persists
+that exact fingerprint after every non-cancelled attempt, including attempts with provider-specific
+or global errors. It does not recompute the fingerprint after provider work. Cancellation clears the
+single in-flight flag, emits no result, and does not persist the attempted fingerprint. Onboarding's
+single-provider fetch remains outside this full-sync presentation and fingerprint lifecycle.
+
+## 19. Notification permission and background-execution settings
+
+Android 13+ notification permission is requested only after onboarding has completed and the main
+Chat navigation has entered composition. Immediately before that request, the existing notification
+owner creates both app channels. When that entry will show the system notification-permission dialog,
+the Chat composer withholds only its initial automatic focus until the activity-result callback
+reports that the dialog has closed, whether permission was granted or denied. Chat launch content
+still appears on its existing schedule while the dialog is present. Already-authorized devices and
+Android 12 or earlier retain the ordinary initial-focus timing; no timeout or fixed delay guesses when
+the permission dialog disappeared. The ongoing generation-status channel remains low importance,
+unbadged, and explicitly silent. The response-completion channel is created at high importance with
+the system default notification sound and vibration so a newly created channel is eligible for
+audible heads-up presentation. Existing channel IDs and user/device channel choices are never
+deleted, recreated, migrated, or overridden; builder priority remains the pre-Android-8 counterpart.
+
+Automation Settings places Exact Execution and Battery Optimization together in one localized
+Background Execution category. Battery Optimization is a status-bearing action row, not an app-owned
+switch: it reads `PowerManager.isIgnoringBatteryOptimizations` on entry and resume and opens the
+general Android battery-optimization management screen. Agora does not request direct exemption or
+declare `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` through this entry.
+
 ## 20. Local Sandbox outcome feedback
 
 Local Sandbox install, remove, upgrade, and reset outcomes are process-local buffered one-shot events.
@@ -276,6 +318,7 @@ install, remove, and upgrade work therefore remains available to later consumers
 Only an explicit Sandbox reset may cancel the manager scope, and reset must replace that scope before
 continuing. The queue is not persisted or restored after process death, mirrored through a durable
 flag, or represented as retained UI state. The Play flavor exposes an empty outcome stream.
+
 ## 21. Tasks Once date-picker mode transition
 
 The Tasks Once date picker uses Material3's modal `DatePickerDialog` at its stable 568 dp container
@@ -304,7 +347,8 @@ and all required image normalization, video frame extraction, PDF rendering, ord
 reading, or Local Sandbox copying begins before Send. `PROCESSING`, `READY`, and `FAILED` are
 persisted with the draft for both ordinary conversations and the New Chat workspace. Navigating to
 another conversation does not cancel or transfer work; returning shows the same live state. After
-process death, `PROCESSING` restarts from its immutable private staged source, `FAILED` remains
+process death, a conversation that has not been explicitly opened remains dormant. When the user
+opens that owner, `PROCESSING` restarts from its immutable private staged source, `FAILED` remains
 retryable, and an unavailable staged source becomes `FAILED`. Legacy drafts without import state
 are `READY`. The existing `unavailable` value remains reserved for backup/import restoration when
 the attachment resource cannot be restored and never represents import failure.
@@ -337,8 +381,9 @@ Switching conversations cannot cancel, redirect, duplicate, or clear the frozen 
 tap through authoritative acceptance and exact-owner clearing, Delete Conversation is disabled for
 the origin and the controller rejects deletion races below the dialog. A New Chat request selects
 its newly created conversation only if the user still occupies the originating New Chat workspace;
-otherwise it appears in the list without taking focus. A process restart restores the durable draft
-and attachment imports but never automatically replays an unaccepted Send request.
+otherwise it appears in the list without taking focus. A process restart leaves durable drafts and
+attachment imports dormant until their exact owner is explicitly opened, then restores that owner
+without automatically replaying an unaccepted Send request.
 
 Attachment paging preserves occurrence identity. Send emits successful attachment artifacts and
 metadata in one traversal of Composer order. Composer and durable-message viewers assign pager
@@ -371,13 +416,24 @@ multiple image URI paste, mixed image/text pass-through, unsupported content pas
 private-copy routing, and failure cleanup. Model-alias verification covers explicit precedence, all
 approved family-specific suffixes, generic preservation of ambiguous tokens, casing/separator
 normalization, idempotence, inferred search, duplicate-display preservation, raw-ID supporting text,
-and unchanged-fallback non-persistence. Tasks Once verification covers the fixed 568 dp Material
-modal height, Material3 ownership of display mode and keyboard interaction, and absence of shadow
-mode, delay, retry, or window-size animation. Debug-model verification covers one canonical
-Chat-enabled model/alias set shared by ordinary Chat and manual Compact while every Provider Settings
-and other configuration surface remains free of Debug Provider/model integration. Local Sandbox
-outcome verification covers emission before collection, ordered pending outcomes, one-time sequential
-display and consumption, absence of replay after collector recreation, every
-install/remove/upgrade/reset success and failure path, the empty Play stream, and the absence of
-persistence or retained UI state. The project-defined full build gate remains required after final
-code or resource changes.
+and unchanged-fallback non-persistence. Models-sync verification covers absence of an in-progress
+snackbar, the two 250 ms in-card crossfades, localized `Syncing...`, persistence of the admitted
+fingerprint after provider and global errors, no end-of-sync fingerprint recomputation, and
+cancellation without fingerprint persistence or completion presentation. Drawer edge-fade
+verification covers the shared conversation/search owner, empty-list behavior, item `0` and final-item
+identity, and the exact `0 dp`, `2 dp`, and above-`2 dp` top/bottom boundaries without adding content
+padding or changing scroll targets. Tasks Once verification covers the fixed 568 dp Material modal
+height, Material3 ownership of display mode and keyboard interaction, and absence of shadow mode,
+delay, retry, or window-size animation. Debug-model verification covers one canonical Chat-enabled
+model/alias set shared by ordinary Chat and manual Compact while every Provider Settings and other
+configuration surface remains free of Debug Provider/model integration. Notification/background-execution verification covers the
+post-onboarding request boundary, channel creation before permission launch, callback-driven initial
+composer focus after permission-dialog dismissal, launch-content independence from permission state,
+absence of timeout-based dismissal guessing, silent low-importance generation status,
+high-importance audible/vibrating response completion, shared Exact Execution and Battery
+Optimization grouping, resume-time exemption-state refresh, the general system settings intent,
+absence of direct exemption permission, and localized resource parity. Local Sandbox outcome
+verification covers emission before collection, ordered pending outcomes, one-time sequential display
+and consumption, absence of replay after collector recreation, every install/remove/upgrade/reset success and failure
+path, the empty Play stream, and the absence of persistence or retained UI state. The project-defined full build
+gate remains required after final code or resource changes.

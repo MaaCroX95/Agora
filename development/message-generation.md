@@ -121,9 +121,14 @@ terminal settlement, recovery, and queue release.
 The Compact invocation is appended by the shared pre-Provider request projection as the final USER
 message. It is request-only configuration: it participates in exact token accounting but is never
 written to Room, rendered as a visible message, assigned a Run boundary, or used to alter durable
-parentage. The configured Compact summary instructions remain the system prompt; the final USER
-turn only invokes that behavior. This guarantees a valid terminal input role even when the durable
-Compact parent is an Assistant message.
+parentage. The configured Compact summary instructions remain the complete system prompt; the final
+USER turn only invokes that behavior. A saved custom Compact prompt replaces the built-in system
+prompt in full, with no hidden prefix, suffix, or mandatory guardrail added by Agora. The built-in
+default therefore owns its provenance, task-state, prior-summary reconciliation, language, fidelity,
+and anti-recursion rules, while a custom prompt intentionally assumes responsibility for all of
+those semantics. The API-only invocation is tagged as application-generated control input and must
+not be represented by the built-in default as human intent, pending work, or the next action. This
+guarantees a valid terminal input role even when the durable Compact parent is an Assistant message.
 
 After a durable tool result and a successful Compact, continuation priority is:
 
@@ -139,8 +144,11 @@ foreground-service lease when execution is not externally managed. An unavailabl
 start records that no lease was acquired and generation continues through the same canonical path;
 it must not create a terminal error, retry, delay, alternate execution path, or shadow lifecycle.
 Completion releases the lease only when acquisition actually succeeded. Task and Loop Workers keep
-using their externally managed WorkManager foreground execution. Process death still uses the
-ordinary orphaned-Run recovery contract and does not recreate the coroutine or Provider stream.
+using their externally managed WorkManager foreground execution. Process death does not recreate a
+coroutine or Provider stream. During interactive App startup, orphaned durable Runs remain dormant:
+Agora must not enumerate conversations or Runs, instantiate per-conversation runtime state, or run
+recovery validation. The ordinary orphaned-Run recovery contract begins only after the user explicitly
+opens that exact conversation and may inspect and recover only that owner.
 
 Foreground Chat terminal attention is conversation-aware. A conversation is visible only while the
 app is foreground, Chat owns top-level presentation, and that exact conversation is selected;
@@ -154,6 +162,21 @@ with a generic failure body. The durable read boundary runs only for a foregroun
 conversation; after its unread write succeeds, it cancels that conversation's stable notification
 without affecting any other conversation. Headless Task/Loop execution retains its independent
 foreground/background notification policy.
+
+The continuous answering haptic texture has one side-effect owner: `AnsweringHapticEffect`. It may
+run only while haptics are enabled, the app is foreground, Chat owns top-level presentation, and the
+selected runtime snapshot exposes an ordinary active MODEL message in `SENDING` state with an active
+Answer segment. `ConversationSelectionController` is the single binding owner for selected
+conversation identity and that conversation's canonical runtime snapshot: every ID publication first
+reads the target registry snapshot synchronously, publishes that bound snapshot, invalidates the old
+collector, and accepts later emissions only for the still-current ID and binding generation. New Chat
+publishes the neutral snapshot when it clears the selected ID. The Room-load-delayed render mirror and
+an independently sampled ID/snapshot pair must never drive answering haptics. Compact, a terminal or
+non-Answer message, Settings, Tasks, media/PDF preview, text preview, app background, or disabling
+haptics makes the texture ineligible and must stop it immediately, including when the effect leaves
+composition. The drawer remains part of Chat presentation and does not suppress the texture.
+Generation code and overlay code must not start or stop the waveform independently or introduce a
+second haptic owner, shadow state, delay, compensation, or fallback path.
 
 ## 6. Review blockers
 
@@ -227,6 +250,10 @@ durable message identity and cannot become a parallel message graph.
   outside scope.
 - Ordinary Regenerate creates a fresh Run and branch using the boundary's real USER source, or the
   first assistant's parent when no real USER is present.
+- Its visual transition scrolls to that direct generation parent. An ordinary assistant target still
+  resolves to its parent, while an explicit Compact target remains anchored on the Compact itself.
+  This presentation rule does not change generation boundaries, Provider context, Run parentage, or
+  branch selection.
 - It must not use the generation boundary to assemble Provider context. The ordinary API-path
   builder does that from the new request parent.
 
@@ -576,12 +603,17 @@ outer-top and 5 dp adjoining-bottom corners; middle rows use 5 dp corners; the l
 adjoining-top and 24 dp outer-bottom corners. All four radii animate when a streamed row changes an
 existing row's group position. Each radius uses one monotonic 240 ms `FastOutSlowInEasing` tween,
 never a bouncy/overshooting spring, and is clamped to [5 dp, 24 dp] after animation; Reduced Motion
-snaps directly to the clamped target. The existing one-shot 420 ms row fade/scale entrance is
-independent and unchanged. Timeline
-Thought/Tool/Transcription cards and grouped blocks own exactly one appearance modifier on their
-actual overflow-sized Surface; a bounded outer appearance Box and a second 0.90 scale layer are
-forbidden because they clip the deliberate 4 dp overflow. Answer-block appearance ownership remains
-unchanged.
+snaps directly to the clamped target. The existing one-shot 420 ms row fade/scale entrance remains
+draw-only and independent from later manual or terminal expansion changes. When Auto-Expand Active
+Group is enabled, a genuinely new active Grouped card is laid out at its final expanded width,
+padding, disclosure state, and content height on its first frame. Its first appearance runs only the
+existing Surface-local fade plus 0.90-to-1.0 scale entrance; it must not first compose collapsed, run
+a width/content expand transition, start a layout-mutation anchor for that already-final geometry, or
+force Tool-containing groups opaque. Historical groups and recomposition/off-screen re-entry do not
+replay this entrance. Timeline Thought/Tool/Transcription cards and grouped blocks own exactly one
+appearance modifier on their actual overflow-sized Surface; a bounded outer appearance Box and a
+second 0.90 scale layer are forbidden because they clip the deliberate 4 dp overflow. Answer-block
+appearance ownership remains unchanged.
 Group position is resolved from rendered order rather than raw adjacent indices: a nonblank visible
 Answer ends the run, while blank Answer, Error, and any other non-rendered segment are transparent to
 the previous/next scan. Invalid indices fail closed as a single row. The top/bottom spacing between a
@@ -617,16 +649,38 @@ page first; click intent is passed explicitly and is never recomputed from the r
 Failed and stopped tool-detail content inside the shared Thinking/Tool bottom-sheet path reuses the
 same neutral gray body-text terminal presentation as ordinary message content. Failed text remains
 selectable and full-width, but neither state may introduce a `Surface`, rounded background, card, or
-Thinking-specific typography. Web Search follows this shared Tool terminal contract; only its
+Thinking-specific typography. A failed MCP detail renders only that terminal failure; its raw text
+and structured result must not be rendered again beneath it. EMPTY/COMPLETED MCP details continue to
+render their ordinary result content. Web Search follows this shared Tool terminal contract; only its
 EMPTY/COMPLETED result content uses the specialized search-result presentation. Message-level errors
 remain owned by the Assistant message and must not be copied into every Segment detail. Destructive
 actions, non-sheet validation text, and unboxed image-load failures retain their own semantics.
+
+JSON-shaped Tool arguments and results in that shared Bottom Sheet use the existing prefix-aware JSON
+renderer for both active and persisted content. When persistence bounding appends the exact terminal
+persistence-truncation marker, the renderer treats only that marker as out-of-band presentation
+metadata, parses the retained real JSON prefix, and displays the marker separately below the
+structured tree. It never inserts a missing quote, key, value, object/array delimiter, or other JSON
+syntax. Arbitrary trailing prose and genuinely impossible JSON prefixes remain invalid and retain the
+raw-text fallback.
 
 ### 8.8 Empty output and automatic handoff
 
 Provider completion with no answer, thought, follow-up, guidance, or other successful output is an
 ordinary generation error. Terminal persistence must include a nonblank error value so every
 consumer can render the shared error bar.
+
+For every applicable remote Provider, a zero-output parse/protocol failure presented through the
+localized `The server response could not be read.` error and a response-body read exception whose
+cause chain contains that exact phrase both enter the Provider's existing retry sequence. Eligibility
+is evaluated only from the current Provider pass: it must have produced no nonblank Answer, Thought,
+Tool, hosted-tool, or other Provider output. An active `SENDING` state with no output in that pass and
+an established but empty Answer both remain zero-output. A Provider pass started after a completed
+Tool call is evaluated independently: output from the preceding pass does not disqualify the new
+`SENDING` pass. Once the current pass produces any Provider output, either failure is terminal and
+must not replay it. This rule reuses the existing initial request plus at most five retries, delays,
+`Retrying` presentation, cancellation, and exhaustion behavior; it does not classify unrelated
+`IOException`, DNS, timeout, or other transport detail as retryable.
 
 Every Compact Run success-gates all automatic handoff, not only the no-input loop and regardless of
 whether the caller is foreground UI, Task, or Loop. Its ordinary launcher installs the queue-release
@@ -715,6 +769,52 @@ publishes one snapshot containing the complete batch before any Tool execution b
 text-recovery batch follows the same publication rule even though no earlier structured block existed.
 The batch executor's later per-call running updates do not own creation visibility. UI placeholders,
 delays, retries, or shadow Tool state must not substitute for this overlay publication boundary.
+
+`generate_image` alone uses a 600,000 ms outer execution budget and the same 600,000 ms budget for
+its generation request and returned-image download. Every other Tool keeps its ordinary configured
+execution timeout. A successful image is persisted through `ToolImageStore` and returned in the
+owning `ToolExecutionResult.images`; the overlay copies it to that exact Tool call and
+`MessageSegment.toolImages`. No provider-local pending queue, conversation drain, or new
+message-level generated-image tail may own current output. Existing `ChatMessage.images` rows remain
+read-compatible and retain their legacy full-width renderer, but new generated images never enter
+that path.
+
+The visible `generate_image` segment is a hard ordered presentation boundary in Compact, Grouped
+Timeline, ordinary Timeline, and the Compact/Grouped Bottom Sheet presentation mode. Its current
+information card ends immediately after that call. The fixed left-aligned `300 x 300 dp` slot is
+rendered next, and every later image call, Tool, Thought, Transcription, or Answer starts after that
+slot. Group and slot identity depend only on the append-only segment/detail position, never on the
+pending, failed, or successful payload, so lifecycle updates cannot replace, regroup, resize, or
+otherwise rewrite the preceding prefix. Multiple image calls establish multiple boundaries in their
+original segment order.
+
+On the boundary's first visible frame, the owning card is presented collapsed and one collapsed
+value is committed through the existing expansion map. Compact and Bottom Sheet preserve the first
+card's existing expansion and appearance identity during this transition. The image-boundary claim
+is session-scoped and one-shot: terminal completion does not collapse again, and a later manual
+expansion remains effective. The slot owns one draw-only 0.90-to-1.0 scale plus opacity entrance
+through the existing segment appearance registry. Its allocated geometry remains fixed while the
+contents Crossfade. Pending content is a light-neutral dot matrix over a light-neutral background.
+The dot field stays at least `16 dp` inside every slot edge; dot radius uses a fixed physical
+falloff from the invisible anchor: distance `0..150 dp` maps linearly to factor `1..0`, clamps beyond
+that range, then squares the factor before interpolating the existing minimum and maximum radii. The
+anchor's random targets and complete smooth travel stay at least `32 dp` inside every edge. Each
+target traversal lasts `1,300 ms`, twice the prior motion speed. Normal motion continues
+target-to-target while Pending. The minimum dot radius remains `0.7 dp` and the maximum is `3.9 dp`;
+the existing center bounds account for that maximum so complete dot edges still retain the full
+`16 dp` inset. Reduced Motion freezes the anchor at the center
+without removing the opacity transition. A terminal failure shows a centered Material `BrokenImage`.
+For a completed attachment, the Coil request receives the explicit pixel size derived from the
+`300 dp` slot so decoding never waits for the painter's first draw; the Pending matrix remains until
+decode succeeds, then Crossfades to a `ContentScale.Crop` image that reuses the ordinary media-open
+callback.
+
+In the Tool detail Bottom Sheet, a `generate_image` result keeps the same `24 dp` outer horizontal
+content padding as ordinary Tool text. Its rounded preview is centered and fills that padded content
+width as a `width x width` square. `ContentScale.Crop` center-crops only the source bitmap inside the
+square; it does not remove container margins or cap the square by sheet height. Arguments, labels,
+result text, and the image therefore share the same outer edges. Non-generation Tool images retain
+their existing aspect-ratio sizing and `ContentScale.Fit` behavior.
 
 Local Sandbox and Conch share one shell-tool baseline: foreground command/workdir validation,
 bounded retained output and cancellation propagation; bounded typed `file_read`; 1MB UTF-8

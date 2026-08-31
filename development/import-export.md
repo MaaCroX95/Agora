@@ -160,6 +160,18 @@ The unified Settings UI must present a second destructive confirmation before st
 `REPLACE`, explicitly stating that all existing conversations will be deleted and only the selected
 imported conversations will remain.
 
+The native `.agora` preview separates each visible category decision block by 16 dp while retaining
+the existing 4 dp label-to-strategy-control gap inside a block. After the user selects an archive,
+reading, validating, and generating its preview shows a non-dismissible modal titled `Loading…`
+until the preview is ready or the operation fails. The preview choices appear only after that loading
+state clears. After the user confirms Import, actual native restoration shows a separate modal titled
+`Importing…`; after the user selects an export destination, native export shows the corresponding
+`Exporting…` modal until success or failure. All three native modals use the same centered,
+indeterminate, motion-aware circular progress indicator, reject Back and outside-click dismissal,
+and expose no cancel action. Preview-loading state is distinct from actual import progress and clears
+on success, invalid or empty archives, failure, and cancellation. Third-party Claude/GPT imports
+retain their determinate percentage presentation.
+
 ## 7. Legacy compatibility and failure behavior
 
 - Unknown JSON fields are ignored; known fields are normalized and validated by their current owner.

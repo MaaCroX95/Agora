@@ -1,23 +1,27 @@
 # Appearance
 
-Open **Settings → Appearance** to configure how Agora looks and presents generated content.
+Open **Settings → Appearance** to configure Agora's theme, motion, chat presentation, and font.
 
-## Theme and typography
+## Theme & Color
 
-- Follow the system theme or choose light/dark mode and an available color scheme.
-- Use the system font, Agora's bundled font, or import a custom font.
-- Toggle dynamic color where the device and build support it.
+- **Theme Mode** follows the device or forces light or dark mode.
+- **Dynamic Color** is available on Android 12 and newer. While it is enabled, Agora uses the system palette and disables the manual color-scheme and scheme-style selectors.
+- **Color Scheme** selects an Agora palette, and **Scheme Style** adjusts how that palette is applied.
 
-## Chat presentation
+## Motion & Feedback
 
-- Show or hide detailed token usage.
-- Display thinking segments as cards or bottom sheets.
-- Display thinking and tool activity as a timeline, grouped blocks, or compact blocks.
-- In card mode, optionally expand the currently active group automatically.
-- Enable or disable haptic feedback.
+- **Blur Effects** blurs the top of the chat list beneath the toolbar. Disable it to reduce rendering cost.
+- **Reduce Motion** reduces continuous and large spatial movement while retaining fades, direct gestures, and useful state feedback.
+- **Haptic Feedback** controls supported vibration feedback.
 
-## Motion and effects
+## Chat Display
 
-The blur setting applies to the chat-list area beneath the top toolbar. **Reduce motion** removes or shortens supported transitions and decorative motion; it does not change message generation or data behavior.
+- **Stick to Bottom** follows new content automatically while a response is generating.
+- **Parse $…$ as Inline Math** treats single-dollar expressions as inline math. When disabled, they remain ordinary text; other math delimiters are unchanged.
+- **Thinking & Tool Blocks** can use a chronological timeline, a grouped timeline that merges consecutive thinking/tool/image blocks, or a compact layout above the answer.
+- **Thinking Segments** chooses whether a segment opens as a card or bottom sheet. This selector is shown only when Thinking & Tool Blocks is not set to Timeline.
+- **Auto-Expand Active Group** is available only with Grouped Timeline and Card thinking segments. It expands the current group and collapses it when the model moves on.
 
-Changes take effect through the shared appearance settings and may require the relevant screen to be recreated before every surface reflects them.
+## Font
+
+Choose Agora's bundled font, the system font, or a custom font. The custom-file picker appears only for **Custom**. Agora validates imported font files and rejects an invalid file; switching away from Custom removes the imported copy managed by Agora.

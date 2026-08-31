@@ -72,18 +72,41 @@ materialize, decode, rank, delete, or rebuild embedding rows.
 
 ## 6. Automatic cache backfill and reminder
 
-`Auto Cache` remains enabled by default and owns both incremental indexing of newly persisted eligible
-messages and full uncached detection at application startup or active Embedding-model change. When an
-active model has uncached messages and no cache run is already active, enabled Auto Cache starts the
-existing full model cache runner with silent presentation. That automatic run emits no uncached,
-caching, success, completion, partial-failure, or setup-failure Snackbar. Manual cache and recache
-actions retain their existing feedback.
+`Auto Cache` remains enabled by default and owns incremental indexing of newly persisted eligible
+messages. Semantic cache completeness is maintained durably rather than rediscovered by scanning the
+message and embedding tables at every launch.
+
+One lightweight ledger row per Embedding model stores whether that model is complete, has exact
+pending work, or requires bounded reconciliation/initial backfill. Searchable-message admission,
+text or eligibility changes, deletion, conversation deletion, fork/import, embedding success, and
+embedding invalidation update the semantic ledger and exact work identity in the same durable
+transaction as the owning mutation. Each work item is uniquely identified by model and message and
+includes the current source fingerprint or revision, so duplicate events coalesce and an embedding
+for older text cannot satisfy current content. Inactive models may retain one `needsReconcile` state
+instead of multiplying per-message work; activating a new or stale model admits one bounded keyset
+reconciliation. Database migration marks affected models for reconciliation without scanning message
+content during application entry.
+
+Interactive App startup first publishes the conversation-list projection. Only after that list is
+visibly available may it read the active model's single ledger row. This O(1) check is the sole
+semantic-search exception to the global lazy-loading rule. It must not execute aggregate `COUNT(*)`
+queries over messages or embeddings, enumerate conversations or owners, load message text or
+embedding blobs, or instantiate conversation runtime state.
+
+When the row reports pending work and no cache run for that model is active, enabled Auto Cache may
+start exactly one unique, bounded, low-priority background cache worker. The worker processes stable
+keyset pages and bounded batches, limits embedding concurrency, yields to foreground list and
+conversation loading, and never blocks either surface. Failed items remain pending with their current
+identity; successful writes remove only the matching work and advance completeness only after durable
+reconciliation. The worker emits no uncached, caching, success, completion, partial-failure, or
+setup-failure Snackbar. Manual cache and recache actions retain their existing feedback.
 
 `Show Uncached Notification` is a separate default-on portable setting. It is consulted only while
-Auto Cache is disabled. In that state, startup and active-model detection may emit the existing
-uncached-message Snackbar with its exact manual cache action when the setting is enabled; disabling it
-leaves the messages uncached and emits no reminder. The Settings row is placed directly below Auto
-Cache and is not shown while Auto Cache is enabled.
+Auto Cache is disabled. After the conversation list is visible, the same one-row ledger check may emit
+the existing uncached-message Snackbar with its exact manual cache action when pending work exists and
+the setting is enabled. It must not run a fallback count or content scan to calculate that reminder.
+Disabling the setting leaves work pending and emits no reminder. The Settings row is placed directly
+below Auto Cache and is not shown while Auto Cache is enabled.
 
 ## 7. Required verification
 
