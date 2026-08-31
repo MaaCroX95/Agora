@@ -118,14 +118,6 @@ internal class QueuedGuidanceDrainExecutor(
         val uiToken = claim.uiToken
         val runId = claim.inputEffect.identity.runId
         val modelId = batch.last().modelId
-        requestBuilder.resolveProviderKey(modelId) ?: run {
-            state.settleGuidanceClaim(claim.lease.id, durable = false)
-            state.deferNextQueueDrain()
-            state.scope.launch {
-                releaseUnlaunchedSlotAndDrain(state, uiToken)
-            }
-            return
-        }
         state.loadingChange(uiToken, true)
         val jobBodyStarted = AtomicBoolean(false)
         val generationJob = state.launchGenerationJob(uiToken) {

@@ -92,6 +92,11 @@ class GenerationRequestBuilder(
         return ProviderKey(providerName, activeKey)
     }
 
+    internal suspend fun awaitProviderKey(modelId: String): ProviderKey? {
+        providerRegistry.awaitInitialSync()
+        return resolveProviderKey(modelId)
+    }
+
     private fun resolveTranscriptionProviderName(model: String?): String =
         model?.let { providerRegistry.providerForModel(it) } ?: ""
 
@@ -180,6 +185,7 @@ class GenerationRequestBuilder(
         resolvedPromptOverride: ResolvedPrompt? = null,
         conversationSettingsOverride: ConversationSettings? = null,
     ): GenerationAdmissionSnapshot {
+        providerRegistry.awaitInitialSync()
         val selectedModelId = providerRegistry.canonicalModelId(modelId)
         val providerName = providerRegistry.providerForModel(selectedModelId)
         val effectiveSettings = if (conversationOverride != null) {

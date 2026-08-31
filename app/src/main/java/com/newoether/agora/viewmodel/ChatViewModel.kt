@@ -71,6 +71,7 @@ class ChatViewModel(
     conversationRepository: ConversationRepository,
     settingsRepository: SettingsRepository,
     conversationSettingsTransfers: ConversationSettingsTransferCoordinator,
+    private val startProcessServices: () -> Unit,
     // Process-scoped generation singletons, shared with background task execution.
     private val localProvider: LocalProvider,
     private val providerRegistry: ProviderRegistry,
@@ -228,44 +229,24 @@ class ChatViewModel(
         scope = viewModelScope,
     )
     private val startupMaintenance by lazy {
-        val attachmentSweeper = AttachmentOrphanSweeper(convRepo, application.filesDir)
         StartupMaintenanceCoordinator(
             settings = settings,
-            conversations = convRepo,
             scope = viewModelScope,
             currentVersion = ::getCurrentVersion,
             checkUpdate = UpdateChecker::check,
             onUpdateFound = { _updateDialogData.value = it },
-            isCaching = { ragManager.cachingProgress.value.containsKey(it) },
-            cacheMessages = { modelId, silent ->
-                ragManager.cacheMessagesForModel(modelId, silent = silent)
-            },
-            cacheReminder = { notCached, total, action ->
-                SnackbarEvent(
-                    getApplication<Application>().getString(
-                        R.string.messages_not_cached,
-                        notCached,
-                        total,
-                    ),
-                    getApplication<Application>().getString(R.string.cache_now),
-                    action,
-                )
-            },
-            emitSnackbar = _snackbarMessage::emit,
-            sweepAttachments = attachmentSweeper::sweep,
-            onAttachmentSweepFailure = { error ->
-                DebugLog.d("ChatViewModel", "Attachment orphan sweep error", error)
-            },
             startAutoBackup = dataControl::startAutoBackup,
         )
     }
 
     private fun startInitJobs() {
-        proxySettingsSynchronizer.start()
-        startupMaintenance.start()
-        localModelCatalogSynchronizer.start()
-        // Provider map / model-list sync jobs now run on the process-scoped registry
-        // (launched once in AppContainer), so they survive ViewModel recreation.
+        viewModelScope.launch {
+            conversations.filterNotNull().first()
+            startProcessServices()
+            proxySettingsSynchronizer.start()
+            startupMaintenance.start()
+            localModelCatalogSynchronizer.start()
+        }
     }
 
     // Per-conversation generation lifecycle (IO scope, job, slot, race-free stop/persist tokens)

@@ -31,7 +31,7 @@ import com.newoether.agora.viewmodel.ConversationStateRegistry
 import com.newoether.agora.viewmodel.ProviderRegistry
 import com.newoether.agora.viewmodel.ShellConfirmationController
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 
 /**
  * Centralized dependency container (manual DI).
@@ -78,14 +78,20 @@ class AppContainer(
         ConversationRepository(chatDao, database)
     }
 
-    /**
-     * Starts process services behind the durable Run-recovery barrier. Scheduling before recovery
-     * lets an overdue Worker race the orphan cleanup and inspect an impossible half-live graph.
-     */
-    suspend fun startProcessServices() = withContext(kotlinx.coroutines.Dispatchers.IO) {
-        conversationSettingsTransfers.replayPending()
-        conversationRepository.ensureRunRecovery()
+    @Volatile
+    private var processServicesStarted = false
+
+    /** Starts necessary process work after the narrow conversation list has published. */
+    @Synchronized
+    fun startProcessServices() {
+        if (processServicesStarted) return
+        providerRegistry.ensureStarted()
+        taskManager.start()
         automationScheduler.start()
+        processServicesStarted = true
+        appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            conversationSettingsTransfers.replayPending()
+        }
     }
     val taskRepository: TaskRepository by lazy {
         TaskRepository(chatDao)
@@ -113,7 +119,7 @@ class AppContainer(
     val localProvider: LocalProvider by lazy { LocalProvider(appContext, settingsRepository) }
 
     val providerRegistry: ProviderRegistry by lazy {
-        ProviderRegistry(settingsRepository, localProvider, appScope).also { it.launchSyncJobs() }
+        ProviderRegistry(settingsRepository, conversationRepository, localProvider, appScope)
     }
 
     /** Serializes every foreground/background generation touching the same conversation. */
@@ -234,7 +240,7 @@ class AppContainer(
     }
 
     val automationScheduler: AutomationScheduler by lazy {
-        AutomationScheduler(appContext, taskRepository, settingsRepository, appScope).also { it.start() }
+        AutomationScheduler(appContext, taskRepository, settingsRepository, appScope)
     }
 
     // ── Auto Backup ───────────────────────────────────────────
@@ -249,7 +255,7 @@ class AppContainer(
         ChatViewModelFactory(
             application, database, chatDao, settingsManager, memoryManager, skillManager, appContext, sandboxManagerFactory,
             autoBackupManager, conversationRepository, settingsRepository, conversationSettingsTransfers,
-            localProvider, providerRegistry,
+            ::startProcessServices, localProvider, providerRegistry,
             taskManager, loopManager, automationToolProvider, conversationExecutionCoordinator,
             automationExecutionGate, conversationStateRegistry, shellConfirmationController,
             mcpRegistry, mcpToolProvider, taskExecutionEngine,

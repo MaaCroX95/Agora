@@ -71,10 +71,6 @@ class RagManager(
     @Volatile
     private var cacheCountRefreshJob: Job? = null
 
-    init {
-        loadCacheCounts()
-    }
-
     @Synchronized
     fun loadCacheCounts() {
         if (cacheCountRefreshJob?.isActive == true) return

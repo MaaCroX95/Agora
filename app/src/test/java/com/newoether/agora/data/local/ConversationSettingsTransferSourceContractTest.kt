@@ -90,18 +90,26 @@ class ConversationSettingsTransferSourceContractTest {
     }
 
     @Test
-    fun processStartupReplaysTheOutboxBeforeRecoveryAndScheduling() {
+    fun processStartupReplaysOnlyThePendingOutboxAfterTheListPublishes() {
         val container = sourceFile("app/src/main/java/com/newoether/agora/di/AppContainer.kt")
             .replace("\r\n", "\n")
-        val startup = container.substringAfter("suspend fun startProcessServices()")
+        val startup = container.substringAfter("fun startProcessServices()")
             .substringBefore("\n    val taskRepository")
+        val viewModel = sourceFile(
+            "app/src/main/java/com/newoether/agora/viewmodel/ChatViewModel.kt",
+        ).replace("\r\n", "\n")
+        val initJobs = viewModel.substringAfter("private fun startInitJobs()")
+            .substringBefore("// Per-conversation generation lifecycle")
 
-        val replay = startup.indexOf("conversationSettingsTransfers.replayPending()")
-        val recovery = startup.indexOf("conversationRepository.ensureRunRecovery()")
-        val scheduler = startup.indexOf("automationScheduler.start()")
-        assertTrue(replay >= 0)
-        assertTrue(recovery > replay)
-        assertTrue(scheduler > recovery)
+        assertTrue(startup.contains("conversationSettingsTransfers.replayPending()"))
+        assertTrue(startup.contains("providerRegistry.ensureStarted()"))
+        assertTrue(startup.contains("taskManager.start()"))
+        assertTrue(startup.contains("automationScheduler.start()"))
+        assertTrue(!startup.contains("ensureRunRecovery"))
+        val listPublished = initJobs.indexOf("conversations.filterNotNull().first()")
+        val processServices = initJobs.indexOf("startProcessServices()")
+        assertTrue(listPublished >= 0)
+        assertTrue(processServices > listPublished)
     }
 
     private fun sourceFile(relativePath: String): String {

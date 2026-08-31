@@ -17,12 +17,10 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -73,8 +71,20 @@ class TaskManager(
         data class Ambiguous(val matches: List<TaskEntity>) : DeleteResult
     }
 
-    val tasks: StateFlow<List<TaskEntity>> =
-        taskRepository.getAllTasks().stateIn(scope, SharingStarted.Eagerly, emptyList())
+    private val mutableTasks = MutableStateFlow<List<TaskEntity>>(emptyList())
+    val tasks: StateFlow<List<TaskEntity>> = mutableTasks.asStateFlow()
+    @Volatile
+    private var started = false
+
+    /** Starts the Task list projection after the conversation list has published. */
+    @Synchronized
+    fun start() {
+        if (started) return
+        started = true
+        scope.launch {
+            taskRepository.getAllTasks().collect { mutableTasks.value = it }
+        }
+    }
 
     private val reservationMonitor = Any()
     private val reservedTaskIds = mutableSetOf<String>()

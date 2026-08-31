@@ -16,7 +16,7 @@ class ApprovedFeatureSourceContractTest {
         val entities = source(root, "com/newoether/agora/data/local/ChatEntities.kt")
         val database = source(root, "com/newoether/agora/data/local/ChatDatabase.kt")
 
-        assertTrue(rag.contains("init {\n        loadCacheCounts()"))
+        assertFalse(rag.contains("init {\n        loadCacheCounts()"))
         assertTrue(rag.contains("cacheCountRefreshJob?.isActive == true"))
         assertTrue(rag.contains("getEmbeddingCountsByModels(modelIds)"))
         assertFalse(
@@ -741,6 +741,32 @@ class ApprovedFeatureSourceContractTest {
                 keys.toSet(),
             )
         }
+    }
+
+    @Test
+    fun generationAdmissionWaitsForProviderLifecycle() {
+        val root = sourceRoot()
+        val builder = source(root, "com/newoether/agora/viewmodel/GenerationRequestBuilder.kt")
+        val generation = source(root, "com/newoether/agora/viewmodel/MessageGenerationController.kt")
+        val queuedDrain = source(root, "com/newoether/agora/viewmodel/QueuedGuidanceDrainExecutor.kt")
+
+        val admission = builder
+            .substringAfter("internal suspend fun captureAdmissionSnapshot(")
+            .substringBefore("internal suspend fun captureContextProjectionSnapshot(")
+        assertTrue(
+            admission.indexOf("providerRegistry.awaitInitialSync()") in
+                0 until admission.indexOf("providerRegistry.canonicalModelId(modelId)"),
+        )
+        assertTrue(builder.contains("internal suspend fun awaitProviderKey(modelId: String)"))
+        assertTrue(builder.contains("providerRegistry.awaitInitialSync()\n        return resolveProviderKey(modelId)"))
+        assertEquals(3, Regex("requestBuilder\\.awaitProviderKey\\(").findAll(generation).count())
+        assertFalse(generation.contains("requestBuilder.resolveProviderKey("))
+        val queuedLaunch = queuedDrain.substringAfter("fun launchClaim(")
+        assertFalse(
+            queuedLaunch.substringBefore("state.launchGenerationJob(uiToken)")
+                .contains("resolveProviderKey("),
+        )
+        assertTrue(queuedLaunch.contains("requestBuilder.captureAdmissionSnapshot("))
     }
 
     @Test

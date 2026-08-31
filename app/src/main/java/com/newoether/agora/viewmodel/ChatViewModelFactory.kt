@@ -37,6 +37,7 @@ class ChatViewModelFactory(
     private val conversationRepository: ConversationRepository,
     private val settingsRepository: SettingsRepository,
     private val conversationSettingsTransfers: ConversationSettingsTransferCoordinator,
+    private val startProcessServices: () -> Unit,
     private val localProvider: LocalProvider,
     private val providerRegistry: ProviderRegistry,
     private val taskManager: TaskManager,
@@ -56,7 +57,7 @@ class ChatViewModelFactory(
             return ChatViewModel(
                 application, database, chatDao, settingsManager, memoryManager, skillManager, context, sandboxFactory,
                 autoBackupManager, conversationRepository, settingsRepository,
-                conversationSettingsTransfers, localProvider, providerRegistry,
+                conversationSettingsTransfers, startProcessServices, localProvider, providerRegistry,
                 taskManager, loopManager, automationToolProvider, conversationExecutionCoordinator,
                 automationExecutionGate, conversationStateRegistry, shellConfirmationController,
                 mcpRegistry, mcpToolProvider, taskExecutionEngine,

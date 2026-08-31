@@ -44,7 +44,6 @@ class AgoraApplication : Application() {
                     this@AgoraApplication.deleteDatabase(ChatDatabase.DB_NAME)
             }
         },
-        startProcessServices = AppContainer::startProcessServices,
         reportFailure = { error ->
             DebugLog.e(
                 "AgoraApplication",

@@ -74,6 +74,31 @@ class DatabaseStartupSafetySourceContractTest {
         assertTrue(application.contains("Diagnostic capture initialization failed closed"))
     }
 
+    @Test
+    fun `database ready publishes before process maintenance and list release owns startup`() {
+        val root = locateMainSourceRoot()
+        val gate = File(root, "com/newoether/agora/DatabaseStartupGate.kt").readText()
+        val application = File(root, "com/newoether/agora/AgoraApplication.kt").readText()
+        val container = File(root, "com/newoether/agora/di/AppContainer.kt").readText()
+        val viewModel = File(root, "com/newoether/agora/viewmodel/ChatViewModel.kt").readText()
+        val rag = File(root, "com/newoether/agora/viewmodel/RagManager.kt").readText()
+        val tasks = File(root, "com/newoether/agora/automation/TaskManager.kt").readText()
+
+        assertFalse(gate.contains("startProcessServices"))
+        assertFalse(application.contains("startProcessServices ="))
+        assertTrue(container.contains("fun startProcessServices()"))
+        assertFalse(container.substringAfter("fun startProcessServices()")
+            .substringBefore("val taskRepository").contains("ensureRunRecovery"))
+        val initJobs = viewModel.substringAfter("private fun startInitJobs()")
+            .substringBefore("// Per-conversation generation lifecycle")
+        assertTrue(initJobs.indexOf("conversations.filterNotNull().first()") >= 0)
+        assertTrue(initJobs.indexOf("startProcessServices()") >
+            initJobs.indexOf("conversations.filterNotNull().first()"))
+        assertFalse(rag.contains("init {\n        loadCacheCounts()"))
+        assertTrue(tasks.contains("fun start()"))
+        assertFalse(tasks.contains("SharingStarted.Eagerly"))
+    }
+
     private fun locateMainSourceRoot(): File {
         var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
         repeat(8) {

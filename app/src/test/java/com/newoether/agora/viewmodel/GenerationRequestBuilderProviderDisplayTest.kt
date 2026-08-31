@@ -8,9 +8,14 @@ import com.newoether.agora.data.MemoryManager
 import com.newoether.agora.data.SkillManager
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.SettingsRepository
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -63,6 +68,55 @@ class GenerationRequestBuilderProviderDisplayTest {
         assertEquals(false, effective.webSearchEnabled)
         assertEquals(false, effective.shellEnabled)
         assertEquals(false, effective.openAiWebSearchEnabled)
+    }
+
+    @Test
+    fun `generation provider admission waits for initial registry sync before resolving`() = runTest {
+        val modelId = "custom-provider-00000000-0000-4000-8000-000000000001:model"
+        val providerName = "Relay X"
+        val settings = mockk<SettingsRepository>()
+        val providerRegistry = mockk<ProviderRegistry>()
+        val gate = CompletableDeferred<Unit>()
+        val events = mutableListOf<String>()
+
+        coEvery { providerRegistry.awaitInitialSync() } coAnswers {
+            events += "await"
+            gate.await()
+            events += "synced"
+        }
+        every { providerRegistry.providerForModel(modelId) } answers {
+            events += "resolve"
+            providerName
+        }
+        every { settings.resolveActiveKey(providerName) } returns "active-key"
+        every { providerRegistry.isConfigured(providerName, "active-key") } returns true
+
+        val builder = GenerationRequestBuilder(
+            settings = settings,
+            convRepo = mockk<ConversationRepository>(),
+            memoryManager = mockk<MemoryManager>(),
+            skillManager = mockk<SkillManager>(),
+            providerRegistry = providerRegistry,
+            ragManager = mockk<RagManager>(),
+            appContext = mockk<Context>(),
+            pendingConversationSettings = MutableStateFlow<ConversationSettings?>(null),
+            onSnackbar = {},
+        )
+
+        val result = async { builder.awaitProviderKey(modelId) }
+        runCurrent()
+
+        assertEquals(listOf("await"), events)
+        assertFalse(result.isCompleted)
+
+        gate.complete(Unit)
+        runCurrent()
+
+        assertEquals(
+            GenerationRequestBuilder.ProviderKey(providerName, "active-key"),
+            result.await(),
+        )
+        assertEquals(listOf("await", "synced", "resolve"), events)
     }
 
     @Test

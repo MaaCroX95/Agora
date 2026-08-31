@@ -356,7 +356,6 @@ internal class MessageGenerationController(
         val genId = currentConversationId.value ?: return false
         val state = registry.getOrCreate(genId)
         val modelId = currentActiveModel.value
-        requestBuilder.resolveProviderKey(modelId) ?: return false
         return regenerationService.regenerate(
             ConversationRegenerationRequest(
                 conversationId = genId,
@@ -382,7 +381,7 @@ internal class MessageGenerationController(
         val genId = currentConversationId.value ?: return false
         val state = registry.getOrCreate(genId)
         val modelId = currentActiveModel.value
-        requestBuilder.resolveProviderKey(modelId) ?: return false
+        requestBuilder.awaitProviderKey(modelId) ?: return false
         return editService.edit(
             ConversationEditRequest(
                 conversationId = genId,
@@ -426,7 +425,7 @@ internal class MessageGenerationController(
             onSnackbar(application.getString(R.string.no_model_selected))
             return null
         }
-        val selectedProvider = requestBuilder.resolveProviderKey(selectedModelId) ?: return null
+        val selectedProvider = requestBuilder.awaitProviderKey(selectedModelId) ?: return null
         if (selectedProvider.providerName == Constants.PROVIDER_LOCAL) {
             val localModelId = selectedModelId.substringAfter("${Constants.PROVIDER_LOCAL}:")
             val localConfig = settings.localChatModels.value.find { it.modelId == localModelId }
@@ -540,7 +539,7 @@ internal class MessageGenerationController(
         onGenerationJob: ((kotlinx.coroutines.Job?) -> Unit)? = null,
     ): SendAcceptance? {
         val state = registry.getOrCreate(genId)
-        val providerName = requestBuilder.resolveProviderKey(modelId)?.providerName ?: return null
+        val providerName = requestBuilder.awaitProviderKey(modelId)?.providerName ?: return null
         if (providerName == Constants.PROVIDER_LOCAL) {
             val localModelId = modelId.substringAfter("${Constants.PROVIDER_LOCAL}:")
             val config = settings.localChatModels.value.find { it.modelId == localModelId }

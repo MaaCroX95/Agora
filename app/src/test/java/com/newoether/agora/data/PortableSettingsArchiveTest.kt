@@ -87,13 +87,9 @@ class PortableSettingsArchiveTest {
         assertTrue(autoCacheGroup.contains("if (!autoCacheEnabled)"))
         assertTrue(autoCacheIndex >= 0 && reminderIndex > autoCacheIndex)
 
-        val startupPolicy = startup
-            .substringAfter("private suspend fun handleUncachedMessages()")
-            .substringBefore("private companion object")
-        assertTrue(startupPolicy.contains("if (settings.getAutoCacheEnabled())"))
-        assertTrue(startupPolicy.contains("cacheMessages(active.id, true)"))
-        assertTrue(startupPolicy.contains("settings.getShowUncachedNotification()"))
-        assertTrue(startupPolicy.contains("cacheMessages(active.id, false)"))
+        assertFalse(startup.contains("handleUncachedMessages"))
+        assertFalse(startup.contains("getIndexableMessageCount"))
+        assertFalse(startup.contains("getEmbeddingCountByModel"))
 
         val modelSwitchPolicy = rag
             .substringAfter("fun setActiveEmbeddingModel(id: String)")
