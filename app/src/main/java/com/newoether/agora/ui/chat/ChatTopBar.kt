@@ -248,69 +248,79 @@ internal fun ChatTopBar(
                 }
                 val showBrandTitle = resolvedTitle == null
 
-                // Title capsule: menu + title
-                ChatTopBarCapsule(
-                    modifier = Modifier.fillMaxHeight().widthIn(max = 260.dp)
+                // Reserve the trailing capsule first; the title may only use the remaining width.
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    contentAlignment = Alignment.CenterStart,
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxHeight(),
-                        verticalAlignment = Alignment.CenterVertically
+                    ChatTopBarCapsule(
+                        modifier = Modifier.fillMaxHeight().widthIn(max = 260.dp)
                     ) {
-                        Spacer(modifier = Modifier.width(5.dp))
-                        IconButton(
-                            onClick = onNavigateBack ?: onOpenDrawer,
-                            modifier = Modifier.size(44.dp)
+                        Row(
+                            modifier = Modifier.fillMaxHeight(),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = if (onNavigateBack != null) {
-                                    Icons.AutoMirrored.Filled.ArrowBack
-                                } else {
-                                    Icons.Default.Menu
-                                },
-                                contentDescription = stringResource(
-                                    if (onNavigateBack != null) R.string.back else R.string.menu
-                                ),
-                                modifier = Modifier.size(26.dp),
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(5.dp))
-                        if (showBrandTitle) {
-                            Text(
-                                text = stringResource(R.string.app_name),
-                                style = ChatType.brandTitle,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.widthIn(max = 180.dp)
-                            )
-                        } else {
-                            Column(modifier = Modifier.widthIn(max = 180.dp)) {
-                                Text(
-                                    text = resolvedTitle,
-                                    // Single-line (no token subtitle) uses a slightly-smaller-than-brand
-                                    // solo size; with the token subtitle stacked below, the compact size.
-                                    style = if (totalTokens > 0) ChatType.conversationTitle else ChatType.conversationTitleSolo,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                            Spacer(modifier = Modifier.width(5.dp))
+                            IconButton(
+                                onClick = onNavigateBack ?: onOpenDrawer,
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (onNavigateBack != null) {
+                                        Icons.AutoMirrored.Filled.ArrowBack
+                                    } else {
+                                        Icons.Default.Menu
+                                    },
+                                    contentDescription = stringResource(
+                                        if (onNavigateBack != null) R.string.back else R.string.menu
+                                    ),
+                                    modifier = Modifier.size(26.dp),
                                 )
-                                if (totalTokens > 0) {
+                            }
+                            Spacer(modifier = Modifier.width(5.dp))
+                            if (showBrandTitle) {
+                                Text(
+                                    text = stringResource(R.string.app_name),
+                                    style = ChatType.brandTitle,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(end = 20.dp).widthIn(max = 180.dp)
+                                )
+                            } else {
+                                Column(
+                                    modifier = Modifier.padding(end = 20.dp).widthIn(max = 180.dp)
+                                ) {
                                     Text(
-                                        text = stringResource(R.string.total_tokens, totalTokens),
-                                        style = ChatType.micro,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                        maxLines = 1
+                                        text = resolvedTitle,
+                                        // Single-line (no token subtitle) uses a slightly-smaller-than-brand
+                                        // solo size; with the token subtitle stacked below, the compact size.
+                                        style = if (totalTokens > 0) ChatType.conversationTitle else ChatType.conversationTitleSolo,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
+                                    if (totalTokens > 0) {
+                                        Text(
+                                            text = stringResource(R.string.total_tokens, totalTokens),
+                                            style = ChatType.micro,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                            maxLines = 1
+                                        )
+                                    }
                                 }
                             }
                         }
-                        Spacer(modifier = Modifier.width(20.dp))
                     }
                 }
 
-                Spacer(modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.width(16.dp))
 
                 // Actions capsule: system prompt + new chat
                 ChatTopBarCapsule(
-                    modifier = Modifier.fillMaxHeight()
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(98.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxHeight(),

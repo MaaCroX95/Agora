@@ -858,6 +858,113 @@ class ApplicationUiSourceContractTest {
     }
 
     @Test
+    fun `notification permission waits for Chat and gates initial composer focus until dismissal`() {
+        val main = sourceFile("app/src/main/java/com/newoether/agora/MainActivity.kt")
+        val chat = sourceFile("app/src/main/java/com/newoether/agora/ui/chat/ChatApp.kt")
+        val interactionEffects = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/chat/ChatAppInteractionEffects.kt",
+        )
+        val service = sourceFile(
+            "app/src/main/java/com/newoether/agora/service/AgoraForegroundService.kt",
+        )
+        val activityStartup = main
+            .substringAfter("override fun onCreate(savedInstanceState: Bundle?)")
+            .substringBefore("override fun onResume()")
+        val mainNavigation = main.substringAfter("fun MainNavigation(")
+        val permissionLauncher = mainNavigation
+            .substringAfter("val notificationPermissionLauncher")
+            .substringBefore("LaunchedEffect(Unit)")
+        val permissionEffect = mainNavigation
+            .substringAfter("LaunchedEffect(Unit) {")
+            .substringBefore("var showSettings")
+        val launchEffects = interactionEffects
+            .substringAfter("internal fun ChatLaunchInteractionEffects(")
+            .substringBefore("internal fun ChatNavigationEffects(")
+        val generationChannel = service
+            .substringAfter("private fun createGenerationChannel(context: Context)")
+            .substringBefore("fun showTerminalNotification(")
+        val completionChannel = service
+            .substringAfter("private fun createCompletionChannel(context: Context)")
+            .substringBefore("private fun createPendingIntent(")
+
+        val onboardingBranch = activityStartup.substringAfter("when (showOnboarding)")
+
+        assertFalse(activityStartup.contains("requestPermissions("))
+        assertTrue(onboardingBranch.substringAfter("false -> {").contains("MainNavigation("))
+        assertTrue(mainNavigation.contains("mutableStateOf(!shouldRequestNotificationPermission)"))
+        assertTrue(permissionLauncher.contains("initialComposerFocusReady = true"))
+        assertTrue(permissionEffect.contains("AgoraForegroundService.createChannels(appContext)"))
+        assertTrue(permissionEffect.contains("notificationPermissionLauncher.launch("))
+        assertFalse(permissionEffect.contains("delay("))
+        assertTrue(
+            permissionEffect.indexOf("AgoraForegroundService.createChannels(appContext)") <
+                permissionEffect.indexOf("notificationPermissionLauncher.launch("),
+        )
+        assertTrue(main.contains("initialComposerFocusReady = initialComposerFocusReady"))
+        assertTrue(chat.contains("initialComposerFocusReady: Boolean = true"))
+        assertTrue(chat.contains("ChatLaunchInteractionEffects("))
+        assertTrue(launchEffects.contains("LaunchedEffect(Unit)"))
+        assertTrue(launchEffects.contains("latestOnShowLaunchContent()"))
+        assertTrue(launchEffects.contains(
+            "LaunchedEffect(initialComposerFocusReady, inputFocusRequester)"
+        ))
+        assertTrue(launchEffects.contains("if (initialComposerFocusReady)"))
+        assertTrue(launchEffects.contains("inputFocusRequester.requestFocus()"))
+        assertTrue(generationChannel.contains("NotificationManager.IMPORTANCE_LOW"))
+        assertTrue(generationChannel.contains("setSound(null, null)"))
+        assertTrue(generationChannel.contains("setShowBadge(false)"))
+        assertTrue(completionChannel.contains("NotificationManager.IMPORTANCE_HIGH"))
+        assertTrue(completionChannel.contains("RingtoneManager.TYPE_NOTIFICATION"))
+        assertTrue(completionChannel.contains("enableVibration(true)"))
+        assertTrue(service.contains(".setPriority(NotificationCompat.PRIORITY_HIGH)"))
+    }
+
+    @Test
+    fun `Automation groups exact execution and battery optimization in every locale`() {
+        val page = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/settings/SettingsAutomationPage.kt",
+        )
+        val manifest = sourceFile("app/src/main/AndroidManifest.xml")
+        val backgroundGroup = page
+            .substringAfter("title = stringResource(R.string.automation_background_execution)")
+            .substringBefore("if (showDocFab)")
+
+        assertTrue(backgroundGroup.contains("R.string.automation_exact_execution"))
+        assertTrue(backgroundGroup.contains("R.string.automation_battery_optimization"))
+        assertTrue(
+            backgroundGroup.indexOf("R.string.automation_exact_execution") <
+                backgroundGroup.indexOf("R.string.automation_battery_optimization"),
+        )
+        assertTrue(page.contains("isIgnoringBatteryOptimizations(context.packageName)"))
+        assertTrue(page.contains("Lifecycle.Event.ON_RESUME"))
+        assertTrue(page.contains("Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS"))
+        assertFalse(page.contains("Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"))
+        assertFalse(manifest.contains("REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"))
+
+        val directories = listOf(
+            "values", "values-ar", "values-de", "values-es", "values-fr", "values-ja",
+            "values-ko", "values-pt-rBR", "values-ru", "values-vi", "values-zh",
+            "values-zh-rTW",
+        )
+        val keys = listOf(
+            "automation_background_execution",
+            "automation_battery_optimization",
+            "automation_battery_optimization_ignored_desc",
+            "automation_battery_optimization_active_desc",
+        )
+        directories.forEach { directory ->
+            val fileName = if (directory == "values-zh") "strings.xml" else "automation_strings.xml"
+            val strings = sourceFile("app/src/main/res/$directory/$fileName")
+            keys.forEach { key ->
+                assertTrue("$directory $key", strings.contains("name=\"$key\""))
+            }
+            assertFalse("$directory obsolete scheduling category", strings.contains(
+                "name=\"automation_scheduling\"",
+            ))
+        }
+    }
+
+    @Test
     fun `Once date picker keeps the Material modal height without taking over mode or IME`() {
         val source = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/tasks/TaskEditorSupportingComponents.kt",

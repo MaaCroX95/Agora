@@ -36,7 +36,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
-import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -73,6 +72,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -84,7 +84,6 @@ import com.newoether.agora.ui.chat.search.rememberDrawerSearchState
 import com.newoether.agora.ui.components.clearFocusOnTap
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
-import com.newoether.agora.ui.motion.closeWithMotionPolicy
 import com.newoether.agora.ui.theme.ChatType
 import com.newoether.agora.util.verticalEdgeFade
 import com.newoether.agora.viewmodel.ChatViewModel
@@ -108,6 +107,29 @@ internal fun resolveDrawerConversationIndicator(
     else -> DrawerConversationIndicator.NONE
 }
 
+internal val DrawerEdgeFadeTolerance = 2.dp
+
+internal fun isDrawerListAtTop(
+    firstVisibleItemIndex: Int,
+    firstVisibleItemScrollOffsetPx: Int,
+    tolerancePx: Int,
+): Boolean =
+    firstVisibleItemIndex == 0 &&
+        firstVisibleItemScrollOffsetPx <= tolerancePx.coerceAtLeast(0)
+
+internal fun isDrawerListAtBottom(
+    totalItemsCount: Int,
+    lastVisibleItemIndex: Int?,
+    lastVisibleItemEndOffsetPx: Int?,
+    viewportEndOffsetPx: Int,
+    tolerancePx: Int,
+): Boolean {
+    if (totalItemsCount == 0) return true
+    return lastVisibleItemIndex == totalItemsCount - 1 &&
+        lastVisibleItemEndOffsetPx != null &&
+        lastVisibleItemEndOffsetPx <= viewportEndOffsetPx + tolerancePx.coerceAtLeast(0)
+}
+
 /**
  * The conversation navigation drawer: search box, new-chat button, conversation list with
  * per-item context menu, and the settings button. Reads its own flows from [viewModel];
@@ -119,10 +141,9 @@ internal fun resolveDrawerConversationIndicator(
 internal fun ChatDrawerContent(
     viewModel: ChatViewModel,
     drawerWidth: Dp,
-    drawerState: DrawerState,
     scope: CoroutineScope,
     inputFocusRequester: FocusRequester,
-    onDrawerProgress: (Float) -> Unit,
+    onRequestClose: suspend () -> Unit,
     onSettingsButtonTop: (Float) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenTasks: () -> Unit,
@@ -134,7 +155,6 @@ internal fun ChatDrawerContent(
     val focusManager = LocalFocusManager.current
     val density = LocalDensity.current
     val windowHeightPx = LocalWindowInfo.current.containerSize.height.toFloat()
-    val drawerWidthPx = with(density) { drawerWidth.toPx() }
 
     val conversationList by viewModel.conversations.collectAsState()
     val conversations = conversationList.orEmpty()
@@ -151,12 +171,6 @@ internal fun ChatDrawerContent(
         drawerTonalElevation = 1.dp,
         modifier = Modifier
             .width(drawerWidth)
-            .onGloballyPositioned { coords ->
-                val x = coords.positionInWindow().x
-                if (!x.isNaN() && drawerWidthPx > 0f) {
-                    onDrawerProgress((1f + x / drawerWidthPx).coerceIn(0f, 1f))
-                }
-            }
             .graphicsLayer {
                 clip = true
             }
@@ -164,6 +178,7 @@ internal fun ChatDrawerContent(
         val conversationListState = rememberLazyListState()
         val searchListState = rememberLazyListState()
         val activeListState = if (search.isActive) searchListState else conversationListState
+        val edgeFadeTolerancePx = with(density) { DrawerEdgeFadeTolerance.roundToPx() }
         val latestConversations by rememberUpdatedState(conversations)
         val latestMotionPolicy by rememberUpdatedState(motionPolicy)
         LaunchedEffect(viewModel, conversationListState) {
@@ -187,24 +202,27 @@ internal fun ChatDrawerContent(
                 }
             }
         }
-        val atTop by remember(activeListState) {
+        val atTop by remember(activeListState, edgeFadeTolerancePx) {
             derivedStateOf {
-                activeListState.firstVisibleItemIndex == 0 &&
-                    activeListState.firstVisibleItemScrollOffset == 0
+                isDrawerListAtTop(
+                    firstVisibleItemIndex = activeListState.firstVisibleItemIndex,
+                    firstVisibleItemScrollOffsetPx =
+                        activeListState.firstVisibleItemScrollOffset,
+                    tolerancePx = edgeFadeTolerancePx,
+                )
             }
         }
-        val atBottom by remember(activeListState) {
+        val atBottom by remember(activeListState, edgeFadeTolerancePx) {
             derivedStateOf {
                 val layoutInfo = activeListState.layoutInfo
-                val totalItems = layoutInfo.totalItemsCount
-                if (totalItems == 0) {
-                    true
-                } else {
-                    val lastVisibleItem = layoutInfo.visibleItemsInfo.maxByOrNull { it.index }
-                    lastVisibleItem != null &&
-                        lastVisibleItem.index == totalItems - 1 &&
-                        lastVisibleItem.offset + lastVisibleItem.size <= layoutInfo.viewportEndOffset
-                }
+                val lastVisibleItem = layoutInfo.visibleItemsInfo.maxByOrNull { it.index }
+                isDrawerListAtBottom(
+                    totalItemsCount = layoutInfo.totalItemsCount,
+                    lastVisibleItemIndex = lastVisibleItem?.index,
+                    lastVisibleItemEndOffsetPx = lastVisibleItem?.let { it.offset + it.size },
+                    viewportEndOffsetPx = layoutInfo.viewportEndOffset,
+                    tolerancePx = edgeFadeTolerancePx,
+                )
             }
         }
         val stw by animateFloatAsState(if (atTop) 0f else 1f, tween(200))
@@ -238,7 +256,7 @@ internal fun ChatDrawerContent(
                             onClick = {
                                 focusManager.clearFocus()
                                 onOpenTasks()
-                                scope.launch { drawerState.closeWithMotionPolicy(motionPolicy) }
+                                scope.launch { onRequestClose() }
                             },
                             modifier = Modifier.fillMaxWidth().height(42.dp),
                             shape = CircleShape
@@ -266,7 +284,7 @@ internal fun ChatDrawerContent(
                                 if (!newChatDisabled) {
                                     viewModel.createNewChat()
                                     scope.launch {
-                                        drawerState.closeWithMotionPolicy(motionPolicy)
+                                        onRequestClose()
                                         inputFocusRequester.requestFocus()
                                     }
                                 }
@@ -327,8 +345,14 @@ internal fun ChatDrawerContent(
                                     Box(
                                         modifier = Modifier.animateItem(
                                             fadeInSpec = null,
-                                            placementSpec = null,
-                                            fadeOutSpec = tween(180),
+                                            placementSpec = if (
+                                                motionPolicy.allowSpatialTransitions
+                                            ) {
+                                                tween(600)
+                                            } else {
+                                                null
+                                            },
+                                            fadeOutSpec = tween(300),
                                         ),
                                     ) {
                                         Surface(
@@ -356,9 +380,7 @@ internal fun ChatDrawerContent(
                                                     onClick = {
                                                         viewModel.selectConversation(conversation.id)
                                                         scope.launch {
-                                                            drawerState.closeWithMotionPolicy(
-                                                                motionPolicy,
-                                                            )
+                                                            onRequestClose()
                                                         }
                                                     },
                                                     onLongClick = {
@@ -395,6 +417,7 @@ internal fun ChatDrawerContent(
                                                     ),
                                                     modifier = Modifier.weight(1f),
                                                     maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
                                                     style = MaterialTheme.typography.bodyLarge,
                                                     color = if (isSelected) {
                                                         MaterialTheme.colorScheme.onSecondaryContainer
@@ -589,7 +612,7 @@ internal fun ChatDrawerContent(
                                             onClick = {
                                                 viewModel.selectConversation(convId)
                                                 scope.launch {
-                                                    drawerState.closeWithMotionPolicy(motionPolicy)
+                                                    onRequestClose()
                                                 }
                                             },
                                         )
@@ -606,7 +629,7 @@ internal fun ChatDrawerContent(
                 onClick = {
                     focusManager.clearFocus()
                     onOpenSettings()
-                    scope.launch { drawerState.closeWithMotionPolicy(motionPolicy) }
+                    scope.launch { onRequestClose() }
                 },
                 modifier = Modifier
                     .fillMaxWidth()

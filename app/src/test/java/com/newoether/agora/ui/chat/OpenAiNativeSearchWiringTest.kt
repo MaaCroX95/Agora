@@ -184,6 +184,36 @@ class OpenAiNativeSearchWiringTest {
         )
     }
 
+    @Test
+    fun `top bar reserves fixed trailing actions without fixing title capsule`() {
+        val root = locateMainSourceRoot()
+        val topBar = File(root, "com/newoether/agora/ui/chat/ChatTopBar.kt")
+            .readText()
+            .replace("\r\n", "\n")
+        val normalBar = topBar
+            .substringAfter("// Reserve the trailing capsule first")
+            .substringBefore("@Composable\nprivate fun ChatTopBarCapsule")
+
+        assertTrue("title host must own only the remaining width", ".weight(1f)" in normalBar)
+        assertTrue(
+            "title capsule must remain adaptive with its existing maximum",
+            "Modifier.fillMaxHeight().widthIn(max = 260.dp)" in normalBar,
+        )
+        assertTrue(
+            "actions capsule must have a fixed leading gap",
+            "Spacer(modifier = Modifier.width(16.dp))" in normalBar,
+        )
+        assertTrue(
+            "actions capsule must retain its full natural width",
+            ".fillMaxHeight()\n                        .width(98.dp)" in normalBar,
+        )
+        assertFalse(
+            "the old flexible sibling spacer allowed the title to compress the actions capsule",
+            "Spacer(modifier = Modifier.weight(1f))" in normalBar,
+        )
+        assertFalse("title capsule must not become fixed width", ".width(260.dp)" in normalBar)
+    }
+
     private fun locateMainSourceRoot(): File {
         var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
         repeat(8) {

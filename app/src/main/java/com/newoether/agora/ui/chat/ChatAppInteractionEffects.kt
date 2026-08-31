@@ -9,8 +9,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.material3.DrawerState
-import androidx.compose.material3.DrawerValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -23,6 +21,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -34,7 +33,6 @@ import com.newoether.agora.model.isContextCompact
 import com.newoether.agora.ui.chat.message.hasActiveAnswerSegment
 import com.newoether.agora.ui.common.AgoraHaptics
 import com.newoether.agora.ui.motion.AgoraMotionPolicy
-import com.newoether.agora.ui.motion.closeWithMotionPolicy
 import com.newoether.agora.util.DebugLog
 import com.newoether.agora.viewmodel.ChatViewModel
 import kotlinx.coroutines.Dispatchers
@@ -257,19 +255,27 @@ internal fun ConversationShareEffect(
 }
 
 @Composable
-internal fun DrawerAvailabilityEffect(
-    drawerEnabled: Boolean,
-    motionPolicy: AgoraMotionPolicy,
-    drawerState: DrawerState,
+internal fun ChatLaunchInteractionEffects(
+    initialComposerFocusReady: Boolean,
+    inputFocusRequester: FocusRequester,
+    onShowLaunchContent: () -> Unit,
 ) {
-    LaunchedEffect(drawerEnabled, motionPolicy.allowSpatialTransitions) {
-        if (!drawerEnabled) drawerState.closeWithMotionPolicy(motionPolicy)
+    val latestOnShowLaunchContent by rememberUpdatedState(onShowLaunchContent)
+    LaunchedEffect(Unit) {
+        delay(50)
+        latestOnShowLaunchContent()
+    }
+    LaunchedEffect(initialComposerFocusReady, inputFocusRequester) {
+        if (initialComposerFocusReady) {
+            delay(50)
+            inputFocusRequester.requestFocus()
+        }
     }
 }
 
 @Composable
 internal fun ChatNavigationEffects(
-    drawerState: DrawerState,
+    drawerState: ChatDrawerState,
     focusManager: FocusManager,
     scope: CoroutineScope,
     motionPolicy: AgoraMotionPolicy,
@@ -277,17 +283,12 @@ internal fun ChatNavigationEffects(
     conversationInteraction: ConversationInteractionProjection,
     onCollapseComposer: () -> Unit,
 ) {
-    BackHandler(
-        enabled = drawerState.currentValue != DrawerValue.Closed ||
-            drawerState.targetValue != DrawerValue.Closed,
-    ) {
+    BackHandler(enabled = drawerState.shouldHandleBack) {
         focusManager.clearFocus()
-        scope.launch { drawerState.closeWithMotionPolicy(motionPolicy) }
+        scope.launch { drawerState.closeFromBack(motionPolicy) }
     }
     BackHandler(
-        enabled = onNavigateBack != null &&
-            drawerState.currentValue == DrawerValue.Closed &&
-            drawerState.targetValue == DrawerValue.Closed,
+        enabled = onNavigateBack != null && !drawerState.shouldHandleBack,
     ) {
         focusManager.clearFocus()
         onNavigateBack?.invoke()
@@ -299,11 +300,15 @@ internal fun ChatNavigationEffects(
     BackHandler(enabled = conversationInteraction.shareSelectionActive) {
         conversationInteraction.dismissShareSelection()
     }
-    LaunchedEffect(drawerState.currentValue) {
-        if (drawerState.currentValue != DrawerValue.Closed) {
-            onCollapseComposer()
-            focusManager.clearFocus()
-        }
+    LaunchedEffect(drawerState) {
+        snapshotFlow { drawerState.isVisible }
+            .distinctUntilChanged()
+            .collect { visible ->
+                if (visible) {
+                    onCollapseComposer()
+                    focusManager.clearFocus()
+                }
+            }
     }
 }
 
@@ -374,10 +379,8 @@ internal fun SnackbarOffsetEffect(
 
 internal fun answeringHapticEligible(
     snapshot: com.newoether.agora.viewmodel.ConversationGenerationSnapshot,
-    currentConversationId: String?,
     presentation: com.newoether.agora.TopLevelPresentation,
 ): Boolean = presentation == com.newoether.agora.TopLevelPresentation.CHAT &&
-    snapshot.conversationId == currentConversationId &&
     snapshot.isLoading && snapshot.isGenerating &&
     snapshot.streamingMessage?.let { message ->
         !message.isContextCompact() &&
@@ -388,14 +391,12 @@ internal fun answeringHapticEligible(
 @Composable
 internal fun AnsweringHapticEffect(
     generationSnapshot: com.newoether.agora.viewmodel.ConversationGenerationSnapshot,
-    currentConversationId: String?,
     topLevelPresentation: com.newoether.agora.TopLevelPresentation,
     hapticsEnabled: Boolean,
     haptics: com.newoether.agora.ui.common.AgoraHaptics,
 ) {
     val answeringHapticActive = answeringHapticEligible(
         generationSnapshot,
-        currentConversationId,
         topLevelPresentation,
     )
     val appInForeground by com.newoether.agora.service.AppForegroundTracker.foreground.collectAsState()

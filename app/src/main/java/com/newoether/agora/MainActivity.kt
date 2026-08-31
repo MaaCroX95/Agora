@@ -9,7 +9,9 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.animation.*
@@ -118,13 +120,6 @@ class MainActivity : ComponentActivity() {
         handleNavigationIntent(intent)
 
         com.newoether.agora.util.DebugLog.init(this)
-        AgoraForegroundService.createChannel(this)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
-            }
-        }
 
         val settingsManager = SettingsManager(applicationContext)
         val agoraApplication = application as AgoraApplication
@@ -299,6 +294,24 @@ fun MainNavigation(
 ) {
     val appContext = LocalContext.current.applicationContext
     val motionPolicy = LocalAgoraMotionPolicy.current
+    val shouldRequestNotificationPermission =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        appContext.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+        PackageManager.PERMISSION_GRANTED
+    var initialComposerFocusReady by remember {
+        mutableStateOf(!shouldRequestNotificationPermission)
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        initialComposerFocusReady = true
+    }
+    LaunchedEffect(Unit) {
+        AgoraForegroundService.createChannels(appContext)
+        if (shouldRequestNotificationPermission) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showTasks by rememberSaveable { mutableStateOf(false) }
     val topLevelPresentation = remember {
@@ -716,6 +729,7 @@ fun MainNavigation(
         Box(modifier = Modifier.fillMaxSize()) {
             ChatApp(
                 viewModel = viewModel,
+                initialComposerFocusReady = initialComposerFocusReady,
                 onNavigateBack = taskHistoryPreview.taskId
                     ?.takeIf { taskHistoryPreview.active }
                     ?.let { taskId ->

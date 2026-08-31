@@ -62,13 +62,11 @@ import com.newoether.agora.ui.components.TypewriterText
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.ui.common.rememberAgoraHaptics
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
-import com.newoether.agora.ui.motion.openWithMotionPolicy
 import com.newoether.agora.model.StableMessageList
 import com.newoether.agora.model.StableModelAliases
 import com.newoether.agora.viewmodel.AnimatedScrollDestination
 import com.newoether.agora.viewmodel.ChatViewModel
 import com.newoether.agora.viewmodel.validChatModels
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(
@@ -78,6 +76,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ChatApp(
     viewModel: ChatViewModel,
+    initialComposerFocusReady: Boolean = true,
     onNavigateBack: (() -> Unit)? = null,
     drawerEnabled: Boolean = true,
     onOpenSettings: () -> Unit,
@@ -100,18 +99,7 @@ fun ChatApp(
     val motionPolicy = LocalAgoraMotionPolicy.current
     ConversationShareEffect(viewModel, context)
 
-    val latestDrawerEnabled by rememberUpdatedState(drawerEnabled)
-    val drawerState = rememberDrawerState(
-        initialValue = DrawerValue.Closed,
-        confirmStateChange = { newValue ->
-            val allowed = newValue == DrawerValue.Closed || latestDrawerEnabled
-            if (allowed && newValue != DrawerValue.Closed) {
-                focusManager.clearFocus()
-            }
-            allowed
-        }
-    )
-    DrawerAvailabilityEffect(drawerEnabled, motionPolicy, drawerState)
+    val drawerState = rememberChatDrawerState()
 
     val conversations by viewModel.conversations.collectAsState()
     // Defer value reads to the narrow composition regions that actually render messages. The
@@ -136,6 +124,8 @@ fun ChatApp(
     val currentLoop by viewModel.currentLoop.collectAsState()
     val runningLoopIds by viewModel.runningLoopConversationIds.collectAsState()
     val generationSnapshot by viewModel.generationSnapshot.collectAsState()
+    val selectedConversationGenerationSnapshot by
+        viewModel.selectedConversationGenerationSnapshot.collectAsState()
     val selectedModel by viewModel.currentActiveModel.collectAsState()
     val enabledModels by viewModel.settings.enabledModels.collectAsState()
     val developerOptionsEnabled by viewModel.settings.developerOptionsEnabled.collectAsState()
@@ -237,10 +227,8 @@ fun ChatApp(
     val windowHeightDp = with(density) {
         windowSize.height.toDp().value.coerceAtLeast(1f)
     }
-    val drawerWidth = with(density) { windowSize.width.toDp() } * 0.8f
     var bottomBarHeightPx by rememberSaveable { mutableFloatStateOf(0f) }
     val bottomBarHeight = with(density) { bottomBarHeightPx.toDp() }
-    val drawerWidthPx = with(density) { drawerWidth.toPx() }
     var drawerProgress by remember { mutableFloatStateOf(0f) }
     // Bottom offset to clear the Settings button in the drawer.
     var settingsButtonTopDp by remember { mutableFloatStateOf(80f) }
@@ -306,12 +294,11 @@ fun ChatApp(
     val composer = com.newoether.agora.ui.chat.bottombar.rememberChatComposerState(viewModel.sandboxManager, sandboxEnabled, viewModel.isSandboxFlavor)
     val inputFocusRequester = remember { FocusRequester() }
     var showLaunchContent by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(50)
-        showLaunchContent = true
-        inputFocusRequester.requestFocus()
-    }
-
+    ChatLaunchInteractionEffects(
+        initialComposerFocusReady = initialComposerFocusReady,
+        inputFocusRequester = inputFocusRequester,
+        onShowLaunchContent = { showLaunchContent = true },
+    )
 
     scrollCoordinator.BindTransitionEffects(
         currentConversationId = currentConversationId,
@@ -364,33 +351,32 @@ fun ChatApp(
     )
 
     AnsweringHapticEffect(
-        generationSnapshot = generationSnapshot,
-        currentConversationId = currentConversationId,
+        generationSnapshot = selectedConversationGenerationSnapshot,
         topLevelPresentation = topLevelPresentation,
         hapticsEnabled = hapticsEnabled,
         haptics = haptics,
     )
 
     CompositionLocalProvider(LocalAgoraHaptics provides haptics) {
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = drawerEnabled,
-        scrimColor = DrawerDefaults.scrimColor,
-        drawerContent = {
+    ChatDrawerHost(
+        state = drawerState,
+        drawerEnabled = drawerEnabled,
+        motionPolicy = motionPolicy,
+        onDrawerProgress = { drawerProgress = it },
+        drawerContent = { drawerWidth, onRequestClose ->
             ChatDrawerContent(
                 viewModel = viewModel,
                 drawerWidth = drawerWidth,
-                drawerState = drawerState,
                 scope = scope,
                 inputFocusRequester = inputFocusRequester,
-                onDrawerProgress = { drawerProgress = it },
+                onRequestClose = onRequestClose,
                 onSettingsButtonTop = { settingsButtonTopDp = it },
                 onOpenSettings = onOpenSettings,
                 onOpenTasks = { onOpenTasks(null) },
                 onRequestRename = dialogState::requestRename,
                 onRequestDelete = dialogState::requestDelete,
             )
-        }
+        },
     ) {
         Box(
             modifier = Modifier
@@ -447,7 +433,7 @@ fun ChatApp(
                         onOpenDrawer = {
                             if (drawerEnabled) {
                                 focusManager.clearFocus()
-                                scope.launch { drawerState.openWithMotionPolicy(motionPolicy) }
+                                scope.launch { drawerState.toggle(motionPolicy) }
                             }
                         },
                         onSearchQueryChange = { query ->
