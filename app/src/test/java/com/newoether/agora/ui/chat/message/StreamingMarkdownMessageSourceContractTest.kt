@@ -129,7 +129,7 @@ class StreamingMarkdownMessageSourceContractTest {
     }
 
     @Test
-    fun `generation error bar is one stateless sibling rather than Markdown state`() {
+    fun `generation error bar owns only Local help dialog state outside Markdown`() {
         val root = locateMainSourceRoot()
         val wrapper = source(root, "StreamingMarkdownMessage.kt")
         val errorBar = source(root, "GenerationErrorBar.kt")
@@ -137,9 +137,12 @@ class StreamingMarkdownMessageSourceContractTest {
         val detail = source(root, "SegmentDetailSheet.kt")
 
         assertTrue(errorBar.contains("internal fun GenerationErrorBar("))
-        assertFalse(errorBar.contains("mutableState"))
+        assertTrue(errorBar.contains("var showHelpDialog by remember { mutableStateOf(false) }"))
+        assertEquals(1, Regex("mutableStateOf\\(").findAll(errorBar).count())
         assertFalse(errorBar.contains("MessageStatus"))
         assertFalse(wrapper.contains("GenerationErrorBar"))
+        assertFalse(wrapper.contains("showHelpDialog"))
+        assertFalse(assistant.contains("showHelpDialog"))
         assertTrue(assistant.contains("GenerationErrorBar("))
         assertTrue(assistant.contains("precededByCard = terminalImmediatelyFollowsCard"))
         assertTrue(detail.contains("GenerationErrorBar(it)"))

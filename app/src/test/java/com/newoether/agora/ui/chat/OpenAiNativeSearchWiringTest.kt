@@ -20,8 +20,8 @@ class OpenAiNativeSearchWiringTest {
         ).readText()
 
         listOf(
-            "openAiWebSearchAvailable = openAiWebSearchAvailable",
-            "openAiWebSearchEnabled = openAiWebSearchEnabled",
+            "openAiWebSearchAvailable = conversationControls.openAiWebSearchAvailable",
+            "openAiWebSearchEnabled = conversationControls.openAiWebSearchEnabled",
             "onOpenAiWebSearchToggle =",
         ).forEach { wiring ->
             assertTrue("ChatApp must wire $wiring", wiring in chatApp)
