@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
+import com.newoether.agora.api.LOCAL_CONTEXT_CAPACITY_ERROR_CODE
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageSegment
 
@@ -218,7 +219,14 @@ internal fun ChatMessage.hasActiveAnswerSegment(): Boolean {
 internal data class AssistantErrorContent(
     val answerText: String?,
     val errorText: String,
+    val showLocalContextHelp: Boolean,
 )
+
+internal fun shouldShowLocalContextHelp(
+    errorCode: String?,
+    modelName: String?,
+): Boolean = errorCode == LOCAL_CONTEXT_CAPACITY_ERROR_CODE &&
+    modelName?.startsWith("Local:") == true
 
 /**
  * Keeps already-generated assistant content separate from the terminal failure detail. Rows
@@ -235,9 +243,9 @@ internal fun assistantErrorContent(
     ) {
         return null
     }
-    val persistedError = mergedSegments
+    val persistedErrorSegment = mergedSegments
         .lastOrNull { it.type == "error" && it.content.isNotBlank() }
-        ?.content
+    val persistedError = persistedErrorSegment?.content
     val hasPersistedAnswer = mergedSegments.any { it.isVisibleAnswerSegment() }
     return AssistantErrorContent(
         answerText = message.text.takeIf {
@@ -246,6 +254,10 @@ internal fun assistantErrorContent(
         errorText = persistedError
             ?: message.text.takeIf { it.isNotBlank() && !hasPersistedAnswer }
             ?: fallbackErrorText,
+        showLocalContextHelp = shouldShowLocalContextHelp(
+            errorCode = persistedErrorSegment?.errorCode,
+            modelName = message.modelName,
+        ),
     )
 }
 

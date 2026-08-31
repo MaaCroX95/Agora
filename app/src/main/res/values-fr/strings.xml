@@ -1229,4 +1229,9 @@
     <string name="tool_edit_skill">Modifier la compétence</string>
     <string name="tool_delete_skill">Supprimer la compétence</string>
     <string name="tool_read_file_truncated">Contenu partiel affiché · continuer à l’octet %1$d</string>
+    <string name="low_context_mode">Mode à faible contexte</string>
+    <string name="low_context_mode_default_desc">Activer le mode à faible contexte par défaut</string>
+    <string name="learn_more">En savoir plus...</string>
+    <string name="local_model_limitations_title">Limites des modèles locaux</string>
+    <string name="local_model_limitations_body">Les modèles locaux sont limités par la mémoire disponible sur les appareils mobiles. La taille du contexte est l’une des principales contraintes. Le contexte comprend souvent le prompt système, les définitions d’outils ou de fonctions et les compétences. Pour réduire l’utilisation initiale du contexte, ouvrez le menu à trois points près du sélecteur de modèle et activez le mode à faible contexte.</string>
 </resources>

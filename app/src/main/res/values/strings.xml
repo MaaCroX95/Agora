@@ -1232,4 +1232,7 @@
     <string name="tool_create_skill">Create skill</string>
     <string name="tool_edit_skill">Edit skill</string>
     <string name="tool_delete_skill">Delete skill</string>
+    <string name="learn_more">Learn more...</string>
+    <string name="local_model_limitations_title">Limitations of Local Models</string>
+    <string name="local_model_limitations_body">Local models are limited by the memory available on mobile devices. Context size is one of the main constraints. Context often includes the system prompt, tool or function definitions, and skills. To reduce initial context use, open the three-dot menu beside the model selector and enable Low Context Mode.</string>
 </resources>

@@ -465,6 +465,23 @@ class LocalLlamaOwnershipSourceContractTest {
     }
 
     @Test
+    fun `Local context capacity failures keep one stable semantic code`() {
+        val provider = mainSource("com/newoether/agora/api/local/LocalProvider.kt")
+        val completedContextFull = provider
+            .substringAfter("LlamaGenerationStopReason.CONTEXT_FULL ->")
+            .substringBefore("LlamaGenerationStopReason.CANCELLED ->")
+        val thrownContextExceeded = provider
+            .substringAfter("DebugLog.e(TAG, \"Generation failed\", e)")
+            .substringBefore("return@runChat")
+
+        assertTrue(completedContextFull.contains("code = LOCAL_CONTEXT_CAPACITY_ERROR_CODE"))
+        assertTrue(thrownContextExceeded.contains(
+            "e.message?.startsWith(CONTEXT_EXCEEDED_PREFIX) == true"
+        ))
+        assertTrue(thrownContextExceeded.contains("LOCAL_CONTEXT_CAPACITY_ERROR_CODE"))
+    }
+
+    @Test
     fun `local context and settings cannot promise an impossible output`() {
         val provider = mainSource("com/newoether/agora/api/local/LocalProvider.kt")
         val settings = mainSource("com/newoether/agora/ui/settings/SettingsProviderDetailPage.kt")

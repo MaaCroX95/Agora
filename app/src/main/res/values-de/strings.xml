@@ -1229,4 +1229,9 @@
     <string name="tool_edit_skill">Skill bearbeiten</string>
     <string name="tool_delete_skill">Skill löschen</string>
     <string name="tool_read_file_truncated">Teilinhalt angezeigt · bei Byte %1$d fortfahren</string>
+    <string name="low_context_mode">Modus mit kleinem Kontext</string>
+    <string name="low_context_mode_default_desc">Modus mit kleinem Kontext standardmäßig aktivieren</string>
+    <string name="learn_more">Mehr erfahren...</string>
+    <string name="local_model_limitations_title">Einschränkungen lokaler Modelle</string>
+    <string name="local_model_limitations_body">Lokale Modelle sind durch den auf Mobilgeräten verfügbaren Arbeitsspeicher begrenzt. Die Kontextgröße ist eine der wichtigsten Einschränkungen. Der Kontext enthält häufig den System-Prompt, Werkzeug- oder Funktionsdefinitionen und Skills. Um den anfänglichen Kontextverbrauch zu verringern, öffnen Sie das Drei-Punkte-Menü neben der Modellauswahl und aktivieren Sie den Modus mit kleinem Kontext.</string>
 </resources>

@@ -1,6 +1,7 @@
 package com.newoether.agora.ui.chat.message
 
 import androidx.compose.ui.unit.dp
+import com.newoether.agora.api.LOCAL_CONTEXT_CAPACITY_ERROR_CODE
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageStatus
@@ -644,8 +645,89 @@ class MessageItemSegmentsTest {
             AssistantErrorContent(
                 answerText = "Generated answer",
                 errorText = "Failed to generate",
+                showLocalContextHelp = false,
             ),
             assistantErrorContent(message, message.segments.orEmpty(), "Failed to generate"),
+        )
+    }
+
+    @Test
+    fun localContextHelpRequiresStableCodeAndEmbeddedLocalModel() {
+        assertTrue(
+            shouldShowLocalContextHelp(
+                errorCode = LOCAL_CONTEXT_CAPACITY_ERROR_CODE,
+                modelName = "Local: model.gguf",
+            ),
+        )
+        listOf("Remote: model", "Ollama: model", null).forEach { modelName ->
+            assertFalse(
+                shouldShowLocalContextHelp(
+                    errorCode = LOCAL_CONTEXT_CAPACITY_ERROR_CODE,
+                    modelName = modelName,
+                ),
+            )
+        }
+        assertFalse(
+            shouldShowLocalContextHelp(
+                errorCode = "different_error",
+                modelName = "Local: model.gguf",
+            ),
+        )
+        assertFalse(shouldShowLocalContextHelp(errorCode = null, modelName = "Local: model.gguf"))
+    }
+
+    @Test
+    fun localContextErrorOnlyRowKeepsHelpEligibility() {
+        val segments = listOf(
+            MessageSegment(
+                type = "error",
+                content = "Context capacity reached",
+                errorCode = LOCAL_CONTEXT_CAPACITY_ERROR_CODE,
+            ),
+        )
+        val message = ChatMessage(
+            text = "",
+            status = MessageStatus.ERROR,
+            participant = Participant.MODEL,
+            modelName = "Local: model.gguf",
+            segments = segments,
+        )
+
+        assertEquals(
+            AssistantErrorContent(
+                answerText = null,
+                errorText = "Context capacity reached",
+                showLocalContextHelp = true,
+            ),
+            assistantErrorContent(message, segments, "Failed to generate"),
+        )
+    }
+
+    @Test
+    fun localContextAnswerAndErrorRowKeepsHelpEligibility() {
+        val segments = listOf(
+            MessageSegment(type = "answer", content = "Partial answer"),
+            MessageSegment(
+                type = "error",
+                content = "Context capacity reached",
+                errorCode = LOCAL_CONTEXT_CAPACITY_ERROR_CODE,
+            ),
+        )
+        val message = ChatMessage(
+            text = "Partial answer",
+            status = MessageStatus.ERROR,
+            participant = Participant.MODEL,
+            modelName = "Local: model.gguf",
+            segments = segments,
+        )
+
+        assertEquals(
+            AssistantErrorContent(
+                answerText = "Partial answer",
+                errorText = "Context capacity reached",
+                showLocalContextHelp = true,
+            ),
+            assistantErrorContent(message, segments, "Failed to generate"),
         )
     }
 
@@ -666,6 +748,7 @@ class MessageItemSegmentsTest {
             AssistantErrorContent(
                 answerText = "Generated answer",
                 errorText = "Stream ended unexpectedly",
+                showLocalContextHelp = false,
             ),
             assistantErrorContent(message, segments, "Failed to generate"),
         )

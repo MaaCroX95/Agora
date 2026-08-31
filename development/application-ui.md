@@ -390,6 +390,22 @@ metadata in one traversal of Composer order. Composer and durable-message viewer
 indices while constructing their filtered media sequence; they never recover an occurrence with
 `indexOf` on a URI or path, so duplicate values and mixed attachment types open the tapped item.
 
+## Local Low Context controls
+
+When the selected model belongs to the embedded `Local` Provider, the Chat bottom bar's three-dot
+menu shows a conversation/New Chat `Low Context Mode` Switch. A null conversation value inherits
+the default-off, device-local value from `Provider > Local > Advanced`; an explicit menu change
+stores that conversation/workspace override. Selecting Ollama, a custom Provider, or a remote
+Provider hides and ignores this control without deleting its stored value.
+
+While Low Context Mode is effective, menu rows that add Provider or tool capability are disabled and
+use the standard Material disabled presentation: Gemini Code Execution and Google Search, OpenAI
+Service Tier and native Search, generic Web Search, and Shell. Thinking, Context Compact, Advanced
+Settings, the model selector, and context usage remain available. The Chat top-bar System Prompt row
+is disabled and gray but retains the selected prompt for later restoration. The Local Advanced
+default uses the standard whole-row `SettingsItem` toggle with the localized Low Context title and
+`Enable Low Context Mode by default` meaning; it is not a portable Settings import/export value.
+
 ## 15. Verification
 
 Focused verification must cover the onboarding action's fixed 32 dp inset and 48 dp height, absence

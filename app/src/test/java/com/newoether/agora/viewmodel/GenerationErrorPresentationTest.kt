@@ -206,6 +206,63 @@ class GenerationErrorPresentationTest {
     }
 
     @Test
+    fun `Local semantic error code reaches live and final persisted segments`() {
+        val generation = sourceFile(
+            "app/src/main/java/com/newoether/agora/viewmodel/GenerationManager.kt",
+        )
+        val streaming = sourceFile(
+            "app/src/main/java/com/newoether/agora/viewmodel/GenerationStreamingSegments.kt",
+        )
+        val liveProjection = generation
+            .substringAfter("segments = buildLiveSegments(")
+            .substringBefore("retryText = retryText")
+        val finalProjection = generation
+            .substringAfter("val generatedMessage = GenerationFinalSnapshot(")
+            .substringBefore(").toMessage()")
+        val errorSegmentProjection = streaming
+            .substringAfter("errorMessage?.takeIf { it.isNotBlank() }")
+            .substringBefore("result.addAll(citations)")
+        val finalMessageProjection = streaming
+            .substringAfter("internal fun GenerationFinalSnapshot.toMessage(): ChatMessage")
+
+        assertTrue(generation.contains(
+            "generationErrorCode = (event.error as? GenerationError.LocalModel)?.code"
+        ))
+        assertTrue(liveProjection.contains("generationErrorMessage"))
+        assertTrue(liveProjection.contains("generationErrorCode"))
+        assertTrue(finalProjection.contains("errorMessage = generationErrorMessage"))
+        assertTrue(finalProjection.contains("errorCode = generationErrorCode"))
+        assertTrue(streaming.contains("errorCode: String? = null"))
+        assertTrue(errorSegmentProjection.contains("errorCode = errorCode"))
+        assertTrue(streaming.contains("val errorCode: String? = null"))
+        assertTrue(finalMessageProjection.contains("errorMessage,"))
+        assertTrue(finalMessageProjection.contains("errorCode,"))
+    }
+
+    @Test
+    fun `Local context help reuses the shared terminal and Markdown link presentation`() {
+        val bar = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/chat/message/GenerationErrorBar.kt",
+        )
+        val helpAction = bar
+            .substringAfter("private fun LocalContextHelpAction(onClick: () -> Unit)")
+            .substringBefore("internal fun StoppedGenerationBar")
+
+        assertTrue(bar.contains("GenerationTerminalText("))
+        assertTrue(bar.contains("stringResource(R.string.learn_more)"))
+        assertTrue(bar.contains("R.string.local_model_limitations_title"))
+        assertTrue(bar.contains("R.string.local_model_limitations_body"))
+        assertTrue(bar.contains("Text(stringResource(R.string.ok))"))
+        assertTrue(helpAction.contains("MaterialTheme.colorScheme.primary"))
+        assertTrue(helpAction.contains("MarkdownLinkPressedAlpha"))
+        assertTrue(helpAction.contains("MarkdownLinkPressAnimationMillis"))
+        assertTrue(helpAction.contains("easing = FastOutSlowInEasing"))
+        assertTrue(helpAction.contains("indication = null"))
+        assertFalse(helpAction.contains(".background("))
+        assertFalse(helpAction.contains("Surface("))
+    }
+
+    @Test
     fun `terminal finalization failures escape to the bound Run recovery owner`() {
         val generation = sourceFile(
             "app/src/main/java/com/newoether/agora/viewmodel/GenerationManager.kt",
@@ -243,6 +300,11 @@ class GenerationErrorPresentationTest {
             "generation_error_connection_reset",
             "generation_error_unknown_host",
             "generation_error_tls_failure",
+            "low_context_mode",
+            "low_context_mode_default_desc",
+            "learn_more",
+            "local_model_limitations_title",
+            "local_model_limitations_body",
         )
         val directories = listOf(
             "values-ar",

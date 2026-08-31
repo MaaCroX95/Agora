@@ -444,6 +444,23 @@ are omitted. Malformed JSON, non-object JSON, or an object without one of those 
 fields remains verbatim. The normalized result is presentation-only for Room, but it is also the
 exact Provider-facing error detail in the current Android locale.
 
+Embedded Local context-capacity failures carry the stable code `local_context_capacity` from both
+native `context_full` completion and preflight context-exceeded failure through live and final
+`MessageSegment.errorCode` persistence. The help action is eligible only when the last nonblank
+persisted error segment has that code and the failed message's own `modelName` begins with `Local:`.
+It must not infer eligibility from localized error text, the currently selected model, Ollama, or a
+remote Provider. Error-only and partial-answer-plus-error layouts both retain the same eligibility
+through terminal transition animation.
+
+An eligible shared gray error bar places an uncontained Primary-colored localized `Learn more...`
+action below the selectable error text. Its pressed color directly reuses Markdown links' `180 ms`,
+`0.72` alpha, and `FastOutSlowInEasing` contract, with no Surface, capsule, background, indication,
+or extra error icon. The shared component alone owns the Dialog open state. Activation opens a
+localized limitations Dialog explaining mobile memory/context constraints, common System Prompt,
+tool/function, and skill context sources, and the three-dot Low Context Mode location; the existing
+localized `OK` action dismisses it. STOPPED and nonqualifying errors keep the ordinary terminal text
+without this action or Dialog.
+
 A normal durable MODEL row ending in ERROR or STOPPED remains that exact assistant turn in every
 later Provider request whose selected context contains that row. API-only canonicalization
 preserves its nonblank partial answer first and appends one terminal annotation to the same assistant

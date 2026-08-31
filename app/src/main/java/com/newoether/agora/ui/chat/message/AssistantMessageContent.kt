@@ -149,6 +149,7 @@ private fun AssistantInlineActivity(
     retainExitLayout: Boolean,
     terminalText: String?,
     terminalIsError: Boolean,
+    terminalShowLocalContextHelp: Boolean,
     precededByCard: Boolean,
 ) {
     var retainedMode by remember {
@@ -195,13 +196,14 @@ private fun AssistantInlineActivity(
                             GenerationActivityDot()
                         }
                     }
-                } else {
-                    GenerationTerminalText(
-                        visibleTerminalText,
-                        selectable = terminalIsError,
-                        fillWidth = terminalIsError,
-                        normalizeError = terminalIsError,
+                } else if (terminalIsError) {
+                    GenerationErrorBar(
+                        errorText = visibleTerminalText,
+                        showLocalContextHelp = terminalShowLocalContextHelp,
+                        topPadding = 0.dp,
                     )
+                } else {
+                    GenerationTerminalText(visibleTerminalText)
                 }
             }
         }
@@ -417,6 +419,7 @@ internal fun AssistantMessageContent(
                     message.text,
                     message.status,
                     message.participant,
+                    message.modelName,
                     mergedSegments,
                     failedToGenerateText,
                 ) {
@@ -607,6 +610,8 @@ internal fun AssistantMessageContent(
                         retainExitLayout = inlineActivityPresentation.retainLayout,
                         terminalText = inlineTerminalText,
                         terminalIsError = errorContent != null,
+                        terminalShowLocalContextHelp =
+                            errorContent?.showLocalContextHelp == true,
                         precededByCard = terminalImmediatelyFollowsCard,
                     )
                 }
@@ -666,8 +671,12 @@ internal fun AssistantMessageContent(
                 }
                 }
                 var retainedErrorText by remember { mutableStateOf("") }
+                var retainedShowLocalContextHelp by remember { mutableStateOf(false) }
                 LaunchedEffect(errorContent) {
-                    errorContent?.errorText?.let { retainedErrorText = it }
+                    errorContent?.let {
+                        retainedErrorText = it.errorText
+                        retainedShowLocalContextHelp = it.showLocalContextHelp
+                    }
                 }
                 AnimatedVisibility(
                     visible = hasAnswerContent && errorContent != null,
@@ -677,6 +686,9 @@ internal fun AssistantMessageContent(
                     GenerationErrorBar(
                         errorText = errorContent?.errorText ?: retainedErrorText,
                         precededByCard = terminalImmediatelyFollowsCard,
+                        showLocalContextHelp =
+                            errorContent?.showLocalContextHelp
+                                ?: retainedShowLocalContextHelp,
                     )
                 }
                 AnimatedVisibility(
