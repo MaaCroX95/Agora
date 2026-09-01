@@ -95,6 +95,25 @@ class ChatBottomBarControlOrderTest {
         assertTrue(lowContextSetting.contains("checked = localLowContextModeEnabled"))
     }
 
+    @Test
+    fun `Top Bar and Bottom Bar share canonical context projection usage`() {
+        val chatApp = mainSource("com/newoether/agora/ui/chat/ChatApp.kt")
+        val chatViewModel = mainSource("com/newoether/agora/viewmodel/ChatViewModel.kt")
+        val conversationUi = mainSource(
+            "com/newoether/agora/viewmodel/ConversationUiStateAssembler.kt",
+        )
+
+        assertEquals(2, chatApp.countOccurrences("contextUsage.estimatedTokenCount"))
+        assertTrue(chatApp.contains("totalTokens = contextUsage.estimatedTokenCount"))
+        assertTrue(chatApp.contains(
+            "contextEstimatedTokens = contextUsage.estimatedTokenCount"
+        ))
+        assertFalse(chatApp.contains("viewModel.totalTokens.collectAsState()"))
+        assertFalse(chatViewModel.contains("conversationUi.totalTokens"))
+        assertFalse(conversationUi.contains("val totalTokens: StateFlow<Int>"))
+        assertFalse(conversationUi.contains("sumOf { it.tokenCount }"))
+    }
+
     private fun mainSource(relativePath: String): String =
         File(locateMainSourceRoot(), relativePath).readText()
 

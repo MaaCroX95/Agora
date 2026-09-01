@@ -1119,18 +1119,21 @@ heuristic and every projected image uses the established fixed per-image estimat
 overestimate, but it may not omit a Provider-visible category. Display-only citations, tool
 progress, presentation metadata, and attachment metadata that is not serialized are excluded.
 
-The conversation UI reports the full selected canonical context estimate plus fixed request cost;
-it does not replace that number with the already-retained Provider window. Its rollout projection
-maps the shared canonical window back to one contiguous eligible durable suffix on the selected
-branch, including complete protocol units. Automatic Compact eligibility and retained verbatim text
-consume the complete selected canonical path, not an already-rolled Provider suffix.
+The Chat top-bar token subtitle and Bottom Bar context indicator report the same full selected canonical
+context estimate plus fixed request cost; neither surface replaces that number with the already-retained
+Provider window or with a sum of historical message usage. The top-bar subtitle is absent when no
+canonical usage is available. The rollout projection maps the shared canonical window back to one
+contiguous eligible durable suffix on the selected branch, including complete protocol units.
+Automatic Compact eligibility and retained verbatim text consume the complete selected canonical path,
+not an already-rolled Provider suffix.
 
 The UI projection reloads whenever the visible conversation ID or exact durable
 `selectedBranchesJson`, selected model, normalized context budget, durable message projection, or
 request-configuration invalidation input changes. The existing projector publishes one
-identity-fenced state: loading has no usage or retained IDs, a completed success may contain a valid
-empty retained set, and a completed failure has no retained IDs. A superseded request may never
-publish over a newer identity.
+identity-fenced state: loading may carry only the previous canonical usage to prevent a transient zero
+presentation, but it has no retained IDs; a completed success may contain a valid empty retained set;
+and a completed failure has neither usage nor retained IDs. A superseded request may never publish
+over a newer identity.
 
 Rollout may consume a projection only when it is completed, not loading, not failed, and its
 conversation ID and `selectedBranchesJson` exactly match the visible conversation. Branch-switch

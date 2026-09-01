@@ -528,7 +528,6 @@ class ChatViewModel(
     fun clearPreviews() = mediaPreview.clear()
 
     val messages: StateFlow<List<ChatMessage>> = conversationUi.messages
-    val totalTokens: StateFlow<Int> = conversationUi.totalTokens
     val isLoading: StateFlow<Boolean> = conversationUi.isLoading
     val generatingInConversationId: StateFlow<String?> =
         conversationUi.generatingInConversationId

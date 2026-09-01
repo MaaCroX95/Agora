@@ -146,7 +146,6 @@ fun ChatApp(
     val isSwitching by viewModel.isSwitching.collectAsState()
     val regenerationTransition by viewModel.regenerationTransition.collectAsState()
     val isTransitioningToNewChat by viewModel.isTransitioningToNewChat.collectAsState()
-    val totalTokens by viewModel.totalTokens.collectAsState()
     val visualizeContextRollout by viewModel.settings.visualizeContextRollout.collectAsState()
     val customProviders by viewModel.settings.customProviders.collectAsState()
     val displayConversations = remember(conversations, customProviders) { conversations.orEmpty().map { it.forDisplay(customProviders) } }
@@ -405,7 +404,7 @@ fun ChatApp(
                         currentConversationTitle = currentConversation?.title?.let {
                             replaceCustomProviderIdsForDisplay(it, customProviders)
                         },
-                        totalTokens = totalTokens,
+                        totalTokens = contextUsage.estimatedTokenCount,
                         searchActive = conversationSearchActive,
                         searchQuery = conversationSearchQuery,
                         searchMatchIndex = conversationSearchMatchIndex,

@@ -99,10 +99,6 @@ internal class ConversationUiStateAssembler(
         .distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
-    val totalTokens: StateFlow<Int> = renderStore.snapshot
-        .map { snapshot -> snapshot.allMessages.sumOf { it.tokenCount } }
-        .stateIn(scope, SharingStarted.Eagerly, 0)
-
     private val _loadedMessagesConversationId = MutableStateFlow<String?>(null)
     val loadedMessagesConversationId: StateFlow<String?> =
         _loadedMessagesConversationId.asStateFlow()
