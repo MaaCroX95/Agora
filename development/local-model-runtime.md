@@ -92,7 +92,10 @@ template bundle is Chat resident substate and is released before its model.
 
 Each request passes its effective `thinkingEnabled` value into the model template. This value may
 change the rendered prompt but does not construct the model/context or change resident identity.
-Model-emitted reasoning delimiters are separated by the shared incremental thinking parser.
+Native template parsing remains authoritative for typed tool-call events. It must not bypass the
+shared incremental thinking parser for ordinary text: model-emitted reasoning delimiters, including
+supported space-bearing channel forms, are recovered across arbitrary callback chunk boundaries while
+matching markers inside Markdown inline or fenced code remain literal.
 
 Each Local request also carries its effective temperature, top P, maximum output tokens, frequency
 penalty, and presence penalty into both text and multimodal native generation. Nullable penalties

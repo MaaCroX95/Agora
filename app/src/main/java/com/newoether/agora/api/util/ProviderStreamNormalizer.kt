@@ -35,6 +35,8 @@ internal class ProviderStreamNormalizer(
     private val offeredToolNames = tools.orEmpty().map { it.function.name }.toSet()
     private val inlineThinking = IncrementalThinkingParser()
     private val structuredThinking = IncrementalThinkingParser(startInThinking = true)
+    // Native authority suppresses generic text tool recovery only. Shared thinking recovery still
+    // handles delimiters that a model template emits but llama.cpp does not classify.
     private val textToolParser = StreamingTextToolCallParser().takeIf {
         offeredToolNames.isNotEmpty() && !nativeTextParsingAuthoritative
     }
@@ -104,10 +106,6 @@ internal class ProviderStreamNormalizer(
         content: String,
         downstream: suspend (StreamEvent) -> Unit,
     ) {
-        if (nativeTextParsingAuthoritative) {
-            if (content.isNotEmpty()) downstream(StreamEvent.TextChunk(content))
-            return
-        }
         routeRawText(content, downstream)
     }
 

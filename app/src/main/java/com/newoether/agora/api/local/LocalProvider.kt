@@ -22,6 +22,28 @@ import kotlinx.serialization.json.Json
 import com.newoether.agora.viewmodel.GenerationCancelHandle
 import kotlin.coroutines.coroutineContext
 
+private const val CONTEXT_EXCEEDED_PREFIX = "LOCAL_CONTEXT_EXCEEDED:"
+
+internal fun localGenerationFailure(
+    event: LlamaGenerationEvent.Failed,
+    displayMessage: String,
+): GenerationError.LocalModel = localGenerationFailure(
+    rawMessage = event.message,
+    displayMessage = displayMessage,
+)
+
+private fun localGenerationFailure(
+    rawMessage: String?,
+    displayMessage: String,
+): GenerationError.LocalModel = GenerationError.LocalModel(
+    message = displayMessage,
+    code = if (rawMessage?.startsWith(CONTEXT_EXCEEDED_PREFIX) == true) {
+        LOCAL_CONTEXT_CAPACITY_ERROR_CODE
+    } else {
+        null
+    },
+)
+
 class LocalProvider(
     private val context: Context,
     private val settings: SettingsRepository
@@ -29,7 +51,6 @@ class LocalProvider(
 
     companion object {
         private const val TAG = "LocalProvider"
-        private const val CONTEXT_EXCEEDED_PREFIX = "LOCAL_CONTEXT_EXCEEDED:"
         private val TEMPLATE_JSON = Json {
             encodeDefaults = true
             explicitNulls = false
@@ -124,7 +145,8 @@ class LocalProvider(
             DebugLog.d(TAG, "Generated prompt ($promptLength chars)")
         }
 
-        // Native template parsing owns text, thinking, and tool-call boundaries.
+        // Native template parsing produces typed thought and tool events. Shared stream normalization
+        // still recovers reasoning delimiters that the model emits as ordinary text.
         var inputTokenCount = 0
         var outputTokenCount = 0
         var terminalError: GenerationError? = null
@@ -215,11 +237,12 @@ class LocalProvider(
                         is LlamaGenerationEvent.Failed -> {
                             inputTokenCount = event.inputTokenCount
                             outputTokenCount = event.outputTokenCount
-                            terminalError = GenerationError.LocalModel(
-                                formatGenerationError(
+                            terminalError = localGenerationFailure(
+                                event = event,
+                                displayMessage = formatGenerationError(
                                     IllegalStateException(event.message),
                                     modelConfig,
-                                )
+                                ),
                             )
                         }
                     }
@@ -237,13 +260,9 @@ class LocalProvider(
             DebugLog.e(TAG, "Generation failed", e)
             emit(
                 StreamEvent.Error(
-                    GenerationError.LocalModel(
-                        message = formatGenerationError(e, modelConfig),
-                        code = if (e.message?.startsWith(CONTEXT_EXCEEDED_PREFIX) == true) {
-                            LOCAL_CONTEXT_CAPACITY_ERROR_CODE
-                        } else {
-                            null
-                        },
+                    localGenerationFailure(
+                        rawMessage = e.message,
+                        displayMessage = formatGenerationError(e, modelConfig),
                     )
                 )
             )

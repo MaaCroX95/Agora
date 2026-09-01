@@ -446,11 +446,14 @@ exact Provider-facing error detail in the current Android locale.
 
 Embedded Local context-capacity failures carry the stable code `local_context_capacity` from both
 native `context_full` completion and preflight context-exceeded failure through live and final
-`MessageSegment.errorCode` persistence. The help action is eligible only when the last nonblank
-persisted error segment has that code and the failed message's own `modelName` begins with `Local:`.
-It must not infer eligibility from localized error text, the currently selected model, Ollama, or a
-remote Provider. Error-only and partial-answer-plus-error layouts both retain the same eligibility
-through terminal transition animation.
+`MessageSegment.errorCode` persistence. Native callback failures must be classified from the raw
+`LlamaGenerationEvent.Failed.message` before localized display formatting; callback-delivered and
+thrown `LOCAL_CONTEXT_EXCEEDED:*` failures therefore use the same semantic code. The help action is
+eligible only when the last nonblank persisted error segment has that code and the failed message's
+own `modelName` begins with `Local:`. It must not infer eligibility from localized error text, the
+currently selected model, Ollama, or a remote Provider. Error-only and
+partial-answer-plus-error layouts both retain the same eligibility through terminal transition
+animation.
 
 An eligible shared gray error bar places an uncontained Primary-colored localized `Learn more...`
 action below the selectable error text. Its pressed color directly reuses Markdown links' `180 ms`,
@@ -887,14 +890,21 @@ while connection, DNS, TLS, timeout, and other transport failures remain network
 legacy network wrappers reuse the same structured detail extraction so current and historical
 presentation cannot drift.
 
-Provider-emitted structured thought events pass through one shared Provider-pass boundary before
-stream accumulation. A compatible relay that leaves final-answer bytes in its thought field may use
-a supported unmatched closing delimiter as the boundary: outside Markdown code, the prefix remains
-a `ThoughtChunk`, the delimiter is removed, and the suffix plus later misrouted thought chunks become
-ordinary text. Matching is case-insensitive and incremental across transport chunks. This fallback is
-one-way and applies only after the wire adapter has already classified content as thought; ordinary
-text and code literals are never globally stripped or reclassified. Thought title/signature metadata
-and the relative order of tool, usage, citation, retry, and terminal-error events remain intact.
+Provider-emitted structured thought events and ordinary text both pass through one shared
+Provider-pass normalization boundary before stream accumulation. Native parser authority preserves
+typed native tool-call execution and suppresses generic text-rendered tool recovery; it does not
+bypass shared incremental thinking-delimiter recovery for text that the native template parser leaves
+unclassified. Recovery is incremental across transport chunks, recognizes supported model-emitted
+channel forms, and preserves matching delimiters inside Markdown inline or fenced code as literal
+text.
+
+A compatible relay that leaves final-answer bytes in its thought field may use a supported unmatched
+closing delimiter as the boundary: outside Markdown code, the prefix remains a `ThoughtChunk`, the
+delimiter is removed, and the suffix plus later misrouted thought chunks become ordinary text.
+Matching is case-insensitive and incremental across transport chunks. This fallback is one-way and
+applies only after the wire adapter has already classified content as thought; ordinary text and code
+literals are never globally stripped or reclassified. Thought title/signature metadata and the
+relative order of tool, usage, citation, retry, and terminal-error events remain intact.
 
 Rows persisted before this normalization use the same narrow condition at the shared Room projection:
 only an assistant row with blank durable answer text, no nonblank answer segment, and a nonblank

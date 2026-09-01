@@ -1,6 +1,8 @@
 package com.newoether.agora.api.local
 
+import com.newoether.agora.api.LlamaGenerationEvent
 import com.newoether.agora.api.LlamaGenerationStopReason
+import com.newoether.agora.api.LOCAL_CONTEXT_CAPACITY_ERROR_CODE
 import com.newoether.agora.data.LocalChatModelConfig
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -218,7 +220,10 @@ class LocalLlamaOwnershipSourceContractTest {
         assertTrue(providerContract.contains("get() = false"))
         assertTrue(provider.contains("override val nativeTextParsingAuthoritative: Boolean = true"))
         assertTrue(runner.contains("nativeTextParsingAuthoritative = provider.nativeTextParsingAuthoritative"))
-        assertTrue(normalizer.contains("if (nativeTextParsingAuthoritative)"))
+        assertTrue(normalizer.contains(
+            "offeredToolNames.isNotEmpty() && !nativeTextParsingAuthoritative"
+        ))
+        assertTrue(normalizer.contains("routeRawText(content, downstream)"))
         assertTrue(provider.contains("is LlamaGenerationEvent.Thought ->"))
         assertTrue(provider.contains("StreamEvent.ThoughtChunk(event.value)"))
         assertTrue(provider.contains("is LlamaGenerationEvent.ToolCallUpdate ->"))
@@ -465,6 +470,30 @@ class LocalLlamaOwnershipSourceContractTest {
     }
 
     @Test
+    fun `native callback context failure receives the stable semantic code`() {
+        val failure = localGenerationFailure(
+            event = LlamaGenerationEvent.Failed(
+                message = "LOCAL_CONTEXT_EXCEEDED:24636:8192",
+                inputTokenCount = 24_636,
+                outputTokenCount = 0,
+            ),
+            displayMessage = "This conversation needs 24636 prompt tokens",
+        )
+        val other = localGenerationFailure(
+            event = LlamaGenerationEvent.Failed(
+                message = "native decode failed",
+                inputTokenCount = 0,
+                outputTokenCount = 0,
+            ),
+            displayMessage = "Generation failed: native decode failed",
+        )
+
+        assertEquals(LOCAL_CONTEXT_CAPACITY_ERROR_CODE, failure.code)
+        assertEquals("This conversation needs 24636 prompt tokens", failure.message)
+        assertNull(other.code)
+    }
+
+    @Test
     fun `Local context capacity failures keep one stable semantic code`() {
         val provider = mainSource("com/newoether/agora/api/local/LocalProvider.kt")
         val completedContextFull = provider
@@ -475,10 +504,10 @@ class LocalLlamaOwnershipSourceContractTest {
             .substringBefore("return@runChat")
 
         assertTrue(completedContextFull.contains("code = LOCAL_CONTEXT_CAPACITY_ERROR_CODE"))
-        assertTrue(thrownContextExceeded.contains(
-            "e.message?.startsWith(CONTEXT_EXCEEDED_PREFIX) == true"
-        ))
-        assertTrue(thrownContextExceeded.contains("LOCAL_CONTEXT_CAPACITY_ERROR_CODE"))
+        assertTrue(provider.contains("is LlamaGenerationEvent.Failed ->"))
+        assertTrue(provider.contains("event = event"))
+        assertTrue(thrownContextExceeded.contains("localGenerationFailure("))
+        assertTrue(thrownContextExceeded.contains("rawMessage = e.message"))
     }
 
     @Test

@@ -1,5 +1,9 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.api.LlamaGenerationEvent
+import com.newoether.agora.api.LOCAL_CONTEXT_CAPACITY_ERROR_CODE
+import com.newoether.agora.api.local.localGenerationFailure
+import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.CitationAnchor
 import com.newoether.agora.model.CitationPolicy
@@ -9,6 +13,7 @@ import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.StreamingTextDelta
 import com.newoether.agora.model.citationRecords
 import com.newoether.agora.model.toMessageSegment
+import com.newoether.agora.ui.chat.message.assistantErrorContent
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -298,6 +303,76 @@ class GenerationStreamingSegmentsTest {
             transformed.text,
         )
         assertEquals(original, transformed.copy(text = original.text))
+    }
+
+    @Test
+    fun `native context callback persists help eligibility through final UI projection`() {
+        val failure = localGenerationFailure(
+            event = LlamaGenerationEvent.Failed(
+                message = "LOCAL_CONTEXT_EXCEEDED:24636:8192",
+                inputTokenCount = 24_636,
+                outputTokenCount = 0,
+            ),
+            displayMessage = "This conversation needs 24636 prompt tokens",
+        )
+        val snapshot = GenerationFinalSnapshot(
+            messageId = "model",
+            parentId = "user",
+            text = "",
+            images = emptyList(),
+            thoughts = "",
+            thoughtTitle = null,
+            tokenCount = 24_636,
+            tokenUsage = null,
+            status = MessageStatus.ERROR,
+            timestamp = 10L,
+            thoughtTimeMs = null,
+            modelName = "Local: model.gguf",
+            flushedSegments = emptyList(),
+            answerBuffer = "",
+            thoughtBuffer = "",
+            thoughtSignature = null,
+            thoughtSignatureProvider = null,
+            thoughtDurationMs = null,
+            errorMessage = failure.message,
+            errorCode = failure.code,
+            runId = "run",
+            runSequence = 1L,
+        )
+        val finalMessage = snapshot.toMessage()
+        val encoded = MessagePersistenceGuard.encodeSegmentsBounded(finalMessage.segments)
+        val projected = MessageEntity(
+            id = finalMessage.id,
+            conversationId = "conversation",
+            parentId = finalMessage.parentId,
+            text = finalMessage.text,
+            images = finalMessage.images,
+            thoughts = finalMessage.thoughts,
+            thoughtTitle = finalMessage.thoughtTitle,
+            tokenCount = finalMessage.tokenCount,
+            status = finalMessage.status,
+            participant = finalMessage.participant,
+            timestamp = finalMessage.timestamp,
+            thoughtTimeMs = finalMessage.thoughtTimeMs,
+            modelName = finalMessage.modelName,
+            toolCallJson = encoded,
+            runId = checkNotNull(finalMessage.runId),
+            runSequence = checkNotNull(finalMessage.runSequence),
+        ).toUiChatMessage { it }
+        val errorContent = checkNotNull(
+            assistantErrorContent(
+                message = projected,
+                mergedSegments = projected.segments.orEmpty(),
+                fallbackErrorText = "Failed to generate",
+            )
+        )
+
+        assertEquals(LOCAL_CONTEXT_CAPACITY_ERROR_CODE, failure.code)
+        assertEquals(
+            LOCAL_CONTEXT_CAPACITY_ERROR_CODE,
+            projected.segments?.single { it.type == "error" }?.errorCode,
+        )
+        assertTrue(errorContent.showLocalContextHelp)
     }
 
     @Test

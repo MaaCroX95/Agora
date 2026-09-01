@@ -178,8 +178,14 @@ class ProviderThoughtBoundaryNormalizerTest {
     }
 
     @Test
-    fun `native parser authority preserves classified text without compatibility recovery`() = runTest {
-        val content = "<think>literal</think><tool_call>{\"name\":\"file_read\",\"arguments\":{}}</tool_call>"
+    fun `native parser authority keeps tool authority while recovering inline thinking`() = runTest {
+        val content = "<think>reason</think><tool_call>{\"name\":\"file_read\",\"arguments\":{}}</tool_call>"
+        val native = StreamEvent.ToolCallRequest(
+            id = "call_native",
+            name = "file_read",
+            arguments = "{}",
+            streamKey = "native_stream",
+        )
         val events = mutableListOf<StreamEvent>()
         val normalizer = ProviderStreamNormalizer(
             tools = TOOLS,
@@ -187,10 +193,73 @@ class ProviderThoughtBoundaryNormalizerTest {
         )
 
         normalizer.emit(StreamEvent.TextChunk(content), events::add)
+        normalizer.emit(native, events::add)
         normalizer.finish(events::add)
 
-        assertEquals(listOf(StreamEvent.TextChunk(content)), events)
-        assertTrue(events.none { it is StreamEvent.ThoughtChunk || it is StreamEvent.ToolCallRequest })
+        assertEquals("reason", events.filterIsInstance<StreamEvent.ThoughtChunk>()
+            .joinToString("") { it.thought })
+        assertEquals(
+            "<tool_call>{\"name\":\"file_read\",\"arguments\":{}}</tool_call>",
+            events.filterIsInstance<StreamEvent.TextChunk>().joinToString("") { it.text },
+        )
+        assertEquals(listOf(native), events.filterIsInstance<StreamEvent.ToolCallRequest>())
+    }
+
+    @Test
+    fun `native parser authority recovers device channel thinking across every split`() = runTest {
+        val source = "<|channel>thought Thinking Process:reason<channel|>final answer"
+        for (split in 0..source.length) {
+            val events = mutableListOf<StreamEvent>()
+            val normalizer = ProviderStreamNormalizer(
+                tools = TOOLS,
+                nativeTextParsingAuthoritative = true,
+            )
+
+            normalizer.emit(StreamEvent.TextChunk(source.substring(0, split)), events::add)
+            normalizer.emit(StreamEvent.TextChunk(source.substring(split)), events::add)
+            normalizer.finish(events::add)
+
+            assertEquals(
+                "split=$split",
+                "Thinking Process:reason",
+                events.filterIsInstance<StreamEvent.ThoughtChunk>()
+                    .joinToString("") { it.thought },
+            )
+            assertEquals(
+                "split=$split",
+                "final answer",
+                events.filterIsInstance<StreamEvent.TextChunk>()
+                    .joinToString("") { it.text },
+            )
+            assertTrue(
+                "split=$split",
+                events.none { event ->
+                    event is StreamEvent.TextChunk &&
+                        (event.text.contains("<|channel>") || event.text.contains("<channel|>"))
+                },
+            )
+            assertTrue(events.none { it is StreamEvent.ToolCallRequest })
+        }
+    }
+
+    @Test
+    fun `native parser authority keeps device markers literal inside markdown code`() = runTest {
+        val content = "`<|channel>thought Thinking Process:inline<channel|>`\n```\n" +
+            "<|channel>thought Thinking Process:fenced<channel|>\n```"
+        val events = mutableListOf<StreamEvent>()
+        val normalizer = ProviderStreamNormalizer(
+            tools = TOOLS,
+            nativeTextParsingAuthoritative = true,
+        )
+
+        content.map(Char::toString).forEach { chunk ->
+            normalizer.emit(StreamEvent.TextChunk(chunk), events::add)
+        }
+        normalizer.finish(events::add)
+
+        assertEquals(content, events.filterIsInstance<StreamEvent.TextChunk>()
+            .joinToString("") { it.text })
+        assertTrue(events.none { it is StreamEvent.ThoughtChunk })
     }
 
     @Test
