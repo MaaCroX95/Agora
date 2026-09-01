@@ -36,6 +36,7 @@ import com.newoether.agora.data.local.migration.MIGRATION_27_28
 )@TypeConverters(MessageConverters::class)
 abstract class ChatDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
+    abstract fun maintenanceDebtDao(): MaintenanceDebtDao
 
     companion object {
         const val CURRENT_VERSION = 28
