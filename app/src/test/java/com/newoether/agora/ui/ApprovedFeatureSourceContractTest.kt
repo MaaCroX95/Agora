@@ -60,11 +60,12 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(dao.contains("GROUP BY e.modelId"))
         assertTrue(dao.contains("getEmbeddingCountsByModels"))
         assertTrue(entities.contains("Index(value = [\"modelId\"])"))
-        assertTrue(database.contains("CURRENT_VERSION = 27"))
+        assertTrue(database.contains("CURRENT_VERSION = 28"))
         assertTrue(database.contains("MIGRATION_23_24"))
         assertTrue(database.contains("MIGRATION_24_25"))
         assertTrue(database.contains("MIGRATION_25_26"))
         assertTrue(database.contains("MIGRATION_26_27"))
+        assertTrue(database.contains("MIGRATION_27_28"))
     }
 
     @Test
