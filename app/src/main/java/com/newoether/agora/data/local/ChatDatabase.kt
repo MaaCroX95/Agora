@@ -40,6 +40,7 @@ import com.newoether.agora.data.local.migration.MIGRATION_28_29
 abstract class ChatDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
     abstract fun maintenanceDebtDao(): MaintenanceDebtDao
+    abstract fun semanticIndexDao(): SemanticIndexDao
 
     companion object {
         const val CURRENT_VERSION = 29
