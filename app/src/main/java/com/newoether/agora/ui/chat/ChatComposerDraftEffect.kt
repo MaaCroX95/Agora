@@ -31,7 +31,7 @@ internal fun ComposerDraftLifecycleEffect(
     LaunchedEffect(ownerId) {
         viewModel.loadingDraft = true
         val loaded = try {
-            controller.load(ownerId)
+            controller.loadSelected(ownerId)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -110,7 +110,7 @@ internal fun ComposerDraftLifecycleEffect(
             }
         } finally {
             withContext(NonCancellable) {
-                controller.release(ownerId)
+                controller.releaseSelected(ownerId)
             }
         }
     }
