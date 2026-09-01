@@ -11,6 +11,8 @@ import com.newoether.agora.data.local.EmbeddingEntity
 import com.newoether.agora.data.local.EmbeddingModelCount
 import com.newoether.agora.data.local.EmbeddingSearchRow
 import com.newoether.agora.data.local.IndexableMessage
+import com.newoether.agora.data.local.MaintenanceDebtDao
+import com.newoether.agora.data.local.MaintenanceDebtEntity
 import com.newoether.agora.data.local.MessageAttachmentReference
 import com.newoether.agora.data.local.MessageContextTopology
 import com.newoether.agora.data.local.MessageEntity
@@ -22,6 +24,7 @@ import com.newoether.agora.data.local.RunEntity
 import com.newoether.agora.data.local.RunGraphCommit
 import com.newoether.agora.data.local.ToolRoundCommit
 import com.newoether.agora.model.AttachmentMeta
+import com.newoether.agora.model.AttachmentStorage
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.ChatConversation
 import com.newoether.agora.model.MessagePersistenceGuard
@@ -32,6 +35,7 @@ import com.newoether.agora.model.RunStatus
 import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.model.citationRecords
 import com.newoether.agora.model.matchesCitationTitle
+import com.newoether.agora.service.MaintenanceDebtWorker
 import com.newoether.agora.util.AttachmentFiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -85,6 +89,8 @@ class ConversationRepository(
     private val chatDao: ChatDao,
     /** Non-null in production; null is an explicit DAO-isolated unit-test seam. */
     private val database: ChatDatabase?,
+    private val scheduleMaintenance: () -> Unit = { MaintenanceDebtWorker.schedule() },
+    private val maintenanceDebtDao: MaintenanceDebtDao? = database?.maintenanceDebtDao(),
 ) {
     // ── Conversations ─────────────────────────────────────────
 
@@ -106,11 +112,41 @@ class ConversationRepository(
     suspend fun getNewChatPersist(): NewChatPersistEntity? =
         chatDao.getNewChatPersist()
 
-    suspend fun upsertNewChatPersist(entity: NewChatPersistEntity) =
-        chatDao.upsertNewChatPersist(entity)
+    suspend fun upsertNewChatPersist(entity: NewChatPersistEntity) {
+        var scheduled = false
+        withMaintenanceTransaction {
+            val previousRaw = chatDao.getNewChatPersist()?.draftAttachments
+            val previous = previousRaw.decodeSelectedAttachments()
+            val replacement = entity.draftAttachments.decodeSelectedAttachments()
+            chatDao.upsertNewChatPersist(entity)
+            scheduled = when {
+                previousRaw == null -> false
+                previous == null || (entity.draftAttachments != null && replacement == null) ->
+                    enqueueAttachmentReconcile()
+                else -> enqueueAttachmentDebt(previous.removedReclaimablePaths(replacement))
+            }
+        }
+        if (scheduled) scheduleMaintenance()
+    }
 
-    suspend fun deleteNewChatPersist(): Boolean =
-        chatDao.deleteNewChatPersist() > 0
+    suspend fun deleteNewChatPersist(reclaimAttachments: Boolean = true): Boolean {
+        var deleted = false
+        var scheduled = false
+        withMaintenanceTransaction {
+            val previousRaw = chatDao.getNewChatPersist()?.draftAttachments
+            val previous = previousRaw.decodeSelectedAttachments()
+            deleted = chatDao.deleteNewChatPersist() > 0
+            if (deleted && reclaimAttachments) {
+                scheduled = if (previousRaw != null && previous == null) {
+                    enqueueAttachmentReconcile()
+                } else {
+                    enqueueAttachmentDebt(previous.orEmpty().reclaimablePaths())
+                }
+            }
+        }
+        if (scheduled) scheduleMaintenance()
+        return deleted
+    }
 
     suspend fun getConversationSettingsTransfer(
         conversationId: String,
@@ -173,28 +209,32 @@ class ConversationRepository(
     ): Boolean = chatDao.updateConversationTitleIfUnchanged(id, expectedTitle, newTitle) == 1
 
     suspend fun deleteConversation(id: String) {
-        val draftAttachments = chatDao.getConversation(id)?.draftAttachments
-            ?.let { raw ->
-                runCatching { Json.decodeFromString<List<SelectedAttachment>>(raw) }.getOrNull()
+        var scheduled = false
+        withMaintenanceTransaction {
+            val conversation = chatDao.getConversation(id) ?: return@withMaintenanceTransaction
+            val draftAttachmentsRaw = conversation.draftAttachments
+            val draftAttachments = draftAttachmentsRaw.decodeSelectedAttachments()
+            val attachmentReferences = mutableListOf<MessageAttachmentReference>()
+            var afterId: String? = null
+            while (true) {
+                val page = chatDao.getConversationMessageAttachmentReferencesPage(
+                    conversationId = id,
+                    afterId = afterId,
+                    limit = ATTACHMENT_REFERENCE_PAGE_SIZE,
+                )
+                attachmentReferences += page
+                afterId = page.lastOrNull()?.id
+                if (page.size < ATTACHMENT_REFERENCE_PAGE_SIZE) break
             }
-            .orEmpty()
-        val attachmentReferences = mutableListOf<MessageAttachmentReference>()
-        var afterId: String? = null
-        while (true) {
-            val page = chatDao.getConversationMessageAttachmentReferencesPage(
-                conversationId = id,
-                afterId = afterId,
-                limit = ATTACHMENT_REFERENCE_PAGE_SIZE,
-            )
-            attachmentReferences += page
-            afterId = page.lastOrNull()?.id
-            if (page.size < ATTACHMENT_REFERENCE_PAGE_SIZE) break
+            chatDao.deleteEmbeddingsByConversation(id)
+            chatDao.deleteMessagesByConversation(id)
+            chatDao.deleteConversation(id)
+            scheduled = enqueueMessageAttachmentDebt(attachmentReferences) or when {
+                draftAttachmentsRaw != null && draftAttachments == null -> enqueueAttachmentReconcile()
+                else -> enqueueAttachmentDebt(draftAttachments.orEmpty().reclaimablePaths())
+            }
         }
-        chatDao.deleteEmbeddingsByConversation(id)
-        chatDao.deleteMessagesByConversation(id)
-        chatDao.deleteConversation(id)
-        deleteMessageAttachmentFiles(attachmentReferences)
-        deleteUnreferencedDraftAttachmentFiles(draftAttachments)
+        if (scheduled) scheduleMaintenance()
     }
 
     // ── Messages ──────────────────────────────────────────────
@@ -260,18 +300,49 @@ class ConversationRepository(
         conversationModelId: String,
         conversationSettingsJson: String?,
         at: Long = System.currentTimeMillis(),
-    ): RunGraphCommit = chatDao.createConversationRunWithMessages(
-        conversation,
-        run,
-        messages,
-        messageSelectionUpdates,
-        conversationModelId,
-        conversationSettingsJson,
-        at,
-    )
+    ): RunGraphCommit {
+        lateinit var graph: RunGraphCommit
+        var scheduled = false
+        withMaintenanceTransaction {
+            val previousRaw = chatDao.getNewChatPersist()?.draftAttachments
+            val previous = previousRaw.decodeSelectedAttachments()
+            graph = chatDao.createConversationRunWithMessages(
+                conversation,
+                run,
+                messages,
+                messageSelectionUpdates,
+                conversationModelId,
+                conversationSettingsJson,
+                at,
+            )
+            scheduled = when {
+                previousRaw == null -> false
+                previous == null -> enqueueAttachmentReconcile()
+                else -> enqueueAttachmentDebt(previous.appPrivatePaths())
+            }
+        }
+        if (scheduled) scheduleMaintenance()
+        return graph
+    }
 
-    suspend fun importRunGraph(runs: List<RunEntity>, messages: List<MessageEntity>) =
-        chatDao.importRunGraph(runs, messages)
+    suspend fun importExternalConversationGraph(
+        conversations: List<ChatEntity>,
+        runs: List<RunEntity>,
+        messages: List<MessageEntity>,
+        replace: Boolean,
+    ) {
+        var scheduled = false
+        withMaintenanceTransaction {
+            if (replace) {
+                chatDao.replaceImportedConversationGraph(conversations, runs, messages)
+            } else {
+                conversations.forEach { chatDao.upsertConversation(it) }
+                chatDao.importRunGraph(runs, messages)
+            }
+            scheduled = enqueueReconcileDebt()
+        }
+        if (scheduled) scheduleMaintenance()
+    }
 
     suspend fun createForkGraph(
         conversation: ChatEntity,
@@ -315,15 +386,34 @@ class ConversationRepository(
         messageSelections: Map<String?, String>,
         runSelections: Map<String?, String>,
         at: Long = System.currentTimeMillis(),
-    ): Boolean = chatDao.deleteMessageSubtree(
-        conversationId = conversationId,
-        rootMessageId = rootMessageId,
-        staleMessageIds = staleMessageIds,
-        rootRunIdsToDelete = rootRunIdsToDelete,
-        selectedBranchesJson = Json.encodeToString(messageSelections.mapKeys { it.key ?: "null" }),
-        selectedRunBranchesJson = Json.encodeToString(runSelections.mapKeys { it.key ?: "null" }),
-        at = at,
-    )
+    ): Boolean {
+        var deleted = false
+        var scheduled = false
+        withMaintenanceTransaction {
+            val staleMessages = if (staleMessageIds.isEmpty()) {
+                emptyList()
+            } else {
+                chatDao.getMessagesByIds(staleMessageIds)
+            }
+            deleted = chatDao.deleteMessageSubtree(
+                conversationId = conversationId,
+                rootMessageId = rootMessageId,
+                staleMessageIds = staleMessageIds,
+                rootRunIdsToDelete = rootRunIdsToDelete,
+                selectedBranchesJson = Json.encodeToString(messageSelections.mapKeys { it.key ?: "null" }),
+                selectedRunBranchesJson = Json.encodeToString(runSelections.mapKeys { it.key ?: "null" }),
+                at = at,
+            )
+            if (deleted) {
+                scheduled = enqueueMessageAttachmentDebt(
+                    staleMessages.map { message -> message.toAttachmentReference() },
+                ) or enqueueDebt(MaintenanceDebtEntity.KIND_EMBEDDING_ORPHANS, staleMessageIds) or
+                    enqueueDebt(MaintenanceDebtEntity.KIND_RUN_BRANCHES, listOf(conversationId))
+            }
+        }
+        if (scheduled) scheduleMaintenance()
+        return deleted
+    }
 
     suspend fun getLiveRun(conversationId: String): RunEntity? =
         chatDao.getLiveRun(conversationId)
@@ -450,7 +540,26 @@ class ConversationRepository(
     )
 
 
-    suspend fun removeContextCompact(messageId: String): Boolean = chatDao.removeContextCompact(messageId)
+    suspend fun removeContextCompact(messageId: String): Boolean {
+        var removed = false
+        var scheduled = false
+        withMaintenanceTransaction {
+            val message = chatDao.getMessage(messageId)
+            removed = chatDao.removeContextCompact(messageId)
+            if (removed && message != null) {
+                scheduled = enqueueMessageAttachmentDebt(listOf(message.toAttachmentReference())) or
+                    enqueueDebt(
+                        MaintenanceDebtEntity.KIND_EMBEDDING_ORPHANS,
+                        listOf(messageId),
+                    ) or enqueueDebt(
+                        MaintenanceDebtEntity.KIND_RUN_BRANCHES,
+                        listOf(message.conversationId),
+                    )
+            }
+        }
+        if (scheduled) scheduleMaintenance()
+        return removed
+    }
 
     suspend fun getMessagesByIds(ids: List<String>): List<MessageEntity> =
         ids.chunked(CONTEXT_MESSAGE_QUERY_PAGE_SIZE).flatMap { page ->
@@ -556,9 +665,6 @@ class ConversationRepository(
     suspend fun deleteEmbeddingsByConversation(conversationId: String) =
         chatDao.deleteEmbeddingsByConversation(conversationId)
 
-    suspend fun deleteOrphanedEmbeddings() =
-        chatDao.deleteOrphanedEmbeddings()
-
     suspend fun deleteEmbeddingsByModel(modelId: String) =
         chatDao.deleteEmbeddingsByModel(modelId)
 
@@ -567,9 +673,6 @@ class ConversationRepository(
 
     suspend fun upsertEmbeddingIfSearchable(entity: EmbeddingEntity): Boolean =
         chatDao.upsertEmbeddingIfSearchable(entity)
-
-    suspend fun deleteAllConversations() =
-        chatDao.deleteAllConversations()
 
     suspend fun findExistingMessageIds(ids: List<String>): List<String> =
         chatDao.findExistingMessageIds(ids)
@@ -659,128 +762,165 @@ class ConversationRepository(
         chatDao.getNewChatDraftAttachmentReference()
 
     /** Persists the composer draft (text + serialized attachments) for a conversation. */
-    suspend fun updateDraft(conversationId: String, draftText: String, draftAttachments: String?) {
-        chatDao.updateDraft(conversationId, draftText, draftAttachments)
-    }
-
-    /** Deletes candidate files only after verifying that no remaining message or draft still
-     * references them. This protects legacy forks/imports that share old backing paths. */
-    suspend fun deleteMessageFiles(messages: List<MessageEntity>) {
-        deleteUnreferencedAttachmentFiles(
-            messages.flatMapTo(linkedSetOf()) { it.attachmentFilePaths() }
-        )
-    }
-
-    private suspend fun deleteMessageAttachmentFiles(
-        messages: List<MessageAttachmentReference>,
+    suspend fun updateDraft(
+        conversationId: String,
+        draftText: String,
+        draftAttachments: String?,
+        reclaimRemovedAttachments: Boolean = true,
     ) {
-        deleteUnreferencedAttachmentFiles(
-            messages.flatMapTo(linkedSetOf()) { it.attachmentFilePaths() }
-        )
+        var scheduled = false
+        withMaintenanceTransaction {
+            val previousRaw = chatDao.getConversation(conversationId)?.draftAttachments
+            val previous = previousRaw.decodeSelectedAttachments()
+            val replacement = draftAttachments.decodeSelectedAttachments()
+            chatDao.updateDraft(conversationId, draftText, draftAttachments)
+            if (reclaimRemovedAttachments) {
+                scheduled = when {
+                    previousRaw == null -> false
+                    previous == null || (draftAttachments != null && replacement == null) ->
+                        enqueueAttachmentReconcile()
+                    else -> enqueueAttachmentDebt(
+                        previous.removedReclaimablePaths(replacement),
+                    )
+                }
+            }
+        }
+        if (scheduled) scheduleMaintenance()
     }
 
-    /** Reclaims private composer files after their draft reference has been durably removed. */
+    /** Enqueues exact paths whose non-draft owner has already been settled by the caller. */
     suspend fun deleteUnreferencedDraftAttachmentFiles(
         attachments: List<SelectedAttachment>,
     ) {
-        val reclaimable = attachments.filter { it.storage.reclaimWhenAbandoned }
-        deleteUnreferencedAttachmentFiles(
-            reclaimable.flatMapTo(linkedSetOf()) { attachment ->
-                buildList {
-                    attachment.localPath?.let(::add)
-                    addAll(attachment.processedFrames.orEmpty())
-                    addAll(attachment.preRenderedPaths.orEmpty())
-                }
-            },
+        var scheduled = false
+        withMaintenanceTransaction {
+            scheduled = enqueueAttachmentDebt(attachments.reclaimablePaths())
+        }
+        if (scheduled) scheduleMaintenance()
+        AttachmentFiles.deleteEmptySandboxParents(
+            attachments.filter { it.storage.reclaimWhenAbandoned },
         )
-        AttachmentFiles.deleteEmptySandboxParents(reclaimable)
     }
 
-    private suspend fun deleteUnreferencedAttachmentFiles(candidates: Set<String>) {
-        if (candidates.isEmpty()) return
-        val referenced = linkedSetOf<String>()
-        var afterMessageId: String? = null
-        while (true) {
-            val page = chatDao.getMessageAttachmentReferencesPage(
-                afterId = afterMessageId,
-                limit = ATTACHMENT_REFERENCE_PAGE_SIZE,
-            )
-            page.forEach { reference ->
-                reference.images.mapTo(referenced, ::normalizeAttachmentPath)
-                reference.attachmentMeta
-                    ?.let { raw ->
-                        runCatching { Json.decodeFromString<AttachmentMeta>(raw) }.getOrNull()
-                    }
-                    ?.items
-                    ?.mapNotNullTo(referenced) { item ->
-                        item.originalUri
-                            ?.takeIf { it.startsWith("file://") }
-                            ?.let(::normalizeAttachmentPath)
-                    }
+    private suspend fun <T> withMaintenanceTransaction(block: suspend () -> T): T =
+        database?.withTransaction { block() } ?: block()
+
+    private suspend fun enqueueAttachmentDebt(paths: Collection<String>): Boolean =
+        enqueueDebt(MaintenanceDebtEntity.KIND_ATTACHMENT_ORPHANS, paths)
+
+    private suspend fun enqueueAttachmentReconcile(): Boolean = enqueueAttachmentDebt(
+        listOf(MaintenanceDebtEntity.RECONCILE_IDENTITY),
+    )
+
+    private suspend fun enqueueReconcileDebt(): Boolean {
+        var scheduled = false
+        for (kind in MaintenanceDebtEntity.RECONCILE_KINDS) {
+            scheduled = enqueueDebt(
+                kind,
+                listOf(MaintenanceDebtEntity.RECONCILE_IDENTITY),
+            ) or scheduled
+        }
+        return scheduled
+    }
+
+    private suspend fun enqueueMessageAttachmentDebt(
+        references: List<MessageAttachmentReference>,
+    ): Boolean {
+        if (references.any { reference ->
+                val metadata = reference.attachmentMeta
+                (metadata == null && reference.images.isNotEmpty()) ||
+                    (metadata != null && metadata.decodeAttachmentMeta() == null)
             }
-            afterMessageId = page.lastOrNull()?.id
-            if (page.size < ATTACHMENT_REFERENCE_PAGE_SIZE) break
+        ) {
+            return enqueueAttachmentReconcile()
+        }
+        return enqueueAttachmentDebt(references.messageReclaimablePaths())
+    }
+
+    private suspend fun enqueueDebt(kind: String, identities: Collection<String>): Boolean {
+        val dao = maintenanceDebtDao ?: return false
+        val exact = identities.asSequence()
+            .filter(String::isNotBlank)
+            .distinct()
+            .toList()
+        if (exact.isEmpty()) return false
+        val at = System.currentTimeMillis()
+        exact.forEach { identity -> dao.enqueue(kind, identity, at) }
+        return true
+    }
+
+    private fun String?.decodeSelectedAttachments(): List<SelectedAttachment>? =
+        this?.let { raw ->
+            runCatching { Json.decodeFromString<List<SelectedAttachment>>(raw) }.getOrNull()
         }
 
-        var afterConversationId: String? = null
-        while (true) {
-            val page = chatDao.getConversationDraftAttachmentReferencesPage(
-                afterId = afterConversationId,
-                limit = ATTACHMENT_REFERENCE_PAGE_SIZE,
-            )
-            page.forEach { reference ->
-                runCatching {
-                    Json.decodeFromString<List<SelectedAttachment>>(reference.draftAttachments)
-                }.getOrNull()?.forEach { attachment ->
-                    attachment.localPath?.let { referenced += normalizeAttachmentPath(it) }
-                    attachment.processedFrames.orEmpty()
-                        .mapTo(referenced, ::normalizeAttachmentPath)
-                    attachment.preRenderedPaths.orEmpty()
-                        .mapTo(referenced, ::normalizeAttachmentPath)
+    private fun List<SelectedAttachment>.removedReclaimablePaths(
+        replacement: List<SelectedAttachment>?,
+    ): Set<String> {
+        val retainedPaths = replacement.orEmpty().reclaimablePaths()
+        return reclaimablePaths() - retainedPaths
+    }
+
+    private fun List<SelectedAttachment>.appPrivatePaths(): Set<String> =
+        filter { it.storage == AttachmentStorage.APP_PRIVATE }.reclaimablePaths()
+
+    private fun List<SelectedAttachment>.reclaimablePaths(): Set<String> =
+        asSequence()
+            .filter { it.storage.reclaimWhenAbandoned }
+            .flatMap { attachment ->
+                sequence {
+                    attachment.localPath?.let { yield(normalizeAttachmentPath(it)) }
+                    attachment.processedFrames.orEmpty().forEach {
+                        yield(normalizeAttachmentPath(it))
+                    }
+                    attachment.preRenderedPaths.orEmpty().forEach {
+                        yield(normalizeAttachmentPath(it))
+                    }
                 }
             }
-            afterConversationId = page.lastOrNull()?.id
-            if (page.size < ATTACHMENT_REFERENCE_PAGE_SIZE) break
+            .toSet()
+
+    private fun MessageEntity.toAttachmentReference() = MessageAttachmentReference(
+        id = id,
+        images = images,
+        attachmentMeta = attachmentMeta,
+    )
+
+    private fun List<MessageAttachmentReference>.messageReclaimablePaths(): Set<String> =
+        flatMapTo(linkedSetOf()) { reference ->
+            attachmentFilePaths(reference.images, reference.attachmentMeta.decodeAttachmentMeta())
         }
 
-        chatDao.getNewChatDraftAttachmentReference()?.let { reference ->
-            runCatching {
-                Json.decodeFromString<List<SelectedAttachment>>(reference.draftAttachments)
-            }.getOrNull()?.forEach { attachment ->
-                attachment.localPath?.let { referenced += normalizeAttachmentPath(it) }
-                attachment.processedFrames.orEmpty()
-                    .mapTo(referenced, ::normalizeAttachmentPath)
-                attachment.preRenderedPaths.orEmpty()
-                    .mapTo(referenced, ::normalizeAttachmentPath)
-            }
-        }
-
-        candidates
-            .asSequence()
-            .map(::normalizeAttachmentPath)
-            .filterNot(referenced::contains)
-            .forEach { path -> runCatching { java.io.File(path).delete() } }
-    }
-
-    private fun MessageEntity.attachmentFilePaths(): List<String> =
-        attachmentFilePaths(images, attachmentMeta)
-
-    private fun MessageAttachmentReference.attachmentFilePaths(): List<String> =
-        attachmentFilePaths(images, attachmentMeta)
+    private fun String?.decodeAttachmentMeta(): AttachmentMeta? =
+        this?.let { raw -> runCatching { Json.decodeFromString<AttachmentMeta>(raw) }.getOrNull() }
 
     private fun attachmentFilePaths(
         images: List<String>,
-        attachmentMeta: String?,
-    ): List<String> = buildList {
-        images.mapTo(this, ::normalizeAttachmentPath)
-        attachmentMeta
-            ?.let { raw -> runCatching { Json.decodeFromString<AttachmentMeta>(raw) }.getOrNull() }
-            ?.items
-            ?.mapNotNullTo(this) { item ->
-                item.originalUri
-                    ?.takeIf { it.startsWith("file://") }
-                    ?.let(::normalizeAttachmentPath)
+        meta: AttachmentMeta?,
+    ): List<String> {
+        val retainedImageIndices = meta?.items.orEmpty()
+            .asSequence()
+            .filterNot { it.storage.reclaimWhenAbandoned }
+            .flatMap { item ->
+                val start = item.imageIndex ?: return@flatMap emptySequence()
+                val count = (item.pageCount ?: 1).coerceAtLeast(0)
+                (start until start + count).asSequence()
             }
+            .toSet()
+        return buildList {
+            images.forEachIndexed { index, path ->
+                if (index !in retainedImageIndices) add(normalizeAttachmentPath(path))
+            }
+            meta?.items.orEmpty()
+                .asSequence()
+                .filter { it.storage.reclaimWhenAbandoned }
+                .mapNotNull { item ->
+                    item.originalUri
+                        ?.takeIf { it.startsWith("file://") }
+                        ?.let(::normalizeAttachmentPath)
+                }
+                .forEach(::add)
+        }
     }
 
     private fun normalizeAttachmentPath(path: String): String {

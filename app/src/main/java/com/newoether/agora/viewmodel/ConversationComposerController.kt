@@ -292,12 +292,18 @@ internal class ConversationComposerController(
         attachment.copy(frameCount = frameCount, sliceIntervalMs = intervalMs)
     }
 
-    suspend fun clearAccepted(ownerId: String): DraftClearResult =
+    suspend fun clearAccepted(
+        ownerId: String,
+        reclaimAttachments: Boolean = true,
+    ): DraftClearResult =
         withSession(ownerId) { session ->
             ensureLoaded(ownerId, session)
             withContext(NonCancellable) {
                 session.mutex.withLock {
-                    val result = drafts.clearAccepted(ownerId)
+                    val result = drafts.clearAccepted(
+                        conversationId = ownerId,
+                        reclaimAttachments = reclaimAttachments,
+                    )
                     if (!result.succeeded) return@withLock result
                     session.jobs.values.forEach(Job::cancel)
                     session.jobs.clear()

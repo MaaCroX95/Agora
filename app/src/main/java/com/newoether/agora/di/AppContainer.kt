@@ -24,6 +24,7 @@ import com.newoether.agora.tool.AutomationToolProvider
 import com.newoether.agora.tool.McpToolProvider
 import com.newoether.agora.mcp.McpRegistry
 import com.newoether.agora.sandbox.SandboxManagerFactory
+import com.newoether.agora.service.MaintenanceDebtWorker
 import com.newoether.agora.service.TaskWorker
 import com.newoether.agora.viewmodel.ChatViewModel
 import com.newoether.agora.viewmodel.ChatViewModelFactory
@@ -89,6 +90,17 @@ class AppContainer(
         taskManager.start()
         automationScheduler.start()
         processServicesStarted = true
+        appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                if (database.maintenanceDebtDao().hasDebt()) MaintenanceDebtWorker.schedule()
+            } catch (error: Exception) {
+                com.newoether.agora.util.DebugLog.e(
+                    "AppContainer",
+                    "Failed to schedule maintenance debt",
+                    error,
+                )
+            }
+        }
         appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             conversationSettingsTransfers.replayPending()
         }

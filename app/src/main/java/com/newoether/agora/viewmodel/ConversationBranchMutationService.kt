@@ -79,9 +79,6 @@ internal class ConversationBranchMutationService(
                             messageSelections = previousSelected,
                             runSelections = previousRunSelections,
                         )
-                        val staleList = conversations.getMessagesByIds(
-                            plan.deletedMessageIds.toList(),
-                        )
                         val remainingMessages = topology
                             .filter { it.id !in plan.deletedMessageIds }
                             .map { message -> message.toUiChatMessageStub() }
@@ -96,8 +93,6 @@ internal class ConversationBranchMutationService(
                             )
                         ) { "Message $messageId disappeared during delete" }
 
-                        // Files are external to Room, so remove them only after graph commit.
-                        conversations.deleteMessageFiles(staleList)
                         val remainingPath = ConversationUiState.resolvePath(
                             allMessages = remainingMessages,
                             streamingMsg = null,

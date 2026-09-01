@@ -11,6 +11,7 @@ import com.newoether.agora.data.local.ChatDatabase
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.local.ConversationSettingsImportTransferEntity
 import com.newoether.agora.data.local.LoopEntity
+import com.newoether.agora.data.local.MaintenanceDebtEntity
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.data.local.RunEntity
 import com.newoether.agora.data.local.TaskEntity
@@ -24,6 +25,7 @@ import com.newoether.agora.data.local.migration.regenerationInputFingerprint
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.RunEndReason
+import com.newoether.agora.service.MaintenanceDebtWorker
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -53,6 +55,7 @@ internal class NativeConversationGraphImporter(
     private val chatDao: ChatDao,
     private val importJson: Json,
     private val mediaRestorer: NativeConversationMediaRestorer,
+    private val scheduleMaintenance: () -> Unit = { MaintenanceDebtWorker.schedule() },
 ) {
     private companion object {
         const val IMPORT_MESSAGE_BATCH_SIZE = 64
@@ -643,7 +646,6 @@ internal class NativeConversationGraphImporter(
                 chatDao.deleteAllLoops()
                 chatDao.deleteAllConversations()
                 chatDao.deleteAllTasks()
-                chatDao.deleteOrphanedEmbeddings()
             }
             headers.tasks.forEach { chatDao.upsertTask(it) }
             headers.conversations.forEach { conversation ->
@@ -682,7 +684,16 @@ internal class NativeConversationGraphImporter(
                 chatDao.deleteConversationSettingsTransfer(conversationId)
             }
             chatDao.upsertConversationSettingsImportTransfer(settingsTransfer)
+            val at = System.currentTimeMillis()
+            MaintenanceDebtEntity.RECONCILE_KINDS.forEach { kind ->
+                database.maintenanceDebtDao().enqueue(
+                    kind,
+                    MaintenanceDebtEntity.RECONCILE_IDENTITY,
+                    at,
+                )
+            }
         }
+        scheduleMaintenance()
         return settingsTransfer.transferId
     }
 

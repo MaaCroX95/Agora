@@ -381,7 +381,6 @@ class RagManager(
                 ) { cacheMessagesForModel(modelId) })
             }
         }
-        conversations.deleteOrphanedEmbeddings()
     }
 
     // ── Single-message indexing ───────────────────────────────────

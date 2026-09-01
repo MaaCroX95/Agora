@@ -149,10 +149,14 @@ class ChatDaoExternalImportReplaceTest {
                 .count() == 2,
         )
         assertTrue(
-            "Claude and GPT Replace must both use the atomic DAO transaction",
-            Regex("""chatDao\.replaceImportedConversationGraph\(""")
+            "Claude and GPT Replace and Merge must use the Repository graph transaction",
+            Regex("""conversations\.importExternalConversationGraph\(""")
                 .findAll(manager)
-                .count() == 2,
+                .count() == 4,
+        )
+        assertTrue(
+            "Claude and GPT Replace must select replacement twice",
+            Regex("""replace = true,""").findAll(manager).count() == 2,
         )
         assertTrue(
             "External Replace must not delete conversations outside the DAO transaction",
@@ -165,10 +169,8 @@ class ChatDaoExternalImportReplaceTest {
                 .count() == 2,
         )
         assertTrue(
-            "Claude and GPT Merge must keep using incremental graph import",
-            Regex("""conversations\.importRunGraph\(graph\.runs, graph\.messages\)""")
-                .findAll(manager)
-                .count() == 2,
+            "Claude and GPT Merge must select incremental import twice",
+            Regex("""replace = false,""").findAll(manager).count() == 2,
         )
     }
 

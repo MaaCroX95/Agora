@@ -50,6 +50,11 @@ internal interface ComposerDraftPersistence {
     )
 
     suspend fun clearAcceptedDraft(ownerId: String)
+
+    suspend fun clearAcceptedDraft(
+        ownerId: String,
+        reclaimAttachments: Boolean,
+    ) = clearAcceptedDraft(ownerId)
 }
 
 /** Routes mutable conversation workspace state to Room or the New Chat singleton. */
@@ -71,6 +76,7 @@ internal class ConversationWorkspaceStore(
         ) : NewChatCommand
 
         data class Clear(
+            val reclaimAttachments: Boolean,
             val completion: CompletableDeferred<Unit>,
         ) : NewChatCommand
     }
@@ -207,12 +213,24 @@ internal class ConversationWorkspaceStore(
     }
 
     override suspend fun clearAcceptedDraft(ownerId: String) {
+        clearAcceptedDraft(ownerId, reclaimAttachments = true)
+    }
+
+    override suspend fun clearAcceptedDraft(
+        ownerId: String,
+        reclaimAttachments: Boolean,
+    ) {
         if (ownerId == NEW_CHAT_WORKSPACE_ID) {
-            clearNewChatAndAwait()
+            clearNewChatAndAwait(reclaimAttachments)
         } else {
             withContext(Dispatchers.IO) {
                 conversationMutationMutex.withLock {
-                    conversations.updateDraft(ownerId, "", null)
+                    conversations.updateDraft(
+                        conversationId = ownerId,
+                        draftText = "",
+                        draftAttachments = null,
+                        reclaimRemovedAttachments = reclaimAttachments,
+                    )
                 }
             }
         }
@@ -233,7 +251,10 @@ internal class ConversationWorkspaceStore(
     }
 
     suspend fun clearCommittedNewChatWorkspace() {
-        clearAcceptedDraft(NEW_CHAT_WORKSPACE_ID)
+        clearAcceptedDraft(
+            ownerId = NEW_CHAT_WORKSPACE_ID,
+            reclaimAttachments = false,
+        )
     }
 
     private fun updateConversation(
@@ -286,13 +307,18 @@ internal class ConversationWorkspaceStore(
         return completion.await()
     }
 
-    private suspend fun clearNewChatAndAwait() {
+    private suspend fun clearNewChatAndAwait(reclaimAttachments: Boolean) {
         val completion = CompletableDeferred<Unit>()
         synchronized(newChatStateLock) {
             pendingNewChatWrites += 1
         }
         try {
-            newChatCommands.send(NewChatCommand.Clear(completion))
+            newChatCommands.send(
+                NewChatCommand.Clear(
+                    reclaimAttachments = reclaimAttachments,
+                    completion = completion,
+                ),
+            )
         } catch (error: Throwable) {
             synchronized(newChatStateLock) {
                 pendingNewChatWrites -= 1
@@ -334,7 +360,7 @@ internal class ConversationWorkspaceStore(
                     synchronized(newChatStateLock) {
                         _newChatPersist.value = null
                     }
-                    conversations.deleteNewChatPersist()
+                    conversations.deleteNewChatPersist(command.reclaimAttachments)
                     command.completion.complete(Unit)
                 } catch (cancelled: CancellationException) {
                     command.completion.completeExceptionally(cancelled)

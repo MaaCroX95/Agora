@@ -334,7 +334,12 @@ class ImportExportManager(
                 }
                 if (strategy == ImportStrategy.REPLACE) {
                     val graph = planImportedLegacyMessages(importData.messages)
-                    chatDao.replaceImportedConversationGraph(chatEntities, graph.runs, graph.messages)
+                    conversations.importExternalConversationGraph(
+                        conversations = chatEntities,
+                        runs = graph.runs,
+                        messages = graph.messages,
+                        replace = true,
+                    )
                     _claudeImportProgress.value = 0.8f
                     _claudeImportResult.value = ClaudeChatImporter.ImportResult(chatEntities.size, graph.messages.size)
                 } else {
@@ -342,9 +347,13 @@ class ImportExportManager(
                     val existingMsgIds = conversations.findExistingMessageIds(importData.messages.map { it.id }).toSet()
                     val newCh = chatEntities.filterNot { it.id in existingConvIds }
                     val newMessageDrafts = importData.messages.filterNot { it.id in existingMsgIds }
-                    newCh.forEach { conversations.upsertConversation(it) }
                     val graph = planImportedLegacyMessages(newMessageDrafts)
-                    conversations.importRunGraph(graph.runs, graph.messages)
+                    conversations.importExternalConversationGraph(
+                        conversations = newCh,
+                        runs = graph.runs,
+                        messages = graph.messages,
+                        replace = false,
+                    )
                     _claudeImportProgress.value = 0.8f
                     _claudeImportResult.value = ClaudeChatImporter.ImportResult(newCh.size, graph.messages.size)
                 }
@@ -429,7 +438,12 @@ class ImportExportManager(
                 val thoughtsCount = importData.messages.count { it.thoughts != null && it.thoughts.isNotBlank() }
                 if (strategy == ImportStrategy.REPLACE) {
                     val graph = planImportedLegacyMessages(importData.messages)
-                    chatDao.replaceImportedConversationGraph(chatEntities, graph.runs, graph.messages)
+                    conversations.importExternalConversationGraph(
+                        conversations = chatEntities,
+                        runs = graph.runs,
+                        messages = graph.messages,
+                        replace = true,
+                    )
                     _gptImportProgress.value = 0.8f
                     _gptImportResult.value = GptChatImporter.ImportResult(chatEntities.size, graph.messages.size, thoughtsCount)
                 } else {
@@ -438,9 +452,13 @@ class ImportExportManager(
                     val newCh = chatEntities.filterNot { it.id in existingConvIds }
                     val newMessageDrafts = importData.messages.filterNot { it.id in existingMsgIds }
                     val newThoughtsCount = newMessageDrafts.count { it.thoughts != null && it.thoughts.isNotBlank() }
-                    newCh.forEach { conversations.upsertConversation(it) }
                     val graph = planImportedLegacyMessages(newMessageDrafts)
-                    conversations.importRunGraph(graph.runs, graph.messages)
+                    conversations.importExternalConversationGraph(
+                        conversations = newCh,
+                        runs = graph.runs,
+                        messages = graph.messages,
+                        replace = false,
+                    )
                     _gptImportProgress.value = 0.8f
                     _gptImportResult.value = GptChatImporter.ImportResult(newCh.size, graph.messages.size, newThoughtsCount)
                 }

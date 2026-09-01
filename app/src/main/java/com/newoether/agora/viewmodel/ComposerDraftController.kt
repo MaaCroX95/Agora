@@ -55,7 +55,19 @@ private class RepositoryComposerDraftPersistence(
     }
 
     override suspend fun clearAcceptedDraft(ownerId: String) {
-        conversations.updateDraft(ownerId, "", null)
+        clearAcceptedDraft(ownerId, reclaimAttachments = true)
+    }
+
+    override suspend fun clearAcceptedDraft(
+        ownerId: String,
+        reclaimAttachments: Boolean,
+    ) {
+        conversations.updateDraft(
+            conversationId = ownerId,
+            draftText = "",
+            draftAttachments = null,
+            reclaimRemovedAttachments = reclaimAttachments,
+        )
     }
 }
 
@@ -150,12 +162,18 @@ internal class ComposerDraftController(
      * A successfully accepted send invalidates every older UI tail-flush by advancing the cached
      * revision only after the draft reference is durably cleared.
      */
-    suspend fun clearAccepted(conversationId: String): DraftClearResult =
+    suspend fun clearAccepted(
+        conversationId: String,
+        reclaimAttachments: Boolean = true,
+    ): DraftClearResult =
         withContext(Dispatchers.IO + NonCancellable) {
             persistenceMutex.withLock {
                 try {
                     val current = persistedDrafts[conversationId] ?: read(conversationId)
-                    persistence.clearAcceptedDraft(conversationId)
+                    persistence.clearAcceptedDraft(
+                        ownerId = conversationId,
+                        reclaimAttachments = reclaimAttachments,
+                    )
                     val revision = current.revision + 1L
                     persistedDrafts[conversationId] = PersistedComposerDraft(
                         text = "",

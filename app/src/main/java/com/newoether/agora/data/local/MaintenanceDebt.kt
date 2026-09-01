@@ -7,6 +7,17 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+
+private fun decodeMaintenanceRunSelections(raw: String): Map<String?, String>? =
+    runCatching {
+        Json.decodeFromString<Map<String, String>>(raw)
+            .mapKeys { if (it.key == "null") null else it.key }
+    }.getOrNull()
+
+private fun encodeMaintenanceRunSelections(selections: Map<String?, String>): String =
+    Json.encodeToString(selections.mapKeys { it.key ?: "null" })
 
 @Entity(
     tableName = "maintenance_debt",
@@ -100,6 +111,74 @@ interface MaintenanceDebtDao {
         staleBefore: Long,
     ): Int
 
+    @Query("SELECT EXISTS(SELECT 1 FROM maintenance_debt LIMIT 1)")
+    suspend fun hasDebt(): Boolean
+
+    @Query(
+        """
+        SELECT id
+        FROM embeddings
+        WHERE id > :afterId
+          AND (messageId LIKE 'compact_%' OR NOT EXISTS (
+              SELECT 1 FROM messages WHERE messages.id = embeddings.messageId
+          ))
+        ORDER BY id
+        LIMIT :limit
+        """,
+    )
+    suspend fun getOrphanEmbeddingIdsPage(afterId: Long, limit: Int): List<Long>
+
+    @Query(
+        """
+        DELETE FROM embeddings
+        WHERE messageId = :messageId
+          AND NOT EXISTS (SELECT 1 FROM messages WHERE messages.id = embeddings.messageId)
+        """,
+    )
+    suspend fun deleteOrphanEmbeddingsForMessage(messageId: String): Int
+
+    @Query(
+        """
+        DELETE FROM embeddings
+        WHERE id IN (:ids)
+          AND (messageId LIKE 'compact_%' OR NOT EXISTS (
+              SELECT 1 FROM messages WHERE messages.id = embeddings.messageId
+          ))
+        """,
+    )
+    suspend fun deleteOrphanEmbeddingsByIds(ids: List<Long>): Int
+
+    @Query(
+        """
+        SELECT id
+        FROM conversations
+        WHERE selectedRunBranchesJson IS NOT NULL
+          AND (:afterId IS NULL OR id > :afterId)
+        ORDER BY id
+        LIMIT :limit
+        """,
+    )
+    suspend fun getRunBranchConversationIdsPage(afterId: String?, limit: Int): List<String>
+
+    @Query("SELECT * FROM conversations WHERE id = :conversationId")
+    suspend fun getMaintenanceConversation(conversationId: String): ChatEntity?
+
+    @Query("SELECT * FROM runs WHERE conversationId = :conversationId")
+    suspend fun getMaintenanceRuns(conversationId: String): List<RunEntity>
+
+    @Query(
+        """
+        UPDATE conversations
+        SET selectedRunBranchesJson = :replacement
+        WHERE id = :conversationId AND selectedRunBranchesJson = :expected
+        """,
+    )
+    suspend fun compareAndSetMaintenanceRunBranches(
+        conversationId: String,
+        expected: String,
+        replacement: String,
+    ): Int
+
     @Query("SELECT * FROM maintenance_debt WHERE kind = :kind AND identity = :identity")
     suspend fun getDebt(kind: String, identity: String): MaintenanceDebtEntity?
 
@@ -188,6 +267,26 @@ interface MaintenanceDebtDao {
             }
         }
         return claimed
+    }
+
+    @Transaction
+    suspend fun repairRunBranches(conversationId: String): Boolean {
+        require(conversationId.isNotBlank())
+        val conversation = getMaintenanceConversation(conversationId) ?: return false
+        val raw = conversation.selectedRunBranchesJson ?: return false
+        val decoded = decodeMaintenanceRunSelections(raw)
+        val repaired = decoded?.let { selections ->
+            RunBranchSelectionIntegrity.retainValidEdges(
+                selections = selections,
+                runs = getMaintenanceRuns(conversationId),
+            )
+        }.orEmpty()
+        if (decoded != null && repaired == decoded) return false
+        return compareAndSetMaintenanceRunBranches(
+            conversationId = conversationId,
+            expected = raw,
+            replacement = encodeMaintenanceRunSelections(repaired),
+        ) == 1
     }
 
     @Transaction

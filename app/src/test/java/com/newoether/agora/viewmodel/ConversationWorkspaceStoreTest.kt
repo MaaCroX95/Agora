@@ -145,13 +145,13 @@ class ConversationWorkspaceStoreTest {
         }
         runCurrent()
 
-        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist() }
+        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist(any()) }
         releaseWrite.complete(Unit)
         clear.await()
 
         assertNull(fixture.persisted.value)
         assertNull(fixture.store.newChatPersist.value)
-        coVerify(exactly = 1) { fixture.conversations.deleteNewChatPersist() }
+        coVerify(exactly = 1) { fixture.conversations.deleteNewChatPersist(true) }
     }
 
     @Test
@@ -202,7 +202,7 @@ class ConversationWorkspaceStoreTest {
             fixture.store.applyCommittedNewConversationState("conversation")
         }
         transferStarted.await()
-        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist() }
+        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist(any()) }
 
         releaseTransfer.complete(Unit)
         apply.await()
@@ -210,11 +210,11 @@ class ConversationWorkspaceStoreTest {
         assertEquals(listOf("transfer-start", "transfer-complete"), fixture.events)
         coVerify(exactly = 1) { fixture.transfers.complete("conversation") }
         assertEquals(initial, fixture.persisted.value)
-        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist() }
+        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist(any()) }
         fixture.store.clearCommittedNewChatWorkspace()
         assertEquals(listOf("transfer-start", "transfer-complete", "delete"), fixture.events)
         assertNull(fixture.persisted.value)
-        coVerify(exactly = 1) { fixture.conversations.deleteNewChatPersist() }
+        coVerify(exactly = 1) { fixture.conversations.deleteNewChatPersist(false) }
     }
 
     private class Fixture(
@@ -235,7 +235,7 @@ class ConversationWorkspaceStoreTest {
             coEvery { conversations.upsertNewChatPersist(any()) } coAnswers {
                 persisted.value = firstArg()
             }
-            coEvery { conversations.deleteNewChatPersist() } coAnswers {
+            coEvery { conversations.deleteNewChatPersist(any()) } coAnswers {
                 events += "delete"
                 val existed = persisted.value != null
                 persisted.value = null

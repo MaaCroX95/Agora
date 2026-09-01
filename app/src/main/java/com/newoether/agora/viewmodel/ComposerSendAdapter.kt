@@ -40,7 +40,10 @@ internal class ComposerSendAdapter(
                 // Acceptance transfers ownership before the composer clears. Direct inputs are
                 // Room-owned; queued guidance remains memory-owned until its later drain boundary.
                 val clearResult = withContext(NonCancellable) {
-                    composers.clearAccepted(draftOwnerId)
+                    composers.clearAccepted(
+                        ownerId = draftOwnerId,
+                        reclaimAttachments = false,
+                    )
                 }
                 // The durable draft may still contain the pre-submission pending copy. Stable localId
                 // prevents that stale snapshot from deleting a submitted runtime file.

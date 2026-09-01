@@ -31,7 +31,7 @@ class ComposerSendAdapterTest {
         assertNull(result)
         assertFalse(acknowledged)
         assertEquals(listOf("load:conversation", "send:text::", "release:conversation"), fixture.events)
-        coVerify(exactly = 0) { fixture.composers.clearAccepted(any()) }
+        coVerify(exactly = 0) { fixture.composers.clearAccepted(any(), any()) }
         coVerify(exactly = 0) { fixture.drafts.reclaimAttachments(any()) }
     }
 
@@ -62,7 +62,7 @@ class ComposerSendAdapterTest {
             ),
             fixture.events,
         )
-        coVerify(exactly = 0) { fixture.composers.clearAccepted("accepted-conversation") }
+        coVerify(exactly = 0) { fixture.composers.clearAccepted("accepted-conversation", any()) }
         coVerify(exactly = 1) { fixture.drafts.reclaimAttachments(listOf(attachment)) }
     }
 
@@ -114,7 +114,7 @@ class ComposerSendAdapterTest {
             ),
             fixture.events,
         )
-        coVerify(exactly = 0) { fixture.composers.clearAccepted("created-conversation") }
+        coVerify(exactly = 0) { fixture.composers.clearAccepted("created-conversation", any()) }
     }
     @Test
     fun stalePendingDraftCannotReclaimSubmittedRuntimeAttachment() = runTest {
@@ -169,7 +169,7 @@ class ComposerSendAdapterTest {
             listOf("load:conversation", "send:text::", "release:conversation"),
             fixture.events,
         )
-        coVerify(exactly = 0) { fixture.composers.clearAccepted(any()) }
+        coVerify(exactly = 0) { fixture.composers.clearAccepted(any(), any()) }
     }
 
     private class Fixture(
@@ -205,7 +205,7 @@ class ComposerSendAdapterTest {
             coEvery { composers.release(any()) } answers {
                 events += "release:${firstArg<String>()}"
             }
-            coEvery { composers.clearAccepted(any()) } answers {
+            coEvery { composers.clearAccepted(any(), false) } answers {
                 events += "clear:${firstArg<String>()}"
                 DraftClearResult(
                     attachments = attachmentsToReclaim,

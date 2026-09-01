@@ -107,9 +107,6 @@ class ConversationBranchMutationServiceTest {
             events += "room-commit"
             true
         }
-        coEvery { conversations.deleteMessageFiles(any()) } coAnswers {
-            events += "file-delete"
-        }
         val service = service(conversations, events)
         val state = ConversationGenerationState("conversation")
 
@@ -123,7 +120,7 @@ class ConversationBranchMutationServiceTest {
 
         assertEquals(1, previewCount)
         assertEquals(
-            listOf("start:true", "room-commit", "file-delete", "settle:user", "project:user"),
+            listOf("start:true", "room-commit", "settle:user", "project:user"),
             events,
         )
         state.dispose()
