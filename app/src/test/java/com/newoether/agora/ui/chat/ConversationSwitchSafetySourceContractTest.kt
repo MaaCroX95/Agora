@@ -71,34 +71,28 @@ class ConversationSwitchSafetySourceContractTest {
     }
 
     @Test
-    fun `pending attachment send waits for switching and uses the new chat draft owner`() {
-        val root = locateMainSourceRoot()
+    fun `pending attachment send retains its exact composer owner across switching`() {
         val sendButton = File(
-            root,
+            locateMainSourceRoot(),
             "com/newoether/agora/ui/chat/bottombar/ComposerSendButton.kt",
-        ).readText()
-        val viewModel = File(
-            root,
-            "com/newoether/agora/viewmodel/ChatViewModel.kt",
         ).readText()
 
         assertTrue(
-            "the pending-send effect must restart when switching settles",
-            sendButton.contains(
-                "LaunchedEffect(composer.pendingSend, anyProcessing, isSwitching)",
-            ),
+            "attachment membership must freeze at the tap-time owner snapshot",
+            sendButton.contains("val frozenIds = snapshot.attachments.map"),
         )
         assertTrue(
-            "attachment auto-submit must stay pending while a conversation switch is covered",
-            sendButton.contains(
-                "composer.pendingSend && !anyProcessing && !isSwitching",
-            ),
+            "the waiting barrier must retain and use the exact tap-time owner",
+            sendButton.contains("controller.load(ownerId)") &&
+                sendButton.contains("controller.awaitProcessing(ownerId, frozenIds.toSet())"),
         )
         assertTrue(
-            "new-chat mode must select the singleton draft owner before the old id is cleared",
-            Regex(
-                """if \(isNewChatMode\.value\) NEW_CHAT_WORKSPACE_ID\s*else currentConversationId\.value \?: NEW_CHAT_WORKSPACE_ID""",
-            ).containsMatchIn(viewModel),
+            "the exact owner retain must always be released non-cancellably",
+            sendButton.contains("withContext(NonCancellable) { controller.release(ownerId) }"),
+        )
+        assertFalse(
+            "the removed UI attachment owner must not drive submission through pendingSend",
+            sendButton.contains("pendingSend"),
         )
     }
 

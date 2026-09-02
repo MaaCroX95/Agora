@@ -91,6 +91,10 @@ class ApprovedFeatureSourceContractTest {
             root,
             "com/newoether/agora/ui/chat/bottombar/ChatComposerState.kt",
         )
+        val preview = source(
+            root,
+            "com/newoether/agora/ui/chat/bottombar/AttachmentPreviewRow.kt",
+        )
         val payload = source(
             root,
             "com/newoether/agora/viewmodel/MessagePayloadBuilder.kt",
@@ -115,47 +119,38 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(composer.contains(".contentReceiver(clipboardImageReceiver)"))
         assertTrue(composer.contains("transferableContent.consume"))
         assertTrue(composer.contains("hasMediaType(MediaType.Image)"))
-        assertTrue(composer.contains("composer.onPickImages(imageUris)"))
+        assertTrue(composer.contains("importUris(composerOwnerId, imageUris, \"image\")"))
+        assertTrue(composer.contains("inspectAttachmentIngress("))
+        assertTrue(composer.contains("composerController.importAttachment(ownerId, it)"))
         assertTrue(composer.contains("return remaining"))
 
-        val imageIngress = composerState.substringAfter("fun onPickImages")
-            .substringBefore("fun onPickVideos")
-        val fileIngress = composerState.substringAfter("fun onPickFiles")
-            .substringBefore("fun addSlicedVideo")
-        val pdfIngress = composerState.substringAfter("fun confirmPendingPdfSelection")
-            .substringBefore("fun dismissPendingPdf")
-        val videoIngress = composerState.substringAfter("fun addSlicedVideo")
-            .substringBefore("\n}")
-        val privateImageUri = "uri = Uri.fromFile(java.io.File(copy.path)).toString()"
-        assertTrue(
-            imageIngress.indexOf("when (val copy = copyToPrivate(uriObj, \"img\"))") <
-                imageIngress.indexOf(privateImageUri),
-        )
-        assertTrue(
-            imageIngress.indexOf(privateImageUri) <
-                imageIngress.indexOf("selectedAttachments = selectedAttachments + copiedAttachments"),
-        )
-        assertFalse(imageIngress.contains("uri = uriObj.toString()"))
-        assertTrue(
-            fileIngress.indexOf("copyToPrivate(uri, ext, attachment.fileSize)") <
-                fileIngress.indexOf("selectedAttachments = selectedAttachments + copiedAttachments"),
-        )
-        assertTrue(
-            pdfIngress.indexOf("copyToPrivate(Uri.parse(uri), \"pdf\")") <
-                pdfIngress.indexOf("selectedAttachments = selectedAttachments + SelectedAttachment"),
-        )
-        assertTrue(
-            videoIngress.indexOf("copyToPrivate(sourceUri, ext)") <
-                videoIngress.indexOf("selectedAttachments = selectedAttachments + attachment"),
-        )
-        assertTrue(videoIngress.contains("progressKey = vidUri"))
+        listOf(
+            "selectedAttachments",
+            "processingStates",
+            "pendingSend",
+            "attachmentCopyJobs",
+            "videoExtractionJobs",
+            "fun onPickImages",
+            "fun onPickVideos",
+            "fun onPickFiles",
+            "fun confirmPendingPdfSelection",
+            "fun addSlicedVideo",
+        ).forEach { legacyOwner ->
+            assertFalse(composerState.contains(legacyOwner))
+        }
+        assertTrue(composerState.contains("controller.importAttachment(ownerId, attachment)"))
         assertTrue(composerState.contains("localPath = file.absolutePath"))
+        assertTrue(preview.contains(
+            "mediaAttachments.mapIndexed { index, attachment -> attachment.localId to index }.toMap()",
+        ))
+        assertFalse(preview.contains("indexOf("))
+        assertTrue(sendButton.contains("val frozenIds = snapshot.attachments.map"))
+        assertTrue(sendButton.contains("controller.awaitProcessing(ownerId, frozenIds.toSet())"))
+        assertTrue(sendButton.contains("it.importState == AttachmentImportState.READY"))
+        assertTrue(sendButton.contains("attachment.storage.transferForSend()"))
         assertFalse(payload.contains("vid_original_"))
         assertTrue(payload.contains("val source = att.localPath ?: att.uri"))
         assertTrue(payload.contains("PdfPageRenderer.renderAsImages(app, sourceUri"))
-        assertTrue(sendButton.contains(
-            "it.localPath == null && (it.type == \"image\" || it.type == \"file\")",
-        ))
     }
 
     @Test

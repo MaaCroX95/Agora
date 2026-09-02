@@ -274,7 +274,10 @@ fun ChatApp(
     val conversationSearchMatches = conversationInteraction.searchMatches
     val textFieldState = rememberSaveable(saver = androidx.compose.foundation.text.input.TextFieldState.Saver) { androidx.compose.foundation.text.input.TextFieldState() }
     val sandboxEnabled by viewModel.settings.sandboxEnabled.collectAsState()
-    val composer = com.newoether.agora.ui.chat.bottombar.rememberChatComposerState(viewModel.sandboxManager, sandboxEnabled, viewModel.isSandboxFlavor)
+    val composer = com.newoether.agora.ui.chat.bottombar.rememberChatComposerState(
+        sandboxEnabled,
+        viewModel.isSandboxFlavor,
+    )
     val inputFocusRequester = remember { FocusRequester() }
     var showLaunchContent by remember { mutableStateOf(false) }
     ChatLaunchInteractionEffects(
