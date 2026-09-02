@@ -1,5 +1,6 @@
 package com.newoether.agora.data.local
 
+import com.newoether.agora.util.Constants
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.coVerifyOrder
@@ -13,6 +14,40 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 class SemanticIndexDaoTest {
+    @Test
+    fun sourceFingerprintUsesOnlyCanonicalEmbeddingPrefix() {
+        val prefix = "a".repeat(Constants.MAX_EMBEDDING_TEXT_LENGTH)
+
+        assertEquals(
+            semanticSourceFingerprint(prefix),
+            semanticSourceFingerprint(prefix + "ignored suffix"),
+        )
+        assertFalse(
+            semanticSourceFingerprint(prefix) ==
+                semanticSourceFingerprint(prefix.dropLast(1) + "b"),
+        )
+    }
+
+    @Test
+    fun finalMultiMessageCompletionUsesCurrentLedgerRevision() = runTest {
+        val dao = mockk<SemanticIndexDao>()
+        val first = workFor("first", "first-fingerprint", revision = 5, updatedAt = 20)
+        val second = workFor("second", "second-fingerprint", revision = 6, updatedAt = 21)
+        val ledger = pending(revision = 6, completedRevision = 4, updatedAt = 21)
+        coEvery { dao.completeExactWork(any(), any()) } coAnswers { callOriginal() }
+        coEvery { dao.deleteMatchingWork(MODEL_ID, "first", "first-fingerprint", 5) } returns 1
+        coEvery { dao.deleteMatchingWork(MODEL_ID, "second", "second-fingerprint", 6) } returns 1
+        coEvery { dao.getLedger(MODEL_ID) } returns ledger
+        coEvery { dao.markCurrentAfterExactWork(MODEL_ID, 6, 30) } returns 0
+        coEvery { dao.markCurrentAfterExactWork(MODEL_ID, 6, 31) } returns 1
+
+        assertTrue(dao.completeExactWork(first, updatedAt = 30))
+        assertTrue(dao.completeExactWork(second, updatedAt = 31))
+
+        coVerify(exactly = 2) { dao.markCurrentAfterExactWork(MODEL_ID, 6, any()) }
+        coVerify(exactly = 0) { dao.markCurrentAfterExactWork(MODEL_ID, 5, any()) }
+    }
+
     @Test
     fun admitModelCreatesNeedsReconcileLedgerWithoutScanningContent() = runTest {
         val dao = mockk<SemanticIndexDao>()
@@ -123,6 +158,11 @@ class SemanticIndexDaoTest {
         coEvery {
             dao.deleteMatchingWork(MODEL_ID, MESSAGE_ID, "new", 5)
         } returns 1
+        coEvery { dao.getLedger(MODEL_ID) } returns pending(
+            revision = 5,
+            completedRevision = 4,
+            updatedAt = 20,
+        )
         coEvery { dao.markCurrentAfterExactWork(MODEL_ID, 5, 30) } returns 1
 
         assertFalse(dao.completeExactWork(stale, updatedAt = 29))
@@ -215,13 +255,20 @@ class SemanticIndexDaoTest {
     )
 
     private fun work(fingerprint: String?, revision: Long, updatedAt: Long) =
-        SemanticIndexWorkEntity(
-            modelId = MODEL_ID,
-            messageId = MESSAGE_ID,
-            sourceFingerprint = fingerprint,
-            sourceRevision = revision,
-            updatedAt = updatedAt,
-        )
+        workFor(MESSAGE_ID, fingerprint, revision, updatedAt)
+
+    private fun workFor(
+        messageId: String,
+        fingerprint: String?,
+        revision: Long,
+        updatedAt: Long,
+    ) = SemanticIndexWorkEntity(
+        modelId = MODEL_ID,
+        messageId = messageId,
+        sourceFingerprint = fingerprint,
+        sourceRevision = revision,
+        updatedAt = updatedAt,
+    )
 
     private suspend fun assertIllegalArgument(block: suspend () -> Unit) {
         try {

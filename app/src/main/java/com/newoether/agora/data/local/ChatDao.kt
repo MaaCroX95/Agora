@@ -664,9 +664,6 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
     @Insert
     suspend fun insertEmbeddings(embeddings: List<EmbeddingEntity>): LongArray
 
-    @Upsert
-    suspend fun upsertEmbedding(embedding: EmbeddingEntity)
-
     @Query("SELECT * FROM embeddings WHERE messageId IN (:messageIds)")
     suspend fun getEmbeddingsByMessageIds(messageIds: List<String>): List<EmbeddingEntity>
 
@@ -675,9 +672,6 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
 
     @Query("SELECT * FROM embeddings")
     suspend fun getAllEmbeddings(): List<EmbeddingEntity>
-
-    @Query("DELETE FROM embeddings WHERE messageId = :messageId")
-    suspend fun deleteEmbedding(messageId: String)
 
     @Query(
         """
@@ -705,9 +699,6 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         minimumTextLength: Int,
         limit: Int,
     ): List<EmbeddingSearchRow>
-
-    @Query("DELETE FROM embeddings WHERE modelId = :modelId")
-    suspend fun deleteEmbeddingsByModel(modelId: String)
 
     @Query("SELECT COUNT(*) FROM embeddings e INNER JOIN messages m ON e.messageId = m.id INNER JOIN conversations c ON m.conversationId = c.id WHERE e.modelId = :modelId AND c.taskId IS NULL AND m.participant IN ('USER', 'MODEL') AND m.text != '' AND m.id NOT LIKE 'tool_%' AND m.id NOT LIKE 'result_%' AND m.id NOT LIKE 'compact_%'")
     suspend fun getEmbeddingCountByModel(modelId: String): Int
@@ -766,17 +757,6 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
 
     @Query("SELECT EXISTS(SELECT 1 FROM messages m INNER JOIN conversations c ON m.conversationId = c.id WHERE m.id = :messageId AND c.taskId IS NULL AND m.participant IN ('USER', 'MODEL') AND m.text != '' AND m.id NOT LIKE 'tool_%' AND m.id NOT LIKE 'result_%' AND m.id NOT LIKE 'compact_%')")
     suspend fun isMessageSearchable(messageId: String): Boolean
-
-    /** Atomically enforces the search-visibility invariant for incremental indexing. */
-    @Transaction
-    suspend fun upsertEmbeddingIfSearchable(embedding: EmbeddingEntity): Boolean {
-        if (!isMessageSearchable(embedding.messageId)) {
-            deleteEmbedding(embedding.messageId)
-            return false
-        }
-        upsertEmbedding(embedding)
-        return true
-    }
 
     @Query("SELECT * FROM conversations WHERE id = :conversationId AND taskId IS NULL")
     suspend fun getSearchableConversation(conversationId: String): ChatEntity?

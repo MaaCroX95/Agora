@@ -7,6 +7,7 @@ import com.newoether.agora.data.SkillManager
 import com.newoether.agora.data.SettingsManager
 import com.newoether.agora.data.local.ChatDao
 import com.newoether.agora.data.local.ChatDatabase
+import com.newoether.agora.data.local.semanticModelSnapshot
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.ConversationSettingsTransferCoordinator
 import com.newoether.agora.data.repository.SettingsRepository
@@ -76,7 +77,17 @@ class AppContainer(
     // ── Repositories ──────────────────────────────────────────
 
     val conversationRepository: ConversationRepository by lazy {
-        ConversationRepository(chatDao, database)
+        ConversationRepository(
+            chatDao = chatDao,
+            database = database,
+            semanticModelSnapshotProvider = {
+                settingsRepository.awaitInitialLoad()
+                semanticModelSnapshot(
+                    activeModelId = settingsRepository.activeEmbeddingModelId.value,
+                    configuredModelIds = settingsRepository.embeddingModels.value.map { it.id },
+                )
+            },
+        )
     }
 
     @Volatile

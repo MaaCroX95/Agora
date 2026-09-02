@@ -36,7 +36,7 @@ class ConversationSettingsTransferSourceContractTest {
         ).replace("\r\n", "\n")
         val importGraph = graphImporter.substringAfter("suspend fun importConversationGraph(")
             .substringBefore("// Internal data classes")
-        val transaction = importGraph.indexOf("database.withTransaction {")
+        val transaction = importGraph.indexOf("database.withSemanticGraphMutation(")
         val writeOutbox = importGraph.indexOf(
             "chatDao.upsertConversationSettingsImportTransfer(settingsTransfer)",
         )

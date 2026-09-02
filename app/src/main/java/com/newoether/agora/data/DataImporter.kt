@@ -7,11 +7,16 @@ import com.newoether.agora.data.local.ChatDao
 import com.newoether.agora.data.local.ChatDatabase
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.local.LoopEntity
+import com.newoether.agora.data.local.deleteSemanticModel
+import com.newoether.agora.data.local.invalidateSemanticModel
+import com.newoether.agora.data.local.semanticModelSnapshot
 import com.newoether.agora.data.local.TaskEntity
 import com.newoether.agora.data.repository.ConversationSettingsTransferCoordinator
 import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
@@ -73,6 +78,16 @@ internal fun sanitizeImportedConversation(
     }
 }
 
+internal fun embeddingModelSemanticsChanged(
+    before: EmbeddingModelConfig,
+    after: EmbeddingModelConfig,
+): Boolean = before.type != after.type || when (after.type) {
+    EmbeddingModelType.REMOTE ->
+        before.remoteModelName != after.remoteModelName ||
+            before.remoteBaseUrl != after.remoteBaseUrl
+    EmbeddingModelType.LOCAL -> before.localFilePath != after.localFilePath
+}
+
 class DataImporter(
     private val context: Context,
     private val database: ChatDatabase,
@@ -96,6 +111,30 @@ class DataImporter(
         importJson = importJson,
         mediaRestorer = conversationMediaRestorer,
     )
+
+    private suspend fun reconcileImportedEmbeddingModels(
+        previousModels: List<EmbeddingModelConfig>,
+    ) {
+        val previousById = previousModels.associateBy(EmbeddingModelConfig::id)
+        val importedModelIds = settingsManager.embeddingModels.first().map(EmbeddingModelConfig::id)
+        val affectedModelIds = buildSet {
+            addAll(previousById.keys)
+            addAll(importedModelIds)
+        }
+        val updatedAt = System.currentTimeMillis()
+        affectedModelIds.forEach { modelId ->
+            EmbeddingCacheLocks.forModel(modelId).withLock {
+                val current = settingsManager.embeddingModels.first()
+                    .firstOrNull { it.id == modelId }
+                val previous = previousById[modelId]
+                when {
+                    current == null -> database.deleteSemanticModel(modelId)
+                    previous == null || embeddingModelSemanticsChanged(previous, current) ->
+                        database.invalidateSemanticModel(modelId, updatedAt)
+                }
+            }
+        }
+    }
 
     @Serializable
     data class ImportManifest(
@@ -404,12 +443,17 @@ class DataImporter(
                                 )
                             }
                             ?: error("${NativeBackupFormat.CONVERSATIONS_ENTRY} is missing")
+                        val semanticSnapshot = semanticModelSnapshot(
+                            activeModelId = settingsManager.activeEmbeddingModelId.first(),
+                            configuredModelIds = settingsManager.embeddingModels.first().map { it.id },
+                        )
                         val settingsTransferId = conversationGraphImporter.importConversationGraph(
                             archive = opened,
                             strategy = convDecision,
                             headers = headers,
                             restoredMedia = media,
                             archiveVersion = manifest.version,
+                            semanticSnapshot = semanticSnapshot,
                         )
                         graphCommitted = true
                         conversationsImported = headers.conversations.size
@@ -516,6 +560,7 @@ class DataImporter(
                 if (settingsDecision != null && settingsDecision != ImportStrategy.SKIP) {
                     var restoredFont: RestoredCustomFont? = null
                     var fontApplied = false
+                    val previousEmbeddingModels = settingsManager.embeddingModels.first()
                     try {
                         val settingsObject = opened[NativeBackupFormat.SETTINGS_ENTRY]
                             ?.decodeToString()
@@ -574,6 +619,15 @@ class DataImporter(
                     } catch (error: Exception) {
                         if (!fontApplied) restoredFont?.path?.let(::File)?.delete()
                         errors += "Settings: ${error.localizedMessage ?: "Unknown error"}"
+                    } finally {
+                        withContext(NonCancellable) {
+                            runCatching {
+                                reconcileImportedEmbeddingModels(previousEmbeddingModels)
+                            }.exceptionOrNull()?.let { error ->
+                                errors += "Settings index: " +
+                                    (error.localizedMessage ?: "Could not refresh embeddings")
+                            }
+                        }
                     }
                     step()
                 }

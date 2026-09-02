@@ -14,8 +14,10 @@ import com.newoether.agora.data.EmbeddingModelType
 import com.newoether.agora.data.EmbeddingIndexer
 import com.newoether.agora.data.SettingsManager
 import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
-import com.newoether.agora.data.local.ChatDao
+import com.newoether.agora.data.local.ChatDatabase
 import com.newoether.agora.data.local.EmbeddingEntity
+import com.newoether.agora.data.local.commitSemanticEmbedding
+import com.newoether.agora.data.local.semanticSourceFingerprint
 import com.newoether.agora.util.Constants
 import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.Dispatchers
@@ -68,15 +70,16 @@ class EmbeddingCacheWorker(
 
         // Same process-wide lock as RagManager's in-app runner: never compute alongside it.
         EmbeddingCacheLocks.forModel(modelId).withLock {
-            cacheModel(modelId, container.chatDao, container.settingsManager)
+            cacheModel(modelId, container.database, container.settingsManager)
         }
     }
 
     private suspend fun cacheModel(
         modelId: String,
-        chatDao: ChatDao,
+        database: ChatDatabase,
         settingsManager: SettingsManager,
     ): Result {
+        val chatDao = database.chatDao()
         val models = settingsManager.embeddingModels.first()
         val model = models.find { it.id == modelId }
         if (model == null) {
@@ -143,14 +146,18 @@ class EmbeddingCacheWorker(
                 attempted += batch.size
                 batch.zip(embeddings).forEach { (message, embedding) ->
                     if (embedding != null) {
-                        chatDao.upsertEmbedding(EmbeddingEntity(
-                            messageId = message.id,
-                            modelId = modelId,
-                            embedding = EmbeddingIndexer.floatsToBytes(embedding),
-                            chunkText = message.text.take(Constants.MAX_CHUNK_TEXT_LENGTH),
-                            dimension = embedding.size,
-                        ))
-                        succeeded++
+                        val stored = database.commitSemanticEmbedding(
+                            embedding = EmbeddingEntity(
+                                messageId = message.id,
+                                modelId = modelId,
+                                embedding = EmbeddingIndexer.floatsToBytes(embedding),
+                                chunkText = message.text.take(Constants.MAX_CHUNK_TEXT_LENGTH),
+                                dimension = embedding.size,
+                            ),
+                            expectedFingerprint = semanticSourceFingerprint(message.text),
+                            updatedAt = System.currentTimeMillis(),
+                        )
+                        if (stored) succeeded++
                     }
                 }
                 val completed = (alreadyDone + attempted).coerceAtMost(total)
