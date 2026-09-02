@@ -126,6 +126,25 @@ interface SemanticIndexDao {
 
     @Query(
         """
+        SELECT * FROM semantic_index_work
+        WHERE modelId = :modelId
+          AND (
+              sourceRevision > :afterSourceRevision
+              OR (sourceRevision = :afterSourceRevision AND messageId > :afterMessageId)
+          )
+        ORDER BY sourceRevision, messageId
+        LIMIT :limit
+        """,
+    )
+    suspend fun getWorkPage(
+        modelId: String,
+        afterSourceRevision: Long,
+        afterMessageId: String,
+        limit: Int,
+    ): List<SemanticIndexWorkEntity>
+
+    @Query(
+        """
         SELECT m.text
         FROM messages m
         INNER JOIN conversations c ON m.conversationId = c.id
@@ -386,16 +405,28 @@ internal suspend fun ChatDatabase.commitSemanticEmbedding(
     embedding: EmbeddingEntity,
     expectedFingerprint: String,
     updatedAt: Long,
+    expectedWorkRevision: Long? = null,
+    completePendingWork: Boolean = true,
 ): Boolean = withTransaction {
     val semanticDao = semanticIndexDao()
     semanticDao.admitModel(embedding.modelId, updatedAt)
     val currentFingerprint = semanticDao.getSearchableMessageText(embedding.messageId)
         ?.let(::semanticSourceFingerprint)
     if (currentFingerprint != expectedFingerprint) return@withTransaction false
+    val work = if (completePendingWork) {
+        semanticDao.getWork(embedding.modelId, embedding.messageId)
+    } else {
+        null
+    }
+    if (
+        expectedWorkRevision != null &&
+        (work?.sourceRevision != expectedWorkRevision || work.sourceFingerprint != expectedFingerprint)
+    ) {
+        return@withTransaction false
+    }
     semanticDao.upsertEmbedding(embedding)
-    semanticDao.getWork(embedding.modelId, embedding.messageId)
-        ?.takeIf { it.sourceFingerprint == expectedFingerprint }
-        ?.let { work -> semanticDao.completeExactWork(work, updatedAt) }
+    work?.takeIf { it.sourceFingerprint == expectedFingerprint }
+        ?.let { currentWork -> semanticDao.completeExactWork(currentWork, updatedAt) }
     true
 }
 

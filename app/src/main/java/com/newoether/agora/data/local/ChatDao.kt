@@ -726,6 +726,17 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
 
     @Query(
         """
+        SELECT m.id, m.text FROM messages m INNER JOIN conversations c ON m.conversationId = c.id
+        WHERE c.taskId IS NULL AND m.participant IN ('USER', 'MODEL') AND m.text != ''
+          AND m.id NOT LIKE 'tool_%' AND m.id NOT LIKE 'result_%' AND m.id NOT LIKE 'compact_%'
+          AND (:afterId IS NULL OR m.id > :afterId)
+        ORDER BY m.id LIMIT :limit
+        """,
+    )
+    suspend fun getSearchableMessagesPage(afterId: String?, limit: Int): List<IndexableMessage>
+
+    @Query(
+        """
         SELECT m.id, m.text
         FROM messages m
         INNER JOIN conversations c ON m.conversationId = c.id

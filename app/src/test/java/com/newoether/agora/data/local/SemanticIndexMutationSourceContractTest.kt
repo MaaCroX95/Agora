@@ -101,9 +101,10 @@ class SemanticIndexMutationSourceContractTest {
             "semanticDao.admitModel(embedding.modelId, updatedAt)",
             "val currentFingerprint =",
             "if (currentFingerprint != expectedFingerprint) return@withTransaction false",
+            "val work = if (completePendingWork)",
+            "work?.sourceRevision != expectedWorkRevision",
             "semanticDao.upsertEmbedding(embedding)",
-            "semanticDao.getWork(embedding.modelId, embedding.messageId)",
-            "semanticDao.completeExactWork(work, updatedAt)",
+            "semanticDao.completeExactWork(currentWork, updatedAt)",
         )
         assertFalse(commit.contains("deleteEmbeddingForModelMessage"))
 
@@ -194,7 +195,7 @@ class SemanticIndexMutationSourceContractTest {
 
         assertTrue(worker.contains("EmbeddingCacheLocks.forModel(modelId).withLock"))
         assertTrue(worker.contains("database.commitSemanticEmbedding("))
-        assertTrue(worker.contains("expectedFingerprint = semanticSourceFingerprint(message.text)"))
+        assertTrue(worker.contains("expectedFingerprint = fingerprint"))
 
         val incremental = rag.section(
             "private suspend fun indexMessageForRagNow(",
@@ -209,6 +210,82 @@ class SemanticIndexMutationSourceContractTest {
             "expectedFingerprint = semanticSourceFingerprint(text)",
         )
         assertTrue(rag.contains("expectedFingerprint = semanticSourceFingerprint(message.text)"))
+    }
+
+    @Test
+    fun canonicalWorkerConsumesBoundedLedgerWorkAndFullReconcilePages() {
+        val worker = source(
+            "app/src/main/java/com/newoether/agora/service/EmbeddingCacheWorker.kt",
+        )
+        val ledger = source(
+            "app/src/main/java/com/newoether/agora/data/local/SemanticIndexLedger.kt",
+        )
+        val chatDao = source(
+            "app/src/main/java/com/newoether/agora/data/local/ChatDao.kt",
+        )
+
+        assertFalse(worker.contains("getIndexableMessageCount("))
+        assertFalse(worker.contains("getEmbeddingCountByModel("))
+        assertFalse(worker.contains("getUnembeddedMessagesPage("))
+        assertTrue(worker.contains("EmbeddingCacheLocks.forModel(modelId).withLock"))
+        assertTrue(worker.contains("SemanticIndexLedgerEntity.STATE_PENDING"))
+        assertTrue(worker.contains("SemanticIndexLedgerEntity.STATE_NEEDS_RECONCILE"))
+        assertTrue(worker.contains("limit = model.batchSize.coerceIn(1, MAX_BATCH_SIZE)"))
+        assertTrue(worker.countToken("yield()") >= 2)
+
+        val exact = worker.section(
+            "private suspend fun consumeExactWork(",
+            "private suspend fun reconcileModel(",
+        )
+        assertOrdered(
+            exact,
+            "semanticDao.getWorkPage(",
+            "work.sourceFingerprint == null",
+            "semanticDao.completeExactWork(work",
+            "semanticDao.getSearchableMessageText(work.messageId)",
+            "semanticSourceFingerprint(text) == work.sourceFingerprint",
+            "embedCandidates(model, remoteConfig, candidates, database)",
+        )
+        val reconcile = worker.section(
+            "private suspend fun reconcileModel(",
+            "private suspend fun embedCandidates(",
+        )
+        assertOrdered(
+            reconcile,
+            "chatDao.getSearchableMessagesPage(",
+            "semanticSourceFingerprint(message.text)",
+            "embedCandidates(model, remoteConfig, candidates, database)",
+            "completeReconcile(",
+            "expectedRevision = expectedRevision",
+        )
+        val commit = worker.section(
+            "private suspend fun embedCandidates(",
+            "private suspend fun resolveEmbeddingConfig(",
+        )
+        assertOrdered(
+            commit,
+            "database.commitSemanticEmbedding(",
+            "expectedFingerprint = fingerprint",
+            "expectedWorkRevision = workRevision",
+            "completePendingWork = workRevision != null",
+        )
+        assertTrue(worker.contains("ExistingWorkPolicy.KEEP"))
+        assertTrue(worker.contains("workNameFor(modelId)"))
+
+        val workPage = ledger.substringBefore("suspend fun getWorkPage(")
+            .substringAfterLast("@Query(")
+        assertTrue(workPage.contains("sourceRevision > :afterSourceRevision"))
+        assertTrue(workPage.contains("sourceRevision = :afterSourceRevision"))
+        assertTrue(workPage.contains("messageId > :afterMessageId"))
+        assertTrue(workPage.contains("ORDER BY sourceRevision, messageId"))
+        assertTrue(workPage.contains("LIMIT :limit"))
+
+        val searchablePage = chatDao.substringBefore("suspend fun getSearchableMessagesPage(")
+            .substringAfterLast("@Query(")
+        assertTrue(searchablePage.contains("SELECT m.id, m.text"))
+        assertTrue(searchablePage.contains(":afterId IS NULL OR m.id > :afterId"))
+        assertTrue(searchablePage.contains("ORDER BY m.id LIMIT :limit"))
+        assertFalse(searchablePage.contains("NOT EXISTS"))
     }
 
     @Test
@@ -281,6 +358,8 @@ class SemanticIndexMutationSourceContractTest {
             "reconcileImportedEmbeddingModels(previousEmbeddingModels)",
         )
     }
+
+    private fun String.countToken(token: String): Int = split(token).size - 1
 
     private fun String.section(start: String, end: String): String =
         substringAfter(start).substringBefore(end)
