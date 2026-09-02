@@ -56,19 +56,25 @@ count or total cached text.
 
 ## 5. Cache-count presentation
 
-Conversation Search cache-count status is a retained aggregate projection, not a page-owned sequence
-of per-model scans. `RagManager` starts one eager refresh when it is created, coalesces overlapping
-page-entry or mutation refresh requests, and immediately exposes its last complete snapshot. One
-bounded DAO aggregate returns cached counts grouped by configured model id while the indexable-message
-total is read independently; no query returns message text or embedding blobs. The embeddings schema
-maintains a model-leading index so model-count work is not forced through the `(messageId, modelId)`
-unique index. Page entry may request freshness but must not blank the retained snapshot or issue N+1
-sequential model counts. Cache/model mutations keep their existing explicit refresh ownership.
+Conversation Search cache counts are retained asynchronous presentation data. `RagManager` must not
+start an aggregate refresh from its constructor. A refresh begins only after the conversation list
+has been published or the Settings page explicitly requests it, and it must never delay list
+publication. Overlapping requests are coalesced; if the configured model set changes during an
+active refresh, one refresh for the latest set runs afterward. One bounded DAO aggregate returns
+cached counts grouped by configured model id while the indexable-message total is read independently.
+No query returns message text or embedding blobs, and page entry must not issue N+1 model counts.
 
-No timer, polling loop, periodic Worker, or continuously invalidating Room Flow is introduced for this
-status. Startup/page refresh failure retains the previous snapshot and logs only aggregate diagnostics.
-Semantic ranking remains governed by the bounded search path above; count optimization cannot
-materialize, decode, rank, delete, or rebuild embedding rows.
+Each model keeps the last complete count snapshot. Before the first snapshot, an active request shows
+loading and an initial failure shows failure plus Retry; neither state may fabricate zero, uncached,
+or an available Cache/Re-cache action. A refresh failure after a successful snapshot retains that
+snapshot and the ledger-owned action. Status and action changes use fixed slots with a 250 ms
+crossfade. Aggregate counts may supply exact numeric status and uncached-reminder copy, but they never
+establish freshness or choose Cache versus Re-cache. Those decisions use only the semantic ledger.
+
+No timer, polling loop, periodic Worker, or continuously invalidating Room Flow is introduced for
+this status. Failures log only aggregate diagnostics. Semantic ranking remains governed by the
+bounded search path above; count presentation cannot materialize, decode, rank, delete, or rebuild
+embedding rows.
 
 ## 6. Automatic cache backfill and reminder
 
@@ -88,23 +94,30 @@ reconciliation. Database migration marks affected models for reconciliation with
 content during application entry.
 
 Interactive App startup first publishes the conversation-list projection. Only after that list is
-visibly available may it read the active model's single ledger row. This O(1) check is the sole
-semantic-search exception to the global lazy-loading rule. It must not execute aggregate `COUNT(*)`
-queries over messages or embeddings, enumerate conversations or owners, load message text or
-embedding blobs, or instantiate conversation runtime state.
+visibly available may `RagManager` admit the active model by reading its single ledger row. This O(1)
+check must not execute aggregate counts, enumerate conversations or owners, load message text or
+embedding blobs, or instantiate conversation runtime state. Model switching, enabling Auto Cache,
+new model admission, manual Cache, and manual Re-cache use the same ledger admission path. Re-cache
+invalidates that model under the shared model mutex before scheduling durable work.
 
-When the row reports pending work and no cache run for that model is active, enabled Auto Cache may
-start exactly one unique, bounded, low-priority background cache worker. The worker processes stable
-keyset pages and bounded batches, limits embedding concurrency, yields to foreground list and
-conversation loading, and never blocks either surface. Failed items remain pending with their current
-identity; successful writes remove only the matching work and advance completeness only after durable
-reconciliation. The worker emits no uncached, caching, success, completion, partial-failure, or
-setup-failure Snackbar. Manual cache and recache actions retain their existing feedback.
+`EmbeddingCacheWorker` is the only cache embedding generator. `RagManager` owns ledger admission,
+unique durable scheduling, worker observation, model lifecycle, reminder delivery, and retained
+aggregate presentation; it must not hold an in-process cache loop or invoke an embedding engine.
+When the ledger is not current and Auto Cache is enabled, exactly one per-model unique worker may run.
+The worker consumes bounded exact-work pages or bounded full-reconcile pages, limits embedding batch
+size, yields between pages, and commits only a matching source fingerprint and work revision. Failed
+items remain durable work. Worker activity is observed from unique WorkManager state; completion may
+refresh presentation but aggregate equality cannot mark the ledger current.
+
+The worker emits no uncached, caching, success, completion, partial-failure, or setup-failure
+Snackbar. Manual cache and recache actions retain their existing feedback. Deleting a model cancels
+its unique work and performs model deletion under the same process-wide model mutex; the mutex entry
+is retained so existing and future waiters cannot become concurrent writers.
 
 `Show Uncached Notification` is a separate default-on portable setting. It is consulted only while
-Auto Cache is disabled. After the conversation list is visible, the same one-row ledger check may emit
-the existing uncached-message Snackbar with its exact manual cache action when pending work exists and
-the setting is enabled. It must not run a fallback count or content scan to calculate that reminder.
+Auto Cache is disabled. After the conversation list is visible, the same one-row ledger check may
+request a background aggregate refresh for exact reminder copy. The reminder may be emitted only by
+a refresh that includes the target model, and it must not treat a count as freshness evidence.
 Disabling the setting leaves work pending and emits no reminder. The Settings row is placed directly
 below Auto Cache and is not shown while Auto Cache is enabled.
 

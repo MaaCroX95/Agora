@@ -25,7 +25,7 @@ class StartupMaintenanceCoordinatorTest {
 
         coVerify(exactly = 0) { fixture.settings.saveLastUpdateCheckTime(any()) }
         assertTrue(fixture.checkedVersions.isEmpty())
-        assertEquals(listOf("backup"), fixture.events)
+        assertEquals(listOf("backup", "semantic"), fixture.events)
     }
 
     @Test
@@ -42,7 +42,7 @@ class StartupMaintenanceCoordinatorTest {
         fixture.coordinator.start()
         runCurrent()
 
-        assertEquals(listOf("backup", "timestamp", "check"), fixture.events)
+        assertEquals(listOf("backup", "semantic", "timestamp", "check"), fixture.events)
         assertEquals(listOf("current"), fixture.checkedVersions)
         assertEquals(listOf(update), fixture.updates)
     }
@@ -68,6 +68,7 @@ class StartupMaintenanceCoordinatorTest {
             },
             onUpdateFound = updates::add,
             startAutoBackup = { events += "backup" },
+            startSemanticIndex = { events += "semantic" },
             now = { now },
             ioDispatcher = dispatcher,
         )

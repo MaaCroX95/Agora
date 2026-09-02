@@ -15,12 +15,14 @@ internal class StartupMaintenanceCoordinator(
     private val checkUpdate: suspend (String) -> UpdateInfo?,
     private val onUpdateFound: (UpdateInfo) -> Unit,
     private val startAutoBackup: () -> Unit,
+    private val startSemanticIndex: () -> Unit,
     private val now: () -> Long = System::currentTimeMillis,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     fun start() {
         scope.launch(ioDispatcher) { checkForUpdateIfDue() }
         startAutoBackup()
+        startSemanticIndex()
     }
 
     private suspend fun checkForUpdateIfDue() {

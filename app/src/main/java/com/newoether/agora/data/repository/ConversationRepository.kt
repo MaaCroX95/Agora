@@ -692,6 +692,10 @@ class ConversationRepository(
 
     // ── Embeddings ────────────────────────────────────────────
 
+    suspend fun getOrAdmitSemanticLedgerState(modelId: String): String =
+        checkNotNull(database) { "Semantic ledger admission requires the production database" }
+            .semanticIndexDao().admitModel(modelId, System.currentTimeMillis()).state
+
     suspend fun deleteSemanticModel(modelId: String) {
         checkNotNull(database) { "Semantic model deletion requires the production database" }
             .deleteSemanticModel(modelId)

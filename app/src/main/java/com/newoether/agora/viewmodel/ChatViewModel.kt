@@ -235,6 +235,7 @@ class ChatViewModel(
             checkUpdate = UpdateChecker::check,
             onUpdateFound = { _updateDialogData.value = it },
             startAutoBackup = dataControl::startAutoBackup,
+            startSemanticIndex = ragManager::startPostList,
         )
     }
 

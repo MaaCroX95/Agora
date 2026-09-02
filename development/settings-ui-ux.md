@@ -76,6 +76,13 @@ layout, states, density, or interaction design has been approved.
 - Async labels, leading icons, counts, and connection status must change in
   place without shifting the surrounding layout.
 - Rows remain clickable as a whole and expose one clear semantic action.
+- Conversation Search keeps one fixed status slot and one fixed action slot per Embedding model.
+  Both slots crossfade for 250 ms. Before the first aggregate snapshot, active loading shows an
+  indeterminate progress state and no Cache/Re-cache action. Initial failure shows localized failure
+  status plus Retry; Retry immediately returns the unresolved row to loading. A later refresh failure
+  retains the last complete numeric snapshot and the ledger-owned action. Missing or failed data must
+  never be converted into a synthetic zero, uncached value, or available action. Cache versus Re-cache
+  is derived only from the semantic ledger; aggregate counts are presentation-only.
 - Search Settings places `Show Uncached Notification` directly below Auto Cache only while Auto
   Cache is disabled. Its default-on stored value is retained while hidden; enabling Auto Cache hides
   the row rather than changing that value.

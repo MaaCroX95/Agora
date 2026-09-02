@@ -8,7 +8,7 @@ import org.junit.Test
 
 class ApprovedFeatureSourceContractTest {
     @Test
-    fun cacheCountsAreEagerCoalescedAndAggregated() {
+    fun cacheCountsAreRetainedPresentationAndLedgerOwnsActions() {
         val root = sourceRoot()
         val rag = source(root, "com/newoether/agora/viewmodel/RagManager.kt")
         val settings = source(root, "com/newoether/agora/ui/settings/SettingsSearchPage.kt")
@@ -17,46 +17,32 @@ class ApprovedFeatureSourceContractTest {
         val database = source(root, "com/newoether/agora/data/local/ChatDatabase.kt")
 
         assertFalse(rag.contains("init {\n        loadCacheCounts()"))
-        assertTrue(rag.contains("cacheCountRefreshJob?.isActive == true"))
+        assertTrue(rag.contains("fun startPostList()"))
+        assertTrue(rag.contains("pendingRefreshModels = models"))
         assertTrue(rag.contains("getEmbeddingCountsByModels(modelIds)"))
-        assertFalse(
-            rag.substringAfter("private suspend fun refreshCacheCounts")
-                .substringBefore("// ── Embedding-model CRUD")
-                .contains("getEmbeddingCountByModel"),
-        )
-        val cacheLoader = rag.substringAfter("fun loadCacheCounts()")
-            .substringBefore("@Synchronized\n    private fun clearCacheCountRefreshJob")
+        assertTrue(rag.contains("getOrAdmitSemanticLedgerState"))
+        assertTrue(rag.contains("getWorkInfosForUniqueWorkFlow("))
+        assertTrue(rag.contains("EmbeddingCacheWorker.schedule(modelId, workManager)"))
+        assertFalse(rag.contains("cacheJobs"))
+        assertFalse(rag.contains("runCacheLoop"))
+        assertFalse(rag.contains("ExistingWorkPolicy.REPLACE"))
+        assertFalse(rag.contains("_cachingProgress"))
+
+        assertTrue(settings.contains("viewModel.ragManager.cachingModels.collectAsState()"))
+        assertTrue(settings.contains("viewModel.ragManager.cacheCountLoading.collectAsState()"))
+        assertTrue(settings.contains("viewModel.ragManager.cacheCountFailures.collectAsState()"))
+        assertTrue(settings.contains("viewModel.ragManager.ledgerStates.collectAsState()"))
         assertTrue(settings.contains("LaunchedEffect(Unit) { viewModel.ragManager.loadCacheCounts() }"))
-        assertTrue(cacheLoader.contains("getWorkInfosForUniqueWorkFlow(workName).first"))
-        assertTrue(cacheLoader.contains("observedActiveWorker"))
-        assertTrue(cacheLoader.contains("cacheJobs[model.id]?.isActive != true"))
-        assertTrue(cacheLoader.contains("EmbeddingCacheWorker.KEY_CACHED"))
-        assertTrue(cacheLoader.contains("EmbeddingCacheWorker.KEY_TOTAL"))
-        assertTrue(cacheLoader.contains("_cachingProgress.update { it - model.id }"))
-        assertTrue(cacheLoader.contains("refreshCacheCounts()"))
-        val cacheRunner = rag.substringAfter("fun cacheMessagesForModel")
-            .substringBefore("/** The cache loop proper")
-        assertTrue(cacheRunner.contains("_cachingProgress.value.containsKey(modelId)"))
-        assertTrue(
-            cacheRunner.indexOf("refreshCacheCounts()") <
-                cacheRunner.indexOf("_cachingProgress.update { it - modelId }"),
-        )
-        val cacheLoop = rag.substringAfter("private suspend fun runCacheLoop")
-            .substringBefore("// ── Single-message indexing")
-        assertTrue(
-            cacheLoop.contains("_cacheCounts.update { it + (modelId to (cached to total)) }"),
-        )
-        assertFalse(cacheLoop.contains("_cachingProgress.update { it - modelId }"))
-        val modelRow = settings.substringAfter("val allCached =")
-            .substringBefore("modifier = Modifier.clickable { viewModel.ragManager.setActiveEmbeddingModel")
-        assertTrue(modelRow.contains("if (isCaching)"))
-        assertFalse(modelRow.contains("if (!isCaching)"))
-        assertTrue(modelRow.contains("} else {\n                                                TextButton"))
-        assertTrue(modelRow.contains("strokeWidth = 3.dp"))
-        assertFalse(modelRow.contains("strokeWidth = 2.dp"))
-        assertTrue(settings.contains(
-            "CircularProgressIndicator(modifier = Modifier.size(24.dp).padding(start = 16.dp), strokeWidth = 2.dp)",
-        ))
+        assertTrue(settings.contains("SemanticIndexLedgerEntity.STATE_CURRENT"))
+        assertTrue(settings.contains("stringResource(R.string.loading_label)"))
+        assertTrue(settings.contains("stringResource(R.string.tool_state_failed)"))
+        assertTrue(settings.contains("onClick = viewModel.ragManager::loadCacheCounts"))
+        assertTrue(settings.split("animationSpec = tween(250)").size - 1 >= 2)
+        assertTrue(settings.contains("modifier = Modifier.size(24.dp)"))
+        assertTrue(settings.contains("viewModel.ragManager.setAutoCacheEnabled"))
+        assertFalse(settings.contains("cachingProgress"))
+        assertFalse(settings.contains("val allCached ="))
+
         assertTrue(dao.contains("GROUP BY e.modelId"))
         assertTrue(dao.contains("getEmbeddingCountsByModels"))
         assertTrue(entities.contains("Index(value = [\"modelId\"])"))

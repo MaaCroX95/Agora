@@ -185,31 +185,71 @@ class SemanticIndexMutationSourceContractTest {
     }
 
     @Test
-    fun everyGeneratedEmbeddingCarriesItsSourceFingerprintAndModelLock() {
+    fun durableWorkerIsTheOnlyEmbeddingGeneratorAndCarriesFingerprintLock() {
         val worker = source(
             "app/src/main/java/com/newoether/agora/service/EmbeddingCacheWorker.kt",
         )
         val rag = source(
             "app/src/main/java/com/newoether/agora/viewmodel/RagManager.kt",
         )
+        val locks = source(
+            "app/src/main/java/com/newoether/agora/data/EmbeddingCacheLocks.kt",
+        )
 
         assertTrue(worker.contains("EmbeddingCacheLocks.forModel(modelId).withLock"))
+        assertTrue(worker.contains("EmbeddingClient.computeEmbeddings("))
+        assertTrue(worker.contains("LlamaEngine.computeEmbeddings("))
         assertTrue(worker.contains("database.commitSemanticEmbedding("))
         assertTrue(worker.contains("expectedFingerprint = fingerprint"))
+        assertTrue(worker.contains("ExistingWorkPolicy.KEEP"))
 
-        val incremental = rag.section(
-            "private suspend fun indexMessageForRagNow(",
-            "fun resolveEmbeddingApiKey(): String? {",
+        assertFalse(rag.contains("EmbeddingClient"))
+        assertFalse(rag.contains("LlamaEngine"))
+        assertFalse(rag.contains("commitSemanticEmbedding("))
+        assertFalse(rag.contains("indexMessageForRagNow("))
+        assertFalse(rag.contains("runCacheLoop("))
+        assertTrue(rag.contains("if (takePendingRefresh(refreshJob) != null)"))
+        assertTrue(locks.contains("EmbeddingCacheWorker] is the only embedding generator"))
+        assertFalse(locks.contains("Two runners exist"))
+        assertFalse(locks.contains("fun remove("))
+        val reminder = rag.section(
+            "private suspend fun emitUncachedReminder(",
+            "// -- Embedding-model CRUD",
         )
         assertOrdered(
-            incremental,
-            "val modelId = activeEmbeddingModel.value?.id",
+            reminder,
+            "EmbeddingCacheLocks.forModel(modelId).withLock",
+            "settings.embeddingModels.value.none { it.id == modelId }",
+            "emitSnackbar(",
+        )
+        val manualCache = rag.section(
+            "fun cacheMessagesForModel(",
+            "private suspend fun admitActiveModel(",
+        )
+        assertOrdered(
+            manualCache,
             "EmbeddingCacheLocks.forModel(modelId).withLock",
             "settings.embeddingModels.value.find { it.id == modelId }",
-            "conversations.commitSemanticEmbedding(",
-            "expectedFingerprint = semanticSourceFingerprint(text)",
+            "conversations.getOrAdmitSemanticLedgerState(modelId)",
+            "EmbeddingCacheWorker.schedule(modelId, workManager)",
         )
-        assertTrue(rag.contains("expectedFingerprint = semanticSourceFingerprint(message.text)"))
+        val admission = rag.section(
+            "private suspend fun admitActiveModel(",
+            "/**\n     * Searchable message persistence",
+        )
+        assertOrdered(
+            admission,
+            "EmbeddingCacheLocks.forModel(modelId).withLock",
+            "settings.embeddingModels.value.none { it.id == modelId }",
+            "conversations.getOrAdmitSemanticLedgerState(modelId)",
+            "EmbeddingCacheWorker.schedule(modelId, workManager)",
+        )
+        val incremental = rag.section(
+            "fun indexMessageForRag(",
+            "fun resolveEmbeddingApiKey(): String? {",
+        )
+        assertTrue(incremental.contains("EmbeddingCacheWorker.schedule(modelId, workManager)"))
+        assertFalse(incremental.contains("computeEmbedding"))
     }
 
     @Test
