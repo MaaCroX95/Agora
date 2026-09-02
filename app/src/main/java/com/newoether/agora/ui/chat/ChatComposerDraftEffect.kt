@@ -3,6 +3,8 @@ package com.newoether.agora.ui.chat
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import com.newoether.agora.util.DebugLog
 import com.newoether.agora.viewmodel.ChatViewModel
@@ -13,7 +15,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -22,12 +23,15 @@ private const val DRAFT_PERSIST_RETRY_COUNT = 2
 private const val DRAFT_PERSIST_RETRY_DELAY_MS = 80L
 
 @Composable
-internal fun ComposerDraftLifecycleEffect(
+internal fun rememberComposerDraftSnapshot(
     ownerId: String,
     controller: ConversationComposerController,
     viewModel: ChatViewModel,
     textFieldState: TextFieldState,
-) {
+): androidx.compose.runtime.State<com.newoether.agora.viewmodel.ConversationComposerSnapshot> {
+    val snapshot = remember(ownerId) {
+        mutableStateOf(com.newoether.agora.viewmodel.ConversationComposerSnapshot())
+    }
     LaunchedEffect(ownerId) {
         viewModel.loadingDraft = true
         val loaded = try {
@@ -42,6 +46,7 @@ internal fun ComposerDraftLifecycleEffect(
         }
         try {
             if (!loaded.loaded) return@LaunchedEffect
+            snapshot.value = loaded
             if (textFieldState.text.toString() != loaded.text) {
                 textFieldState.edit { replace(0, length, loaded.text) }
             }
@@ -75,14 +80,12 @@ internal fun ComposerDraftLifecycleEffect(
             try {
                 coroutineScope {
                     launch {
-                        controller.state(ownerId)
-                            .map { it.textProjectionVersion }
-                            .distinctUntilChanged()
-                            .collect { textProjectionVersion ->
-                                if (textProjectionVersion != projectedTextVersion) {
-                                    projectAuthoritativeText()
-                                }
+                        controller.state(ownerId).collect { current ->
+                            snapshot.value = current
+                            if (current.textProjectionVersion != projectedTextVersion) {
+                                projectAuthoritativeText()
                             }
+                        }
                     }
                     snapshotFlow { textFieldState.text.toString() }
                         .distinctUntilChanged()
@@ -114,4 +117,5 @@ internal fun ComposerDraftLifecycleEffect(
             }
         }
     }
+    return snapshot
 }

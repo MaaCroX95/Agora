@@ -13,6 +13,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
+import com.newoether.agora.model.AttachmentImportState
 import com.newoether.agora.model.AttachmentStorage
 import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.sandbox.SandboxManager
@@ -23,6 +24,7 @@ import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.util.FileValidator
 import com.newoether.agora.util.AttachmentFiles
 import com.newoether.agora.util.PdfPageRenderer
+import com.newoether.agora.viewmodel.ConversationComposerController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -84,8 +86,8 @@ class ChatComposerState(
     var pendingPdfIsRendering by mutableStateOf(false)
     var pendingPdfRenderProgress by mutableStateOf(0 to 0)
     var pdfDialogHiddenForPreview by mutableStateOf(false)
-    // Background render job for the page-select dialog, so a dismiss can cancel it and
-    // let renderAllPages clean up its partially-written page files.
+    var pendingPdfOwnerId by mutableStateOf<String?>(null)
+    var pendingPdfAttachmentId by mutableStateOf<String?>(null)
     var pdfRenderJob by mutableStateOf<Job?>(null)
     // In-flight video frame-extraction jobs, keyed by video uri, so removing a video while
     // it is still extracting can cancel the job (which deletes its partial frame files).
@@ -97,6 +99,9 @@ class ChatComposerState(
     var pendingVideoUri by mutableStateOf<String?>(null)
     var pendingVideoDurationMs by mutableLongStateOf(0L)
     var pendingVideoQueue by mutableStateOf<List<String>>(emptyList())
+    var pendingVideoOwnerId by mutableStateOf<String?>(null)
+    var pendingVideoAttachmentId by mutableStateOf<String?>(null)
+    private var pendingDialogRemovalId by mutableStateOf<String?>(null)
     private var videoMetadataJob: Job? = null
     private val attachmentInspectionMutex = Mutex()
 
@@ -243,7 +248,7 @@ class ChatComposerState(
         deleteFilesAsync(discardedPaths)
     }
 
-    private fun resetPendingPdfState() {
+    fun resetPendingPdfState() {
         showPdfPageDialog = false
         pendingPdfUri = null
         pendingPdfPages = 0
@@ -253,6 +258,17 @@ class ChatComposerState(
         pendingPdfIsRendering = false
         pendingPdfRenderProgress = 0 to 0
         pdfDialogHiddenForPreview = false
+        pendingPdfOwnerId = null
+        pendingPdfAttachmentId = null
+    }
+
+    fun resetPendingVideoState() {
+        showVideoSliceDialog = false
+        pendingVideoUri = null
+        pendingVideoDurationMs = 0L
+        pendingVideoOwnerId = null
+        pendingVideoAttachmentId = null
+        pendingDialogRemovalId = null
     }
 
     private fun deleteFilesAsync(paths: List<String>) {
@@ -320,52 +336,59 @@ class ChatComposerState(
             }
         }
 
-    /**
-     * Commits a successful camera file as a normal image attachment. Cancellation and malformed
-     * zero-byte camera results reclaim the private target asynchronously.
-     */
-    fun completeCameraCapture(privatePath: String, captured: Boolean) {
+    /** Commits a successful private camera target through the canonical attachment owner. */
+    internal fun completeCameraCapture(
+        ownerId: String,
+        controller: ConversationComposerController,
+        privatePath: String,
+        captured: Boolean,
+    ) {
         scope.launch {
-            val (attachment, tooLarge) = withContext(Dispatchers.IO) {
+            val (attachment, errorRes) = withContext(Dispatchers.IO) {
                 val file = privateCameraFile(privatePath)
-                if (file == null) {
-                    null to false
-                } else if (!captured || !file.isFile || file.length() <= 0L) {
-                    runCatching { file.delete() }
-                    null to false
-                } else if (file.length() > AttachmentFiles.MAX_ATTACHMENT_BYTES) {
-                    runCatching { file.delete() }
-                    null to true
-                } else {
-                    runCatching {
-                        val uri = FileProvider.getUriForFile(
+                when {
+                    file == null || !captured || !file.isFile || file.length() <= 0L -> {
+                        file?.let { runCatching { it.delete() } }
+                        null to null
+                    }
+                    file.length() > AttachmentFiles.MAX_ATTACHMENT_BYTES -> {
+                        runCatching { file.delete() }
+                        null to com.newoether.agora.R.string.file_too_large
+                    }
+                    else -> SelectedAttachment(
+                        uri = FileProvider.getUriForFile(
                             context,
                             "${context.packageName}.fileprovider",
                             file,
-                        )
-                        SelectedAttachment(
-                            uri = uri.toString(),
-                            type = "image",
-                            fileName = file.name,
-                            mimeType = "image/jpeg",
-                            fileSize = file.length(),
-                            localPath = file.absolutePath,
-                        ) to false
-                    }.getOrElse { error ->
-                        runCatching { file.delete() }
-                        DebugLog.e("ChatComposer", "Unable to attach camera capture", error)
-                        null to false
-                    }
+                        ).toString(),
+                        type = "image",
+                        fileName = file.name,
+                        mimeType = "image/jpeg",
+                        fileSize = file.length(),
+                        localPath = file.absolutePath,
+                    ) to null
                 }
             }
             if (attachment != null) {
-                haptics.selection()
-                selectedAttachments = selectedAttachments + attachment
-            } else if (captured) {
-                rejectedMessage = context.getString(
-                    if (tooLarge) com.newoether.agora.R.string.file_too_large
-                    else com.newoether.agora.R.string.attachment_copy_failed_image,
-                )
+                runCatching {
+                    controller.load(ownerId)
+                    try { controller.importAttachment(ownerId, attachment) }
+                    finally { withContext(NonCancellable) { controller.release(ownerId) } }
+                }
+                    .onSuccess { haptics.selection() }
+                    .onFailure { failure ->
+                        withContext(NonCancellable + Dispatchers.IO) {
+                            attachment.localPath?.let { path ->
+                                runCatching { java.io.File(path).delete() }
+                            }
+                        }
+                        if (failure is CancellationException) throw failure
+                        rejectedMessage = context.getString(
+                            com.newoether.agora.R.string.attachment_copy_failed_image,
+                        )
+                    }
+            } else if (errorRes != null) {
+                rejectedMessage = context.getString(errorRes)
             }
         }
     }
@@ -376,6 +399,14 @@ class ChatComposerState(
             file.parentFile == directory && file.name.startsWith("camera_")
         }
     }.getOrNull()
+
+    fun acceptsLocalSandboxAttachments(): Boolean = isSandboxFlavor && sandboxEnabled()
+
+    fun reportUnsupportedFiles(mimeTypes: List<String?>) {
+        if (mimeTypes.isEmpty()) return
+        haptics.reject()
+        mimeTypes.distinct().forEach { appendRejection(unsupportedFileMessage(it)) }
+    }
 
     fun reportCameraPreparationFailure() {
         rejectionTitleState = com.newoether.agora.R.string.camera

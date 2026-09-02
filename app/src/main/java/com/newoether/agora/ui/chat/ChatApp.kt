@@ -297,8 +297,9 @@ fun ChatApp(
         haptics = haptics,
     )
 
-    ComposerDraftLifecycleEffect(
-        ownerId = if (isNewChatMode) com.newoether.agora.viewmodel.NEW_CHAT_WORKSPACE_ID else currentConversationId ?: com.newoether.agora.viewmodel.NEW_CHAT_WORKSPACE_ID,
+    val composerOwnerId = if (isNewChatMode) com.newoether.agora.viewmodel.NEW_CHAT_WORKSPACE_ID else currentConversationId ?: com.newoether.agora.viewmodel.NEW_CHAT_WORKSPACE_ID
+    val composerSnapshot by rememberComposerDraftSnapshot(
+        ownerId = composerOwnerId,
         controller = viewModel.conversationComposer,
         viewModel = viewModel,
         textFieldState = textFieldState,
@@ -882,6 +883,9 @@ fun ChatApp(
                                 onAccepted = onAccepted,
                             )
                         },
+                        composerOwnerId = composerOwnerId,
+                        composerController = viewModel.conversationComposer,
+                        composerSnapshot = composerSnapshot,
                         onStopGeneration = {
                             haptics.interrupt()
                             viewModel.stopGeneration()
@@ -928,7 +932,6 @@ fun ChatApp(
                         // The model row owns its selection tick. Repeating it here produced the
                         // previous double buzz for one physical tap.
                         onModelSelect = { viewModel.setActiveModel(it) },
-                        onImageClick = { url -> onMediaClick(listOf(url), 0) },
                         onAllMediaClick = { urls, idx -> onMediaClick(urls, idx) },
                         onFileContentClick = { name, content -> viewModel.showFilePreview(name, content) },
                         modifier = Modifier,
