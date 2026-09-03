@@ -1,0 +1,182 @@
+name: Namespace generic web tools once
+
+on:
+  push:
+    branches:
+      - automation/namespaced-web-tools-2026-09-03
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/namespaced-web-tools
+          fetch-depth: 0
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Apply namespaced generic web-tool compatibility fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly 1 occurrence, found {count}: {old!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Generic Web Search publishes namespaced function names so OpenAI-compatible relays
+          # cannot confuse Agora-local functions with provider-hosted paid web tools. Legacy names
+          # remain executable aliases for durable history/import compatibility.
+          web = "app/src/main/java/com/newoether/agora/tool/WebSearchToolProvider.kt"
+          replace_once(web, 'name = "web_search",\n                description =', 'name = "agora_web_search",\n                description =')
+          replace_once(web, 'name = "web_fetch",\n                description =', 'name = "agora_web_fetch",\n                description =')
+          replace_once(web, '"web_search" -> executeWebSearch(arguments, ctx)', '"agora_web_search", "web_search" -> executeWebSearch(arguments, ctx)')
+          replace_once(web, '"web_fetch" -> executeWebFetch(arguments, ctx)', '"agora_web_fetch", "web_fetch" -> executeWebFetch(arguments, ctx)')
+          replace_once(web, 'name in setOf("web_search", "web_fetch")', 'name in setOf("agora_web_search", "agora_web_fetch", "web_search", "web_fetch")')
+
+          # OpenAI-compatible chat/Responses history must never replay the old reserved names.
+          conv = "app/src/main/java/com/newoether/agora/api/util/MessageConverter.kt"
+          p = Path(conv)
+          text = p.read_text()
+          marker = 'fun buildToolCallId(toolName: String, arguments: String, prefix: String = Constants.TOOL_CALL_ID_PREFIX): String {'
+          if marker not in text:
+              raise SystemExit("MessageConverter marker missing")
+          helper = '''internal fun openAiCompatibleWireToolName(name: String): String = when (name) {\n    "web_search" -> "agora_web_search"\n    "web_fetch" -> "agora_web_fetch"\n    else -> name\n}\n\n'''
+          text = text.replace(marker, helper + marker, 1)
+          old = '''                val toolCalls = toolSegs.map { seg ->\n                    val tid = seg.toolCallId ?: buildToolCallId(seg.toolName ?: "", seg.toolArgs ?: "{}")\n                    OpenAiRequestToolCall(\n                        id = tid,\n                        function = OpenAiRequestFunction(name = seg.toolName ?: "", arguments = seg.toolArgs ?: "{}")\n                    )\n                }'''
+          new = '''                val toolCalls = toolSegs.map { seg ->\n                    val wireName = openAiCompatibleWireToolName(seg.toolName.orEmpty())\n                    val tid = seg.toolCallId ?: buildToolCallId(wireName, seg.toolArgs ?: "{}")\n                    OpenAiRequestToolCall(\n                        id = tid,\n                        function = OpenAiRequestFunction(name = wireName, arguments = seg.toolArgs ?: "{}")\n                    )\n                }'''
+          if text.count(old) != 1:
+              raise SystemExit("MessageConverter segment tool-call block mismatch")
+          text = text.replace(old, new, 1)
+          old = '''                val tc = msg.toolCall!!\n                val toolId = tc.toolCallId ?: buildToolCallId(tc.toolName, tc.arguments)\n                entries.add(OpenAiMessage(\n                    role = "assistant",\n                    content = null,\n                    toolCalls = listOf(OpenAiRequestToolCall(\n                        id = toolId,\n                        function = OpenAiRequestFunction(name = tc.toolName, arguments = tc.arguments)\n                    )),'''
+          new = '''                val tc = msg.toolCall!!\n                val wireName = openAiCompatibleWireToolName(tc.toolName)\n                val toolId = tc.toolCallId ?: buildToolCallId(wireName, tc.arguments)\n                entries.add(OpenAiMessage(\n                    role = "assistant",\n                    content = null,\n                    toolCalls = listOf(OpenAiRequestToolCall(\n                        id = toolId,\n                        function = OpenAiRequestFunction(name = wireName, arguments = tc.arguments)\n                    )),'''
+          if text.count(old) != 1:
+              raise SystemExit("MessageConverter legacy toolCall block mismatch")
+          text = text.replace(old, new, 1)
+          # Tool result IDs generated for legacy rows must use the same normalized name.
+          text = text.replace(
+              'val toolId = seg.toolCallId ?: buildToolCallId(seg.toolName ?: "", seg.toolArgs ?: "{}")',
+              'val toolId = seg.toolCallId ?: buildToolCallId(openAiCompatibleWireToolName(seg.toolName.orEmpty()), seg.toolArgs ?: "{}")',
+              1,
+          )
+          text = text.replace(
+              'val toolId = tc.toolCallId ?: buildToolCallId(tc.toolName, tc.arguments)',
+              'val toolId = tc.toolCallId ?: buildToolCallId(openAiCompatibleWireToolName(tc.toolName), tc.arguments)',
+              1,
+          )
+          p.write_text(text)
+
+          # Responses can replay provider-scoped raw function_call items. Normalize those too;
+          # otherwise a legacy web_fetch name survives even when reconstructed tool calls are fixed.
+          validator = "app/src/main/java/com/newoether/agora/api/openai/OpenAiRequestValidator.kt"
+          p = Path(validator)
+          text = p.read_text()
+          import_marker = 'import com.newoether.agora.api.util.requireValidRequestFormat\n'
+          if import_marker not in text:
+              raise SystemExit("OpenAiRequestValidator import marker missing")
+          text = text.replace(
+              import_marker,
+              'import com.newoether.agora.api.util.openAiCompatibleWireToolName\n' + import_marker,
+              1,
+          )
+          fn_marker = 'internal fun List<OpenAiMessage>.toResponsesInput(\n'
+          helper = '''private fun JsonObject.normalizeLegacyAgoraWebToolName(): JsonObject {\n    val type = (this["type"] as? JsonPrimitive)?.content\n    val name = (this["name"] as? JsonPrimitive)?.content\n    if (type != "function_call" || name == null) return this\n    val normalizedName = openAiCompatibleWireToolName(name)\n    if (normalizedName == name) return this\n    return JsonObject(toMutableMap().apply {\n        put("name", JsonPrimitive(normalizedName))\n    })\n}\n\n'''
+          if fn_marker not in text:
+              raise SystemExit("toResponsesInput marker missing")
+          text = text.replace(fn_marker, helper + fn_marker, 1)
+          old = '''            message.responseOutputItems.orEmpty()\n        } else {'''
+          new = '''            message.responseOutputItems.orEmpty().map {\n                it.normalizeLegacyAgoraWebToolName()\n            }\n        } else {'''
+          if text.count(old) != 1:
+              raise SystemExit("Responses replay raw-items block mismatch")
+          text = text.replace(old, new, 1)
+          old = 'name = call.function.name,\n                        arguments = call.function.arguments,'
+          new = 'name = openAiCompatibleWireToolName(call.function.name),\n                        arguments = call.function.arguments,'
+          if text.count(old) != 1:
+              raise SystemExit("Responses reconstructed function-call block mismatch")
+          text = text.replace(old, new, 1)
+          p.write_text(text)
+
+          # UI continues to present both new canonical names and legacy history as Web Search/Fetch.
+          ui = "app/src/main/java/com/newoether/agora/ui/chat/message/ToolPresentation.kt"
+          replace_once(ui,
+              '"web_search", "openai_search", "google_search" -> ToolKind.WEB_SEARCH',
+              '"agora_web_search", "web_search", "openai_search", "google_search" -> ToolKind.WEB_SEARCH')
+          replace_once(ui,
+              '"web_fetch" -> ToolKind.WEB_FETCH',
+              '"agora_web_fetch", "web_fetch" -> ToolKind.WEB_FETCH')
+
+          # Contract: canonical names are Agora-namespaced; native provider web_search stays distinct.
+          doc = Path("development/web-search.md")
+          text = doc.read_text().replace('Status: authoritative, 2026-08-27.', 'Status: authoritative, 2026-09-03.', 1)
+          ownership = '- `WebSearchToolProvider.kt` owns generic provider execution, normalized result enrichment, and\n  explicit `web_fetch` page reading.\n'
+          ownership_new = '- `WebSearchToolProvider.kt` owns generic provider execution, normalized result enrichment, and\n  explicit `agora_web_fetch` page reading.\n'
+          if ownership not in text:
+              raise SystemExit("web-search ownership contract marker missing")
+          text = text.replace(ownership, ownership_new, 1)
+          boundary = '''No owner may infer the other capability from a matching company name or legacy stored value.\n\n'''
+          naming = '''No owner may infer the other capability from a matching company name or legacy stored value.\n\n### Generic tool-name boundary\n\n- The canonical model-facing generic function names are `agora_web_search` and `agora_web_fetch`.\n  The `agora_` namespace is required so OpenAI-compatible relays cannot confuse Agora-local\n  functions with provider-hosted paid `web_search` / web-fetch capabilities.\n- Legacy persisted calls named exactly `web_search` or `web_fetch` remain accepted local execution\n  aliases, but OpenAI-compatible request projection must rewrite those legacy names to the\n  canonical `agora_*` names, including provider-scoped raw Responses `function_call` replay items.\n- Result payloads may continue to use `\"type\":\"web_search\"`; that result-schema label is not a\n  callable tool name. Native provider-hosted Responses `type: \"web_search\"` remains unchanged and\n  is included only when the independent OpenAI Search setting resolves ON.\n\n'''
+          if boundary not in text:
+              raise SystemExit("web-search ownership boundary marker missing")
+          text = text.replace(boundary, naming, 1)
+          text = text.replace('The `web_search` tool description must present search', 'The `agora_web_search` tool description must present search', 1)
+          text = text.replace('`web_fetch` remains the explicit deeper-reading tool.', '`agora_web_fetch` remains the explicit deeper-reading tool.', 1)
+          text = text.replace('does not force a `web_search` call before the', 'does not force an `agora_web_search` call before the', 1)
+          doc.write_text(text)
+
+          # Focused regression tests.
+          Path("app/src/test/java/com/newoether/agora/tool/WebSearchToolNamingTest.kt").write_text('''package com.newoether.agora.tool\n\nimport com.newoether.agora.viewmodel.GenerationContext\nimport org.junit.Assert.assertEquals\nimport org.junit.Assert.assertFalse\nimport org.junit.Assert.assertTrue\nimport org.junit.Test\n\nclass WebSearchToolNamingTest {\n    @Test\n    fun genericDefinitionsUseAgoraNamespaceAndLegacyAliasesRemainExecutable() {\n        val provider = WebSearchToolProvider()\n        val definitions = provider.definitions(GenerationContext(webSearchEnabled = true))\n\n        assertEquals(\n            listOf("agora_web_search", "agora_web_fetch"),\n            definitions.map { it.function.name },\n        )\n        assertFalse(definitions.any { it.function.name == "web_search" || it.function.name == "web_fetch" })\n        assertTrue(provider.handles("agora_web_search"))\n        assertTrue(provider.handles("agora_web_fetch"))\n        assertTrue(provider.handles("web_search"))\n        assertTrue(provider.handles("web_fetch"))\n    }\n}\n''')
+
+          Path("app/src/test/java/com/newoether/agora/api/util/WebToolWireNameTest.kt").write_text('''package com.newoether.agora.api.util\n\nimport org.junit.Assert.assertEquals\nimport org.junit.Test\n\nclass WebToolWireNameTest {\n    @Test\n    fun legacyGenericWebNamesAreNamespacedForOpenAiCompatibleWire() {\n        assertEquals("agora_web_search", openAiCompatibleWireToolName("web_search"))\n        assertEquals("agora_web_fetch", openAiCompatibleWireToolName("web_fetch"))\n        assertEquals("agora_web_search", openAiCompatibleWireToolName("agora_web_search"))\n        assertEquals("openai_search", openAiCompatibleWireToolName("openai_search"))\n        assertEquals("google_search", openAiCompatibleWireToolName("google_search"))\n    }\n}\n''')
+
+          Path("app/src/test/java/com/newoether/agora/api/openai/OpenAiWebToolNameCompatibilityTest.kt").write_text('''package com.newoether.agora.api.openai\n\nimport com.newoether.agora.api.OpenAiMessage\nimport kotlinx.serialization.json.JsonObject\nimport kotlinx.serialization.json.JsonPrimitive\nimport org.junit.Assert.assertEquals\nimport org.junit.Test\n\nclass OpenAiWebToolNameCompatibilityTest {\n    @Test\n    fun responsesRawReplayNamespacesLegacyGenericWebFunctionCall() {\n        val legacy = JsonObject(\n            mapOf(\n                "type" to JsonPrimitive("function_call"),\n                "call_id" to JsonPrimitive("call_legacy"),\n                "name" to JsonPrimitive("web_fetch"),\n                "arguments" to JsonPrimitive("{\\\"url\\\":\\\"https://example.test\\\"}"),\n            )\n        )\n        val message = OpenAiMessage(\n            role = "assistant",\n            responseOutputItems = listOf(legacy),\n            responseOutputItemProvider = "NanoGPT",\n        )\n\n        val input = listOf(message).toResponsesInput(providerName = "NanoGPT")\n\n        assertEquals("function_call", (input.single()["type"] as JsonPrimitive).content)\n        assertEquals("agora_web_fetch", (input.single()["name"] as JsonPrimitive).content)\n    }\n\n    @Test\n    fun responsesReplayDoesNotRewriteHostedSearchItems() {\n        val hosted = JsonObject(\n            mapOf(\n                "type" to JsonPrimitive("web_search_call"),\n                "id" to JsonPrimitive("ws_1"),\n            )\n        )\n        val message = OpenAiMessage(\n            role = "assistant",\n            responseOutputItems = listOf(hosted),\n            responseOutputItemProvider = "NanoGPT",\n        )\n\n        val input = listOf(message).toResponsesInput(providerName = "NanoGPT")\n\n        assertEquals(hosted, input.single())\n    }\n}\n''')
+
+          Path("app/src/test/java/com/newoether/agora/ui/chat/message/WebToolPresentationNameTest.kt").write_text('''package com.newoether.agora.ui.chat.message\n\nimport org.junit.Assert.assertEquals\nimport org.junit.Test\n\nclass WebToolPresentationNameTest {\n    @Test\n    fun canonicalAndLegacyGenericWebNamesShareExistingPresentation() {\n        assertEquals(ToolKind.WEB_SEARCH, ToolPresentationResolver.kindForToolName("agora_web_search"))\n        assertEquals(ToolKind.WEB_SEARCH, ToolPresentationResolver.kindForToolName("web_search"))\n        assertEquals(ToolKind.WEB_FETCH, ToolPresentationResolver.kindForToolName("agora_web_fetch"))\n        assertEquals(ToolKind.WEB_FETCH, ToolPresentationResolver.kindForToolName("web_fetch"))\n    }\n}\n''')
+          PY
+
+          git diff --check
+          git status --short
+
+      - name: Run focused and full unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew -p build-logic test --stacktrace
+          ./gradlew :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest verifyKotlinFileSize --stacktrace
+
+      - name: Commit and push feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/newoether/agora/tool/WebSearchToolProvider.kt \
+                  app/src/main/java/com/newoether/agora/api/util/MessageConverter.kt \
+                  app/src/main/java/com/newoether/agora/api/openai/OpenAiRequestValidator.kt \
+                  app/src/main/java/com/newoether/agora/ui/chat/message/ToolPresentation.kt \
+                  development/web-search.md \
+                  app/src/test/java/com/newoether/agora/tool/WebSearchToolNamingTest.kt \
+                  app/src/test/java/com/newoether/agora/api/util/WebToolWireNameTest.kt \
+                  app/src/test/java/com/newoether/agora/api/openai/OpenAiWebToolNameCompatibilityTest.kt \
+                  app/src/test/java/com/newoether/agora/ui/chat/message/WebToolPresentationNameTest.kt
+          git commit -m "fix: namespace local web tools"
+          git push origin HEAD:fix/namespaced-web-tools
