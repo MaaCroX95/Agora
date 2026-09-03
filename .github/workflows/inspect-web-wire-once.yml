@@ -1,0 +1,20 @@
+name: Inspect web wire once
+
+on:
+  push:
+    branches:
+      - automation/inspect-web-wire-2026-09-03
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 1
+      - name: Locate Responses replay code
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -R -n -C 5 -E 'toResponsesInput|responseOutputItems|response_output|function_call_output' app/src/main/java/com/newoether/agora/api app/src/main/java/com/newoether/agora/viewmodel | head -n 500
