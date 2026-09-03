@@ -1,6 +1,7 @@
 package com.newoether.agora.viewmodel
 
 import com.newoether.agora.model.ChatMessage
+import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import com.newoether.agora.util.Constants
@@ -108,6 +109,69 @@ class ConversationUiStateTest {
     }
 
     @Test
+    fun latestSnapshotRebindsPayloadBeforeStreamingAndPendingTailRules() {
+        val root = ChatMessage(
+            id = "u1",
+            text = "request",
+            participant = Participant.USER,
+            timestamp = 1L,
+        )
+        val staleTerminal = ChatMessage(
+            id = "m1",
+            parentId = root.id,
+            text = "",
+            participant = Participant.MODEL,
+            status = MessageStatus.STOPPED,
+            timestamp = 2L,
+            runId = "old-run",
+        )
+        val nextUser = ChatMessage(
+            id = "u2",
+            parentId = staleTerminal.id,
+            text = "continue",
+            participant = Participant.USER,
+            timestamp = 3L,
+            runId = "live-run",
+            consumedAtPass = 0,
+        )
+        val activeStub = ChatMessage(
+            id = "m2",
+            parentId = nextUser.id,
+            text = "",
+            participant = Participant.MODEL,
+            status = MessageStatus.SENDING,
+            timestamp = 4L,
+            runId = "live-run",
+        )
+        val pending = ChatMessage(
+            id = "u3",
+            parentId = activeStub.id,
+            text = "queued guidance",
+            participant = Participant.USER,
+            timestamp = 5L,
+            runId = "live-run",
+            consumedAtPass = null,
+        )
+        val fullTerminal = staleTerminal.copy(
+            text = "partial answer",
+            segments = listOf(MessageSegment(type = "thought", content = "complete")),
+        )
+        val streaming = activeStub.copy(text = "latest stream")
+
+        val path = applyRenderSnapshotToResolvedPath(
+            resolvedPath = listOf(root, staleTerminal, nextUser, activeStub, pending),
+            snapshot = ConversationRenderSnapshot(
+                allMessages = listOf(root, fullTerminal, nextUser, activeStub, pending),
+                streamingMessage = streaming,
+            ),
+        )
+
+        assertEquals(listOf("u1", "m1", "u2", "m2"), path.map(ChatMessage::id))
+        assertSame(fullTerminal, path[1])
+        assertSame(streaming, path.last())
+    }
+
+    @Test
     fun durableQueuedInput_staysOutOfPathUntilCurrentPassReleases() {
         val initial = ChatMessage(
             id = "u1",
@@ -156,6 +220,42 @@ class ConversationUiStateTest {
         assertEquals(listOf("u1", "m1"), whileQueued.map { it.id })
         assertEquals("latest partial", whileQueued.last().text)
         assertEquals(listOf("u1", "m1", "u2"), afterRelease.map { it.id })
+    }
+
+    @Test
+    fun streamingPayloadOverlayDropsQueuedTailWithoutStructuralReprojection() {
+        val initial = ChatMessage(
+            id = "u1",
+            text = "initial",
+            participant = Participant.USER,
+            runId = "run",
+            consumedAtPass = 0,
+        )
+        val persistedModel = ChatMessage(
+            id = "m1",
+            parentId = initial.id,
+            text = "old",
+            participant = Participant.MODEL,
+            status = MessageStatus.SENDING,
+            runId = "run",
+        )
+        val queued = ChatMessage(
+            id = "u2",
+            parentId = persistedModel.id,
+            text = "queued",
+            participant = Participant.USER,
+            runId = "run",
+            consumedAtPass = null,
+        )
+        val structuralPath = listOf(initial, persistedModel, queued)
+
+        val visible = applyStreamingMessageToResolvedPath(
+            resolvedPath = structuralPath,
+            streamingMessage = persistedModel.copy(text = "latest"),
+        )
+
+        assertEquals(listOf("u1", "m1"), visible.map(ChatMessage::id))
+        assertEquals("latest", visible.last().text)
     }
 
     @Test

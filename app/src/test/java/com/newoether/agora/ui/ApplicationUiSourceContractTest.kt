@@ -273,16 +273,17 @@ class ApplicationUiSourceContractTest {
 
     @Test
     fun `ordinary segment detail does not repeat message error while Compact keeps its error`() {
-        val source = sourceFile(
+        val messageItem = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/chat/message/MessageItem.kt",
         )
+        val segmentDetail = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/chat/message/SegmentDetailSheet.kt",
+        )
 
-        val compactDetail = source
-            .substringAfter("if (showCompactDetail) {")
-            .substringBefore("// Segment detail bottom sheet")
-        val ordinarySegmentDetail = source
-            .substringAfter("// Segment detail bottom sheet")
-            .substringBefore("internal fun ContextCompactPill(")
+        val compactDetail = messageItem.substringAfter("if (showCompactDetail) {")
+        val ordinarySegmentDetail = segmentDetail
+            .substringAfter("internal fun MessageSegmentDetailHost(")
+            .substringBefore("internal fun usesVirtualizedSegmentDetail(")
 
         assertTrue(compactDetail.contains("errorText = detailErrorText"))
         assertFalse(ordinarySegmentDetail.contains("errorText ="))
@@ -497,6 +498,70 @@ class ApplicationUiSourceContractTest {
     }
 
     @Test
+    fun `Appearance uses semantic groups and leading visuals for every setting row`() {
+        val appearance = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/settings/SettingsAppearancePage.kt",
+        )
+        val groupKeys = listOf(
+            "appearance_theme_color",
+            "appearance_motion_feedback",
+            "appearance_chat_display",
+            "font_title",
+        )
+        val groupIndices = groupKeys.map { key ->
+            appearance.indexOf("title = stringResource(R.string.$key)")
+        }
+
+        assertTrue(groupIndices.all { it >= 0 })
+        assertTrue(groupIndices.zipWithNext().all { (current, next) -> current < next })
+        assertFalse(appearance.contains("R.string.appearance_interface"))
+        assertEquals(4, Regex("SettingsGroup\\(").findAll(appearance).count())
+        assertEquals(14, Regex("SettingsItem\\(").findAll(appearance).count())
+        assertEquals(14, Regex("leadingContent\\s*=").findAll(appearance).count())
+        listOf(
+            "Palette",
+            "Style",
+            "BlurOn",
+            "MotionPhotosOff",
+            "Vibration",
+            "VerticalAlignBottom",
+            "Functions",
+            "ViewAgenda",
+            "TextFields",
+            "UploadFile",
+        ).forEach { icon ->
+            assertTrue("Appearance is missing the $icon icon", appearance.contains("Icons.Default.$icon"))
+        }
+        val toolBlocksRow = appearance
+            .substringAfter("headlineContent = { Text(stringResource(R.string.tool_call_display_mode)) }")
+            .substringBefore("trailingContent =")
+        val thinkingSegmentsRow = appearance
+            .substringAfter("Text(stringResource(R.string.thinking_segment_display_mode))")
+            .substringBefore("trailingContent =")
+        val autoExpandRow = appearance
+            .substringAfter("Text(stringResource(R.string.auto_expand_active_group))")
+            .substringBefore("trailingContent =")
+        assertTrue(toolBlocksRow.contains("painterResource(R.drawable.material_symbol_lists_24)"))
+        assertTrue(thinkingSegmentsRow.contains("Icons.Default.ViewAgenda"))
+        assertTrue(
+            autoExpandRow.contains(
+                "R.drawable.material_symbol_expand_content_24",
+            ),
+        )
+        listOf("AccountTree", "Psychology", "UnfoldMore").forEach { oldIcon ->
+            assertFalse("Appearance still uses $oldIcon", appearance.contains("Icons.Default.$oldIcon"))
+        }
+        assertTrue(appearance.contains(".background(currentPrimary)"))
+
+        val toolBlocksIndex = appearance.indexOf("R.string.tool_call_display_mode")
+        val thinkingSegmentIndex = appearance.indexOf("R.string.thinking_segment_display_mode")
+        val autoExpandIndex = appearance.indexOf("R.string.auto_expand_active_group")
+        assertTrue(toolBlocksIndex >= 0)
+        assertTrue(thinkingSegmentIndex > toolBlocksIndex)
+        assertTrue(autoExpandIndex > thinkingSegmentIndex)
+    }
+
+    @Test
     fun `Appearance removes dead detailed token usage UI threading but keeps persistence compatibility`() {
         val appearance = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/settings/SettingsAppearancePage.kt",
@@ -613,6 +678,24 @@ class ApplicationUiSourceContractTest {
     }
 
     @Test
+    fun `provider base URL placeholder stays separate from its stored default`() {
+        val provider = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/settings/SettingsProviderDetailPage.kt",
+        )
+
+        assertTrue(provider.contains(
+            "val defaultUrl = providerInstance?.defaultBaseUrl.orEmpty()"
+        ))
+        assertTrue(provider.contains(
+            "val placeholderUrl = providerInstance?.baseUrlPlaceholder.orEmpty()"
+        ))
+        assertTrue(provider.contains(
+            "val displayedUrl = savedUrl?.takeIf(String::isNotBlank) ?: defaultUrl"
+        ))
+        assertTrue(provider.contains("placeholder = { Text(placeholderUrl"))
+    }
+
+    @Test
     fun `Settings destination rows omit redundant arrows without losing behavior`() {
         val home = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/settings/SettingsScreen.kt",
@@ -643,6 +726,23 @@ class ApplicationUiSourceContractTest {
             "modifier = Modifier.clickable { selectedProvider = Constants.PROVIDER_LOCAL }"
         ))
         assertFalse(provider.contains("Spacer(modifier = Modifier.width(4.dp))"))
+    }
+
+    @Test
+    fun `shell confirmation code surface provides standalone Markdown locals`() {
+        val main = sourceFile("app/src/main/java/com/newoether/agora/MainActivity.kt")
+        val assets = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/chat/message/MessageBubbleAssets.kt",
+        )
+        val codeBlock = assets
+            .substringAfter("internal fun ChatMarkdownCodeBlock(")
+            .substringBefore("private fun OverflowFriendlyMarkdownTable(")
+
+        assertTrue(main.contains("ChatMarkdownCodeBlock(code = pending.summary)"))
+        assertTrue(codeBlock.contains("CompositionLocalProvider("))
+        assertTrue(codeBlock.contains("LocalMarkdownColors provides assets.renderContext.colors"))
+        assertTrue(codeBlock.contains("LocalMarkdownDimens provides markdownDimens()"))
+        assertTrue(codeBlock.contains("MarkdownCodeBackground("))
     }
 
     @Test

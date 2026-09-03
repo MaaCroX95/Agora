@@ -206,6 +206,18 @@ class GenerationErrorPresentationTest {
     }
 
     @Test
+    fun `terminal finalization failures escape to the bound Run recovery owner`() {
+        val generation = sourceFile(
+            "app/src/main/java/com/newoether/agora/viewmodel/GenerationManager.kt",
+        )
+        val failureLog =
+            "DebugLog.e(\"AgoraVM\", \"Failed to execute terminal generation effect\", e)"
+        val afterFailureLog = generation.substringAfter(failureLog, missingDelimiterValue = "")
+
+        assertTrue(afterFailureLog.trimStart().startsWith("throw e"))
+    }
+
+    @Test
     fun `every supported locale owns the generation error key set`() {
         val keys = setOf(
             "generation_error_authentication",

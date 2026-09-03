@@ -35,7 +35,8 @@ internal fun mergeAdjacentSegments(segs: List<MessageSegment>): List<MessageSegm
         if (last != null && last.type == seg.type && (seg.type == "answer" || seg.type == "thought")) {
             merged[merged.lastIndex] = last.copy(
                 content = last.content + seg.content,
-                durationMs = mergeDurationMs(last.durationMs, seg.durationMs)
+                durationMs = mergeDurationMs(last.durationMs, seg.durationMs),
+                streamingTextDeltas = last.streamingTextDeltas + seg.streamingTextDeltas,
             )
         } else {
             merged.add(seg)
@@ -309,6 +310,10 @@ internal fun buildTimelineBlockKeys(
 @Stable
 internal class SegmentAppearanceRegistry {
     private val seenKeys = HashSet<String>()
+    private val streamingFadeTrackers = HashMap<String, StreamingTailFadeTracker>()
+
+    fun streamingFadeTracker(key: String): StreamingTailFadeTracker =
+        streamingFadeTrackers.getOrPut(key) { StreamingTailFadeTracker() }
 
     fun shouldAnimate(key: String, isStreaming: Boolean): Boolean =
         isStreaming && key !in seenKeys
@@ -386,6 +391,7 @@ internal fun AnimatedTimelineBlockAppearance(
     animate: Boolean? = null,
     appearanceRegistry: SegmentAppearanceRegistry? = null,
     isStreaming: Boolean = false,
+    forceOpaque: Boolean = false,
     content: @Composable () -> Unit
 ) {
     key(animationKey) {
@@ -403,6 +409,7 @@ internal fun AnimatedTimelineBlockAppearance(
             animate = play,
             durationMillis = SEGMENT_ENTER_DURATION_MS,
             initialScale = SEGMENT_ENTER_INITIAL_SCALE,
+            forceOpaque = forceOpaque,
         )
         Box(
             modifier = appearanceModifier,

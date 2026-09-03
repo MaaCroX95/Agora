@@ -1,6 +1,7 @@
 package com.newoether.agora.tool
 
 import com.newoether.agora.data.local.ChatEntity
+import com.newoether.agora.data.local.MessageContextTopology
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.model.MessageStatus
@@ -8,10 +9,7 @@ import com.newoether.agora.model.Participant
 import com.newoether.agora.viewmodel.GenerationContext
 import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -28,7 +26,10 @@ class RagToolProviderIsolationTest {
 
     @Test
     fun listConversations_readsOnlySearchableConversationSource() = runTest {
-        coEvery { conversations.getSearchableConversationsList() } returns listOf(
+        coEvery { conversations.getSearchableConversationCount() } returns 1
+        coEvery {
+            conversations.getSearchableConversationsPage(0, 20, descending = true)
+        } returns listOf(
             ChatEntity(id = "visible", title = "Visible", lastUpdated = 123L)
         )
 
@@ -42,7 +43,10 @@ class RagToolProviderIsolationTest {
             result.getValue("conversations").jsonArray.single().jsonObject
                 .getValue("id").jsonPrimitive.content,
         )
-        coVerify(exactly = 1) { conversations.getSearchableConversationsList() }
+        coVerify(exactly = 1) { conversations.getSearchableConversationCount() }
+        coVerify(exactly = 1) {
+            conversations.getSearchableConversationsPage(0, 20, descending = true)
+        }
         coVerify(exactly = 0) { conversations.getAllConversationsList() }
     }
 
@@ -59,7 +63,7 @@ class RagToolProviderIsolationTest {
         ).jsonObject
 
         assertEquals("not_found", result.getValue("error").jsonPrimitive.content)
-        verify(exactly = 0) { conversations.getMessagesForConversation(any()) }
+        coVerify(exactly = 0) { conversations.getMessageTopologySnapshot(any()) }
     }
 
     @Test
@@ -86,7 +90,7 @@ class RagToolProviderIsolationTest {
         ).jsonObject
 
         assertTrue(result.getValue("results").jsonArray.isEmpty())
-        verify(exactly = 0) { conversations.getMessagesForConversation(any()) }
+        coVerify(exactly = 0) { conversations.getMessageTopologySnapshot(any()) }
     }
 
     @Test
@@ -103,7 +107,9 @@ class RagToolProviderIsolationTest {
         )
         coEvery { conversations.searchMessages("target", any()) } returns listOf(match)
         coEvery { conversations.getSearchableConversation("conv") } returns ChatEntity(id = "conv", title = "Conv", lastUpdated = 123L)
-        every { conversations.getMessagesForConversation("conv") } returns flowOf(listOf(match))
+        coEvery { conversations.getMessageTopologySnapshot("conv") } returns
+            listOf(topology(match))
+        coEvery { conversations.getMessagesByIds(listOf(match.id)) } returns listOf(match)
 
         val result = Json.parseToJsonElement(
             provider.execute("search_conversations", """{"query":"target"}""", context)
@@ -112,4 +118,61 @@ class RagToolProviderIsolationTest {
         assertEquals(1, result.getValue("count").jsonPrimitive.content.toInt())
         assertEquals(1, result.getValue("results").jsonArray.size)
     }
+
+    @Test
+    fun readConversation_usesIdAsTheSiblingFallbackTieBreaker() = runTest {
+        val laterId = MessageEntity(
+            id = "z-message",
+            conversationId = "conv",
+            text = "deterministic fallback",
+            status = MessageStatus.SUCCESS,
+            participant = Participant.USER,
+            timestamp = 123L,
+            runId = "run-z",
+            runSequence = 0,
+        )
+        val earlierId = laterId.copy(
+            id = "a-message",
+            text = "must not be selected",
+            runId = "run-a",
+        )
+        coEvery { conversations.getSearchableConversation("conv") } returns ChatEntity(
+            id = "conv",
+            title = "Conv",
+            lastUpdated = 123L,
+        )
+        coEvery { conversations.getMessageTopologySnapshot("conv") } returns listOf(
+            topology(laterId),
+            topology(earlierId),
+        )
+        coEvery { conversations.getMessagesByIds(listOf(laterId.id)) } returns listOf(laterId)
+
+        val result = Json.parseToJsonElement(
+            provider.execute(
+                "read_conversation",
+                "{\"conversation_id\":\"conv\"}",
+                context,
+            )
+        ).jsonObject
+
+        val messages = result.getValue("messages").jsonArray
+        assertEquals(1, messages.size)
+        assertEquals(
+            laterId.text,
+            messages.single().jsonObject.getValue("text").jsonPrimitive.content,
+        )
+    }
+
+    private fun topology(message: MessageEntity) = MessageContextTopology(
+        id = message.id,
+        conversationId = message.conversationId,
+        parentId = message.parentId,
+        status = message.status,
+        participant = message.participant,
+        timestamp = message.timestamp,
+        modelName = message.modelName,
+        runId = message.runId,
+        runSequence = message.runSequence,
+        consumedAtPass = message.consumedAtPass,
+    )
 }

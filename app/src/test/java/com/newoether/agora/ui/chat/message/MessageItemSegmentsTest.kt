@@ -7,9 +7,12 @@ import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.ThinkingSegmentDisplayModes
 import com.newoether.agora.model.ToolCallDisplayModes
+
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -210,6 +213,29 @@ class MessageItemSegmentsTest {
     }
 
     @Test
+    fun streamingFadeTimelineSurvivesLazyItemDisposal() {
+        val registry = SegmentAppearanceRegistry()
+        val key = "message:answer"
+        val first = registry.streamingFadeTracker(key)
+        first.update(
+            text = "old",
+            nowMs = 1_000L,
+        )
+
+        val recreated = registry.streamingFadeTracker(key)
+        val sample = recreated.update(
+            text = "oldnew",
+            nowMs = 1_200L,
+        )
+
+        assertSame(first, recreated)
+        assertArrayEquals(
+            longArrayOf(1_000L, 1_000L, 1_000L, 1_200L, 1_200L, 1_200L),
+            sample.birthTimesMs,
+        )
+    }
+
+    @Test
     fun historicalSegmentNeverReplaysAnEntrance() {
         val registry = SegmentAppearanceRegistry()
 
@@ -323,6 +349,53 @@ class MessageItemSegmentsTest {
         assertEquals(
             GroupedSegmentAutoExpansionAction.NONE,
             controller.update(key, isActive = false, enabled = true),
+        )
+    }
+
+    @Test
+    fun stoppedToolMessageRequestsOneExistingCollapse() {
+        val segments = listOf(
+            MessageSegment(
+                type = "tool",
+                toolName = "shell",
+                toolArgs = "{}",
+                toolCallId = "call",
+            ),
+        )
+        val active = ChatMessage(
+            id = "message",
+            text = "",
+            participant = Participant.MODEL,
+            status = MessageStatus.TOOL_CALLING,
+            segments = segments,
+        )
+        val stopped = active.copy(status = MessageStatus.STOPPED)
+        val controller = GroupedSegmentAutoExpansionController()
+        val key = "message:group:0"
+
+        val activeContent = compactSegmentHasActiveContent(
+            segs = segments,
+            message = active,
+            useLiveStatus = true,
+        )
+        val stoppedContent = compactSegmentHasActiveContent(
+            segs = segments,
+            message = stopped,
+            useLiveStatus = true,
+        )
+        assertTrue(activeContent)
+        assertFalse(stoppedContent)
+        assertEquals(
+            GroupedSegmentAutoExpansionAction.EXPAND,
+            controller.update(key, isActive = activeContent, enabled = true),
+        )
+        assertEquals(
+            GroupedSegmentAutoExpansionAction.COLLAPSE,
+            controller.update(key, isActive = stoppedContent, enabled = true),
+        )
+        assertEquals(
+            GroupedSegmentAutoExpansionAction.NONE,
+            controller.update(key, isActive = stoppedContent, enabled = true),
         )
     }
 

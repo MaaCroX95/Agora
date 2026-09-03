@@ -269,7 +269,7 @@
     <string name="image_gen_select_model">Select Image Model</string>
     <string name="image_gen_size">Default Size</string>
     <string name="image_gen_size_hint">1024x1024</string>
-    <string name="image_gen_show_all">Show all models</string>
+    <string name="image_gen_show_all">Show All Models</string>
     <string name="tool_generate_image">Generate Image</string>
     <string name="tool_generating_image">Generating image…</string>
     <string name="tool_generated_image">Generated image</string>
@@ -306,7 +306,7 @@
     <string name="prompts_edit_title">Edit System Prompt</string>
     <string name="prompts_add_title">Add System Prompt</string>
     <string name="prompts_title_hint">Title (e.g. Translator)</string>
-    <string name="prompts_template_title">Choose a template</string>
+    <string name="prompts_template_title">Choose a Template</string>
     <string name="prompts_template_blank">Blank</string>
     <string name="prompts_template_blank_desc">Start with an empty editable system prompt.</string>
     <string name="prompts_template_default">Default</string>
@@ -314,17 +314,17 @@
     <string name="prompts_duplicate">Duplicate</string>
     <string name="prompts_duplicate_title">%1$s Copy</string>
     <string name="prompts_empty_preview">Empty prompt</string>
-    <string name="prompts_empty_title">No system prompts</string>
+    <string name="prompts_empty_title">No System Prompts</string>
     <string name="prompts_empty_desc">Create custom personalities and instructions</string>
     <string name="prompts_delete_title">Delete System Instruction?</string>
     <string name="prompts_delete_text">Are you sure you want to delete \'%1$s\'? This action cannot be undone.</string>
     <string name="template_title_required">Title is required</string>
     <string name="template_tab_system">System</string>
-    <string name="template_tab_prepend">Prefix</string>
-    <string name="template_tab_postpend">Suffix</string>
-    <string name="template_tab_system_desc">Sent as the system instruction.</string>
-    <string name="template_tab_prepend_desc">Inserted before each user message.</string>
-    <string name="template_tab_postpend_desc">Inserted after each user message.</string>
+    <string name="template_tab_user">User</string>
+    <string name="template_tab_assistant">Assistant</string>
+    <string name="template_tab_system_desc">Defines the system message sent to the model.</string>
+    <string name="template_tab_user_desc">Defines the structure around each ordinary user message.</string>
+    <string name="template_tab_assistant_desc">Defines the structure around each ordinary assistant message.</string>
     <string name="template_empty_hint">No items. Add text or variables below.</string>
     <string name="template_add_text">Add Text</string>
     <string name="template_add_variable">Add Variable</string>
@@ -333,8 +333,8 @@
     <string name="template_variable_picker_title">Choose Variable</string>
     <string name="template_custom_text_label">Text</string>
     <string name="template_insert_title">Insert Item</string>
-    <string name="template_move_up">Move up</string>
-    <string name="template_move_down">Move down</string>
+    <string name="template_move_up">Move Up</string>
+    <string name="template_move_down">Move Down</string>
 
     <!-- Settings - Models Page -->
     <string name="models_title">Models</string>
@@ -347,7 +347,7 @@
     <string name="models_auto_empty">No fetched models</string>
     <string name="models_search_hint">Search models…</string>
     <string name="models_search_empty">No matching models</string>
-    <string name="models_clear_search">Clear model search</string>
+    <string name="models_clear_search">Clear Model Search</string>
     <string name="models_custom_exists">This model already exists</string>
     <string name="models_available">Available Models</string>
     <string name="models_sync">Sync from All Providers</string>
@@ -618,6 +618,9 @@
     <string name="settings_appearance_desc">Theme, color scheme, and dynamic color</string>
     <string name="appearance_title">Appearance</string>
     <string name="appearance_interface">Interface</string>
+    <string name="appearance_theme_color">Theme &amp; Color</string>
+    <string name="appearance_motion_feedback">Motion &amp; Feedback</string>
+    <string name="appearance_chat_display">Chat Display</string>
     <string name="theme_mode">Theme Mode</string>
     <string name="theme_mode_light">Light</string>
     <string name="theme_mode_dark">Dark</string>
@@ -648,12 +651,12 @@
     <string name="visual_effects">Visual Effects</string>
     <string name="blur_effects">Blur Effects</string>
     <string name="blur_effects_desc">Blur the top of the chat list under the toolbar. Turn off to save performance.</string>
-    <string name="parse_inline_dollar_math">Parse $…$ as inline math</string>
+    <string name="parse_inline_dollar_math">Parse $…$ as Inline Math</string>
     <string name="parse_inline_dollar_math_desc">When disabled, single-dollar expressions such as $ x $ remain ordinary text. Other math delimiters are unchanged.</string>
-    <string name="reduce_motion">Reduce motion</string>
+    <string name="reduce_motion">Reduce Motion</string>
     <string name="reduce_motion_desc">Reduce continuous and large spatial motion while keeping fades, direct gestures, and useful state feedback.</string>
     <string name="interaction_feedback">Interaction Feedback</string>
-    <string name="stick_to_bottom">Stick to bottom</string>
+    <string name="stick_to_bottom">Stick to Bottom</string>
     <string name="stick_to_bottom_desc">Automatically follow new content while a response is generating.</string>
     <string name="haptic_feedback">Haptic Feedback</string>
     <string name="haptic_feedback_desc">Use subtle vibration for generation status and key actions.</string>
@@ -786,6 +789,10 @@
     <!-- Local Chat Provider -->
     <string name="local_chat_models">Local Chat Models</string>
     <string name="local_models_title">Local Models</string>
+    <string name="local_model_idle_retention">Model Idle Retention</string>
+    <string name="local_model_idle_retention_desc">How long to keep an idle local model in memory before unloading it</string>
+    <string name="local_model_idle_retention_immediate">Immediate</string>
+    <string name="local_model_idle_retention_minutes">%1$d min</string>
     <string name="local_chat_models_count">%1$d model(s) imported</string>
     <string name="local_title">Local</string>
     <string name="not_configured">Not configured</string>
@@ -855,7 +862,7 @@
     <string name="rating_submitting">Submitting…</string>
     <string name="rating_success">Thanks for your feedback!</string>
     <string name="rating_failed">Failed to submit. Please try again.</string>
-    <string name="rating_privacy">Your rating will be uploaded anonymously to newoether.space. Only the fields you fill in are transmitted. No other data is collected.</string>
+    <string name="rating_privacy">Your rating will be uploaded anonymously to newoether.com. Only the fields you fill in are transmitted. No other data is collected.</string>
 
     <!-- Data Control -->
     <string name="settings_data_control">Data Control</string>
@@ -937,7 +944,8 @@
     <string name="file_unsupported_title">File Not Supported</string>
     <string name="file_unknown_type">Unknown file type</string>
     <string name="file_unsupported_type">Unsupported file type: %1$s</string>
-    <string name="file_too_large">File too large (max 20 MB)</string>
+    <string name="file_too_large">File too large (max 100 MiB)</string>
+    <string name="file_sandbox_required">Install and enable Local Sandbox to attach this file.</string>
     <string name="attachment_copy_failed_image">Failed to load image</string>
     <string name="attachment_copy_failed_file">Failed to load file</string>
     <string name="pdf_render_failed">Failed to render PDF</string>
@@ -1035,7 +1043,7 @@
     <string name="pdf_pages_selected">%1$d selected</string>
     <string name="video_between_frames">~%1$s between frames</string>
     <!-- SSH host-key pinning -->
-    <string name="shell_ssh_verify_host_key">Verify &amp; pin host key</string>
+    <string name="shell_ssh_verify_host_key">Verify &amp; Pin Host Key</string>
     <string name="shell_ssh_host_key_pinned">Host key pinned</string>
     <string name="shell_ssh_host_key_not_pinned">Host key not pinned — vulnerable to interception</string>
     <string name="shell_ssh_verify_title">Verify SSH Host Key</string>
@@ -1057,7 +1065,7 @@
     <string name="crash_message">Sorry about that. You can help fix this by sending an anonymous crash report.</string>
     <string name="crash_submit">Submit report</string>
     <string name="crash_dismiss">Don\'t send</string>
-    <string name="crash_privacy_note">Only the crash log is sent to newoether.space. No other information is collected.</string>
+    <string name="crash_privacy_note">Only the crash log is sent to newoether.com. No other information is collected.</string>
     <string name="crash_submitted">Crash report sent. Thank you!</string>
     <string name="settings_group_network">Network</string>
     <string name="settings_proxy">Proxy</string>
@@ -1072,25 +1080,28 @@
     <string name="proxy_bypass">Bypass List</string>
     <string name="proxy_bypass_desc">Hosts and CIDR ranges that connect directly, one per line</string>
     <string name="default_service_tier">Default Service Tier</string>
-    <string name="openai_service_tier_title">Service tier</string>
+    <string name="openai_service_tier_title">Service Tier</string>
     <string name="openai_service_tier_desc">Controls latency and processing priority for OpenAI-protocol requests.</string>
     <string name="openai_service_tier_off">Off</string>
     <string name="openai_service_tier_auto">Auto</string>
     <string name="openai_service_tier_default">Default</string>
     <string name="openai_service_tier_flex">Flex</string>
+    <string name="openai_service_tier_scale">Scale</string>
+    <string name="openai_service_tier_priority">Priority</string>
     <string name="openai_service_tier_fast">Fast</string>
+    <string name="openai_service_tier_ultrafast">Ultrafast</string>
     <string name="context_title">Context</string>
     <string name="context_desc">Context management</string>
-    <string name="context_compact">Context compact</string>
-    <string name="context_compact_auto">Automatic compact</string>
+    <string name="context_compact">Context Compact</string>
+    <string name="context_compact_auto">Automatic Compact</string>
     <string name="context_compact_auto_desc">Summarize older context before overflow</string>
-    <string name="context_compact_model">Compact model</string>
-    <string name="context_compact_prompt">Compact prompt</string>
+    <string name="context_compact_model">Compact Model</string>
+    <string name="context_compact_prompt">Compact Prompt</string>
     <string name="context_compact_prompt_desc">Summary instructions</string>
-    <string name="context_compact_select_model">Select compact model</string>
-    <string name="context_compact_retain">Recent messages to keep</string>
+    <string name="context_compact_select_model">Select Compact Model</string>
+    <string name="context_compact_retain">Recent Messages to Keep</string>
     <string name="context_compact_retain_desc">Messages preserved verbatim after each compact</string>
-    <string name="context_compact_threshold">Automatic compact threshold</string>
+    <string name="context_compact_threshold">Automatic Compact Threshold</string>
     <string name="context_compact_threshold_desc">Compact when estimated context reaches this percentage of the selected window</string>
     <string name="context_compact_manual">Compact context</string>
     <string name="context_compacting">Compacting context…</string>
@@ -1112,43 +1123,43 @@
     <string name="context_compact_open_conversation">Open a conversation first</string>
     <string name="context_boundary_active">Compact boundary active</string>
     <string name="context_boundary_none">No compact boundary</string>
-    <string name="thinking_segment_display_mode">Thinking segments</string>
+    <string name="thinking_segment_display_mode">Thinking Segments</string>
     <string name="thinking_segment_display_mode_desc">Choose where thinking segments open</string>
     <string name="thinking_segment_display_card">Card</string>
-    <string name="thinking_segment_display_bottom_sheet">Bottom sheet</string>
+    <string name="thinking_segment_display_bottom_sheet">Bottom Sheet</string>
     <string name="thinking_segments_title">Thinking segments</string>
 
     <!-- Developer Options -->
     <string name="settings_group_developer">Developer</string>
-    <string name="settings_developer">Developer options</string>
+    <string name="settings_developer">Developer Options</string>
     <string name="settings_developer_desc">Diagnostics, protocol inspectors, and test tools</string>
-    <string name="developer_options_title">Developer options</string>
+    <string name="developer_options_title">Developer Options</string>
     <string name="developer_options_status_group">Status</string>
     <string name="developer_options_enabled_desc">Enabled for this installation. Turn it off to stop and clear temporary diagnostics.</string>
     <string name="developer_options_taps_remaining">%1$d more taps to enable developer options.</string>
     <string name="developer_options_enabled_message">Developer options are now enabled.</string>
     <string name="developer_options_already_enabled_message">Developer options are already enabled.</string>
     <string name="developer_options_capture_group">Diagnostics</string>
-    <string name="developer_options_capture">Diagnostic capture</string>
+    <string name="developer_options_capture">Diagnostic Capture</string>
     <string name="developer_options_capture_off_desc">No diagnostic session is active. Capture remains off until explicitly started.</string>
 
     <string name="developer_options_test_lab_group">Testing</string>
     <string name="developer_options_test_lab">Test Lab</string>
     <string name="developer_options_test_lab_desc">Provider-agnostic checks and safe protocol fixtures will appear here.</string>
-    <string name="developer_options_disable_title">Turn off developer options?</string>
+    <string name="developer_options_disable_title">Turn Off Developer Options?</string>
     <string name="developer_options_disable_message">This stops active capture and clears temporary diagnostic data.</string>
     <string name="developer_options_disable_confirm">Turn off</string>
     <string name="developer_options_capture_on_desc">%1$d metadata events · %2$d dropped. Message content is not captured.</string>
     <string name="developer_options_capture_stopped_desc">Capture stopped. %1$d events retained · %2$d dropped.</string>
-    <string name="developer_options_clear_diagnostics">Clear diagnostic session</string>
+    <string name="developer_options_clear_diagnostics">Clear Diagnostic Session</string>
     <string name="developer_options_clear_diagnostics_desc">Stops capture and clears all in-memory diagnostic events.</string>
-    <string name="developer_options_timeline_group">Metadata timeline</string>
+    <string name="developer_options_timeline_group">Metadata Timeline</string>
     <string name="developer_options_timeline_empty">Start capture, then run an operation to see ordered runtime and HTTP metadata.</string>
-    <string name="developer_options_payload_capture">Protocol payload capture</string>
+    <string name="developer_options_payload_capture">Protocol Payload Capture</string>
     <string name="developer_options_payload_capture_desc">Capture sanitized request, response, and SSE payload structures. Changing mode starts a new session.</string>
-    <string name="developer_options_sensitive_capture">Sensitive content</string>
+    <string name="developer_options_sensitive_capture">Sensitive Content</string>
     <string name="developer_options_sensitive_capture_desc">Include message and tool content in this session. Credentials are still always redacted.</string>
-    <string name="developer_options_sensitive_capture_title">Capture sensitive content?</string>
+    <string name="developer_options_sensitive_capture_title">Capture Sensitive Content?</string>
     <string name="developer_options_sensitive_capture_message">This starts a new in-memory session that may contain private conversation and tool data. It resets to off when capture stops or the app process restarts. Credentials remain redacted.</string>
     <string name="developer_options_sensitive_capture_confirm">Start sensitive capture</string>
     <string name="developer_options_capture_redacted_desc">%1$d events · %2$d dropped. Payload structure is captured with content redacted.</string>
@@ -1157,9 +1168,9 @@
     <string name="developer_options_inspector">Conversation Inspector</string>
     <string name="developer_options_inspector_empty">No conversation is selected. Open a conversation before inspecting it.</string>
     <string name="developer_options_export_group">Export</string>
-    <string name="developer_options_export">Export diagnostic bundle</string>
+    <string name="developer_options_export">Export Diagnostic Bundle</string>
     <string name="developer_options_export_desc">Share a bounded JSON bundle. Sensitive content is redacted, and the file is never uploaded automatically.</string>
-    <string name="developer_options_export_share_title">Share Agora diagnostic bundle</string>
+    <string name="developer_options_export_share_title">Share Agora Diagnostic Bundle</string>
     <string name="developer_options_export_failed">Could not create the diagnostic bundle.</string>
     <string name="responses_api">Responses API</string>
     <string name="responses_api_desc">Use the provider’s /responses endpoint instead of Chat Completions.</string>
@@ -1194,7 +1205,7 @@
     <string name="skills_access">Access Saved Skills</string>
     <string name="skills_access_desc">Allow the model to read, create, and edit skill files</string>
     <string name="skills_saved_title">Saved Skills</string>
-    <string name="skills_empty">No Skills yet</string>
+    <string name="skills_empty">No Skills Yet</string>
     <string name="skills_create_hint">Create a Skill or let the model create one via tool calling</string>
     <string name="skills_add">Add Skill</string>
     <string name="skills_create">Create</string>

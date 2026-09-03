@@ -8,20 +8,18 @@ import org.junit.Test
 
 class GenerationForegroundLeaseGateTest {
     @Test
-    fun localGenerationFailsClosedWhenForegroundLeaseIsUnavailable() = runTest {
+    fun localGenerationContinuesWithoutLeaseWhenForegroundServiceIsUnavailable() = runTest {
         var acquireCalled = false
-        val failure = runCatching {
-            acquireGenerationForegroundLease(managedExternally = false) {
-                acquireCalled = true
-                false
-            }
-        }.exceptionOrNull()
+        val acquired = acquireGenerationForegroundLease(managedExternally = false) {
+            acquireCalled = true
+            false
+        }
         assertTrue(acquireCalled)
-        assertTrue(failure is GenerationForegroundServiceUnavailableException)
+        assertFalse(acquired)
     }
 
     @Test
-    fun localGenerationContinuesOnlyAfterForegroundLeaseIsAcquired() = runTest {
+    fun localGenerationTracksSuccessfullyAcquiredForegroundLease() = runTest {
         assertTrue(
             acquireGenerationForegroundLease(managedExternally = false) { true }
         )

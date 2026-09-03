@@ -6,7 +6,6 @@ import android.content.Context
 import com.newoether.agora.R
 import com.newoether.agora.util.DebugLog
 import com.newoether.agora.api.util.ThinkingParser
-import com.newoether.agora.api.util.prepareMessages
 import com.newoether.agora.data.repository.SettingsRepository
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.Participant
@@ -18,8 +17,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import com.newoether.agora.viewmodel.GenerationCancelHandle
 import kotlin.coroutines.coroutineContext
 
@@ -36,9 +33,6 @@ class LocalProvider(
     override val name: String = Constants.PROVIDER_LOCAL
     override val defaultBaseUrl: String = ""
 
-    private var currentEngine: LlamaChatEngine? = null
-    private val engineLock = Mutex()
-
     override fun generateResponse(
         messages: List<ChatMessage>,
         config: ProviderConfig
@@ -50,24 +44,54 @@ class LocalProvider(
             return@flow
         }
 
-        val engine = ensureEngineLoaded(modelConfig)
-        if (engine == null) {
-            emit(StreamEvent.Error(GenerationError.LocalModel("Failed to load model: ${modelConfig.alias}")))
-            return@flow
-        }
+        // The process runtime owns strict FIFO admission and the single Chat-or-Embedding resident.
+        // This block covers model/context mutation, template rendering, and complete generation.
+        val executed = LocalModelRuntime.runChat(
+            modelPath = modelConfig.localFilePath,
+            nCtx = modelConfig.nCtx,
+        ) { engine ->
 
         // Build template messages, collecting images per-message with <__media__> markers
         val imagePaths = mutableListOf<String>()
+        val localContextWindow = minOf(config.maxContextWindow, modelConfig.nCtx).coerceAtLeast(1)
+        val resolvedRequest = config.copy(maxContextWindow = localContextWindow).resolveRequest(messages)
         val templateMessages = buildTemplateMessages(
-            prepareMessages(messages, config.maxContextWindow),
-            config.systemPrompt,
+            resolvedRequest.messages,
+            resolvedRequest.systemPrompt,
             imagePaths,
         )
         val hasImages = imagePaths.isNotEmpty()
 
-        // Try native chat template first, fall back to ChatML
-        val prompt = engine.applyTemplate(templateMessages, addAss = true)
-            ?: buildPrompt(templateMessages)
+        if (hasImages) {
+            if (modelConfig.mmprojPath.isBlank()) {
+                emit(StreamEvent.Error(GenerationError.LocalModel(
+                    "This local model has no vision projector configured."
+                )))
+                return@runChat
+            }
+            if (!engine.loadMmproj(modelConfig.mmprojPath)) {
+                emit(StreamEvent.Error(GenerationError.LocalModel(
+                    "Failed to load the configured vision projector."
+                )))
+                return@runChat
+            }
+        } else if (modelConfig.mmprojPath.isBlank()) {
+            engine.unloadMmproj()
+        }
+
+        // Template ownership stays with the model. A generic fallback can silently apply the
+        // wrong role/control-token protocol, so an incompatible model fails closed.
+        val prompt = engine.applyTemplate(
+            templateMessages,
+            addAss = true,
+            enableThinking = config.thinkingEnabled,
+        )
+        if (prompt == null) {
+            emit(StreamEvent.Error(GenerationError.LocalModel(
+                "The local model does not provide a compatible chat template."
+            )))
+            return@runChat
+        }
         val promptLength = prompt.length
         val imageCount = imagePaths.size
         if (hasImages) {
@@ -77,7 +101,9 @@ class LocalProvider(
         }
 
         // Generate tokens with unified thinking parsing
-        var totalTokens = 0
+        var inputTokenCount = 0
+        var outputTokenCount = 0
+        var terminalError: GenerationError? = null
         var stopped = false
         var rawBuf = ""
         val STOP_PATTERNS = listOf("<|im_end|>", "<|im_start|>")
@@ -89,78 +115,94 @@ class LocalProvider(
                     imagePaths = imagePaths,
                     temperature = config.temperature ?: modelConfig.temperature,
                     topP = config.topP ?: modelConfig.topP,
-                    maxTokens = config.maxTokens ?: modelConfig.maxTokens
+                    frequencyPenalty = config.frequencyPenalty ?: 0f,
+                    presencePenalty = config.presencePenalty ?: 0f,
+                    maxTokens = config.maxTokens ?: modelConfig.maxTokens,
                 )
             } else {
                 engine.generate(
                     prompt = prompt,
                     temperature = config.temperature ?: modelConfig.temperature,
                     topP = config.topP ?: modelConfig.topP,
-                    maxTokens = config.maxTokens ?: modelConfig.maxTokens
+                    frequencyPenalty = config.frequencyPenalty ?: 0f,
+                    presencePenalty = config.presencePenalty ?: 0f,
+                    maxTokens = config.maxTokens ?: modelConfig.maxTokens,
                 )
             }
-            // Serialize on-device model work process-wide: a resident chat model plus a
-            // concurrently-loaded embedding model can OOM the native heap. Replaces the
-            // former global GenerationQueue for the local path (remote generation no
-            // longer takes any global slot). Held only across the native sampling loop,
-            // not the whole generation, and withLock is cancellable so Stop releases it
-            // immediately.
-            // INVARIANT: local models never emit tool calls (no tool definitions are sent,
-            // and this provider parses none), so one generation acquires this mutex exactly
-            // once. If local tool-calling is ever added, the release between rounds would
-            // let another conversation's model load interleave — revisit the locking scope
-            // (see the matching note on LocalModelSerializer).
-            com.newoether.agora.api.LocalModelSerializer.mutex.withLock {
-                // Register while still holding the process-wide local-model mutex. This makes the
-                // handle generation-specific: it is removed before another conversation can begin
-                // native sampling on the shared engine.
-                val streamScope = HttpClient.boundStreamScope()
-                val nativeCancel = GenerationCancelHandle { engine.cancel() }
-                streamScope?.register(nativeCancel)
-                try {
-                    tokenFlow.collect { token ->
-                        if (!coroutineContext.isActive) {
-                            engine.cancel()
-                            return@collect
+            // Register while still holding the process-wide runtime task. The handle is removed
+            // before the next FIFO waiter may begin native work on the resident engine.
+            val streamScope = HttpClient.boundStreamScope()
+            val nativeCancel = GenerationCancelHandle { engine.cancel() }
+            streamScope?.register(nativeCancel)
+            try {
+                tokenFlow.collect { event ->
+                    if (!coroutineContext.isActive) {
+                        engine.cancel()
+                        return@collect
+                    }
+                    if (event is LlamaGenerationEvent.Completed) {
+                        inputTokenCount = event.inputTokenCount
+                        outputTokenCount = event.outputTokenCount
+                        terminalError = when (event.reason) {
+                            LlamaGenerationStopReason.EOG -> null
+                            LlamaGenerationStopReason.MAX_TOKENS ->
+                                GenerationError.OutputTruncated(name, "max_tokens")
+                            LlamaGenerationStopReason.CONTEXT_FULL -> GenerationError.LocalModel(
+                                "Local context window was exhausted before generation completed."
+                            )
+                            LlamaGenerationStopReason.CANCELLED ->
+                                if (stopped) null else GenerationError.Cancelled
                         }
-                        if (stopped) return@collect
-                        totalTokens++
+                        return@collect
+                    }
+                    if (event is LlamaGenerationEvent.Failed) {
+                        inputTokenCount = event.inputTokenCount
+                        outputTokenCount = event.outputTokenCount
+                        terminalError = GenerationError.LocalModel(
+                            formatGenerationError(IllegalStateException(event.message), modelConfig)
+                        )
+                        return@collect
+                    }
+                    if (stopped) return@collect
+                    val token = (event as LlamaGenerationEvent.Text).value
 
-                        // Check for stop patterns in the rolling buffer
-                        rawBuf += token
-                        val hit = STOP_PATTERNS.firstOrNull { p -> rawBuf.contains(p) }
-                        if (hit != null) {
-                            // Strip the stop pattern and anything after it, then stop
-                            val cleanEnd = rawBuf.substringBefore(hit)
-                            if (cleanEnd.isNotEmpty()) {
-                                thinkParser.feed(
-                                    content = cleanEnd,
-                                    thinkingEnabled = config.thinkingEnabled,
-                                    onText = { emit(StreamEvent.TextChunk(it)) },
-                                    onThought = { emit(StreamEvent.ThoughtChunk(it)) }
-                                )
-                            }
-                            engine.cancel()
-                            stopped = true
-                            return@collect
-                        }
-
-                        // Keep buffer bounded — only as much as longest stop pattern
-                        val maxPatLen = STOP_PATTERNS.maxOf { it.length }
-                        if (rawBuf.length > maxPatLen * 2) {
-                            val emitPart = rawBuf.substring(0, rawBuf.length - maxPatLen)
+                    // Check for stop patterns in the rolling buffer
+                    rawBuf += token
+                    val hit = STOP_PATTERNS.firstOrNull { p -> rawBuf.contains(p) }
+                    if (hit != null) {
+                        // Strip the stop pattern and anything after it, then stop
+                        val cleanEnd = rawBuf.substringBefore(hit)
+                        if (cleanEnd.isNotEmpty()) {
                             thinkParser.feed(
-                                content = emitPart,
+                                content = cleanEnd,
                                 thinkingEnabled = config.thinkingEnabled,
                                 onText = { emit(StreamEvent.TextChunk(it)) },
                                 onThought = { emit(StreamEvent.ThoughtChunk(it)) }
                             )
-                            rawBuf = rawBuf.substring(rawBuf.length - maxPatLen)
                         }
+                        engine.cancel()
+                        stopped = true
+                        return@collect
                     }
-                } finally {
-                    streamScope?.unregister(nativeCancel)
+
+                    // Keep buffer bounded — only as much as longest stop pattern
+                    val maxPatLen = STOP_PATTERNS.maxOf { it.length }
+                    if (rawBuf.length > maxPatLen * 2) {
+                        val emitPart = rawBuf.substring(0, rawBuf.length - maxPatLen)
+                        thinkParser.feed(
+                            content = emitPart,
+                            thinkingEnabled = config.thinkingEnabled,
+                            onText = { emit(StreamEvent.TextChunk(it)) },
+                            onThought = { emit(StreamEvent.ThoughtChunk(it)) }
+                        )
+                        rawBuf = rawBuf.substring(rawBuf.length - maxPatLen)
+                    }
                 }
+            } finally {
+                streamScope?.unregister(nativeCancel)
+            }
+            if (terminalError === GenerationError.Cancelled) {
+                throw kotlinx.coroutines.CancellationException("Native generation cancelled")
             }
             // Flush remaining buffer (no stop pattern found)
             if (!stopped && rawBuf.isNotEmpty()) {
@@ -177,22 +219,29 @@ class LocalProvider(
             )
         } catch (e: kotlinx.coroutines.CancellationException) {
             engine.cancel()
-            emit(StreamEvent.Error(GenerationError.Cancelled))
             throw e
         } catch (e: Exception) {
             DebugLog.e(TAG, "Generation failed", e)
             emit(StreamEvent.Error(GenerationError.LocalModel(formatGenerationError(e, modelConfig))))
-            return@flow
+            return@runChat
         }
 
         emit(
             StreamEvent.UsageUpdate(
                 TokenUsage(
-                    totalTokenCount = totalTokens.coerceAtLeast(0),
-                    outputTokenCount = totalTokens.coerceAtLeast(0),
+                    totalTokenCount = (inputTokenCount + outputTokenCount).coerceAtLeast(0),
+                    inputTokenCount = inputTokenCount.coerceAtLeast(0),
+                    outputTokenCount = outputTokenCount.coerceAtLeast(0),
                 )
             )
         )
+        terminalError?.let { emit(StreamEvent.Error(it)) }
+        }
+        if (!executed) {
+            emit(StreamEvent.Error(GenerationError.LocalModel(
+                "Failed to load model: ${modelConfig.alias}"
+            )))
+        }
     }.flowOn(Dispatchers.IO)
 
     private fun formatGenerationError(
@@ -207,35 +256,6 @@ class LocalProvider(
             return context.getString(R.string.local_context_exceeded, promptTokens, contextTokens)
         }
         return "Generation failed: $message"
-    }
-
-    private suspend fun ensureEngineLoaded(model: com.newoether.agora.data.LocalChatModelConfig): LlamaChatEngine? {
-        return engineLock.withLock {
-            val existing = currentEngine
-            if (existing != null && existing.modelPath == model.localFilePath) {
-                existing.resetContext()
-                // Load or unload mmproj based on current config
-                if (model.mmprojPath.isNotBlank()) {
-                    existing.loadMmproj(model.mmprojPath)
-                } else {
-                    existing.unloadMmproj()
-                }
-                existing
-            } else {
-                existing?.close()
-                val engine = LlamaChatEngine(model.localFilePath, model.nCtx)
-                if (engine.load()) {
-                    if (model.mmprojPath.isNotBlank()) {
-                        val loaded = engine.loadMmproj(model.mmprojPath)
-                        DebugLog.d(TAG, "mmproj load: $loaded")
-                    }
-                    currentEngine = engine
-                    engine
-                } else {
-                    null
-                }
-            }
-        }
     }
 
     private fun buildTemplateMessages(
@@ -311,32 +331,8 @@ class LocalProvider(
         return result
     }
 
-    private fun buildPrompt(messages: List<ChatTemplateMessage>): String {
-        val sb = StringBuilder()
-        for (msg in messages) {
-            sb.append("<|im_start|>${msg.role}\n${msg.content}<|im_end|>\n")
-        }
-        sb.append("<|im_start|>assistant\n")
-        return sb.toString()
-    }
-
     override suspend fun fetchModels(apiKey: String, baseUrl: String?): List<String> {
         return settings.localChatModels.first().map { it.modelId }
     }
 
-    fun close() {
-        currentEngine?.close()
-        currentEngine = null
-    }
-
-    suspend fun releaseEngine() {
-        engineLock.withLock {
-            currentEngine?.close()
-            currentEngine = null
-        }
-    }
-
-    fun releaseEngineBlocking() {
-        kotlinx.coroutines.runBlocking { releaseEngine() }
-    }
 }

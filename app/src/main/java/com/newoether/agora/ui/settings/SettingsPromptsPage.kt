@@ -86,11 +86,22 @@ fun SettingsPromptsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
         if (currentEntry != null) {
             SystemPromptEditorPage(
                 entry = currentEntry,
-                onSave = { title, systemItems, userPrependItems, userPostpendItems ->
+                onSave = { title, systemItems, userItems, assistantItems ->
                     if (systemPrompts.any { it.id == currentEntry.id }) {
-                        viewModel.settings.updateSystemPrompt(currentEntry.id, title, systemItems, userPrependItems, userPostpendItems)
+                        viewModel.settings.updateSystemPrompt(
+                            currentEntry.id,
+                            title,
+                            systemItems,
+                            userItems,
+                            assistantItems,
+                        )
                     } else {
-                        viewModel.settings.addSystemPrompt(title, systemItems, userPrependItems, userPostpendItems)
+                        viewModel.settings.addSystemPrompt(
+                            title,
+                            systemItems,
+                            userItems,
+                            assistantItems,
+                        )
                     }
                     editingEntry = null
                 },
@@ -182,8 +193,10 @@ private fun SystemPromptEntry.duplicateAsDraft(title: String): SystemPromptEntry
         title = title,
         content = "",
         systemItems = resolvedSystemItems.copyWithNewIds(),
-        userPrependItems = userPrependItems.copyWithNewIds(),
-        userPostpendItems = userPostpendItems.copyWithNewIds()
+        userItems = resolvedUserItems.copyWithNewIds(),
+        assistantItems = resolvedAssistantItems.copyWithNewIds(),
+        userPrependItems = emptyList(),
+        userPostpendItems = emptyList(),
     )
 
 private fun List<PromptTemplateItem>.copyWithNewIds(): List<PromptTemplateItem> =

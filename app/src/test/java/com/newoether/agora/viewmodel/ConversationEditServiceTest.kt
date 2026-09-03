@@ -45,9 +45,7 @@ class ConversationEditServiceTest {
 
         assertFalse(result)
         assertFalse(state.generating.value)
-        coVerify(exactly = 0) {
-            fixture.conversations.getMessagesForConversationSnapshot(any())
-        }
+        coVerify(exactly = 0) { fixture.conversations.getMessage(any()) }
         coVerify(exactly = 0) {
             fixture.boundLauncher.launch(any(), any())
         }
@@ -59,9 +57,8 @@ class ConversationEditServiceTest {
     fun commitsEditedGraphBeforeProjectionSettlementAndBoundLaunch() = runBlocking {
         val fixture = Fixture()
         val state = ConversationGenerationState("conversation")
-        coEvery {
-            fixture.conversations.getMessagesForConversationSnapshot("conversation")
-        } returns listOf(SOURCE_ENTITY)
+        coEvery { fixture.conversations.getMessage("source-input") } returns SOURCE_ENTITY
+        coEvery { fixture.conversations.getMessage("previous") } returns null
         coEvery { fixture.conversations.getRun("source-run") } returns SOURCE_RUN
         coEvery {
             fixture.inputCloner.clone(

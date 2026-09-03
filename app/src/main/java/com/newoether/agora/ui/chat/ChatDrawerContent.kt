@@ -54,7 +54,9 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,6 +89,7 @@ import com.newoether.agora.ui.theme.ChatType
 import com.newoether.agora.util.verticalEdgeFade
 import com.newoether.agora.viewmodel.ChatViewModel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 internal enum class DrawerConversationIndicator {
@@ -161,9 +164,25 @@ internal fun ChatDrawerContent(
         val conversationListState = rememberLazyListState()
         val searchListState = rememberLazyListState()
         val activeListState = if (search.isActive) searchListState else conversationListState
+        val latestConversations by rememberUpdatedState(conversations)
+        val latestMotionPolicy by rememberUpdatedState(motionPolicy)
         LaunchedEffect(viewModel, conversationListState) {
             viewModel.firstMessageCommitted.collect { conversationId ->
-                if (viewModel.currentConversationId.value == conversationId) {
+                if (viewModel.currentConversationId.value != conversationId) return@collect
+                snapshotFlow {
+                    val currentConversations = latestConversations
+                    currentConversations.firstOrNull()?.id == conversationId &&
+                        conversationListState.layoutInfo.totalItemsCount ==
+                            currentConversations.size
+                }.first { ready -> ready }
+                if (viewModel.currentConversationId.value != conversationId) return@collect
+                if (latestMotionPolicy.allowProgrammaticScrollMotion) {
+                    conversationListState.animateToAbsoluteTop(
+                        estimatedItemSizePx = with(density) { 44.dp.toPx() },
+                        minimumStepPx = with(density) { 2.dp.toPx() },
+                        feedbackSpec = SendFeedbackScrollSpec,
+                    )
+                } else {
                     conversationListState.scrollToItem(0)
                 }
             }

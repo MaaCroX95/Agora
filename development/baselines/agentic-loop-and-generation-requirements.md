@@ -1,8 +1,12 @@
 # Agentic loop and generation requirements
 
-Status: frozen implementation and audit baseline, 2026-08-08.
+Status: historical, non-authoritative implementation and audit baseline, 2026-08-08.
 
-This document is the source of truth for the current agentic-loop, provider-streaming, send/queue/Stop, completion, and related chat UI work. It incorporates the mobile test requirements and supersedes implementation assumptions that conflict with it. Context Compact has its own companion specification in `context-compact-requirements.md`; Compact is a standard generation lifecycle with an effect-specific request/persistence operation, not a separate non-generation UI state.
+This document preserves the requirements used by the frozen implementation snapshot. Current
+agentic-loop, provider-streaming, send/queue/Stop, completion, Compact, and related chat UI behavior
+is owned by [`../message-generation.md`](../message-generation.md). When this baseline conflicts
+with that contract, the current contract wins. The companion historical Compact baseline remains in
+`context-compact-requirements.md`.
 
 ## 1. One send pipeline
 

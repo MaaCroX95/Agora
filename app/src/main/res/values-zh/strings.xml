@@ -291,11 +291,11 @@
     <string name="prompts_delete_text">确定要删除 \'%1$s\' 吗？此操作无法撤销。</string>
     <string name="template_title_required">标题不能为空</string>
     <string name="template_tab_system">系统</string>
-    <string name="template_tab_prepend">前缀</string>
-    <string name="template_tab_postpend">后缀</string>
-    <string name="template_tab_system_desc">作为 system 指令发送。</string>
-    <string name="template_tab_prepend_desc">插入到每条用户消息之前。</string>
-    <string name="template_tab_postpend_desc">插入到每条用户消息之后。</string>
+    <string name="template_tab_user">用户</string>
+    <string name="template_tab_assistant">助手</string>
+    <string name="template_tab_system_desc">定义发送给模型的系统消息。</string>
+    <string name="template_tab_user_desc">定义每条普通用户消息周围的结构。</string>
+    <string name="template_tab_assistant_desc">定义每条普通助手消息周围的结构。</string>
     <string name="template_empty_hint">暂无项目。请在下方添加文本或变量。</string>
     <string name="template_add_text">添加文本</string>
     <string name="template_add_variable">添加变量</string>
@@ -606,6 +606,9 @@
     <string name="dynamic_color">动态颜色</string>
     <string name="dynamic_color_desc">根据壁纸使用系统生成的颜色（Android 12+）</string>
     <string name="appearance_interface">界面</string>
+    <string name="appearance_theme_color">主题与颜色</string>
+    <string name="appearance_motion_feedback">动效与反馈</string>
+    <string name="appearance_chat_display">聊天显示</string>
     <string name="visual_effects">视觉效果</string>
     <string name="blur_effects">模糊效果</string>
     <string name="blur_effects_desc">对聊天列表顶部工具栏下方应用模糊。关闭可节省性能。</string>
@@ -908,6 +911,10 @@
     <string name="provider_keys_summary">%1$d 个 API 密钥</string>
     <string name="provider_connection">连接</string>
     <string name="local_models_title">本地模型</string>
+    <string name="local_model_idle_retention">模型空闲保留时间</string>
+    <string name="local_model_idle_retention_desc">本地模型空闲后在卸载前继续驻留内存的时长</string>
+    <string name="local_model_idle_retention_immediate">立即</string>
+    <string name="local_model_idle_retention_minutes">%1$d 分钟</string>
     <string name="local_mmproj_path">Vision Projector 路径（可选）</string>
     <string name="local_mmproj_path_hint">选择 vision 的 mmproj .gguf 文件</string>
     <string name="local_mmproj_path_label">Vision projector (.mmproj)</string>
@@ -925,7 +932,8 @@
     <string name="file_unsupported_title">不支持的文件</string>
     <string name="file_unknown_type">未知文件类型</string>
     <string name="file_unsupported_type">不支持的文件类型: %1$s</string>
-    <string name="file_too_large">文件过大 (最大 20 MB)</string>
+    <string name="file_too_large">文件过大（最大 100 MiB）</string>
+    <string name="file_sandbox_required">请安装并开启 Local Sandbox 后重试。</string>
     <string name="attachment_copy_failed_image">图片加载失败</string>
     <string name="attachment_copy_failed_file">文件加载失败</string>
     <string name="pdf_render_failed">PDF 渲染失败</string>
@@ -976,7 +984,7 @@
     <string name="rating_submitting">提交中…</string>
     <string name="rating_success">感谢您的反馈！</string>
     <string name="rating_failed">提交失败，请重试。</string>
-    <string name="rating_privacy">您的评分将以匿名方式上传至 newoether.space。仅上传您填写的字段，不会收集其他数据。</string>
+    <string name="rating_privacy">您的评分将以匿名方式上传至 newoether.com。仅上传您填写的字段，不会收集其他数据。</string>
 
     <!-- Data Control -->
     <string name="settings_data_control">数据控制</string>
@@ -1156,7 +1164,7 @@
     <string name="crash_message">很抱歉。您可以通过发送匿名崩溃报告来帮助修复此问题。</string>
     <string name="crash_submit">提交报告</string>
     <string name="crash_dismiss">不发送</string>
-    <string name="crash_privacy_note">仅向 newoether.space 发送崩溃日志，不收集任何其他信息。</string>
+    <string name="crash_privacy_note">仅向 newoether.com 发送崩溃日志，不收集任何其他信息。</string>
     <string name="crash_submitted">崩溃报告已发送，谢谢！</string>
     <string name="settings_group_network">网络</string>
     <string name="settings_proxy">代理</string>
@@ -1177,7 +1185,10 @@
     <string name="openai_service_tier_auto">自动</string>
     <string name="openai_service_tier_default">默认</string>
     <string name="openai_service_tier_flex">弹性</string>
+    <string name="openai_service_tier_scale">规模</string>
+    <string name="openai_service_tier_priority">优先</string>
     <string name="openai_service_tier_fast">快速</string>
+    <string name="openai_service_tier_ultrafast">超高速</string>
     <string name="context_title">上下文</string>
     <string name="context_desc">上下文管理</string>
     <string name="context_compact">上下文压缩</string>
@@ -1307,4 +1318,5 @@
     <string name="tool_create_skill">创建技能</string>
     <string name="tool_edit_skill">编辑技能</string>
     <string name="tool_delete_skill">删除技能</string>
+    <string name="tool_read_file_truncated">已显示部分内容 · 从字节 %1$d 继续</string>
 </resources>

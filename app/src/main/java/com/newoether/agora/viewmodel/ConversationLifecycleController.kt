@@ -27,13 +27,6 @@ internal class ConversationLifecycleController(
         }
     }
 
-    fun setSystemPrompt(conversationId: String, promptId: String?) {
-        scope.launch {
-            val existing = conversations.getConversation(conversationId) ?: return@launch
-            conversations.upsertConversation(existing.copy(systemPromptId = promptId))
-        }
-    }
-
     fun delete(conversationId: String) {
         if (currentConversationId.value == conversationId) {
             stopVisibleGeneration()

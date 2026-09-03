@@ -1,5 +1,6 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.data.local.MessageContextTopology
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.data.local.RunEntity
 import com.newoether.agora.util.Constants
@@ -21,6 +22,35 @@ internal data class BranchDeletionPlan(
  * requested message subtree.
  */
 internal object BranchDeletionPlanner {
+    fun planTopology(
+        rootMessageId: String,
+        messages: List<MessageContextTopology>,
+        runs: List<RunEntity>,
+        messageSelections: Map<String?, String>,
+        runSelections: Map<String?, String>,
+    ): BranchDeletionPlan = plan(
+        rootMessageId = rootMessageId,
+        messages = messages.map { message ->
+            MessageEntity(
+                id = message.id,
+                conversationId = message.conversationId,
+                parentId = message.parentId,
+                text = "",
+                tokenCount = message.tokenCount,
+                status = message.status,
+                participant = message.participant,
+                timestamp = message.timestamp,
+                modelName = message.modelName,
+                runId = message.runId,
+                runSequence = message.runSequence,
+                consumedAtPass = message.consumedAtPass,
+            )
+        },
+        runs = runs,
+        messageSelections = messageSelections,
+        runSelections = runSelections,
+    )
+
     fun plan(
         rootMessageId: String,
         messages: List<MessageEntity>,

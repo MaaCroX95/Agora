@@ -7,12 +7,34 @@ import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import com.newoether.agora.ui.chat.message.AssistantInlineActivityMode
 import com.newoether.agora.ui.chat.message.assistantInlineActivityMode
+import com.newoether.agora.ui.chat.message.resolveSegmentDetailMessage
+import com.newoether.agora.ui.chat.message.segmentDetailIndicesForSnapshot
+import com.newoether.agora.ui.chat.message.userBubbleSizeAnimationEnabled
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MessageListStreamingTailTest {
+    @Test
+    fun userBubbleSizeAnimationStartsOnlyAfterPayloadHydration() {
+        assertFalse(userBubbleSizeAnimationReady(hydrationPending = true))
+        assertTrue(userBubbleSizeAnimationReady(hydrationPending = false))
+        assertFalse(
+            userBubbleSizeAnimationEnabled(
+                sizeAnimationReady = true,
+                allowSpatialTransitions = false,
+            ),
+        )
+        assertTrue(
+            userBubbleSizeAnimationEnabled(
+                sizeAnimationReady = true,
+                allowSpatialTransitions = true,
+            ),
+        )
+    }
+
     @Test
     fun attachedStreamingTailSurvivesContentGrowth() {
         var mode = reduceStreamingTailFollow(
@@ -440,6 +462,175 @@ class MessageListStreamingTailTest {
         )
 
         assertEquals(StreamingTailFollowMode.DETACHED, mode)
+    }
+
+    @Test
+    fun stoppingHidesTheAnswerTailWhileRetainingOnlyItsStatusSlot() {
+        val answer = ChatMessage(
+            id = "answer-tail",
+            text = "Answer",
+            status = MessageStatus.SENDING,
+            participant = Participant.MODEL,
+            segments = listOf(MessageSegment(type = "answer", content = "Answer")),
+        )
+        val active = streamingTailPresentation(true, false, answer)
+        val stopping = streamingTailPresentation(false, true, answer)
+        val stopped = streamingTailPresentation(
+            isLoading = false,
+            isStopping = false,
+            message = answer.copy(status = MessageStatus.STOPPED),
+        )
+
+        assertTrue(active.visible)
+        assertFalse(active.retainLayout)
+        assertFalse(stopping.visible)
+        assertTrue(stopping.retainLayout)
+        assertTrue(stopping.retainLayout && !stopping.visible)
+        assertFalse(stopped.visible)
+        assertFalse(stopped.retainLayout)
+    }
+
+    @Test
+    fun activeStreamingPayloadAlwaysUsesLatestRuntimeSnapshot() {
+        val stub = ChatMessage(
+            id = "active",
+            text = "",
+            participant = Participant.MODEL,
+            status = MessageStatus.TOOL_CALLING,
+        )
+        val firstCall = stub.copy(
+            segments = listOf(
+                MessageSegment(
+                    type = "tool",
+                    toolCallId = "call-stream-1",
+                    toolArgs = "",
+                ),
+            ),
+        )
+        val secondCall = firstCall.copy(
+            segments = firstCall.segments.orEmpty() +
+                MessageSegment(
+                    type = "tool",
+                    toolCallId = "call-stream-2",
+                    toolArgs = "",
+                ),
+        )
+
+        assertSame(
+            firstCall,
+            resolveMessagePayloadForRender(stub, firstCall, stub, stub),
+        )
+        val latest = resolveMessagePayloadForRender(stub, secondCall, firstCall, firstCall)
+        assertSame(secondCall, latest)
+        assertEquals(
+            listOf("call-stream-1", "call-stream-2"),
+            latest.segments.orEmpty().map(MessageSegment::toolCallId),
+        )
+        assertTrue(latest.segments.orEmpty().all { it.toolName == null && it.toolArgs.isNullOrEmpty() })
+    }
+
+    @Test
+    fun authoritativeTerminalPayloadWinsOverStaleHydration() {
+        val terminal = ChatMessage(
+            id = "terminal",
+            text = "partial answer",
+            participant = Participant.MODEL,
+            status = MessageStatus.STOPPED,
+            segments = listOf(MessageSegment(type = "thought", content = "terminal")),
+        )
+        val observed = terminal.copy(
+            text = "older room payload",
+            status = MessageStatus.SENDING,
+            segments = null,
+        )
+        val cached = observed.copy(text = "older cached payload")
+
+        assertSame(
+            terminal,
+            resolveMessagePayloadForRender(terminal, null, observed, cached),
+        )
+    }
+
+    @Test
+    fun historicalPayloadRetainsLazyHydrationPriority() {
+        val stub = ChatMessage(id = "history", text = "", participant = Participant.MODEL)
+        val cached = stub.copy(text = "cached")
+        val observed = stub.copy(text = "observed")
+
+        assertSame(observed, resolveMessagePayloadForRender(stub, null, observed, cached))
+        assertSame(cached, resolveMessagePayloadForRender(stub, null, null, cached))
+        assertSame(stub, resolveMessagePayloadForRender(stub, null, null, null))
+    }
+
+    @Test
+    fun segmentDetailUsesRuntimeThenTerminalHandoffThenRoomAfterOffload() {
+        val room = ChatMessage(
+            id = "detail",
+            participant = Participant.MODEL,
+            text = "",
+            status = MessageStatus.SUCCESS,
+            segments = listOf(MessageSegment(type = "thought", content = "room")),
+        )
+        val terminalHandoff = room.copy(
+            segments = listOf(MessageSegment(type = "thought", content = "terminal")),
+        )
+        val streaming = room.copy(
+            status = MessageStatus.THINKING,
+            segments = listOf(MessageSegment(type = "thought", content = "streaming")),
+        )
+
+        assertSame(
+            streaming,
+            resolveSegmentDetailMessage("detail", streaming, terminalHandoff, room),
+        )
+        assertSame(
+            terminalHandoff,
+            resolveSegmentDetailMessage("detail", null, terminalHandoff, room),
+        )
+        assertSame(
+            room,
+            resolveSegmentDetailMessage(
+                messageId = "detail",
+                streamingMessage = null,
+                authoritativeMessage = room.copy(text = "topology stub", segments = null),
+                roomMessage = room,
+            ),
+        )
+        assertSame(
+            room,
+            resolveSegmentDetailMessage("detail", null, null, room),
+        )
+    }
+
+    @Test
+    fun groupedSegmentDetailSelectionTracksNewAuthoritativeSegments() {
+        val initial = ChatMessage(
+            id = "detail",
+            participant = Participant.MODEL,
+            text = "",
+            segments = listOf(
+                MessageSegment(type = "thought", content = "reasoning"),
+                MessageSegment(type = "answer", content = "partial"),
+                MessageSegment(type = "tool", toolName = "shell"),
+            ),
+        )
+        val grown = initial.copy(
+            segments = initial.segments.orEmpty() +
+                MessageSegment(type = "transcription", content = "image text"),
+        )
+
+        assertEquals(
+            listOf(0, 1),
+            segmentDetailIndicesForSnapshot(initial, listOf(0), showSegmentListFirst = true),
+        )
+        assertEquals(
+            listOf(0, 1, 2),
+            segmentDetailIndicesForSnapshot(grown, listOf(0), showSegmentListFirst = true),
+        )
+        assertEquals(
+            listOf(1),
+            segmentDetailIndicesForSnapshot(grown, listOf(1), showSegmentListFirst = false),
+        )
     }
 
     @Test

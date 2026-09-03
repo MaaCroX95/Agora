@@ -12,6 +12,30 @@ class AnthropicRequestValidatorTest {
     }
 
     @Test
+    fun disabledThinkingAcceptsToolUseWithoutSignedThinking() {
+        request(toolUseIncludesThinking = false).copy(
+            thinking = AnthropicThinking(type = "disabled"),
+            outputConfig = AnthropicOutputConfig(effort = "high"),
+        ).requireValidWireFormat()
+    }
+
+    @Test
+    fun disabledThinkingRejectsDisplayOrBudget() {
+        val error = runCatching {
+            request(toolUseIncludesThinking = false).copy(
+                thinking = AnthropicThinking(
+                    type = "disabled",
+                    budgetTokens = 1024,
+                    display = "summarized",
+                ),
+            ).requireValidWireFormat()
+        }.exceptionOrNull()
+
+        assertTrue(error is RequestFormatException)
+        assertTrue(error?.message.orEmpty().contains("cannot carry budget_tokens or display"))
+    }
+
+    @Test
     fun adaptiveThinkingToolRoundWithoutSignedThinking_isBlockedLocally() {
         val error = runCatching {
             request(toolUseIncludesThinking = false).requireValidWireFormat()

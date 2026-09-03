@@ -26,7 +26,8 @@ class SkillToolProviderTest {
 
     @Test
     fun definitionsExposeExactlyFiveSavedSkillTools() {
-        val names = provider.definitions(enabled).map { it.function.name }
+        val definitions = provider.definitions(enabled)
+        val names = definitions.map { it.function.name }
         assertEquals(
             listOf(
                 "list_skill_files",
@@ -38,6 +39,21 @@ class SkillToolProviderTest {
             names,
         )
         assertFalse(names.any { it.contains("active") })
+
+        val edit = definitions.single { it.function.name == "edit_skill_file" }.function.parameters
+        assertEquals(listOf("name", "operation"), edit.required)
+        assertEquals(
+            setOf(
+                "name",
+                "operation",
+                "content",
+                "old_string",
+                "new_string",
+                "new_name",
+                "description",
+            ),
+            edit.properties.keys,
+        )
     }
 
     @Test
@@ -71,12 +87,58 @@ class SkillToolProviderTest {
     }
 
     @Test
-    fun editSupportsUniquePatch() = runTest {
+    fun editSupportsFullReplacementIncludingEmptyContent() = runTest {
         assertEquals(
             "Updated",
             provider.execute(
                 "edit_skill_file",
-                """{"name":"review.md","old_string":"old","new_string":"new"}""",
+                """{"name":"review.md","operation":"replace","content":"replacement","old_string":"","new_string":"","new_name":"","description":""}""",
+                enabled,
+            ),
+        )
+        assertEquals(
+            "Updated",
+            provider.execute(
+                "edit_skill_file",
+                """{"name":"review.md","operation":"replace","content":"","old_string":"","new_string":"","new_name":"","description":""}""",
+                enabled,
+            ),
+        )
+        verify {
+            skillManager.editFile(
+                name = "review.md",
+                content = "replacement",
+                newName = null,
+                description = null,
+                oldString = null,
+                newString = null,
+            )
+            skillManager.editFile(
+                name = "review.md",
+                content = "",
+                newName = null,
+                description = null,
+                oldString = null,
+                newString = null,
+            )
+        }
+    }
+
+    @Test
+    fun editSupportsPatchIncludingDeletion() = runTest {
+        assertEquals(
+            "Updated",
+            provider.execute(
+                "edit_skill_file",
+                """{"name":"review.md","operation":"patch","content":"","old_string":"old","new_string":"new","new_name":"","description":""}""",
+                enabled,
+            ),
+        )
+        assertEquals(
+            "Updated",
+            provider.execute(
+                "edit_skill_file",
+                """{"name":"review.md","operation":"patch","content":"","old_string":"remove","new_string":"","new_name":"","description":""}""",
                 enabled,
             ),
         )
@@ -89,6 +151,109 @@ class SkillToolProviderTest {
                 oldString = "old",
                 newString = "new",
             )
+            skillManager.editFile(
+                name = "review.md",
+                content = null,
+                newName = null,
+                description = null,
+                oldString = "remove",
+                newString = "",
+            )
+        }
+    }
+
+    @Test
+    fun editSupportsRename() = runTest {
+        assertEquals(
+            "Updated",
+            provider.execute(
+                "edit_skill_file",
+                """{"name":"review.md","operation":"rename","content":"","old_string":"","new_string":"","new_name":"renamed.md","description":""}""",
+                enabled,
+            ),
+        )
+        verify {
+            skillManager.editFile(
+                name = "review.md",
+                content = null,
+                newName = "renamed.md",
+                description = null,
+                oldString = null,
+                newString = null,
+            )
+        }
+    }
+
+    @Test
+    fun editSupportsSettingAndClearingDescription() = runTest {
+        assertEquals(
+            "Updated",
+            provider.execute(
+                "edit_skill_file",
+                """{"name":"review.md","operation":"describe","content":"","old_string":"","new_string":"","new_name":"","description":"Review carefully"}""",
+                enabled,
+            ),
+        )
+        assertEquals(
+            "Updated",
+            provider.execute(
+                "edit_skill_file",
+                """{"name":"review.md","operation":"describe","content":"","old_string":"","new_string":"","new_name":"","description":""}""",
+                enabled,
+            ),
+        )
+        verify {
+            skillManager.editFile(
+                name = "review.md",
+                content = null,
+                newName = null,
+                description = "Review carefully",
+                oldString = null,
+                newString = null,
+            )
+            skillManager.editFile(
+                name = "review.md",
+                content = null,
+                newName = null,
+                description = "",
+                oldString = null,
+                newString = null,
+            )
+        }
+    }
+
+    @Test
+    fun invalidEditOperationsDoNotMutateSkill() = runTest {
+        assertTrue(
+            provider.execute(
+                "edit_skill_file",
+                """{"name":"review.md","operation":"","content":"","old_string":"","new_string":"","new_name":"","description":""}""",
+                enabled,
+            ).contains("operation", ignoreCase = true),
+        )
+        assertTrue(
+            provider.execute(
+                "edit_skill_file",
+                """{"name":"review.md","operation":"patch","content":"","old_string":"","new_string":"","new_name":"","description":""}""",
+                enabled,
+            ).contains("old_string", ignoreCase = true),
+        )
+        assertTrue(
+            provider.execute(
+                "edit_skill_file",
+                """{"name":"review.md","operation":"rename","content":"","old_string":"","new_string":"","new_name":"","description":""}""",
+                enabled,
+            ).contains("new_name", ignoreCase = true),
+        )
+        assertTrue(
+            provider.execute(
+                "edit_skill_file",
+                """{"name":"review.md","operation":"move","content":"","old_string":"","new_string":"","new_name":"other.md","description":""}""",
+                enabled,
+            ).contains("operation", ignoreCase = true),
+        )
+        verify(exactly = 0) {
+            skillManager.editFile(any(), any(), any(), any(), any(), any())
         }
     }
 

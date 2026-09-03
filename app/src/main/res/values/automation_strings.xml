@@ -1,28 +1,28 @@
 <resources>
     <string name="tasks">Tasks</string>
-    <string name="task_new">New task</string>
-    <string name="task_edit">Edit task</string>
+    <string name="task_new">New Task</string>
+    <string name="task_edit">Edit Task</string>
     <string name="task_name">Name</string>
     <string name="task_name_hint">Untitled task</string>
     <string name="task_prompt">Prompt</string>
     <string name="task_prompt_hint">What should this task do each run?</string>
     <string name="task_model">Model</string>
-    <string name="task_model_default">App default</string>
-    <string name="task_run_now">Run now</string>
-    <string name="task_delete">Delete task</string>
+    <string name="task_model_default">App Default</string>
+    <string name="task_run_now">Run Now</string>
+    <string name="task_delete">Delete Task</string>
     <string name="task_delete_confirm">Delete “%1$s” and all of its execution history?</string>
     <string name="import_conversation_graph_counts">Conversations (%1$d) · Tasks (%2$d) · Loops (%3$d)</string>
-    <string name="task_enabled">Run on schedule</string>
+    <string name="task_enabled">Run on Schedule</string>
     <string name="task_enabled_desc">Off means the task only runs when you tap Run now.</string>
     <string name="task_enabled_needs_schedule">Pick a schedule first.</string>
     <string name="task_section_details">Details</string>
-    <string name="task_schedule_not_set">Not set</string>
+    <string name="task_schedule_not_set">Not Set</string>
     <string name="task_schedule_pick">Choose schedule</string>
     <string name="task_last_run_at">Last run %1$s</string>
     <string name="task_never_run">Never run</string>
     <string name="task_empty">No tasks yet</string>
     <string name="task_empty_desc">Create a task to run a prompt now or on a schedule.</string>
-    <string name="task_new_task">New task</string>
+    <string name="task_new_task">New Task</string>
     <string name="task_execution_log">History</string>
     <string name="task_no_executions">No runs yet</string>
     <string name="task_no_executions_desc">Run this task to create execution history.</string>
@@ -30,11 +30,11 @@
     <string name="task_last_run">Last run %1$s</string>
     <string name="task_from_banner">From task: %1$s</string>
     <string name="task_schedule">Schedule</string>
-    <string name="task_schedule_manual">Manual only</string>
+    <string name="task_schedule_manual">Manual Only</string>
     <string name="task_schedule_custom">Custom (cron)</string>
-    <string name="task_select_month_day">Select month and day</string>
-    <string name="task_switch_to_date_input">Switch to date input</string>
-    <string name="task_switch_to_calendar">Switch to calendar</string>
+    <string name="task_select_month_day">Select Month and Day</string>
+    <string name="task_switch_to_date_input">Switch to Date Input</string>
+    <string name="task_switch_to_calendar">Switch to Calendar</string>
     <string name="task_repeat">Repeat</string>
     <string name="task_repeat_once">Once</string>
     <string name="task_repeat_daily">Daily</string>
@@ -46,8 +46,8 @@
     <string name="task_save">Save</string>
     <!-- Multi-select of Sun..Sat. NOT "Weekdays": in English that idiomatically means Mon-Fri,
          which is one possible selection here, so it would read as a filter rather than a picker. -->
-    <string name="task_days_of_week">Days of week</string>
-    <string name="task_day_of_month">Day of month</string>
+    <string name="task_days_of_week">Days of Week</string>
+    <string name="task_day_of_month">Day of Month</string>
     <string name="task_day_ordinal">Day %1$d</string>
     <string name="task_once_past">That time has already passed.</string>
     <string name="task_cron_hint">min hour day month weekday</string>

@@ -35,6 +35,7 @@ internal fun generationLifecycleAppearanceModifier(
     durationMillis: Int,
     initialScale: Float = 1f,
     transformOrigin: TransformOrigin = TransformOrigin.Center,
+    forceOpaque: Boolean = false,
 ): Modifier {
     val allowSpatialTransitions = LocalAgoraMotionPolicy.current.allowSpatialTransitions
     val resolvedInitialScale = if (allowSpatialTransitions) initialScale else 1f
@@ -55,7 +56,7 @@ internal fun generationLifecycleAppearanceModifier(
     }
     return Modifier.graphicsLayer {
         val value = progress.value.coerceIn(0f, 1f)
-        alpha = value
+        alpha = if (forceOpaque) 1f else value
         val scaleProgress = LinearOutSlowInEasing.transform(value)
         val scale =
             resolvedInitialScale + (1f - resolvedInitialScale) * scaleProgress

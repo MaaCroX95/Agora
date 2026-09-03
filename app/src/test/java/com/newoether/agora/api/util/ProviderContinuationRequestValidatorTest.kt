@@ -20,10 +20,12 @@ import com.newoether.agora.api.ollama.OllamaChatRequest
 import com.newoether.agora.api.ollama.OllamaMessage
 import com.newoether.agora.api.ollama.requireValidWireFormat
 import com.newoether.agora.api.openai.requireValidWireFormat
+import com.newoether.agora.model.ChatMessage
+import com.newoether.agora.model.Participant
 import kotlinx.serialization.json.JsonObject
 import org.junit.Test
 
-/** Regression coverage for a live tool continuation: every wire history ends in durable input. */
+/** Regression coverage for provider requests that terminate in tool or Compact input. */
 class ProviderContinuationRequestValidatorTest {
     private val emptyObject = JsonObject(emptyMap())
 
@@ -130,6 +132,40 @@ class ProviderContinuationRequestValidatorTest {
                 ),
                 OllamaMessage("tool", content = "result", toolName = "file_read"),
             ),
+        ).requireValidWireFormat()
+    }
+
+    @Test
+    fun compactContinuationIsValidTerminalUserInputForEveryProvider() {
+        val content = prepareMessages(
+            listOf(
+                ChatMessage(
+                    id = "compact_boundary",
+                    text = "summary",
+                    participant = Participant.MODEL,
+                )
+            ),
+            contextTokenBudget = 4_096,
+        ).single().text
+
+        OpenAiChatRequest(
+            model = "deepseek-chat",
+            messages = listOf(OpenAiMessage("user", content = listOf(text(content)))),
+        ).requireValidWireFormat("DeepSeek")
+        AnthropicRequest(
+            model = "claude-sonnet-5",
+            messages = listOf(
+                AnthropicMessage("user", listOf(AnthropicContentPart("text", text = content)))
+            ),
+        ).requireValidWireFormat()
+        ApiGenerateContentRequest(
+            contents = listOf(
+                ApiRequestContent("user", listOf(ApiRequestPart(text = content)))
+            ),
+        ).requireValidWireFormat("gemini-2.5-pro")
+        OllamaChatRequest(
+            model = "qwen3",
+            messages = listOf(OllamaMessage("user", content = content)),
         ).requireValidWireFormat()
     }
 

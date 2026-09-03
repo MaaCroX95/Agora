@@ -94,6 +94,8 @@ internal class ConversationContextProjector(
                     includeImages = !it.context.imageTranscriptionEnabled,
                     userPrepend = it.config.userPrepend,
                     userPostpend = it.config.userPostpend,
+                    assistantPrepend = it.config.assistantPrepend,
+                    assistantPostpend = it.config.assistantPostpend,
                 )
             } ?: durableProviderMessages
             val fixedTokenCost = snapshot?.let {

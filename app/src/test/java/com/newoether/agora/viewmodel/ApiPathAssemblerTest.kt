@@ -1,8 +1,11 @@
 package com.newoether.agora.viewmodel
 
 import com.newoether.agora.data.local.MessageEntity
+import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -27,6 +30,49 @@ class ApiPathAssemblerTest {
         )
         assertEquals(assembled.size, assembled.map { it.id }.distinct().size)
         assertNull(assembled.first { it.id == "m" }.toolCallJson)
+    }
+
+    @Test
+    fun terminalAggregate_preservesNonToolSegmentsWhenProtocolRowsAreExpanded() {
+        val errorDetail = "Formatted provider failure"
+        val aggregate = Json.encodeToString(
+            listOf(
+                MessageSegment(
+                    type = "tool",
+                    toolName = "shell",
+                    toolArgs = "{}",
+                    toolCallId = "call-1",
+                ),
+                MessageSegment(type = "answer", content = "partial answer"),
+                MessageSegment(type = "error", content = errorDetail),
+            ),
+        )
+        val user = message("u", null, Participant.USER, 0)
+        val model = message(
+            "m",
+            "u",
+            Participant.MODEL,
+            1,
+            toolJson = aggregate,
+            status = MessageStatus.ERROR,
+        )
+        val tool = message("tool_round", "m", Participant.MODEL, 2)
+        val result = message("result_round", "tool_round", Participant.USER, 3)
+
+        val assembled = ApiPathAssembler.assemble(
+            ancestorPath = listOf(user, model),
+            allMessages = listOf(user, model, tool, result),
+        )
+
+        assertEquals(
+            listOf("u", "tool_round", "result_round", "m"),
+            assembled.map { it.id },
+        )
+        val retained = Json.decodeFromString<List<MessageSegment>>(
+            requireNotNull(assembled.last().toolCallJson),
+        )
+        assertEquals(listOf("answer", "error"), retained.map { it.type })
+        assertEquals(errorDetail, retained.last().content)
     }
 
     @Test

@@ -136,7 +136,6 @@ class TaskExecutionEngine(
     private val ragManager = RagManager(
         conversations = convRepo,
         settings = settings,
-        localProvider = localProvider,
         appContext = appContext,
         scope = appScope,
         emitSnackbar = {},

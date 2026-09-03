@@ -1,6 +1,7 @@
 package com.newoether.agora.ui.chat.message
 
 import com.newoether.agora.model.MessageSegment
+import com.newoether.agora.model.RunRecoveryPolicy
 import com.newoether.agora.model.ToolExecutionStates
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -381,6 +382,23 @@ class ToolPresentationResolverTest {
     }
 
     @Test
+    fun recoveredForegroundShellIsStoppedInsteadOfExitWithoutCode() {
+        val recovered = RunRecoveryPolicy.stopIncompleteTools(
+            listOf(
+                MessageSegment(
+                    type = "tool",
+                    toolName = "execute_shell_command",
+                    toolState = ToolExecutionStates.RUNNING,
+                ),
+            ),
+        ).single()
+        val presentation = ToolPresentationResolver.resolve(recovered)
+
+        assertEquals(ToolPresentationState.STOPPED, presentation.state)
+        assertEquals(ShellPresentationStatus.Stopped, shellPresentationStatus(presentation))
+    }
+
+    @Test
     fun shellOutputFallsBackToSeparateStdoutAndStderr() {
         val presentation = ToolPresentationResolver.resolve(
             MessageSegment(
@@ -490,8 +508,40 @@ class ToolPresentationResolverTest {
 
         assertEquals(ToolKind.SHELL_JOB_WAIT, terminal.kind)
         assertEquals(ToolPresentationState.COMPLETED, terminal.state)
+        assertEquals(0, terminal.exitCode)
         assertEquals("done", shellOutputText(terminal))
         assertEquals("job-9", terminal.jobId)
+
+        val timedOut = ToolPresentationResolver.resolve(
+            MessageSegment(
+                type = "tool",
+                toolName = "wait_for_job",
+                toolArgs = """{"job_id":"job-9"}""",
+                toolResult = """{"type":"wait_for_job","job_id":"job-9","state":"running","timed_out":true,"output":"partial"}""",
+            ),
+        )
+
+        assertEquals(ToolPresentationState.BACKGROUND_RUNNING, timedOut.state)
+        assertEquals(ShellPresentationStatus.Background("job-9"), shellPresentationStatus(timedOut))
+        assertEquals("partial", shellOutputText(timedOut))
+    }
+
+    @Test
+    fun truncatedFileReadWithPartialContentRemainsCompleted() {
+        val presentation = ToolPresentationResolver.resolve(
+            MessageSegment(
+                type = "tool",
+                toolName = "file_read",
+                toolArgs = """{"path":"/tmp/large.txt","offset":0}""",
+                toolResult = """{"type":"file_read","path":"/tmp/large.txt","content":"partial content","lines":1,"total_lines":0,"total_bytes":1048577,"returned_bytes":15,"offset":0,"limit":1048576,"truncated":true}""",
+                toolState = ToolExecutionStates.SUCCEEDED,
+            ),
+        )
+        val result = presentation.result as JsonObject
+
+        assertEquals(ToolPresentationState.COMPLETED, presentation.state)
+        assertEquals("partial content", (result["content"] as JsonPrimitive).content)
+        assertEquals("true", (result["truncated"] as JsonPrimitive).content)
     }
 
     @Test

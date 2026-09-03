@@ -273,9 +273,8 @@ private fun ToolSectionLabel(text: String) {
 
 @Composable
 private fun ToolActiveContent(text: String, output: String?) {
-    StableStreamingText(
+    Text(
         text = text,
-        streaming = true,
         style = ChatType.metaNormal,
         color = MaterialTheme.colorScheme.primary,
     )
@@ -509,6 +508,12 @@ private fun FileReadResult(presentation: ToolPresentation) {
     } else {
         TerminalOutput(content)
     }
+    if (result.boolean("truncated") == true) {
+        val nextOffset = (result.long("offset") ?: 0L) +
+            (result.long("returned_bytes") ?: content.toByteArray(Charsets.UTF_8).size.toLong())
+        Spacer(Modifier.height(8.dp))
+        ToolMutedContent(stringResource(R.string.tool_read_file_truncated, nextOffset))
+    }
 }
 
 @Composable
@@ -662,3 +667,7 @@ private fun JsonObject?.string(key: String): String? =
 
 private fun JsonObject?.int(key: String): Int? =
     (this?.get(key) as? JsonPrimitive)?.intOrNull
+private fun JsonObject?.long(key: String): Long? =
+    string(key)?.toLongOrNull()
+private fun JsonObject?.boolean(key: String): Boolean? =
+    string(key)?.toBooleanStrictOrNull()

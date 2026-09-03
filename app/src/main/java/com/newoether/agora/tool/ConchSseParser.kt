@@ -1,5 +1,7 @@
 package com.newoether.agora.tool
 
+import com.newoether.agora.util.SHELL_COMMAND_OUTPUT_MAX_BYTES
+import com.newoether.agora.util.shellUtf8Prefix
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -54,7 +56,8 @@ internal suspend fun parseConchSseLines(
     fun recordOutputTruncation() {
         if (outputTruncationReported) return
         outputTruncationReported = true
-        val notice = "Conch output was truncated at $MAX_OUTPUT_BYTES UTF-8 bytes."
+        val notice =
+            "Conch output was truncated at $SHELL_COMMAND_OUTPUT_MAX_BYTES UTF-8 bytes."
         warningMessage = when (val existing = warningMessage) {
             null -> notice
             else -> (notice + "\n" + existing).take(MAX_WARNING_CHARS)
@@ -104,13 +107,15 @@ internal suspend fun parseConchSseLines(
                             fail("event line has unsupported stream $stream")
                         }
                         val rawDelta = "$text\n"
-                        val prefix = rawDelta.utf8Prefix(MAX_OUTPUT_BYTES - outputBytes)
-                        if (prefix.value.isNotEmpty()) {
-                            output.append(prefix.value)
-                            outputBytes += prefix.byteCount
-                            onOutput(prefix.value)
+                        val prefix = rawDelta.shellUtf8Prefix(
+                            SHELL_COMMAND_OUTPUT_MAX_BYTES - outputBytes,
+                        )
+                        if (prefix.isNotEmpty()) {
+                            output.append(prefix)
+                            outputBytes += prefix.toByteArray(Charsets.UTF_8).size
+                            onOutput(prefix)
                         }
-                        if (prefix.truncated) recordOutputTruncation()
+                        if (prefix.length < rawDelta.length) recordOutputTruncation()
                     }
                     "warning" -> {
                         recordWarning(data.requiredString("message", event))
@@ -178,36 +183,6 @@ private fun JsonObject.optionalBoolean(key: String, event: String): Boolean? {
         )
 }
 
-private data class Utf8Prefix(
-    val value: String,
-    val byteCount: Int,
-    val truncated: Boolean,
-)
-
-private fun String.utf8Prefix(maxBytes: Int): Utf8Prefix {
-    if (maxBytes <= 0) return Utf8Prefix("", 0, isNotEmpty())
-    var index = 0
-    var bytes = 0
-    while (index < length) {
-        val codePoint = Character.codePointAt(this, index)
-        val nextBytes = when {
-            codePoint <= 0x7f -> 1
-            codePoint <= 0x7ff -> 2
-            codePoint <= 0xffff -> 3
-            else -> 4
-        }
-        if (bytes + nextBytes > maxBytes) break
-        bytes += nextBytes
-        index += Character.charCount(codePoint)
-    }
-    return Utf8Prefix(
-        value = substring(0, index),
-        byteCount = bytes,
-        truncated = index < length,
-    )
-}
-
 private val SUPPORTED_EVENTS = setOf("line", "warning", "result", "error")
 private val OUTPUT_STREAMS = setOf("stdout", "stderr")
-private const val MAX_OUTPUT_BYTES = 1 shl 20
 private const val MAX_WARNING_CHARS = 8_192

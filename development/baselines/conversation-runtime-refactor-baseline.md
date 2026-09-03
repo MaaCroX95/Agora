@@ -1,10 +1,13 @@
 # Conversation Runtime Refactor Baseline
 
+Status: historical, non-authoritative architecture and verification snapshot.
+
 This document freezes the live architecture and migration boundaries for the incremental
 conversation-runtime refactor. It describes the protected product baseline at commit `e650af6`.
-It is not a claim that the target single-writer runtime already exists.
+It is not a claim that the target single-writer runtime already exists. Current behavior is owned by
+[`../message-generation.md`](../message-generation.md); this file remains only as historical evidence.
 
-The frozen product requirements remain authoritative:
+The requirement snapshots used by this historical baseline are:
 
 - `agentic-loop-and-generation-requirements.md`
 - `context-compact-requirements.md`

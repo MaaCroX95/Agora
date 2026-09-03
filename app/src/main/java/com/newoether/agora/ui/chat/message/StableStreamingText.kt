@@ -23,11 +23,19 @@ internal fun StableStreamingText(
     fontWeight: FontWeight? = null,
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Clip,
+    tailFadeEnabled: Boolean = true,
+    tailFadeInitialAlpha: Float = 0f,
+    tailFadeCodePoints: Int? = null,
+    tailFadeSpatialBands: Int = 0,
 ) {
+    val content = AnnotatedString(text)
     val renderedText = rememberStreamingGlyphFade(
-        content = AnnotatedString(text),
+        content = content,
         color = color,
-        enabled = streaming,
+        enabled = streaming && tailFadeEnabled,
+        initialAlpha = tailFadeInitialAlpha,
+        fadeCodePoints = tailFadeCodePoints,
+        spatialBands = tailFadeSpatialBands,
     )
     Text(
         text = renderedText,

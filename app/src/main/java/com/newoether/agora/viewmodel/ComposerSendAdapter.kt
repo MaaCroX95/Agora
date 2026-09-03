@@ -28,20 +28,30 @@ internal class ComposerSendAdapter(
         images: List<String> = emptyList(),
         attachments: List<SelectedAttachment> = emptyList(),
         onAccepted: suspend () -> Unit = {},
-    ): SendAcceptance? = send(text, images, attachments) { acceptance ->
-        // Acceptance transfers ownership before the composer clears. Direct inputs are Room-owned;
-        // queued guidance remains memory-owned until its later drain boundary.
-        val attachmentsToReclaim = withContext(NonCancellable) {
-            drafts.clearAccepted(acceptance.conversationId)
-        }
-        withContext(mainDispatcher + NonCancellable) {
-            onAccepted()
-        }
-        if (attachmentsToReclaim.isNotEmpty() && acceptance.hasDurableAttachmentOwner()) {
-            // The visible handshake no longer waits on deletion. Repository cleanup rechecks all
-            // remaining message/draft references before removing any app-private path.
-            scope.launch(ioDispatcher) {
-                drafts.reclaimAttachments(attachmentsToReclaim)
+        draftOwnerId: String? = null,
+    ): SendAcceptance? {
+        val submittedRuntimeIds = attachments.asSequence()
+            .filterNot { it.storage.reclaimWhenAbandoned }
+            .mapTo(hashSetOf(), SelectedAttachment::localId)
+        return send(text, images, attachments) { acceptance ->
+            // Acceptance transfers ownership before the composer clears. Direct inputs are
+            // Room-owned; queued guidance remains memory-owned until its later drain boundary.
+            val clearedDraftAttachments = withContext(NonCancellable) {
+                drafts.clearAccepted(draftOwnerId ?: acceptance.conversationId)
+            }
+            // The durable draft may still contain the pre-submission pending copy. Stable localId
+            // prevents that stale snapshot from deleting a submitted runtime file.
+            val attachmentsToReclaim = clearedDraftAttachments.filterNot { attachment ->
+                attachment.localId in submittedRuntimeIds
+            }
+            withContext(mainDispatcher + NonCancellable) {
+                onAccepted()
+            }
+            if (attachmentsToReclaim.isNotEmpty() && acceptance.hasDurableAttachmentOwner()) {
+                // UI no longer waits on deletion. Repository cleanup rechecks durable references.
+                scope.launch(ioDispatcher) {
+                    drafts.reclaimAttachments(attachmentsToReclaim)
+                }
             }
         }
     }

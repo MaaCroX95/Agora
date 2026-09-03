@@ -6,9 +6,12 @@ internal data class GenerationCompletionEffectsRequest(
     val terminalPersisted: Boolean,
     val status: MessageStatus,
     val text: String,
+    val notificationText: String,
     val conversationId: String,
     val modelMessageId: String,
     val foregroundLeaseAcquired: Boolean,
+    val isContextCompact: Boolean,
+    val conversationVisible: Boolean?,
     val hasPendingContinuation: Boolean = false,
 )
 
@@ -32,7 +35,7 @@ internal fun GenerationCallbacks.completionEffectsCallbacks(
 internal class GenerationCompletionEffectsExecutor(
     private val isAppInForeground: () -> Boolean,
     private val releaseForegroundLease: (modelMessageId: String) -> Unit,
-    private val notify: (text: String, conversationId: String) -> Unit,
+    private val notify: (text: String, conversationId: String, status: MessageStatus) -> Unit,
 ) {
     fun execute(
         request: GenerationCompletionEffectsRequest,
@@ -53,19 +56,25 @@ internal class GenerationCompletionEffectsExecutor(
             releaseForegroundLease(request.modelMessageId)
         }
 
-        // A queued intervention is a separate pending generation. Avoid notifying for the Run
-        // immediately before it while the next generation is about to start.
-        val shouldNotify =
-            request.status == MessageStatus.SUCCESS &&
-                !request.hasPendingContinuation &&
-                !callbacks.hasQueuedSends()
+        val hasPendingGuidance =
+            request.hasPendingContinuation || callbacks.hasQueuedSends()
+        val appInForeground = if (request.conversationVisible == null) {
+            isAppInForeground()
+        } else {
+            false
+        }
         if (
             request.terminalPersisted &&
-            !isAppInForeground() &&
-            shouldNotify &&
-            request.text.isNotBlank()
+            request.notificationText.isNotBlank() &&
+            shouldPostGenerationTerminalNotification(
+                messageStatus = request.status,
+                hasPendingGuidance = hasPendingGuidance,
+                isContextCompact = request.isContextCompact,
+                appInForeground = appInForeground,
+                conversationVisible = request.conversationVisible,
+            )
         ) {
-            notify(request.text, request.conversationId)
+            notify(request.notificationText, request.conversationId, request.status)
         }
     }
 }

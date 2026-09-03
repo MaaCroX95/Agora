@@ -5,7 +5,8 @@ Status: repository maintenance baseline, 2026-08-10.
 ## Directory ownership
 
 - `docs/` is exclusively the MkDocs public user-manual source. Its direct children are locale directories.
-- `development-docs/` contains internal engineering requirements, architecture baselines, and maintenance policy. It is not published by MkDocs.
+- `development/` contains internal engineering contracts, maintenance policy, and historical
+  baselines under `development/baselines/`. It is not published by MkDocs.
 - `README.md`, `ARCHITECTURE.md`, and `PRIVACY.md` remain root repository documents.
 
 Do not reintroduce non-locale folders under `docs/`.
@@ -31,7 +32,7 @@ The MkDocs language set must match the app's explicit interface languages: en, a
 | `shell.md`, `sandbox.md`, `proxy.md` | shell device settings/clients, flavor sandbox manager, shared HTTP client |
 | `search.md`, `embedding.md`, `memory.md` | conversation-search settings, embedding repository, memory tools/storage |
 | `conversations.md` | chat controller/runtime, Room graph DAO, composer and drawer UI |
-| `import-export.md` | archive manifest/version, exporters/importers, auto-backup worker |
+| `import-export.md` | `development/import-export.md`, archive manifest/version, exporters/importers, auto-backup worker |
 | `privacy.md`, `faq.md`, `index.md` | cross-page synthesis verified against all sources above |
 
 Exact class names may move. Search the current settings route and user-visible string first, then follow the active implementation rather than copying a historical filename.
@@ -44,7 +45,7 @@ For any behavior, default, setting, network destination, persistence, security, 
 2. update maintained translated overrides or remove them to activate fallback;
 3. update MkDocs nav and every DocumentationFab target if paths change;
 4. update README/architecture/privacy when the claim is repository-level;
-5. check root documents and `development-docs/` for old paths and superseded state-machine claims;
+5. check root documents and `development/` for old paths and superseded state-machine claims;
 6. build docs normally and with strict warnings;
 7. run an internal-link/target scan for every generated locale;
 8. review the generated site route used by the app's DocumentationFab;

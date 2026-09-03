@@ -48,9 +48,9 @@ Conch application-layer encryption is enabled when an API key is configured. A b
 
 - 📖 **[User Manual](https://newo-ether.github.io/Agora/)** — 28 maintained manual pages covering setup, providers, Context Compact, MCP, automation, tools, privacy, and data management.
 - 🏗️ **[Architecture Guide](ARCHITECTURE.md)** — current runtime, persistence, providers, tools, and data flows.
-- 🧰 **[Development documentation](development-docs/documentation-maintenance.md)** — internal requirements, baselines, and documentation-maintenance policy.
+- 🧰 **[Development documentation](development/documentation-maintenance.md)** — internal contracts, baselines, and documentation-maintenance policy.
 
-Public manuals live under `docs/<locale>/`. Internal engineering documents live separately under `development-docs/`.
+Public manuals live under `docs/<locale>/`. Internal engineering documents live under `development/`.
 
 ## Getting Started
 

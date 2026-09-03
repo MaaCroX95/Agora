@@ -271,11 +271,11 @@
     <string name="prompts_delete_text">¿Seguro que quieres eliminar \'%1$s\'? Esta acción no se puede deshacer.</string>
     <string name="template_title_required">El título es obligatorio</string>
     <string name="template_tab_system">Sistema</string>
-    <string name="template_tab_prepend">Prefijo</string>
-    <string name="template_tab_postpend">Sufijo</string>
-    <string name="template_tab_system_desc">Se envía como instrucción del sistema.</string>
-    <string name="template_tab_prepend_desc">Se inserta antes de cada mensaje del usuario.</string>
-    <string name="template_tab_postpend_desc">Se inserta después de cada mensaje del usuario.</string>
+    <string name="template_tab_user">Usuario</string>
+    <string name="template_tab_assistant">Asistente</string>
+    <string name="template_tab_system_desc">Define el mensaje del sistema enviado al modelo.</string>
+    <string name="template_tab_user_desc">Define la estructura alrededor de cada mensaje normal del usuario.</string>
+    <string name="template_tab_assistant_desc">Define la estructura alrededor de cada mensaje normal del asistente.</string>
     <string name="template_empty_hint">No hay elementos. Añade texto o variables abajo.</string>
     <string name="template_add_text">Añadir texto</string>
     <string name="template_add_variable">Añadir variable</string>
@@ -370,6 +370,9 @@
     <string name="advanced_generation_title">Ajustes avanzados</string>
     <string name="advanced_per_conversation">Anulaciones por conversación</string>
     <string name="appearance_interface">Interfaz</string>
+    <string name="appearance_theme_color">Tema y color</string>
+    <string name="appearance_motion_feedback">Movimiento y respuesta</string>
+    <string name="appearance_chat_display">Visualización del chat</string>
     <string name="message_display">Visualización de mensajes</string>
     <string name="tool_call_display_mode">Bloques de razonamiento y herramientas</string>
     <string name="tool_call_display_mode_timeline">Cronología</string>
@@ -731,6 +734,10 @@
     <!-- Local Chat Provider -->
     <string name="local_chat_models">Modelos de chat locales</string>
     <string name="local_models_title">Modelos locales</string>
+    <string name="local_model_idle_retention">Retención del modelo inactivo</string>
+    <string name="local_model_idle_retention_desc">Tiempo que un modelo local inactivo permanece en memoria antes de descargarse</string>
+    <string name="local_model_idle_retention_immediate">Inmediata</string>
+    <string name="local_model_idle_retention_minutes">%1$d min</string>
     <string name="local_chat_models_count">%1$d modelo(s) importado(s)</string>
     <string name="local_title">Local</string>
     <string name="not_configured">No configurado</string>
@@ -800,7 +807,7 @@
     <string name="rating_submitting">Enviando…</string>
     <string name="rating_success">¡Gracias por tus comentarios!</string>
     <string name="rating_failed">Error al enviar. Inténtalo de nuevo.</string>
-    <string name="rating_privacy">Tu valoración se subirá de forma anónima a newoether.space. Solo se transmiten los campos que rellenes. No se recopilan otros datos.</string>
+    <string name="rating_privacy">Tu valoración se subirá de forma anónima a newoether.com. Solo se transmiten los campos que rellenes. No se recopilan otros datos.</string>
 
     <!-- Data Control -->
     <string name="settings_data_control">Control de datos</string>
@@ -882,7 +889,8 @@
     <string name="file_unsupported_title">Archivo no compatible</string>
     <string name="file_unknown_type">Tipo de archivo desconocido</string>
     <string name="file_unsupported_type">Tipo de archivo no compatible: %1$s</string>
-    <string name="file_too_large">Archivo demasiado grande (máx. 20 MB)</string>
+    <string name="file_too_large">Archivo demasiado grande (máx. 100 MiB)</string>
+    <string name="file_sandbox_required">Instala y activa Local Sandbox para adjuntar este archivo.</string>
     <string name="attachment_copy_failed_image">No se pudo cargar la imagen</string>
     <string name="attachment_copy_failed_file">No se pudo cargar el archivo</string>
     <string name="pdf_render_failed">Error al renderizar el PDF</string>
@@ -999,7 +1007,7 @@
     <string name="crash_message">Lo sentimos. Puedes ayudar a solucionarlo enviando un informe de fallos anónimo.</string>
     <string name="crash_submit">Enviar informe</string>
     <string name="crash_dismiss">No enviar</string>
-    <string name="crash_privacy_note">Solo se envía el registro del fallo a newoether.space. No se recopila ninguna otra información.</string>
+    <string name="crash_privacy_note">Solo se envía el registro del fallo a newoether.com. No se recopila ninguna otra información.</string>
     <string name="crash_submitted">Informe de fallos enviado. ¡Gracias!</string>
     <string name="settings_group_network">Red</string>
     <string name="settings_proxy">Proxy</string>
@@ -1077,7 +1085,10 @@
     <string name="openai_service_tier_auto">Automático</string>
     <string name="openai_service_tier_default">Predeterminado</string>
     <string name="openai_service_tier_flex">Flexible</string>
+    <string name="openai_service_tier_scale">Escala</string>
+    <string name="openai_service_tier_priority">Prioridad</string>
     <string name="openai_service_tier_fast">Rápido</string>
+    <string name="openai_service_tier_ultrafast">Ultrarrápido</string>
     <string name="context_title">Contexto</string>
     <string name="context_desc">Gestión del contexto</string>
     <string name="context_compact">Compactación de contexto</string>
@@ -1207,4 +1218,5 @@
     <string name="tool_create_skill">Crear habilidad</string>
     <string name="tool_edit_skill">Editar habilidad</string>
     <string name="tool_delete_skill">Eliminar habilidad</string>
+    <string name="tool_read_file_truncated">Se muestra contenido parcial · continúa en el byte %1$d</string>
 </resources>

@@ -1,10 +1,12 @@
 package com.newoether.agora.viewmodel
 
 import com.newoether.agora.model.ChatMessage
+import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.RuntimeRunIdentity
 import com.newoether.agora.model.RunState
+import com.newoether.agora.model.ToolExecutionStates
 import kotlinx.coroutines.Job
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -56,6 +58,40 @@ class ConversationRuntimeResourceOwnershipTest {
         assertNull(resources.streamMessageForClear(OWNER_TOKEN))
 
         assertEquals(stopped, resources.streamingMessage.value)
+    }
+
+    @Test
+    fun stoppableOverlayTerminalizesIncompleteToolsBeforeTheHandoff() {
+        val resources = activeResources()
+        resources.streamUpdate(
+            OWNER_TOKEN,
+            message(MessageStatus.TOOL_CALLING).copy(
+                segments = listOf(
+                    MessageSegment(
+                        type = "tool",
+                        toolName = "shell",
+                        toolState = ToolExecutionStates.RUNNING,
+                    ),
+                    MessageSegment(
+                        type = "tool",
+                        toolName = "background",
+                        toolState = ToolExecutionStates.BACKGROUND_RUNNING,
+                    ),
+                ),
+            ),
+        )
+
+        val stopped = requireNotNull(
+            resources.stoppableOverlay(
+                RunState.Active(RuntimeRunIdentity("conversation", OWNER_TOKEN, "run")),
+            ),
+        )
+
+        assertEquals(MessageStatus.STOPPED, stopped.status)
+        assertEquals(
+            listOf(ToolExecutionStates.STOPPED, ToolExecutionStates.BACKGROUND_RUNNING),
+            stopped.segments?.map(MessageSegment::toolState),
+        )
     }
 
     @Test

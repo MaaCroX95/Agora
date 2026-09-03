@@ -58,6 +58,7 @@ class ConversationRepositoryCheckpointTest {
                     totalTokenCount = 42,
                     inputTokenCount = 30,
                     cachedInputTokenCount = 10,
+                    cacheWriteInputTokenCount = 6,
                     uncachedInputTokenCount = 20,
                     outputTokenCount = 12,
                     reasoningTokenCount = 4,
@@ -80,6 +81,7 @@ class ConversationRepositoryCheckpointTest {
         assertEquals(42, captured.captured.tokenCount)
         assertEquals(30, captured.captured.inputTokenCount)
         assertEquals(10, captured.captured.cachedInputTokenCount)
+        assertEquals(6, captured.captured.cacheWriteInputTokenCount)
         assertEquals(20, captured.captured.uncachedInputTokenCount)
         assertEquals(12, captured.captured.outputTokenCount)
         assertEquals(4, captured.captured.reasoningTokenCount)

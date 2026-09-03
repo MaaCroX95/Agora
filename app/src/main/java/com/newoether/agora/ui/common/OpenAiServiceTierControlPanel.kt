@@ -165,6 +165,9 @@ fun openAiServiceTierShortLabel(enabled: Boolean, tier: String): String =
 private fun serviceTierLabel(tier: String): String = when (tier) {
     OpenAiServiceTiers.DEFAULT -> stringResource(R.string.openai_service_tier_default)
     OpenAiServiceTiers.FLEX -> stringResource(R.string.openai_service_tier_flex)
+    OpenAiServiceTiers.SCALE -> stringResource(R.string.openai_service_tier_scale)
+    OpenAiServiceTiers.PRIORITY -> stringResource(R.string.openai_service_tier_priority)
     OpenAiServiceTiers.FAST -> stringResource(R.string.openai_service_tier_fast)
+    OpenAiServiceTiers.ULTRAFAST -> stringResource(R.string.openai_service_tier_ultrafast)
     else -> stringResource(R.string.openai_service_tier_auto)
 }

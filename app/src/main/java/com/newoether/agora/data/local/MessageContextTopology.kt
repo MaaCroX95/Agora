@@ -11,6 +11,7 @@ data class MessageContextTopology(
     val status: MessageStatus,
     val participant: Participant,
     val timestamp: Long,
+    val tokenCount: Int = 0,
     val modelName: String?,
     val runId: String,
     val runSequence: Long,

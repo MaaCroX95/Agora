@@ -4,6 +4,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
@@ -16,9 +17,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import com.newoether.agora.model.ChatMessage
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withTimeoutOrNull
 
 @Stable
@@ -124,20 +127,38 @@ internal class ConversationInteractionState internal constructor(
         currentConversationId: String?,
         messages: State<List<ChatMessage>>,
         listState: LazyListState,
+        searchMessages: (String, String) -> Flow<List<ChatMessage>>,
     ): ConversationInteractionProjection {
-        val messagesForSearchAndSelection =
-            if (searchActive || shareSelectionActive) messages.value else emptyList()
-        val selectableShareMessageIds = remember(messagesForSearchAndSelection) {
-            messagesForSearchAndSelection.mapTo(linkedSetOf()) { it.id }
+        val selectedPathIds = messages.value.mapTo(linkedSetOf()) { message -> message.id }
+        val searchPayloadMessages by remember(
+            currentConversationId,
+            searchActive,
+            searchQuery,
+            searchMessages,
+        ) {
+            if (searchActive && currentConversationId != null && searchQuery.isNotBlank()) {
+                searchMessages(currentConversationId, searchQuery)
+            } else {
+                flowOf(emptyList())
+            }
+        }.collectAsState(initial = emptyList())
+        val messagesForSearch = if (searchActive) {
+            searchPayloadMessages.filter { message -> message.id in selectedPathIds }
+        } else {
+            emptyList()
+        }
+        val messagesForSelection = if (shareSelectionActive) messages.value else emptyList()
+        val selectableShareMessageIds = remember(messagesForSelection) {
+            messagesForSelection.mapTo(linkedSetOf()) { it.id }
         }
         val searchMatchDistances = remember(currentConversationId) {
             mutableStateMapOf<String, Float>()
         }
-        val searchMatches = remember(messagesForSearchAndSelection, searchQuery) {
-            findConversationSearchMatches(messagesForSearchAndSelection, searchQuery)
+        val searchMatches = remember(messagesForSearch, searchQuery) {
+            findConversationSearchMatches(messagesForSearch, searchQuery)
         }
-        val searchTurns = remember(messagesForSearchAndSelection) {
-            buildMessageListTurns(messagesForSearchAndSelection)
+        val searchTurns = remember(messages.value) {
+            buildMessageListTurns(messages.value)
         }
         val searchTurnIndexByMessageId = remember(searchTurns) {
             buildMap {
@@ -270,9 +291,15 @@ internal fun rememberConversationInteractionState(
     currentConversationId: String?,
     messages: State<List<ChatMessage>>,
     listState: LazyListState,
+    searchMessages: (String, String) -> Flow<List<ChatMessage>> = { _, _ -> flowOf(emptyList()) },
 ): ConversationInteractionProjection {
     val state = rememberSaveable(saver = ConversationInteractionState.Saver) {
         ConversationInteractionState()
     }
-    return state.project(currentConversationId, messages, listState)
+    return state.project(
+        currentConversationId = currentConversationId,
+        messages = messages,
+        listState = listState,
+        searchMessages = searchMessages,
+    )
 }

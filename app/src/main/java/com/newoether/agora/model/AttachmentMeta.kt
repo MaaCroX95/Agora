@@ -3,6 +3,39 @@ package com.newoether.agora.model
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 
+/**
+ * Where an attachment's owned bytes live, and whether Agora is still allowed to reclaim them.
+ *
+ * Local Sandbox files stop belonging to the composer immediately before their first Send
+ * submission. Keeping that transfer explicit prevents message, queue, draft, and fork cleanup from
+ * deleting a runtime workspace that an agent may have already changed.
+ */
+@Serializable
+enum class AttachmentStorage {
+    @SerialName("app_private")
+    APP_PRIVATE,
+
+    @SerialName("local_sandbox_pending")
+    LOCAL_SANDBOX_PENDING,
+
+    @SerialName("local_sandbox_runtime")
+    LOCAL_SANDBOX_RUNTIME;
+
+    val isLocalSandbox: Boolean
+        get() = this != APP_PRIVATE
+
+    val canPreview: Boolean
+        get() = !isLocalSandbox
+
+    val reclaimWhenAbandoned: Boolean
+        get() = this != LOCAL_SANDBOX_RUNTIME
+
+    fun transferForSend(): AttachmentStorage = when (this) {
+        LOCAL_SANDBOX_PENDING -> LOCAL_SANDBOX_RUNTIME
+        else -> this
+    }
+}
+
 @Serializable
 data class AttachmentMeta(val items: List<AttachmentItem> = emptyList())
 
@@ -16,7 +49,10 @@ data class AttachmentItem(
     @SerialName("page_count") val pageCount: Int? = null,
     val warning: String? = null,
     @SerialName("text_content") val textContent: String? = null,
-    @SerialName("transcription") val transcription: String? = null
+    @SerialName("transcription") val transcription: String? = null,
+    val storage: AttachmentStorage = AttachmentStorage.APP_PRIVATE,
+    @SerialName("sandbox_path") val sandboxPath: String? = null,
+    @SerialName("file_size") val fileSize: Long? = null,
 )
 
 /** Used for passing attachment metadata from ChatBottomBar to ViewModel. */
@@ -37,5 +73,7 @@ data class SelectedAttachment(
     val processedFrames: List<String>? = null,
     val selectedPages: Set<Int>? = null,
     val preRenderedPaths: List<String>? = null,
-    val localPath: String? = null   // copied to app-private storage at pick time
+    val localPath: String? = null,  // copied into storage owned by [storage] at pick time
+    val storage: AttachmentStorage = AttachmentStorage.APP_PRIVATE,
+    val sandboxPath: String? = null,
 )

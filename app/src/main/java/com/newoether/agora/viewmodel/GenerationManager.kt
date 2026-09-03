@@ -3,7 +3,9 @@ package com.newoether.agora.viewmodel
 import android.app.Application
 import com.newoether.agora.util.DebugLog
 import com.newoether.agora.api.LlmProvider
+import com.newoether.agora.api.ProviderConfig
 import com.newoether.agora.api.StreamEvent
+import com.newoether.agora.api.resolveRequest
 import com.newoether.agora.data.CustomProviderConfig
 import com.newoether.agora.data.MemoryManager
 import com.newoether.agora.data.SkillManager
@@ -15,6 +17,7 @@ import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.RunEffectIdentity
+import com.newoether.agora.model.StreamingTextDelta
 import com.newoether.agora.model.RequestTokenUsageAccumulator
 import com.newoether.agora.model.TokenUsage
 import com.newoether.agora.model.ToolCallData
@@ -23,6 +26,7 @@ import com.newoether.agora.service.AgoraForegroundService
 import com.newoether.agora.service.AppForegroundTracker
 import com.newoether.agora.api.util.ContextTokenEstimator
 import com.newoether.agora.tool.ToolProvider
+import com.newoether.agora.util.Constants
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,16 +36,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
-internal class GenerationForegroundServiceUnavailableException :
-    IllegalStateException("Required foreground service could not be started")
 internal suspend fun acquireGenerationForegroundLease(
     managedExternally: Boolean,
     acquire: suspend () -> Boolean,
 ): Boolean {
     if (managedExternally) return false
-    if (!acquire()) throw GenerationForegroundServiceUnavailableException()
-    return true
+    return acquire()
 }
+
 class GenerationManager(
     private val app: Application,
     private val conversations: com.newoether.agora.data.repository.ConversationRepository,
@@ -80,13 +82,7 @@ class GenerationManager(
     private val completionEffects = GenerationCompletionEffectsExecutor(
         isAppInForeground = { AppForegroundTracker.isInForeground },
         releaseForegroundLease = AgoraForegroundService::release,
-        notify = { text, conversationId ->
-            AgoraForegroundService.showCompletionNotification(
-                app,
-                replaceCustomProviderIdsForDisplay(text, customProviders()),
-                conversationId,
-            )
-        },
+        notify = ::showTerminalNotification,
     )
 
     // Image/video frame extraction lives in ImageProcessor (single source of truth).
@@ -103,6 +99,19 @@ class GenerationManager(
     suspend fun semanticSearch(query: String, limit: Int, ctx: GenerationContext): List<Pair<MessageEntity, Float>> =
         toolExecutor.semanticSearch(query, limit, ctx)
 
+    internal fun showTerminalNotification(
+        text: String,
+        conversationId: String,
+        status: MessageStatus,
+    ) {
+        AgoraForegroundService.showTerminalNotification(
+            context = app,
+            responseText = replaceCustomProviderIdsForDisplay(text, customProviders()),
+            conversationId = conversationId,
+            isError = status == MessageStatus.ERROR,
+        )
+    }
+
     internal fun fixedContextTokenCost(
         config: GenerationConfig,
         context: GenerationContext,
@@ -114,6 +123,34 @@ class GenerationManager(
         googleSearchEnabled = config.googleSearchEnabled,
         openAiWebSearchEnabled = config.openAiWebSearchEnabled,
     )
+
+    internal suspend fun resolvedFixedContextTokenCost(
+        config: GenerationConfig,
+        context: GenerationContext,
+    ): Int {
+        val resolver = config.requestResolver ?: return fixedContextTokenCost(config, context)
+        val definitions = toolExecutor.definitions(context)
+        val providerConfig = ProviderConfig(
+            apiKey = config.apiKey,
+            modelId = config.modelId,
+            maxContextWindow = config.maxContextWindow,
+            codeExecutionEnabled = config.codeExecutionEnabled,
+            googleSearchEnabled = config.googleSearchEnabled,
+            openAiWebSearchEnabled = config.openAiWebSearchEnabled,
+            tools = definitions,
+            includeImages = !context.imageTranscriptionEnabled,
+            requestResolver = resolver,
+        )
+        val resolvedRequest = providerConfig.resolveRequest(emptyList())
+        return ContextTokenEstimator.estimateFixed(
+            systemPrompt = resolvedRequest.systemPrompt,
+            tools = definitions,
+            initialUserPrompt = config.initialUserPrompt,
+            codeExecutionEnabled = config.codeExecutionEnabled,
+            googleSearchEnabled = config.googleSearchEnabled,
+            openAiWebSearchEnabled = config.openAiWebSearchEnabled,
+        )
+    }
 
     internal suspend fun buildApiPath(request: GenerationApiPathRequest): GenerationApiPath =
         apiPathBuilder.build(request)
@@ -160,6 +197,8 @@ class GenerationManager(
         val toolOverlay = GenerationToolOverlay(toolExecutor, config.providerName)
         val generatedImages = mutableListOf<String>()
         var currentAnswerBuf = StringBuilder()
+        var currentAnswerDeltas = mutableListOf<StreamingTextDelta>()
+        var nextAnswerDeltaSequence = 0L
         var currentThoughtBuf = StringBuilder()
         var currentThoughtSignature: String? = null
         var currentThoughtSignatureProvider: String? = null
@@ -180,6 +219,11 @@ class GenerationManager(
             },
         )
         var terminalPersisted = false
+        var terminalConversationVisible: Boolean? = null
+        var terminalOutputText = ""
+
+        fun projectOutput(message: ChatMessage): ChatMessage =
+            message.withBoundedOutputTextTransform(callbacks.transformFinalText)
 
         fun adoptIncompleteTranscriptionSnapshot() {
             transcriptionExecution.incompleteSnapshot()?.let { snapshot ->
@@ -234,8 +278,9 @@ class GenerationManager(
                     startTime = startTime,
                 ),
                 onSnapshot = { snapshot, forceCheckpoint ->
-                    onStreamUpdate(snapshot)
-                    checkpoints.persist(snapshot, forceCheckpoint)
+                    val projected = projectOutput(snapshot)
+                    onStreamUpdate(projected)
+                    checkpoints.persist(projected, forceCheckpoint)
                 },
             )
             if (transcription.segments.isNotEmpty()) {
@@ -289,6 +334,7 @@ class GenerationManager(
                     currentThoughtSignatureProvider,
                     thoughtTiming.liveDurationMs(),
                     generationErrorMessage,
+                    answerDeltas = currentAnswerDeltas,
                 ),
                 retryText = retryText,
                 runId = runId,
@@ -296,7 +342,7 @@ class GenerationManager(
             )
 
             suspend fun publishStreamUpdate(forceCheckpoint: Boolean = false) {
-                val snapshot = modelMessage()
+                val snapshot = projectOutput(modelMessage())
                 onStreamUpdate(snapshot)
                 if (firstUiPublishPending) {
                     firstUiPublishPending = false
@@ -308,9 +354,14 @@ class GenerationManager(
             fun flushAnswerSegment() {
                 if (currentAnswerBuf.isNotEmpty()) {
                     toolOverlay.append(
-                        MessageSegment(type = "answer", content = currentAnswerBuf.toString()),
+                        MessageSegment(
+                            type = "answer",
+                            content = currentAnswerBuf.toString(),
+                            streamingTextDeltas = currentAnswerDeltas.toList(),
+                        ),
                     )
                     currentAnswerBuf = StringBuilder()
+                    currentAnswerDeltas = mutableListOf()
                 }
             }
 
@@ -414,6 +465,14 @@ class GenerationManager(
                         }
                         totalText += answerText
                         currentAnswerBuf.append(answerText)
+                        val deltaCodePointCount =
+                            answerText.codePointCount(0, answerText.length)
+                        if (deltaCodePointCount > 0) {
+                            currentAnswerDeltas += StreamingTextDelta(
+                                sequence = nextAnswerDeltaSequence++,
+                                codePointCount = deltaCodePointCount,
+                            )
+                        }
                         if (answerText.isNotBlank()) {
                             currentStatus = MessageStatus.SENDING
                         }
@@ -470,7 +529,7 @@ class GenerationManager(
                     }
                     is StreamEvent.Retrying -> {
                         retryText = context.getString(R.string.generation_retry_attempt, event.attempt, event.maxAttempts)
-                        onStreamUpdate(modelMessage())
+                        onStreamUpdate(projectOutput(modelMessage()))
                     }
                     is StreamEvent.Error -> {
                         flushThoughtSegment()
@@ -615,13 +674,19 @@ class GenerationManager(
                 }
             }
 
-            val apiPath = projectGenerationInputMessages(
-                messages = currentPath,
-                includeImages = providerConfig.includeImages,
-                userPrepend = config.userPrepend,
-                userPostpend = config.userPostpend,
-                initialUserPrompt = config.initialUserPrompt,
-            )
+            val apiPath = if (providerConfig.requestResolver != null) {
+                currentPath
+            } else {
+                projectGenerationInputMessages(
+                    messages = currentPath,
+                    includeImages = providerConfig.includeImages,
+                    userPrepend = config.userPrepend,
+                    userPostpend = config.userPostpend,
+                    assistantPrepend = config.assistantPrepend,
+                    assistantPostpend = config.assistantPostpend,
+                    initialUserPrompt = config.initialUserPrompt,
+                )
+            }
             requestTrace?.mark("provider_dispatch")
             acceptProviderPass(collectProviderRequest(apiPath) {
                 requestTrace?.mark("first_semantic_event")
@@ -668,6 +733,15 @@ class GenerationManager(
                         expectedPass = commitIdentity.pass,
                     )
                 }
+                toolOverlay.releaseCommittedResponseState(
+                    tcds.mapTo(linkedSetOf()) { call ->
+                        checkNotNull(call.toolCallId) {
+                            "Committed tool call is missing its provider call id"
+                        }
+                    },
+                )
+                publishStreamUpdate(forceCheckpoint = true)
+                uiUpdateGate.recordPublished(System.currentTimeMillis())
                 // A terminal Conch job may be deleted only after the complete tool result is
                 // durable. ACK is best-effort and cannot influence the already-authorized
                 // continuation; Conch's bounded retention remains the failure fallback.
@@ -703,12 +777,18 @@ class GenerationManager(
 
                 uiUpdateGate.reset()
 
-                val apiToolPath = projectGenerationInputMessages(
-                    messages = toolPath,
-                    includeImages = providerConfig.includeImages,
-                    userPrepend = config.userPrepend,
-                    userPostpend = config.userPostpend,
-                )
+                val apiToolPath = if (providerConfig.requestResolver != null) {
+                    toolPath
+                } else {
+                    projectGenerationInputMessages(
+                        messages = toolPath,
+                        includeImages = providerConfig.includeImages,
+                        userPrepend = config.userPrepend,
+                        userPostpend = config.userPostpend,
+                        assistantPrepend = config.assistantPrepend,
+                        assistantPostpend = config.assistantPostpend,
+                    )
+                }
                 acceptProviderPass(collectProviderRequest(apiToolPath))
                 thoughtTiming.finishCurrent()
                 currentStatus = statusAfterThoughtPhaseFinished(currentStatus)
@@ -758,7 +838,7 @@ class GenerationManager(
             currentStatus = if (isCancelled) MessageStatus.STOPPED else MessageStatus.ERROR
             if (!isCancelled) {
                 generationErrorMessage =
-                    "Error: ${e.localizedMessage ?: "An unexpected error occurred."}"
+                    "Error: ${e.localizedMessage?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName}"
             }
         } finally {
             // Fence the asynchronous checkpoint lane before any terminal transaction. Without
@@ -802,14 +882,16 @@ class GenerationManager(
                             errorMessage = generationErrorMessage,
                             runId = runId,
                             runSequence = modelRunSequence,
+                            answerDeltas = currentAnswerDeltas.toList(),
                         ).toMessage()
-                        val finalMessage = generatedMessage.withBoundedFinalTextTransform(
-                            callbacks.transformFinalText,
-                        )
+                        val finalMessage = projectOutput(generatedMessage)
+                        terminalOutputText = finalMessage.text
+                        terminalConversationVisible = callbacks.isConversationVisible?.invoke()
                         val terminalDisposition = generationTerminalDisposition(
                             messageStatus = currentStatus,
                             hasPendingGuidance =
                                 callbacks.hasQueuedSends() || endedForFollowUp,
+                            conversationVisible = terminalConversationVisible,
                         )
                         val finalizationIdentity = RunEffectIdentity(
                             conversationId = conversationId,
@@ -848,16 +930,24 @@ class GenerationManager(
                     }
                 } catch (e: Exception) {
                     DebugLog.e("AgoraVM", "Failed to execute terminal generation effect", e)
+                    throw e
                 }
             }
             completionEffects.execute(
                 request = GenerationCompletionEffectsRequest(
                     terminalPersisted = terminalPersisted,
                     status = currentStatus,
-                    text = totalText,
+                    text = terminalOutputText,
+                    notificationText = if (currentStatus == MessageStatus.ERROR) {
+                        generationErrorMessage.orEmpty()
+                    } else {
+                        terminalOutputText
+                    },
                     conversationId = conversationId,
                     modelMessageId = modelMessageId,
                     foregroundLeaseAcquired = foregroundLeaseAcquired,
+                    isContextCompact = modelMessageId.startsWith(Constants.COMPACT_MSG_PREFIX),
+                    conversationVisible = terminalConversationVisible,
                     hasPendingContinuation = endedForFollowUp,
                 ),
                 callbacks = callbacks.completionEffectsCallbacks(onMessagePersisted),

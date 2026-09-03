@@ -91,24 +91,37 @@ class MessagePayloadBuilder(
                     }
                 }
                 "file" -> {
-                    val source = att.localPath ?: att.uri
-                    val textContent = AttachmentSourceReader.readText(
-                        context = app,
-                        source = source,
-                        maxChars = Constants.MAX_FILE_CONTENT_READ_LENGTH,
-                    )
-                    if (textContent == null) {
-                        DebugLog.e(
-                            "ChatViewModel",
-                            "Failed to read attachment content: ${att.fileName}",
+                    if (att.storage.isLocalSandbox) {
+                        metaItems.add(
+                            AttachmentItem(
+                                type = "file",
+                                fileName = att.fileName,
+                                mimeType = att.mimeType,
+                                storage = att.storage.transferForSend(),
+                                sandboxPath = att.sandboxPath,
+                                fileSize = att.fileSize,
+                            ),
                         )
+                    } else {
+                        val source = att.localPath ?: att.uri
+                        val textContent = AttachmentSourceReader.readText(
+                            context = app,
+                            source = source,
+                            maxChars = Constants.MAX_FILE_CONTENT_READ_LENGTH,
+                        )
+                        if (textContent == null) {
+                            DebugLog.e(
+                                "ChatViewModel",
+                                "Failed to read attachment content: ${att.fileName}",
+                            )
+                        }
+                        metaItems.add(AttachmentItem(
+                            originalUri = att.localPath?.let { "file://$it" } ?: att.uri,
+                            type = "file",
+                            fileName = att.fileName, mimeType = att.mimeType,
+                            textContent = textContent
+                        ))
                     }
-                    metaItems.add(AttachmentItem(
-                        originalUri = att.localPath?.let { "file://$it" } ?: att.uri,
-                        type = "file",
-                        fileName = att.fileName, mimeType = att.mimeType,
-                        textContent = textContent
-                    ))
                 }
                 "pdf" -> {
                     val preparedPages = att.preRenderedPaths.orEmpty()

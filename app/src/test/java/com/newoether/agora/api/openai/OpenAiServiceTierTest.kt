@@ -1,7 +1,6 @@
 package com.newoether.agora.api.openai
 
-import com.newoether.agora.api.OpenAiChatRequest
-import com.newoether.agora.api.OpenAiMessage
+import com.newoether.agora.api.OpenAiResponsesRequest
 import com.newoether.agora.data.CustomEndpointProtocol
 import com.newoether.agora.data.CustomProviderConfig
 import com.newoether.agora.data.isOpenAiProtocolProvider
@@ -9,6 +8,7 @@ import com.newoether.agora.model.OpenAiServiceTiers
 import com.newoether.agora.util.Constants
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -22,20 +22,22 @@ class OpenAiServiceTierTest {
     }
 
     @Test
-    fun enabledTierIsSerializedForAnOpenAiProtocolRequest() {
-        val customized = request().copy(
-            serviceTier = OpenAiServiceTiers.requestValue(
-                enabled = true,
-                value = OpenAiServiceTiers.FAST,
-                responsesApiEnabled = true,
-            ),
-        )
+    fun everyEnabledTierIsSerializedWithoutNormalizationLossForResponses() {
+        OpenAiServiceTiers.values.forEach { tier ->
+            val customized = request().copy(
+                serviceTier = OpenAiServiceTiers.requestValue(
+                    enabled = true,
+                    value = tier,
+                    responsesApiEnabled = true,
+                ),
+            )
 
-        assertEquals(OpenAiServiceTiers.FAST, customized.serviceTier)
-        assertTrue(
-            wireJson.encodeToString(customized)
-                .contains("\"service_tier\":\"fast\""),
-        )
+            assertEquals(tier, customized.serviceTier)
+            assertTrue(
+                wireJson.encodeToString(customized)
+                    .contains("\"service_tier\":\"$tier\""),
+            )
+        }
     }
 
     @Test
@@ -65,9 +67,14 @@ class OpenAiServiceTierTest {
 
     @Test
     fun invalidOrMissingTiersNormalizeToAuto() {
+        assertEquals(
+            listOf("auto", "default", "flex", "scale", "priority", "fast", "ultrafast"),
+            OpenAiServiceTiers.values,
+        )
         assertEquals(OpenAiServiceTiers.AUTO, OpenAiServiceTiers.normalize(null))
         assertEquals(OpenAiServiceTiers.AUTO, OpenAiServiceTiers.normalize("unknown"))
         assertEquals(OpenAiServiceTiers.FLEX, OpenAiServiceTiers.normalize(" FLEX "))
+        OpenAiServiceTiers.values.forEach { assertEquals(it, OpenAiServiceTiers.normalize(it)) }
     }
 
     @Test
@@ -83,8 +90,8 @@ class OpenAiServiceTierTest {
         assertFalse(isOpenAiProtocolProvider(Constants.PROVIDER_DEEPSEEK, customProviders))
     }
 
-    private fun request() = OpenAiChatRequest(
+    private fun request() = OpenAiResponsesRequest(
         model = "gpt-5",
-        messages = listOf(OpenAiMessage(role = "user")),
+        input = listOf(buildJsonObject {}),
     )
 }

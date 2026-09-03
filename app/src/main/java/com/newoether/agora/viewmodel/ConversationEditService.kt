@@ -147,16 +147,13 @@ internal class ConversationEditService(
             var stopFinalizationClaimed = false
             try {
                 executionCoordinator.withConversationLock(request.conversationId) lock@{
-                    val persistedMessages = conversations.getMessagesForConversationSnapshot(
-                        request.conversationId,
-                    )
-                    val persistedSource = persistedMessages
-                        .find { it.id == request.messageId } ?: return@lock
+                    val persistedSource = conversations.getMessage(request.messageId)
+                        ?: return@lock
                     if (!MessageGenerationBoundaryResolver.isRealUser(toUiMessage(persistedSource))) {
                         return@lock
                     }
                     val parentRunId = persistedSource.parentId
-                        ?.let { parentId -> persistedMessages.find { it.id == parentId } }
+                        ?.let { parentId -> conversations.getMessage(parentId) }
                         ?.runId
                         ?: persistedSource.runId
                             .takeIf(String::isNotBlank)

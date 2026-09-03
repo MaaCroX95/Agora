@@ -7,6 +7,7 @@ import com.newoether.agora.api.ToolDefinition
 import com.newoether.agora.api.ToolFunction
 import com.newoether.agora.api.ToolParameters
 import com.newoether.agora.api.ToolProperty
+import com.newoether.agora.data.local.MessageContextTopology
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.model.Participant
@@ -14,7 +15,6 @@ import com.newoether.agora.util.Constants
 import com.newoether.agora.util.DebugLog
 import com.newoether.agora.viewmodel.GenerationContext
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
@@ -87,12 +87,20 @@ class RagToolProvider(
         else -> "Unknown tool: $name"
     }
 
+    private data class SearchWindowPlan(
+        val conversationId: String,
+        val conversationTitle: String,
+        val messageIds: List<String>,
+        val topScore: Float,
+        val matchCount: Int
+    )
+
     private data class SearchWindow(
         val conversationId: String,
         val conversationTitle: String,
         val messages: List<MessageEntity>,
         val topScore: Float,
-        val matchCount: Int
+        val matchCount: Int,
     )
 
     private suspend fun executeSearchConversations(arguments: String, ctx: GenerationContext): String {
@@ -124,15 +132,15 @@ class RagToolProvider(
                 return buildJsonObject { put("type", "search_conversations"); put("query", query); put("error", "no_results") }.toString()
 
             // Step 2-4: For each conversation, build branch, expand windows, merge
-            val allWindows = mutableListOf<SearchWindow>()
+            val allWindows = mutableListOf<SearchWindowPlan>()
 
             for ((convId, matchIds) in matchesByConv) {
                 val conversation = conversations.getSearchableConversation(convId) ?: continue
-                val allMsgs = conversations.getMessagesForConversation(convId).first()
+                val topology = conversations.getMessageTopologySnapshot(convId)
                     .filter { it.participant in listOf(Participant.USER, Participant.MODEL) }
 
                 // Build selected branch as indexed list
-                val branch = buildSelectedBranch(allMsgs, conversation.selectedBranchesJson)
+                val branch = buildSelectedTopologyBranch(topology, conversation.selectedBranchesJson)
                 val indexMap = branch.withIndex().associate { (i, m) -> m.id to i }
                 val branchMatchIds = matchIds.filter { it in indexMap }.toSet()
 
@@ -177,10 +185,12 @@ class RagToolProvider(
                     }
                     val windowMsgIds = branch.subList(cappedRange.first, cappedRange.last + 1).map { it.id }.toSet()
                     val matchedInWindow = branchMatchIds.count { it in windowMsgIds }
-                    allWindows.add(SearchWindow(
+                    allWindows.add(SearchWindowPlan(
                         conversationId = convId,
                         conversationTitle = conversation.title,
-                        messages = cappedRange.map { branch[it] }.filter { it.text.isNotEmpty() && !it.id.startsWith(Constants.TOOL_MSG_PREFIX) && !it.id.startsWith(Constants.RESULT_MSG_PREFIX) },
+                        messageIds = cappedRange
+                            .map { branch[it].id }
+                            .filterNot(::isSyntheticMessageId),
                         topScore = score,
                         matchCount = matchedInWindow
                     ))
@@ -193,13 +203,21 @@ class RagToolProvider(
             for (window in allWindows.sortedByDescending { it.topScore }) {
                 if (totalMessages >= totalCap) break
                 val available = totalCap - totalMessages
-                if (window.messages.size > available) {
-                    finalWindows.add(window.copy(messages = window.messages.take(available)))
-                    totalMessages = totalCap
-                } else {
-                    finalWindows.add(window)
-                    totalMessages += window.messages.size
-                }
+                val selectedIds = window.messageIds.take(available)
+                val messagesById = conversations.getMessagesByIds(selectedIds).associateBy { it.id }
+                val hydratedMessages = selectedIds
+                    .mapNotNull(messagesById::get)
+                    .filter { it.text.isNotEmpty() }
+                finalWindows.add(
+                    SearchWindow(
+                        conversationId = window.conversationId,
+                        conversationTitle = window.conversationTitle,
+                        messages = hydratedMessages,
+                        topScore = window.topScore,
+                        matchCount = window.matchCount,
+                    )
+                )
+                totalMessages += selectedIds.size
             }
 
             // Step 6: Format output
@@ -247,14 +265,12 @@ class RagToolProvider(
         val offset = ((args["offset"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() ?: 0).coerceAtLeast(0)
 
         return try {
-            val allConversations = conversations.getSearchableConversationsList()
-            val sorted = if (order == "desc") allConversations.reversed() else allConversations
-            val total = sorted.size
-            val page = if (offset < total) {
-                sorted.subList(offset, (offset + limit).coerceAtMost(total))
-            } else {
-                emptyList()
-            }
+            val total = conversations.getSearchableConversationCount()
+            val page = conversations.getSearchableConversationsPage(
+                offset = offset,
+                limit = limit,
+                descending = order == "desc",
+            )
             val hasMore = offset + limit < total
 
             buildJsonObject {
@@ -304,18 +320,19 @@ class RagToolProvider(
                     put("error", "not_found")
                 }.toString()
 
-            val allMessages = conversations.getMessagesForConversation(conversationId).first()
+            val topology = conversations.getMessageTopologySnapshot(conversationId)
                 .filter { it.participant in listOf(Participant.USER, Participant.MODEL) }
-            // buildSelectedBranch needs all intermediate nodes to walk the tree without gaps;
-            // text emptiness check is deferred: tool-only MODEL msgs must stay as parent-chain links.
-            val branch = buildSelectedBranch(allMessages, conversation.selectedBranchesJson)
-                .filter { !it.id.startsWith(Constants.TOOL_MSG_PREFIX) && !it.id.startsWith(Constants.RESULT_MSG_PREFIX) }
+            val branch = buildSelectedTopologyBranch(topology, conversation.selectedBranchesJson)
+                .filterNot { isSyntheticMessageId(it.id) }
             val totalMessages = branch.size
-            val page = if (offset < totalMessages) {
+            val pageTopology = if (offset < totalMessages) {
                 branch.subList(offset, (offset + limit).coerceAtMost(totalMessages))
             } else {
                 emptyList()
             }
+            val pageIds = pageTopology.map { it.id }
+            val pageById = conversations.getMessagesByIds(pageIds).associateBy { it.id }
+            val page = pageIds.mapNotNull(pageById::get)
             val hasMore = offset + limit < totalMessages
 
             buildJsonObject {
@@ -351,24 +368,30 @@ class RagToolProvider(
      * Reconstruct the user-selected message branch for a conversation.
      * Uses selectedBranchesJson (Map<parentId → childId>) to walk from root to leaf.
      */
-    private fun buildSelectedBranch(
-        allMessages: List<MessageEntity>,
+    private fun buildSelectedTopologyBranch(
+        allMessages: List<MessageContextTopology>,
         selectedBranchesJson: String?
-    ): List<MessageEntity> {
+    ): List<MessageContextTopology> {
         val selections: Map<String?, String> = try {
             val raw = Json.decodeFromString<Map<String, String>>(selectedBranchesJson ?: "{}")
             raw.mapKeys { if (it.key == "null") null else it.key }
         } catch (_: Exception) { emptyMap() }
 
-        val byParent = allMessages.groupBy { it.parentId }
-        val path = mutableListOf<MessageEntity>()
+        val byParent = allMessages
+            .groupBy { it.parentId }
+            .mapValues { (_, siblings) ->
+                siblings.sortedWith(
+                    compareBy<MessageContextTopology> { it.timestamp }.thenBy { it.id },
+                )
+            }
+        val path = mutableListOf<MessageContextTopology>()
         var parentId: String? = null
         while (true) {
             val siblings = byParent[parentId] ?: break
             if (siblings.isEmpty()) break
             val selectedId = selections[parentId]
             val visible = siblings.filter {
-                !it.id.startsWith(Constants.TOOL_MSG_PREFIX) && !it.id.startsWith(Constants.RESULT_MSG_PREFIX)
+                !isSyntheticMessageId(it.id)
             }
             val chosen = if (visible.isNotEmpty()) {
                 visible.find { it.id == selectedId } ?: visible.last()
@@ -380,6 +403,10 @@ class RagToolProvider(
         }
         return path
     }
+
+    private fun isSyntheticMessageId(messageId: String): Boolean =
+        messageId.startsWith(Constants.TOOL_MSG_PREFIX) ||
+            messageId.startsWith(Constants.RESULT_MSG_PREFIX)
 
     suspend fun semanticSearch(query: String, limit: Int, ctx: GenerationContext): List<Pair<MessageEntity, Float>> = withContext(Dispatchers.IO) {
         val config = ctx.activeEmbeddingConfig

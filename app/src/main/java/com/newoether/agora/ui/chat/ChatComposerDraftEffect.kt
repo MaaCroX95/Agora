@@ -2,6 +2,7 @@ package com.newoether.agora.ui.chat
 
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import com.newoether.agora.model.SelectedAttachment
@@ -10,6 +11,7 @@ import com.newoether.agora.ui.chat.bottombar.PendingAttachmentRemoval
 import com.newoether.agora.util.DebugLog
 import com.newoether.agora.viewmodel.ChatViewModel
 import com.newoether.agora.viewmodel.LoadedComposerDraft
+import com.newoether.agora.viewmodel.NEW_CHAT_WORKSPACE_ID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -45,26 +47,17 @@ internal fun ComposerDraftLifecycleEffect(
     composer: ChatComposerState,
     textFieldState: TextFieldState,
 ) {
+    DisposableEffect(composer) {
+        onDispose { composer.abandonUnownedSandboxAttachments() }
+    }
     // One effect owns both loading and persistence for exactly one conversation. This prevents
     // the former pair of independent effects from cancelling a debounced tail write during a
     // fast switch. Attachment mutations bypass the text debounce; cancellation performs a final
     // non-cancellable flush before the next conversation is allowed to bind the shared composer.
     LaunchedEffect(currentConversationId) {
-        val draftId = currentConversationId
-        if (draftId == null) {
-            // New-chat screen: clear the composer so a draft from the previous conversation
-            // doesn't carry over.
-            viewModel.loadingDraft = true
-            try {
-                composer.bindDraftOwner(null)
-                textFieldState.edit { replace(0, length, "") }
-                composer.selectedAttachments = emptyList()
-            } finally {
-                viewModel.loadingDraft = false
-            }
-            return@LaunchedEffect
-        }
+        val draftId = currentConversationId ?: NEW_CHAT_WORKSPACE_ID
 
+        composer.abandonUnownedSandboxAttachments()
         viewModel.loadingDraft = true
         val loadedDraft = try {
             viewModel.loadDraft(draftId)

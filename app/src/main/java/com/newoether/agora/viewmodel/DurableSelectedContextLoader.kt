@@ -73,7 +73,11 @@ internal class DurableSelectedContextLoader(
                 validateEntity(request.conversationId, topology, entity)
                 entity.copy(
                     modelName = entity.modelName ?: planned.inheritedModelName,
-                    toolCallJson = if (planned.clearToolCallJson) null else entity.toolCallJson,
+                    toolCallJson = if (planned.stripAggregateToolSegments) {
+                        stripAggregatedToolSegments(entity.toolCallJson)
+                    } else {
+                        entity.toolCallJson
+                    },
                 )
             }
             DurableSelectedContext(

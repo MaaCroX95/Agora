@@ -184,7 +184,6 @@ internal fun LazyListScope.modelProviderGroups(
                             }
                             CardSurface(shape = modelShape) {
                                 val isEnabled = model in enabledModels
-                                val alias = modelAliases[model]
                                 val displayName = modelAliasDisplayName(
                                     model,
                                     modelAliases,
@@ -192,10 +191,8 @@ internal fun LazyListScope.modelProviderGroups(
                                 )
                                 SettingsItem(
                                     headlineContent = { Text(displayName) },
-                                    supportingContent = if (alias != null) {
-                                        { Text(modelApiDisplayName(model, customProviders)) }
-                                    } else {
-                                        null
+                                    supportingContent = {
+                                        Text(modelApiDisplayName(model, customProviders))
                                     },
                                     trailingContent = {
                                         Row(verticalAlignment = Alignment.CenterVertically) {

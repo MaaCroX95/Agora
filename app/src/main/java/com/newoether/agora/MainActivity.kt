@@ -309,6 +309,9 @@ fun MainNavigation(
                 showSettings -> TopLevelPresentation.SETTINGS
                 else -> TopLevelPresentation.CHAT
             },
+            onOwnerChanged = { owner ->
+                AppForegroundTracker.setChatPresented(owner == TopLevelPresentation.CHAT)
+            },
         )
     }
     val tasksListState = rememberLazyListState()

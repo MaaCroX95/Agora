@@ -1,6 +1,5 @@
 package com.newoether.agora.viewmodel
 
-import com.newoether.agora.api.LocalModelSerializer
 import com.newoether.agora.api.ProviderConfig
 import com.newoether.agora.api.StreamEvent
 import com.newoether.agora.data.BuiltInPrompts
@@ -10,15 +9,23 @@ import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.ModelId
 import com.newoether.agora.model.Participant
-import com.newoether.agora.util.Constants
 import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 
 private val TITLE_WHITESPACE = Regex("\\s+")
+
+private const val INITIAL_CONVERSATION_TITLE_MAX_CODE_POINTS = 32
+
+internal fun initialConversationTitle(prompt: String, fallback: String): String {
+    val normalized = prompt.replace(TITLE_WHITESPACE, " ").trim()
+    if (normalized.isEmpty()) return fallback
+    val codePointCount = normalized.codePointCount(0, normalized.length)
+    if (codePointCount <= INITIAL_CONVERSATION_TITLE_MAX_CODE_POINTS) return normalized
+    val prefixCodePoints = INITIAL_CONVERSATION_TITLE_MAX_CODE_POINTS - 1
+    val prefixEnd = normalized.offsetByCodePoints(0, prefixCodePoints)
+    return normalized.substring(0, prefixEnd).trimEnd() + "…"
+}
 
 internal fun fallbackConversationTitle(response: String): String =
     response.replace(TITLE_WHITESPACE, " ").trim().take(60)
@@ -64,20 +71,32 @@ class ConversationTitleGenerator(
 
         val conversation = conversations.getConversation(conversationId)
             ?: return Result.Failure("Conversation not found")
-        val snapshot = conversations.getMessagesForConversationSnapshot(conversationId)
         val path = ConversationUiState.resolvePath(
-            allMessages = projectProviderMessages(
-                entities = snapshot,
-                includeStoredTranscriptions = true,
-            ),
+            allMessages = conversations.getMessageTopologySnapshot(conversationId)
+                .map { message -> message.toUiChatMessageStub() },
             streamingMsg = null,
             selectedChildren = conversations.restoreBranchSelections(conversationId),
         )
-        val firstUser = path.firstOrNull {
-            it.participant == Participant.USER && titleSourceText(it).isNotBlank()
+        suspend fun firstMatchingMessage(
+            participant: Participant,
+            predicate: (ChatMessage) -> Boolean,
+        ): ChatMessage? {
+            for (message in path) {
+                if (message.participant != participant) continue
+                val entity = conversations.getMessage(message.id) ?: continue
+                val projected = projectProviderMessages(
+                    entities = listOf(entity),
+                    includeStoredTranscriptions = true,
+                ).singleOrNull() ?: continue
+                if (predicate(projected)) return projected
+            }
+            return null
+        }
+        val firstUser = firstMatchingMessage(Participant.USER) { message ->
+            titleSourceText(message).isNotBlank()
         } ?: return Result.Failure("Conversation has no user message")
-        val firstModel = path.firstOrNull {
-            it.participant == Participant.MODEL && it.text.isNotBlank()
+        val firstModel = firstMatchingMessage(Participant.MODEL) { message ->
+            message.text.isNotBlank()
         }
 
         val configuredTitleModel = settings.titleGenerationModel.value
@@ -136,13 +155,9 @@ class ConversationTitleGenerator(
         }
 
         try {
-            if (providerName == Constants.PROVIDER_LOCAL) {
-                LocalModelSerializer.mutex.withLock {
-                    withContext(Dispatchers.IO) { collectTitle() }
-                }
-            } else {
-                collectTitle()
-            }
+            // LocalProvider owns process-wide local-model serialization. Acquiring that mutex
+            // here as well would re-enter the same non-reentrant lock while collecting its Flow.
+            collectTitle()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

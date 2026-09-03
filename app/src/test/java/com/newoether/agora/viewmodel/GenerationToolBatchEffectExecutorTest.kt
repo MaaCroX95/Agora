@@ -4,6 +4,7 @@ import com.newoether.agora.api.StreamEvent
 import com.newoether.agora.api.ToolDefinition
 import com.newoether.agora.model.CitationAnchor
 import com.newoether.agora.model.CitationPolicy
+import com.newoether.agora.model.MessagePersistenceGuard
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.RunEffect
 import com.newoether.agora.model.RunEffectIdentity
@@ -16,6 +17,8 @@ import com.newoether.agora.tool.ToolProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
@@ -228,6 +231,70 @@ class GenerationToolBatchEffectExecutorTest {
     }
 
     @Test
+    fun `oversized running checkpoint fails before tool execution and leaves a writable terminal overlay`() = runTest {
+        val provider = StreamingToolProvider()
+        val tools = GenerationToolExecutor.forTest(listOf(provider))
+        val executor = GenerationToolBatchEffectExecutor(tools)
+        val overlay = GenerationToolOverlay(tools, "provider")
+        val continuation = Json.parseToJsonElement(
+            """{"type":"reasoning","encrypted_content":"${"x".repeat(610_000)}"}""",
+        ).jsonObject
+        val requestCall = call(responseOutputItems = listOf(continuation))
+        overlay.upsert("stream", "call", "tool", "{}", null)
+
+        val failure = runCatching {
+            executor.execute(
+                request = AuthorizedToolBatchRequest(
+                    effect = RunEffect.ExecuteToolBatch(IDENTITY),
+                    calls = listOf(requestCall),
+                    context = GenerationContext(),
+                    conversationId = "conversation",
+                    authorizedToolNames = setOf("tool"),
+                ),
+                overlay = overlay,
+                callbacks = ToolBatchProgressCallbacks(
+                    publish = { force ->
+                        if (force) MessagePersistenceGuard.encodeSegmentsBounded(overlay.snapshot())
+                    },
+                    onPublishedAt = {},
+                ),
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertTrue(
+            failure?.message.orEmpty().contains("continuation state exceeds"),
+        )
+        assertTrue(provider.executedNames.isEmpty())
+        val terminalSegment = overlay.snapshot().single { it.type == "tool" }
+        assertEquals(ToolExecutionStates.FAILED, terminalSegment.toolState)
+        assertTrue(terminalSegment.responseOutputItems.isEmpty())
+        assertNull(terminalSegment.responseOutputItemProvider)
+        assertTrue(MessagePersistenceGuard.encodeSegmentsBounded(overlay.snapshot()) != null)
+    }
+
+    @Test
+    fun `committed response state is released only from the root overlay copy`() {
+        val tools = GenerationToolExecutor.forTest(emptyList())
+        val overlay = GenerationToolOverlay(tools, "provider")
+        val continuation = Json.parseToJsonElement(
+            """{"id":"rs_1","type":"reasoning","encrypted_content":"opaque"}""",
+        ).jsonObject
+        val requestCall = call(responseOutputItems = listOf(continuation))
+        overlay.upsert("stream", "call", "tool", "{}", null)
+        overlay.start(requestCall)
+        val completed = overlay.complete(requestCall, ToolExecutionResult(text = "done"))
+
+        overlay.releaseCommittedResponseState(setOf("call"))
+
+        val rootSegment = overlay.snapshot().single { it.type == "tool" }
+        assertTrue(rootSegment.responseOutputItems.isEmpty())
+        assertNull(rootSegment.responseOutputItemProvider)
+        assertEquals(listOf(continuation), completed.data.responseOutputItems)
+        assertEquals("provider", completed.data.responseOutputItemProvider)
+    }
+
+    @Test
     fun `declared tool images are transcribed into consecutive thinking segments without polluting the result`() = runTest {
         val provider = ImageResultToolProvider()
         val tools = GenerationToolExecutor.forTest(listOf(provider))
@@ -332,12 +399,14 @@ class GenerationToolBatchEffectExecutorTest {
         id: String = "call",
         streamKey: String = "stream",
         arguments: String = "{}",
+        responseOutputItems: List<JsonObject> = emptyList(),
     ) = StreamEvent.ToolCallRequest(
         id = id,
         name = "tool",
         arguments = arguments,
         streamKey = streamKey,
         signature = "signature",
+        responseOutputItems = responseOutputItems,
     )
 
     private class ImageResultToolProvider : ToolProvider {

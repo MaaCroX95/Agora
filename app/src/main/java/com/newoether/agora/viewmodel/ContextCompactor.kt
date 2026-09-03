@@ -1,5 +1,7 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.api.util.CONTEXT_SUMMARY_CLOSE_TAG
+import com.newoether.agora.api.util.CONTEXT_SUMMARY_OPEN_TAG
 import com.newoether.agora.api.util.contextWindowUsage
 import com.newoether.agora.api.util.projectGenerationStatusesForApi
 import com.newoether.agora.api.util.splitContextForCompactRetention
@@ -27,6 +29,37 @@ internal fun compactSplitMessages(messages: List<ChatMessage>): List<ChatMessage
             projectGenerationStatusesForApi(messages.distinctBy(ChatMessage::id))
         )
     )
+
+internal fun normalizeContextCompactOutput(text: String): String {
+    val firstContentIndex = text.indexOfFirst { !it.isWhitespace() }
+    if (firstContentIndex < 0) return text
+    val candidate = text.substring(firstContentIndex)
+    if (CONTEXT_SUMMARY_OPEN_TAG.startsWith(candidate)) return ""
+    if (!candidate.startsWith(CONTEXT_SUMMARY_OPEN_TAG)) return text
+
+    val body = candidate
+        .substring(CONTEXT_SUMMARY_OPEN_TAG.length)
+        .removePrefix("\r\n")
+        .removePrefix("\n")
+    val closingIndex = body.lastIndexOf(CONTEXT_SUMMARY_CLOSE_TAG)
+    if (
+        closingIndex >= 0 &&
+        body.substring(closingIndex + CONTEXT_SUMMARY_CLOSE_TAG.length).isBlank()
+    ) {
+        return body.substring(0, closingIndex).trimEnd()
+    }
+
+    val partialClosingLength = minOf(body.length, CONTEXT_SUMMARY_CLOSE_TAG.length - 1)
+        .downTo(1)
+        .firstOrNull { length ->
+            CONTEXT_SUMMARY_CLOSE_TAG.startsWith(body.takeLast(length))
+        }
+        ?: return body
+    return body
+        .dropLast(partialClosingLength)
+        .removeSuffix("\r\n")
+        .removeSuffix("\n")
+}
 
 internal fun buildPersistedCompactText(
     summary: String,

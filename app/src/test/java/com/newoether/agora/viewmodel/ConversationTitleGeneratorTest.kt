@@ -10,6 +10,31 @@ import org.junit.Test
 
 class ConversationTitleGeneratorTest {
     @Test
+    fun initialTitleCollapsesWhitespaceAndFitsThirtyTwoCodePoints() {
+        val prompt = "  " + "a".repeat(20) + "\n" + "b".repeat(20) + "  "
+
+        val title = initialConversationTitle(prompt, fallback = "New Chat")
+
+        assertEquals("a".repeat(20) + " " + "b".repeat(10) + "…", title)
+        assertEquals(32, title.codePointCount(0, title.length))
+    }
+
+    @Test
+    fun initialTitleDoesNotSplitSupplementaryCharacters() {
+        val emoji = "\uD83D\uDE00"
+
+        val title = initialConversationTitle(emoji.repeat(40), fallback = "New Chat")
+
+        assertEquals(emoji.repeat(31) + "…", title)
+        assertEquals(32, title.codePointCount(0, title.length))
+    }
+
+    @Test
+    fun initialTitleFallsBackForBlankPrompt() {
+        assertEquals("New Chat", initialConversationTitle(" \n\t ", fallback = "New Chat"))
+    }
+
+    @Test
     fun fallbackTitleCollapsesWhitespaceAndTruncates() {
         val response = "  First line\n\nSecond\tline  " + "x".repeat(80)
 

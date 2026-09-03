@@ -221,7 +221,7 @@ fun RatingForm(
                                 }
                                 val body = json.toRequestBody("application/json".toMediaType())
                                 val request = Request.Builder()
-                                    .url("https://newoether.space/api/rating")
+                                    .url("https://newoether.com/api/rating")
                                     .post(body)
                                     .build()
                                 HttpClient.client.newCall(request).execute().use {

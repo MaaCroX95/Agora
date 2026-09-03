@@ -2,6 +2,10 @@ package com.newoether.agora.viewmodel
 
 import android.content.Context
 import com.newoether.agora.R
+import com.newoether.agora.api.ProviderRequestInput
+import com.newoether.agora.api.ProviderRequestResolver
+import com.newoether.agora.api.util.ContextTokenEstimator
+import com.newoether.agora.api.util.prepareMessages
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.MemoryManager
 import com.newoether.agora.data.SkillManager
@@ -23,6 +27,31 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
+
+internal fun buildPromptRuntimeValues(
+    now: java.util.Date,
+    modelId: String,
+    activeMemory: String,
+    skillCatalog: String,
+): Map<String, String> {
+    val timeFormat = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+    val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+    val sentDateFormat = java.text.SimpleDateFormat(
+        PredefinedVariables.SENT_DATE_PATTERN,
+        java.util.Locale.US,
+    )
+    return mapOf(
+        PredefinedVariables.TIME to timeFormat.format(now),
+        PredefinedVariables.DATE to dateFormat.format(now),
+        PredefinedVariables.SENT_TIME to timeFormat.format(now),
+        PredefinedVariables.SENT_DATE to sentDateFormat.format(now),
+        PredefinedVariables.CURRENT_MODEL_ID to modelId,
+        PredefinedVariables.MESSAGE_MODEL_ID to "",
+        PredefinedVariables.MODEL_ID to modelId,
+        PredefinedVariables.ACTIVE_MEMORY to activeMemory,
+        PredefinedVariables.SKILL_CATALOG to skillCatalog,
+    )
+}
 
 /**
  * Stateless builder for the LLM generation request. Extracted from ChatViewModel.
@@ -106,6 +135,11 @@ class GenerationRequestBuilder(
         val overrides = settings.conversationSettings.value[conversationId]
             ?: pendingConversationSettings.value  // new chat: may not be saved to map yet
             ?: ConversationSettings()
+        return resolveEffectiveConversationSettings(overrides)
+    }
+    private fun resolveEffectiveConversationSettings(
+        overrides: ConversationSettings,
+    ): ConversationSettings {
         return ConversationSettings(
             contextWindow = ContextBudget.normalize(
                 overrides.contextWindow ?: settings.maxContextWindow.value
@@ -148,10 +182,17 @@ class GenerationRequestBuilder(
         modelId: String,
         conversationOverride: ChatEntity? = null,
         resolvedPromptOverride: ResolvedPrompt? = null,
+        conversationSettingsOverride: ConversationSettings? = null,
     ): GenerationAdmissionSnapshot {
         val selectedModelId = providerRegistry.canonicalModelId(modelId)
         val providerName = providerRegistry.providerForModel(selectedModelId)
-        val effectiveSettings = buildEffectiveConversationSettings(conversationId)
+        val effectiveSettings = if (conversationOverride != null) {
+            resolveEffectiveConversationSettings(
+                conversationSettingsOverride ?: ConversationSettings(),
+            )
+        } else {
+            buildEffectiveConversationSettings(conversationId)
+        }
         val frozenKey = settings.awaitActiveKey(providerName).orEmpty()
         check(providerRegistry.isConfigured(providerName, frozenKey)) {
             "Provider is no longer configured: $providerName"
@@ -213,31 +254,41 @@ class GenerationRequestBuilder(
             ),
         )
         val titleGenerationEnabled = settings.titleGenerationEnabled.value
-        val promptSettings = capturePromptSettings()
-        val resolved = resolvedPromptOverride ?: buildEffectiveSystemPrompt(
-            currentId = conversationId,
-            activeModel = selectedModelId,
-            conversationOverride = conversationOverride,
-            promptSettings = promptSettings,
-        )
+        val ordinaryConfig = resolvedPromptOverride?.let { override ->
+            baseConfig.copy(
+                effectiveSystemPrompt = override.systemPrompt,
+                userPrepend = override.userPrepend,
+                userPostpend = override.userPostpend,
+                assistantPrepend = override.assistantPrepend,
+                assistantPostpend = override.assistantPostpend,
+            )
+        } ?: run {
+            val promptTemplate = capturePromptTemplate(
+                currentId = conversationId,
+                conversationOverride = conversationOverride,
+                promptSettings = capturePromptSettings(),
+            )
+            baseConfig.copy(
+                effectiveSystemPrompt = null,
+                userPrepend = null,
+                userPostpend = null,
+                assistantPrepend = null,
+                assistantPostpend = null,
+                promptTemplate = promptTemplate,
+                requestResolver = createRequestResolver(promptTemplate, selectedModelId),
+            )
+        }
         return GenerationAdmissionSnapshot(
             conversationId = conversationId,
             runId = runId,
             selectedModelId = selectedModelId,
-            config = baseConfig.copy(
-                effectiveSystemPrompt = resolved.systemPrompt,
-                userPrepend = resolved.userPrepend,
-                userPostpend = resolved.userPostpend,
-            ),
+            config = ordinaryConfig,
             context = context.copy(
                 webSearchApiKeys = context.webSearchApiKeys.toMap(),
                 shellDevices = context.shellDevices.toList(),
             ),
             providerInstances = providerInstances,
-            automaticCompact = automaticCompact.copy(
-                userPrepend = resolved.userPrepend,
-                userPostpend = resolved.userPostpend,
-            ),
+            automaticCompact = automaticCompact,
             titleGenerationEnabled = titleGenerationEnabled,
         )
     }
@@ -263,18 +314,21 @@ class GenerationRequestBuilder(
             effectiveSettings = buildEffectiveConversationSettings(conversationId),
             currentId = conversationId,
         )
-        val resolved = buildEffectiveSystemPrompt(
+        val promptTemplate = capturePromptTemplate(
             currentId = conversationId,
-            activeModel = selectedModelId,
             conversationOverride = null,
             promptSettings = capturePromptSettings(),
             systemPromptIdOverride = systemPromptIdOverride,
         )
+        val resolved = resolvePromptTemplate(promptTemplate, selectedModelId)
         return GenerationContextProjectionSnapshot(
             config = baseConfig.copy(
                 effectiveSystemPrompt = resolved.systemPrompt,
                 userPrepend = resolved.userPrepend,
                 userPostpend = resolved.userPostpend,
+                assistantPrepend = resolved.assistantPrepend,
+                assistantPostpend = resolved.assistantPostpend,
+                promptTemplate = promptTemplate,
             ),
             context = context.copy(
                 webSearchApiKeys = context.webSearchApiKeys.toMap(),
@@ -298,10 +352,6 @@ class GenerationRequestBuilder(
         val skillReadAccess = settings.accessSkills.value
         val skillModifyAccess = skillReadAccess && settings.accessSkillsModify.value
         val skillCatalog = if (skillReadAccess) skillManager.catalog() else ""
-        val effectiveSystemPromptWithSkills = listOfNotNull(
-            resolvedSystemPrompt?.takeIf(String::isNotBlank),
-            skillCatalog.takeIf(String::isNotBlank),
-        ).joinToString("\n\n").ifBlank { null }
         val responsesApiEnabled = isResponsesApiEnabledForProvider(
             providerName = providerName,
             builtInOpenAiEnabled = settings.openAiResponsesApiEnabled.value,
@@ -311,7 +361,7 @@ class GenerationRequestBuilder(
             providerName = providerName,
             modelId = ModelId.parse(providerRegistry.canonicalModelId(modelId)).modelName,
             apiKey = activeKey,
-            effectiveSystemPrompt = effectiveSystemPromptWithSkills,
+            effectiveSystemPrompt = resolvedSystemPrompt,
             maxContextWindow = ContextBudget.normalize(
                 effectiveSettings.contextWindow ?: settings.maxContextWindow.value
             ),
@@ -384,13 +434,11 @@ class GenerationRequestBuilder(
     }
 
     private data class PromptSettingsSnapshot(
-        val includeActiveMemory: Boolean,
         val activeSystemPromptId: String?,
         val systemPrompts: List<SystemPromptEntry>,
     )
 
     private fun capturePromptSettings() = PromptSettingsSnapshot(
-        includeActiveMemory = settings.accessActiveMemory.value,
         activeSystemPromptId = settings.activeSystemPromptId.value,
         systemPrompts = settings.systemPrompts.value.toList(),
     )
@@ -398,59 +446,118 @@ class GenerationRequestBuilder(
     data class ResolvedPrompt(
         val systemPrompt: String?,
         val userPrepend: String?,
-        val userPostpend: String?
+        val userPostpend: String?,
+        val assistantPrepend: String? = null,
+        val assistantPostpend: String? = null,
     )
 
-    private suspend fun buildEffectiveSystemPrompt(
+    private suspend fun capturePromptTemplate(
         currentId: String,
-        activeModel: String,
         conversationOverride: ChatEntity?,
         promptSettings: PromptSettingsSnapshot,
         systemPromptIdOverride: String? = null,
+    ): GenerationPromptTemplate = withContext(Dispatchers.Default) {
+        val conversation = conversationOverride ?: convRepo.getConversation(currentId)
+        val targetPromptId = systemPromptIdOverride
+            ?: conversation?.systemPromptId
+            ?: promptSettings.activeSystemPromptId
+        val entry = promptSettings.systemPrompts.find { it.id == targetPromptId }
+        GenerationPromptTemplate(
+            systemItems = entry?.resolvedSystemItems?.toList().orEmpty(),
+            userItems = entry?.resolvedUserItems?.toList()
+                ?: PredefinedVariables.normalizeMessageTemplate(emptyList()),
+            assistantItems = entry?.resolvedAssistantItems?.toList()
+                ?: PredefinedVariables.normalizeMessageTemplate(emptyList()),
+        )
+    }
+
+    private fun createRequestResolver(
+        promptTemplate: GenerationPromptTemplate,
+        activeModel: String,
+    ): ProviderRequestResolver = ProviderRequestResolver { messages, providerConfig ->
+        val resolved = resolvePromptTemplate(promptTemplate, activeModel)
+        val fixedTokenCost = ContextTokenEstimator.estimateFixed(
+            systemPrompt = resolved.systemPrompt,
+            tools = providerConfig.tools.orEmpty(),
+            initialUserPrompt = null,
+            codeExecutionEnabled = providerConfig.codeExecutionEnabled,
+            googleSearchEnabled = providerConfig.googleSearchEnabled,
+            openAiWebSearchEnabled = providerConfig.openAiWebSearchEnabled,
+        )
+        val providerTokenBudget =
+            (providerConfig.maxContextWindow - fixedTokenCost).coerceAtLeast(1)
+        val projectedMessages = projectGenerationInputMessages(
+            messages = messages,
+            includeImages = providerConfig.includeImages,
+            userPrepend = resolved.userPrepend,
+            userPostpend = resolved.userPostpend,
+            assistantPrepend = resolved.assistantPrepend,
+            assistantPostpend = resolved.assistantPostpend,
+        )
+        ProviderRequestInput(
+            messages = prepareMessages(projectedMessages, providerTokenBudget),
+            systemPrompt = resolved.systemPrompt,
+        )
+    }
+
+    private suspend fun resolvePromptTemplate(
+        promptTemplate: GenerationPromptTemplate,
+        activeModel: String,
     ): ResolvedPrompt = withContext(Dispatchers.Default) {
         coroutineScope {
-            val includeActiveMemory = promptSettings.includeActiveMemory
-            // Room and the optional memory-file read are independent. Running both immediately avoids
-            // adding their latencies serially to the visible Sending phase.
-            val conversationDeferred = async {
-                conversationOverride ?: convRepo.getConversation(currentId)
-            }
+            val includeActiveMemory = settings.accessActiveMemory.value
+            val includeSkillCatalog = settings.accessSkills.value
             val activeMemoryDeferred = async(Dispatchers.IO) {
                 if (includeActiveMemory) memoryManager.getActiveMemory() else ""
             }
-            val conversation = conversationDeferred.await()
-            val targetPromptId = systemPromptIdOverride
-                ?: conversation?.systemPromptId
-                ?: promptSettings.activeSystemPromptId
-            val entry = promptSettings.systemPrompts.find { it.id == targetPromptId }
-            val activeMemory = activeMemoryDeferred.await()
-            val modelId = ModelId.parse(providerRegistry.canonicalModelId(activeModel)).modelName
-
-            val sdf = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
-            val dateSdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-            val now = java.util.Date()
-
-            val runtimeValues = mapOf(
-                PredefinedVariables.TIME to sdf.format(now),
-                PredefinedVariables.DATE to dateSdf.format(now),
-                PredefinedVariables.SENT_TIME to sdf.format(now),
-                PredefinedVariables.SENT_DATE to dateSdf.format(now),
-                PredefinedVariables.MODEL_ID to modelId,
-                PredefinedVariables.ACTIVE_MEMORY to if (includeActiveMemory && activeMemory.isNotBlank()) activeMemory else ""
+            val skillCatalogDeferred = async {
+                if (includeSkillCatalog) skillManager.catalog() else ""
+            }
+            val modelId = ModelId.parse(
+                providerRegistry.canonicalModelId(activeModel),
+            ).modelName
+            val runtimeValues = buildPromptRuntimeValues(
+                now = java.util.Date(),
+                modelId = modelId,
+                activeMemory = activeMemoryDeferred.await()
+                    .takeIf { includeActiveMemory }
+                    .orEmpty(),
+                skillCatalog = skillCatalogDeferred.await()
+                    .takeIf { includeSkillCatalog }
+                    .orEmpty(),
             )
-
-            if (entry != null) {
-                val systemItems = entry.resolvedSystemItems
-                // Prepend/postpend: {sent_time}/{sent_date} stay as placeholders resolved per-message in applyUserTemplate
-                val perMsgValues = runtimeValues.filterKeys { it !in PredefinedVariables.PER_MESSAGE_VARS }
-                return@coroutineScope ResolvedPrompt(
-                    systemPrompt = PredefinedVariables.compile(systemItems, runtimeValues).ifBlank { null },
-                    userPrepend = PredefinedVariables.compile(entry.userPrependItems, perMsgValues, emptyMap()).ifBlank { null },
-                    userPostpend = PredefinedVariables.compile(entry.userPostpendItems, perMsgValues, emptyMap()).ifBlank { null }
-                )
+            val perMessageValues = runtimeValues.filterKeys {
+                it !in PredefinedVariables.PER_MESSAGE_VARS
             }
 
-            ResolvedPrompt(null, null, null)
+            fun resolveMessageTemplate(items: List<com.newoether.agora.data.PromptTemplateItem>): Pair<String?, String?> {
+                val parts = PredefinedVariables.splitMessageTemplate(items)
+                val before = PredefinedVariables.compile(
+                    parts.beforePrompt,
+                    perMessageValues,
+                    emptyMap(),
+                ).takeIf(String::isNotEmpty)
+                val after = PredefinedVariables.compile(
+                    parts.afterPrompt,
+                    perMessageValues,
+                    emptyMap(),
+                ).takeIf(String::isNotEmpty)
+                return before to after
+            }
+
+            val userTemplate = resolveMessageTemplate(promptTemplate.userItems)
+            val assistantTemplate = resolveMessageTemplate(promptTemplate.assistantItems)
+            ResolvedPrompt(
+                systemPrompt = PredefinedVariables.compile(
+                    promptTemplate.systemItems,
+                    runtimeValues,
+                    emptyMap(),
+                ).takeIf(String::isNotEmpty),
+                userPrepend = userTemplate.first,
+                userPostpend = userTemplate.second,
+                assistantPrepend = assistantTemplate.first,
+                assistantPostpend = assistantTemplate.second,
+            )
         }
     }
 }

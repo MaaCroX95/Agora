@@ -3,17 +3,46 @@ package com.newoether.agora.api
 import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import java.io.Closeable
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
+internal enum class LlamaGenerationStopReason(val nativeValue: String) {
+    EOG("eog"),
+    MAX_TOKENS("max_tokens"),
+    CONTEXT_FULL("context_full"),
+    CANCELLED("cancelled");
+
+    companion object {
+        fun fromNative(value: String): LlamaGenerationStopReason? = entries
+            .firstOrNull { it.nativeValue == value }
+    }
+}
+
+internal sealed interface LlamaGenerationEvent {
+    data class Text(val value: String) : LlamaGenerationEvent
+    data class Completed(
+        val reason: LlamaGenerationStopReason,
+        val inputTokenCount: Int,
+        val outputTokenCount: Int,
+    ) : LlamaGenerationEvent
+
+    data class Failed(
+        val message: String,
+        val inputTokenCount: Int,
+        val outputTokenCount: Int,
+    ) : LlamaGenerationEvent
+}
+
 interface NativeChatCallback {
-    fun onToken(token: String)
-    fun onDone()
-    fun onError(message: String)
+    fun onToken(token: String): Boolean
+    fun onDone(reason: String, inputTokenCount: Int, outputTokenCount: Int)
+    fun onError(message: String, inputTokenCount: Int, outputTokenCount: Int)
 }
 
 class ChatTemplateMessage(val role: String, val content: String)
@@ -33,27 +62,39 @@ class LlamaChatEngine(
 
     @Volatile
     private var nativeHandle: Long = 0
+    @Volatile
+    private var loadedMmprojPath: String? = null
     private val lock = ReentrantReadWriteLock()
 
     private external fun nativeChatLoadModel(path: String, nCtx: Int): Long
     private external fun nativeChatGetTemplate(handle: Long): String?
-    private external fun nativeChatApplyTemplate(handle: Long, messages: Array<ChatTemplateMessage>, addAss: Boolean): String?
+    private external fun nativeChatApplyTemplate(
+        handle: Long,
+        messages: Array<ChatTemplateMessage>,
+        addAss: Boolean,
+        enableThinking: Boolean,
+    ): String?
     private external fun nativeChatLoadMmproj(handle: Long, mmprojPath: String): Boolean
     private external fun nativeChatUnloadMmproj(handle: Long)
     private external fun nativeChatHasMmproj(handle: Long): Boolean
     private external fun nativeChatGenerateWithImages(
         handle: Long, prompt: String, imagePaths: Array<String>,
-        temperature: Float, topP: Float, maxTokens: Int, callback: NativeChatCallback
+        temperature: Float, topP: Float, frequencyPenalty: Float, presencePenalty: Float,
+        maxTokens: Int, callback: NativeChatCallback,
     ): Int
     private external fun nativeChatGenerate(
-        handle: Long, prompt: String, temperature: Float, topP: Float, maxTokens: Int,
-        callback: NativeChatCallback
+        handle: Long, prompt: String, temperature: Float, topP: Float,
+        frequencyPenalty: Float, presencePenalty: Float, maxTokens: Int,
+        callback: NativeChatCallback,
     ): Int
     private external fun nativeChatReset(handle: Long)
     private external fun nativeChatFreeModel(handle: Long)
     private external fun nativeChatCancel(handle: Long)
 
     fun isLoaded(): Boolean = nativeHandle != 0L
+
+    fun matches(path: String, contextSize: Int): Boolean =
+        nativeHandle != 0L && modelPath == path && nCtx == contextSize
 
     fun load(): Boolean {
         if (!File(modelPath).exists()) {
@@ -86,40 +127,72 @@ class LlamaChatEngine(
 
     fun applyTemplate(
         messages: List<ChatTemplateMessage>,
-        addAss: Boolean = true
+        addAss: Boolean = true,
+        enableThinking: Boolean = true,
     ): String? {
         lock.readLock().lock()
         try {
             if (nativeHandle == 0L) return null
-            return nativeChatApplyTemplate(nativeHandle, messages.toTypedArray(), addAss)
+            return nativeChatApplyTemplate(
+                nativeHandle,
+                messages.toTypedArray(),
+                addAss,
+                enableThinking,
+            )
         } finally {
             lock.readLock().unlock()
         }
     }
 
-    fun generate(
+    internal fun generate(
         prompt: String,
         temperature: Float = 0.7f,
         topP: Float = 0.9f,
-        maxTokens: Int = 4096
-    ): Flow<String> = callbackFlow {
+        frequencyPenalty: Float = 0f,
+        presencePenalty: Float = 0f,
+        maxTokens: Int = 4096,
+    ): Flow<LlamaGenerationEvent> = callbackFlow {
         if (nativeHandle == 0L) {
             close(RuntimeException("Model not loaded"))
             return@callbackFlow
         }
 
+        val terminalSignalled = AtomicBoolean(false)
         val callback = object : NativeChatCallback {
-            override fun onToken(token: String) {
-                trySend(token)
+            override fun onToken(token: String): Boolean =
+                !terminalSignalled.get() &&
+                    trySendBlocking(LlamaGenerationEvent.Text(token)).isSuccess
+
+            override fun onDone(reason: String, inputTokenCount: Int, outputTokenCount: Int) {
+                if (!terminalSignalled.compareAndSet(false, true)) return
+                val parsedReason = LlamaGenerationStopReason.fromNative(reason)
+                if (parsedReason == null) {
+                    trySendBlocking(
+                        LlamaGenerationEvent.Failed(
+                            message = "Unknown native stop reason: $reason",
+                            inputTokenCount = inputTokenCount,
+                            outputTokenCount = outputTokenCount,
+                        )
+                    )
+                } else {
+                    trySendBlocking(
+                        LlamaGenerationEvent.Completed(
+                            reason = parsedReason,
+                            inputTokenCount = inputTokenCount,
+                            outputTokenCount = outputTokenCount,
+                        )
+                    )
+                }
+                this@callbackFlow.close()
             }
 
-            override fun onDone() {
-                close()
-            }
-
-            override fun onError(message: String) {
+            override fun onError(message: String, inputTokenCount: Int, outputTokenCount: Int) {
+                if (!terminalSignalled.compareAndSet(false, true)) return
                 DebugLog.e(TAG, "Generation error reported by native backend")
-                close(RuntimeException(message))
+                trySendBlocking(
+                    LlamaGenerationEvent.Failed(message, inputTokenCount, outputTokenCount)
+                )
+                this@callbackFlow.close()
             }
         }
 
@@ -128,9 +201,15 @@ class LlamaChatEngine(
             try {
                 val handle = nativeHandle
                 if (handle != 0L) {
-                    nativeChatGenerate(handle, prompt, temperature, topP, maxTokens, callback)
+                    val result = nativeChatGenerate(
+                        handle, prompt, temperature, topP, frequencyPenalty, presencePenalty,
+                        maxTokens, callback,
+                    )
+                    if (result < 0 && !terminalSignalled.get()) {
+                        callback.onError("Native generation ended without a terminal result", 0, 0)
+                    }
                 } else {
-                    callback.onError("Model closed before generation started")
+                    callback.onError("Model closed before generation started", 0, 0)
                 }
             } catch (e: Exception) {
                 DebugLog.e(TAG, "nativeChatGenerate crashed", e)
@@ -157,12 +236,17 @@ class LlamaChatEngine(
             DebugLog.e(TAG, "mmproj file not found")
             return false
         }
-        lock.readLock().lock()
+        lock.writeLock().lock()
         try {
             if (nativeHandle == 0L) return false
-            return nativeChatLoadMmproj(nativeHandle, mmprojPath)
+            if (loadedMmprojPath == mmprojPath && nativeChatHasMmproj(nativeHandle)) {
+                return true
+            }
+            val loaded = nativeChatLoadMmproj(nativeHandle, mmprojPath)
+            if (loaded) loadedMmprojPath = mmprojPath
+            return loaded
         } finally {
-            lock.readLock().unlock()
+            lock.writeLock().unlock()
         }
     }
 
@@ -176,34 +260,64 @@ class LlamaChatEngine(
     }
 
     fun unloadMmproj() {
-        lock.readLock().lock()
+        lock.writeLock().lock()
         try {
-            if (nativeHandle != 0L) {
+            if (nativeHandle != 0L && loadedMmprojPath != null) {
                 nativeChatUnloadMmproj(nativeHandle)
             }
+            loadedMmprojPath = null
         } finally {
-            lock.readLock().unlock()
+            lock.writeLock().unlock()
         }
     }
 
-    fun generateWithImages(
+    internal fun generateWithImages(
         prompt: String,
         imagePaths: List<String>,
         temperature: Float = 0.7f,
         topP: Float = 0.9f,
-        maxTokens: Int = 4096
-    ): Flow<String> = callbackFlow {
+        frequencyPenalty: Float = 0f,
+        presencePenalty: Float = 0f,
+        maxTokens: Int = 4096,
+    ): Flow<LlamaGenerationEvent> = callbackFlow {
         if (nativeHandle == 0L) {
             close(RuntimeException("Model not loaded"))
             return@callbackFlow
         }
 
+        val terminalSignalled = AtomicBoolean(false)
         val callback = object : NativeChatCallback {
-            override fun onToken(token: String) { trySend(token) }
-            override fun onDone() { close() }
-            override fun onError(message: String) {
+            override fun onToken(token: String): Boolean =
+                !terminalSignalled.get() &&
+                    trySendBlocking(LlamaGenerationEvent.Text(token)).isSuccess
+
+            override fun onDone(reason: String, inputTokenCount: Int, outputTokenCount: Int) {
+                if (!terminalSignalled.compareAndSet(false, true)) return
+                val parsedReason = LlamaGenerationStopReason.fromNative(reason)
+                val event = if (parsedReason == null) {
+                    LlamaGenerationEvent.Failed(
+                        message = "Unknown native stop reason: $reason",
+                        inputTokenCount = inputTokenCount,
+                        outputTokenCount = outputTokenCount,
+                    )
+                } else {
+                    LlamaGenerationEvent.Completed(
+                        reason = parsedReason,
+                        inputTokenCount = inputTokenCount,
+                        outputTokenCount = outputTokenCount,
+                    )
+                }
+                trySendBlocking(event)
+                this@callbackFlow.close()
+            }
+
+            override fun onError(message: String, inputTokenCount: Int, outputTokenCount: Int) {
+                if (!terminalSignalled.compareAndSet(false, true)) return
                 DebugLog.e(TAG, "Generation error reported by native backend")
-                close(RuntimeException(message))
+                trySendBlocking(
+                    LlamaGenerationEvent.Failed(message, inputTokenCount, outputTokenCount)
+                )
+                this@callbackFlow.close()
             }
         }
 
@@ -212,12 +326,16 @@ class LlamaChatEngine(
             try {
                 val handle = nativeHandle
                 if (handle != 0L) {
-                    nativeChatGenerateWithImages(
+                    val result = nativeChatGenerateWithImages(
                         handle, prompt, imagePaths.toTypedArray(),
-                        temperature, topP, maxTokens, callback
+                        temperature, topP, frequencyPenalty, presencePenalty,
+                        maxTokens, callback,
                     )
+                    if (result < 0 && !terminalSignalled.get()) {
+                        callback.onError("Native generation ended without a terminal result", 0, 0)
+                    }
                 } else {
-                    callback.onError("Model closed before generation started")
+                    callback.onError("Model closed before generation started", 0, 0)
                 }
             } catch (e: Exception) {
                 DebugLog.e(TAG, "nativeChatGenerateWithImages crashed", e)
@@ -249,13 +367,13 @@ class LlamaChatEngine(
     }
 
     fun resetContext() {
-        lock.readLock().lock()
+        lock.writeLock().lock()
         try {
             if (nativeHandle != 0L) {
                 nativeChatReset(nativeHandle)
             }
         } finally {
-            lock.readLock().unlock()
+            lock.writeLock().unlock()
         }
     }
 
@@ -274,6 +392,7 @@ class LlamaChatEngine(
             if (nativeHandle != 0L) {
                 nativeChatFreeModel(nativeHandle)
                 nativeHandle = 0L
+                loadedMmprojPath = null
                 DebugLog.d(TAG, "Model closed")
             }
         } finally {

@@ -109,16 +109,22 @@ Never:
 | Scope | Required module contract |
 |---|---|
 | Message generation, Run lifecycle, queue, tools, Compact, Regenerate, message actions/status, or Provider context | [message-generation.md](message-generation.md) |
+| Embedded llama.cpp FIFO admission, Chat/Embedding residency, identity switching, Stop, or idle offload | [local-model-runtime.md](local-model-runtime.md) |
 | Provider structured citations, citation persistence, marker cleanup, answer/source projection, citation copy/search/import/export, or citation accessibility | [citations.md](citations.md) |
 | Embedding-cache reads, semantic conversation search, RAG ranking, or search eligibility | [semantic-search.md](semantic-search.md) |
 | Generic Web Search providers/settings/tool execution or native provider-hosted web search | [web-search.md](web-search.md) |
 | Persistent Skill files, Skill catalog prompt projection, Skill tools/settings, or Skill archive transport | [skills.md](skills.md) |
 | Application-level onboarding motion, settings category copy, or other non-message global UI behavior | [application-ui.md](application-ui.md) |
+| Native `.agora` archive categories, settings portability, import strategies, secrets, or backup compatibility | [import-export.md](import-export.md) |
+| Shared Settings page structure, interaction, copy, localization, or documentation entry points | [settings-ui-ux.md](settings-ui-ux.md) |
 
 Add a module document when a user defines durable behavior for another subsystem. Each module
 document must describe current code ownership, allowed and forbidden responsibilities, concrete
 behavior/state/data flow, concurrency and transaction boundaries, failure behavior, and required
 verification. Keep one authority per contract; do not duplicate normative text across modules.
+
+Documents under [`baselines/`](baselines/) are explicitly historical and non-authoritative. They
+preserve migration or audit evidence only and never override the module contracts in this registry.
 
 ## 7. Development completion gate
 

@@ -2,12 +2,12 @@ package com.newoether.agora.viewmodel
 
 import com.newoether.agora.model.ChatMessage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -27,11 +27,17 @@ internal class StreamingCheckpointWriter(
 ) {
     private data class Request(val sequence: Long, val message: ChatMessage)
     private data class Completion(val sequence: Long, val targetExists: Boolean)
+    private data class BarrierCompletion(
+        val targetExists: Boolean,
+        val failure: Exception? = null,
+    )
 
     private val accepting = AtomicBoolean(true)
     private val nextSequence = AtomicLong(0L)
     private val requested = MutableStateFlow<Request?>(null)
     private val completed = MutableStateFlow(Completion(0L, targetExists = true))
+    private val barrierLock = Any()
+    private val barriers = linkedMapOf<Long, CompletableDeferred<BarrierCompletion>>()
 
     private val writerJob = scope.launch(Dispatchers.IO) {
         requested.filterNotNull().collect { request ->
@@ -39,37 +45,101 @@ internal class StreamingCheckpointWriter(
             if (request.sequence <= previous.sequence) return@collect
             if (!previous.targetExists) {
                 completed.value = Completion(request.sequence, targetExists = false)
+                completeBarriers(request.sequence, targetExists = false)
                 return@collect
             }
+            var failure: Exception? = null
             val targetExists = try {
                 persist(request.message)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // A checkpoint remains best-effort. Keep the target eligible so a later snapshot
-                // can retry, but complete this sequence so a forced boundary cannot deadlock.
+                // Ordinary checkpoints remain best-effort, but a flush waiting on this sequence
+                // receives the original failure and can stop the guarded lifecycle transition.
                 onFailure(e)
+                failure = e
                 true
             }
             completed.value = Completion(request.sequence, targetExists)
+            completeBarriers(request.sequence, targetExists, failure)
         }
     }
 
-    fun enqueue(message: ChatMessage): Long? {
-        if (!accepting.get() || !completed.value.targetExists) return null
-        val sequence = nextSequence.incrementAndGet()
-        requested.value = Request(sequence, message)
-        return sequence
-    }
+    fun enqueue(message: ChatMessage): Long? = enqueue(message, barrier = null)
 
     suspend fun flush(message: ChatMessage): Boolean {
-        val sequence = enqueue(message) ?: return false
-        return completed.first { it.sequence >= sequence }.targetExists
+        val barrier = CompletableDeferred<BarrierCompletion>()
+        val sequence = enqueue(message, barrier) ?: return false
+        return try {
+            val completion = barrier.await()
+            completion.failure?.let { throw it }
+            completion.targetExists
+        } finally {
+            synchronized(barrierLock) {
+                if (barriers[sequence] === barrier) barriers.remove(sequence)
+            }
+        }
     }
 
     suspend fun cancelAndJoin() {
         accepting.set(false)
         writerJob.cancelAndJoin()
+        val pending = synchronized(barrierLock) {
+            barriers.values.toList().also { barriers.clear() }
+        }
+        pending.forEach { barrier ->
+            barrier.completeExceptionally(
+                CancellationException("Streaming checkpoint writer closed before flush completed"),
+            )
+        }
+    }
+
+    private fun enqueue(
+        message: ChatMessage,
+        barrier: CompletableDeferred<BarrierCompletion>?,
+    ): Long? {
+        if (!accepting.get() || !completed.value.targetExists) return null
+        val sequence = nextSequence.incrementAndGet()
+        if (barrier != null) {
+            synchronized(barrierLock) { barriers[sequence] = barrier }
+        }
+        if (!accepting.get() || !completed.value.targetExists) {
+            if (barrier != null) {
+                synchronized(barrierLock) {
+                    if (barriers[sequence] === barrier) barriers.remove(sequence)
+                }
+            }
+            return null
+        }
+        requested.value = Request(sequence, message)
+        return sequence
+    }
+
+    private fun completeBarriers(
+        sequence: Long,
+        targetExists: Boolean,
+        failure: Exception? = null,
+    ) {
+        val ready = synchronized(barrierLock) {
+            buildList {
+                val iterator = barriers.entries.iterator()
+                while (iterator.hasNext()) {
+                    val entry = iterator.next()
+                    if (entry.key <= sequence) {
+                        add(entry.value)
+                        iterator.remove()
+                    }
+                }
+            }
+        }
+        ready.forEach { barrier ->
+            barrier.complete(
+                BarrierCompletion(
+                    targetExists = targetExists,
+                    failure = failure,
+                ),
+            )
+        }
     }
 }
 

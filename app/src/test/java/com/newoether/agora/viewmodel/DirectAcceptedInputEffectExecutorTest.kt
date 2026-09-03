@@ -1,6 +1,7 @@
 package com.newoether.agora.viewmodel
 
 import com.newoether.agora.automation.ConversationExecutionCoordinator
+import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.data.local.RunEntity
@@ -69,7 +70,6 @@ class DirectAcceptedInputEffectExecutorTest {
         assertEquals(SendAcceptance.Direct(USER_ID, CONVERSATION_ID), accepted)
         assertEquals(
             listOf(
-                "apply-pending",
                 "capture-snapshot",
                 "room-commit",
                 "persist-user:$USER_ID",
@@ -137,19 +137,35 @@ class DirectAcceptedInputEffectExecutorTest {
         val fixture = Fixture(deletePath = { deleted += it })
         val state = ConversationGenerationState(CONVERSATION_ID)
         val effect = claimDirectEffect(state)
-        coEvery { fixture.graphWriter.commit(any(), any()) } throws
-            CancellationException("cancelled after Room commit")
+        coEvery { fixture.graphWriter.commit(any(), any()) } coAnswers {
+            fixture.events += "room-commit"
+            throw CancellationException("cancelled after Room commit")
+        }
         coEvery { fixture.conversations.getRun(RUN_ID) } returns ACTIVE_RUN
         coEvery {
             fixture.terminalSettlement.settleCancelledDurableRun(state, any())
         } returns true
 
-        val execution = fixture.executor.launch(fixture.request(effect), state)
+        val execution = fixture.executor.launch(
+            fixture.request(
+                effect = effect,
+                wasNewChat = true,
+                newConversation = ChatEntity(CONVERSATION_ID, "New chat"),
+                newConversationSettings = CAPTURED_SETTINGS,
+            ),
+            state,
+        )
         val accepted = execution.awaitAcceptance()
         execution.job?.join()
 
         assertEquals(SendAcceptance.Direct(USER_ID, CONVERSATION_ID), accepted)
         assertTrue(deleted.isEmpty())
+        val commitIndex = fixture.events.indexOf("room-commit")
+        val transferIndex = fixture.events.indexOf(
+            "apply-committed:$CONVERSATION_ID",
+        )
+        assertTrue(commitIndex >= 0)
+        assertTrue(transferIndex > commitIndex)
         coVerify(exactly = 1) {
             fixture.terminalSettlement.settleCancelledDurableRun(
                 state,
@@ -179,6 +195,7 @@ class DirectAcceptedInputEffectExecutorTest {
                 effect = effect,
                 wasNewChat = true,
                 newConversation = ChatEntity(CONVERSATION_ID, "New chat"),
+                newConversationSettings = CAPTURED_SETTINGS,
             ),
             state,
         )
@@ -186,17 +203,64 @@ class DirectAcceptedInputEffectExecutorTest {
         execution.job?.join()
 
         val commitIndex = fixture.events.indexOf("room-commit")
+        val transferIndex = fixture.events.indexOf(
+            "apply-committed:$CONVERSATION_ID",
+        )
         val acceptanceIndex = fixture.events.indexOf("accept-callback:$USER_ID")
-        val publicationIndex = fixture.events.indexOf("publish-new")
+        val publicationIndex = fixture.events.indexOf("publish-new:provider:model")
+        val clearIndex = fixture.events.indexOf("clear-new-chat")
         assertTrue(commitIndex >= 0)
-        assertTrue(acceptanceIndex > commitIndex)
+        assertTrue(transferIndex > commitIndex)
+        assertTrue(acceptanceIndex > transferIndex)
         assertTrue(publicationIndex > acceptanceIndex)
+        assertTrue(clearIndex > publicationIndex)
+        state.dispose()
+        Unit
+    }
+
+    @Test
+    fun outboxTransferFailureDoesNotRejectTheDurableSend() = runBlocking {
+        val fixture = Fixture(
+            applyCommittedError = IllegalStateException("DataStore unavailable"),
+        )
+        val state = ConversationGenerationState(CONVERSATION_ID)
+        val effect = claimDirectEffect(state)
+        coEvery { fixture.graphWriter.commit(any(), any()) } coAnswers {
+            fixture.events += "room-commit"
+            fixture.commit
+        }
+        coEvery { fixture.boundLauncher.launch(any(), state) } coAnswers {
+            fixture.events += "bound-launch"
+        }
+
+        val execution = fixture.executor.launch(
+            fixture.request(
+                effect = effect,
+                wasNewChat = true,
+                newConversation = ChatEntity(CONVERSATION_ID, "New chat"),
+                newConversationSettings = CAPTURED_SETTINGS,
+            ),
+            state,
+        )
+        val accepted = execution.awaitAcceptance()
+        execution.job?.join()
+
+        assertEquals(SendAcceptance.Direct(USER_ID, CONVERSATION_ID), accepted)
+        assertTrue(fixture.events.contains("apply-committed:$CONVERSATION_ID"))
+        assertTrue(fixture.events.contains("accept-callback:$USER_ID"))
+        assertTrue(fixture.events.contains("publish-new:provider:model"))
+        assertTrue(fixture.events.contains("clear-new-chat"))
+        assertTrue(fixture.events.contains("bound-launch"))
+        coVerify(exactly = 0) {
+            fixture.terminalSettlement.failGenerationSetup(any(), any(), any(), any(), any(), any())
+        }
         state.dispose()
         Unit
     }
 
     private class Fixture(
         deletePath: (String) -> Unit = {},
+        private val applyCommittedError: Exception? = null,
     ) {
         val conversations = mockk<ConversationRepository>()
         val settings = mockk<SettingsRepository>()
@@ -222,7 +286,7 @@ class DirectAcceptedInputEffectExecutorTest {
             coEvery { settings.incrementMessagesSent() } just Runs
             coEvery {
                 requestBuilder.captureAdmissionSnapshot(
-                    any(), any(), any(), any(), any(),
+                    any(), any(), any(), any(), any(), any(),
                 )
             } coAnswers {
                 events += "capture-snapshot"
@@ -245,8 +309,16 @@ class DirectAcceptedInputEffectExecutorTest {
                 },
                 toUiMessage = ::toUiMessage,
                 isConversationOpen = { true },
-                applyPendingConversationSettings = { events += "apply-pending" },
-                publishNewConversation = { events += "publish-new" },
+                applyCommittedNewConversationState = { conversationId ->
+                    events += "apply-committed:$conversationId"
+                    applyCommittedError?.let { throw it }
+                },
+                clearCommittedNewChatWorkspace = {
+                    events += "clear-new-chat"
+                },
+                publishNewConversation = { _, modelId ->
+                    events += "publish-new:$modelId"
+                },
                 onUserMessagePersisted = { messageId, _ ->
                     events += "persist-user:$messageId"
                 },
@@ -260,6 +332,7 @@ class DirectAcceptedInputEffectExecutorTest {
             effect: RunEffect.PersistAcceptedInput,
             wasNewChat: Boolean = false,
             newConversation: ChatEntity? = null,
+            newConversationSettings: ConversationSettings? = null,
         ) = DirectAcceptedInputRequest(
             inputEffect = effect,
             wasNewChat = wasNewChat,
@@ -267,6 +340,7 @@ class DirectAcceptedInputEffectExecutorTest {
             userText = "hello",
             payloadLease = payloadLease,
             modelId = "provider:model",
+            newConversationSettings = newConversationSettings,
             alreadyHoldsLock = false,
             requestScroll = { _, messageId -> events += "scroll:$messageId" },
             onAccepted = { events += "accept-callback:${it.messageId}" },
@@ -279,6 +353,7 @@ class DirectAcceptedInputEffectExecutorTest {
         const val RUN_ID = "run"
         const val USER_ID = "user"
         const val MODEL_ID = "model"
+        val CAPTURED_SETTINGS = ConversationSettings(temperature = 0.25f)
         val PAYLOAD = MessagePayloadBuilder.MessagePayload(
             allImages = listOf("image"),
             attachmentMeta = null,

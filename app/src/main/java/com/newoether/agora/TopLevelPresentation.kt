@@ -17,19 +17,26 @@ enum class TopLevelPresentation {
 @Stable
 internal class TopLevelPresentationState(
     initialOwner: TopLevelPresentation = TopLevelPresentation.CHAT,
+    private val onOwnerChanged: (TopLevelPresentation) -> Unit = {},
 ) {
     var owner by mutableStateOf(initialOwner)
         private set
 
+    init {
+        onOwnerChanged(owner)
+    }
+
     fun present(presentation: TopLevelPresentation) {
         require(presentation != TopLevelPresentation.CHAT)
         owner = presentation
+        onOwnerChanged(owner)
     }
 
     /** A stale exiting surface cannot return ownership after a newer surface was presented. */
     fun release(presentation: TopLevelPresentation): Boolean {
         if (owner != presentation) return false
         owner = TopLevelPresentation.CHAT
+        onOwnerChanged(owner)
         return true
     }
 }

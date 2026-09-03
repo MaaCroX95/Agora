@@ -271,11 +271,11 @@
     <string name="prompts_delete_text">Вы уверены, что хотите удалить \'%1$s\'? Это действие нельзя отменить.</string>
     <string name="template_title_required">Требуется заголовок</string>
     <string name="template_tab_system">Система</string>
-    <string name="template_tab_prepend">Префикс</string>
-    <string name="template_tab_postpend">Суффикс</string>
-    <string name="template_tab_system_desc">Отправляется как системная инструкция.</string>
-    <string name="template_tab_prepend_desc">Вставляется перед каждым сообщением пользователя.</string>
-    <string name="template_tab_postpend_desc">Вставляется после каждого сообщения пользователя.</string>
+    <string name="template_tab_user">Пользователь</string>
+    <string name="template_tab_assistant">Ассистент</string>
+    <string name="template_tab_system_desc">Определяет системное сообщение, отправляемое модели.</string>
+    <string name="template_tab_user_desc">Определяет структуру вокруг каждого обычного сообщения пользователя.</string>
+    <string name="template_tab_assistant_desc">Определяет структуру вокруг каждого обычного сообщения ассистента.</string>
     <string name="template_empty_hint">Нет элементов. Добавьте текст или переменные ниже.</string>
     <string name="template_add_text">Добавить текст</string>
     <string name="template_add_variable">Добавить переменную</string>
@@ -370,6 +370,9 @@
     <string name="advanced_generation_title">Дополнительные настройки</string>
     <string name="advanced_per_conversation">Переопределения для отдельной беседы</string>
     <string name="appearance_interface">Интерфейс</string>
+    <string name="appearance_theme_color">Тема и цвета</string>
+    <string name="appearance_motion_feedback">Движение и обратная связь</string>
+    <string name="appearance_chat_display">Отображение чата</string>
     <string name="message_display">Отображение сообщений</string>
     <string name="tool_call_display_mode">Блоки размышлений и инструментов</string>
     <string name="tool_call_display_mode_timeline">Хронология</string>
@@ -731,6 +734,10 @@
     <!-- Local Chat Provider -->
     <string name="local_chat_models">Локальные модели чата</string>
     <string name="local_models_title">Локальные модели</string>
+    <string name="local_model_idle_retention">Хранение модели в простое</string>
+    <string name="local_model_idle_retention_desc">Как долго неактивная локальная модель остаётся в памяти перед выгрузкой</string>
+    <string name="local_model_idle_retention_immediate">Сразу</string>
+    <string name="local_model_idle_retention_minutes">%1$d мин</string>
     <string name="local_chat_models_count">Импортировано моделей: %1$d</string>
     <string name="local_title">Локальная</string>
     <string name="not_configured">Не настроено</string>
@@ -800,7 +807,7 @@
     <string name="rating_submitting">Отправка…</string>
     <string name="rating_success">Спасибо за ваш отзыв!</string>
     <string name="rating_failed">Не удалось отправить. Попробуйте ещё раз.</string>
-    <string name="rating_privacy">Ваша оценка будет анонимно загружена на newoether.space. Передаются только заполненные вами поля. Никакие другие данные не собираются.</string>
+    <string name="rating_privacy">Ваша оценка будет анонимно загружена на newoether.com. Передаются только заполненные вами поля. Никакие другие данные не собираются.</string>
 
     <!-- Data Control -->
     <string name="settings_data_control">Управление данными</string>
@@ -882,7 +889,8 @@
     <string name="file_unsupported_title">Файл не поддерживается</string>
     <string name="file_unknown_type">Неизвестный тип файла</string>
     <string name="file_unsupported_type">Неподдерживаемый тип файла: %1$s</string>
-    <string name="file_too_large">Файл слишком большой (макс. 20 МБ)</string>
+    <string name="file_too_large">Файл слишком большой (макс. 100 МиБ)</string>
+    <string name="file_sandbox_required">Установите и включите Local Sandbox, чтобы прикрепить этот файл.</string>
     <string name="attachment_copy_failed_image">Не удалось загрузить изображение</string>
     <string name="attachment_copy_failed_file">Не удалось загрузить файл</string>
     <string name="pdf_render_failed">Не удалось отрисовать PDF</string>
@@ -999,7 +1007,7 @@
     <string name="crash_message">Приносим извинения. Вы можете помочь исправить это, отправив анонимный отчёт о сбое.</string>
     <string name="crash_submit">Отправить отчёт</string>
     <string name="crash_dismiss">Не отправлять</string>
-    <string name="crash_privacy_note">На newoether.space отправляется только журнал сбоя. Никакая другая информация не собирается.</string>
+    <string name="crash_privacy_note">На newoether.com отправляется только журнал сбоя. Никакая другая информация не собирается.</string>
     <string name="crash_submitted">Отчёт о сбое отправлен. Спасибо!</string>
     <string name="settings_group_network">Сеть</string>
     <string name="settings_proxy">Прокси</string>
@@ -1077,7 +1085,10 @@
     <string name="openai_service_tier_auto">Авто</string>
     <string name="openai_service_tier_default">По умолчанию</string>
     <string name="openai_service_tier_flex">Гибкий</string>
+    <string name="openai_service_tier_scale">Масштаб</string>
+    <string name="openai_service_tier_priority">Приоритет</string>
     <string name="openai_service_tier_fast">Быстрый</string>
+    <string name="openai_service_tier_ultrafast">Ультрабыстрый</string>
     <string name="context_title">Контекст</string>
     <string name="context_desc">Управление контекстом</string>
     <string name="context_compact">Сжатие контекста</string>
@@ -1207,4 +1218,5 @@
     <string name="tool_create_skill">Создать навык</string>
     <string name="tool_edit_skill">Изменить навык</string>
     <string name="tool_delete_skill">Удалить навык</string>
+    <string name="tool_read_file_truncated">Показана часть содержимого · продолжить с байта %1$d</string>
 </resources>

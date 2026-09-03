@@ -140,6 +140,7 @@ class AnthropicStreamEventRouterTest {
         assertEquals(190, event.usage.totalTokenCount)
         assertEquals(150, event.usage.inputTokenCount)
         assertEquals(30, event.usage.cachedInputTokenCount)
+        assertEquals(20, event.usage.cacheWriteInputTokenCount)
         assertEquals(120, event.usage.uncachedInputTokenCount)
         assertEquals(40, event.usage.outputTokenCount)
     }
@@ -177,6 +178,7 @@ class AnthropicStreamEventRouterTest {
         ).single() as StreamEvent.UsageUpdate
 
         assertEquals(3740, event.usage.cachedInputTokenCount)
+        assertEquals(370, event.usage.cacheWriteInputTokenCount)
         assertEquals(371, event.usage.uncachedInputTokenCount)
         assertEquals(4111, event.usage.inputTokenCount)
         assertEquals(8, event.usage.outputTokenCount)

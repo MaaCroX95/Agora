@@ -23,7 +23,7 @@ import org.junit.Test
 
 class CitationMessageContentTest {
     @Test
-    fun validClaimsReuseOneStableDomainCapsule() {
+    fun validClaimsStayUnprojectedWhileStreamingThenReuseOneTerminalCapsule() {
         val answer = "Alpha and beta."
         val source = citation(
             answer = answer,
@@ -45,14 +45,21 @@ class CitationMessageContentTest {
         assertFalse(marker.label.contains('('))
         assertFalse(marker.label.contains(')'))
         assertEquals(2, projection.markdown.count { it == marker.token })
-        val streamingProjection = citationMarkdownProjection(
+        val streamingBeforeCitation = citationMarkdownProjection(
+            answerText = answer,
+            citations = emptyList(),
+            isStreaming = true,
+        )
+        val streamingAfterCitation = citationMarkdownProjection(
             answerText = answer,
             citations = listOf(source),
             isStreaming = true,
         )
-        assertNotNull(streamingProjection)
-        assertEquals(projection.markdown, streamingProjection!!.markdown)
-        assertEquals(projection.markers, streamingProjection.markers)
+        assertEquals(answer, streamingBeforeCitation!!.markdown)
+        assertEquals(answer, streamingAfterCitation!!.markdown)
+        assertTrue(streamingBeforeCitation.markers.isEmpty())
+        assertTrue(streamingAfterCitation.markers.isEmpty())
+        assertNotEquals(answer, projection.markdown)
     }
 
     @Test
@@ -120,10 +127,15 @@ class CitationMessageContentTest {
             citationMarkdownProjection(answer, sources, isStreaming = false),
         )
         val marker = projection.markers.single()
+        val streaming = requireNotNull(
+            citationMarkdownProjection(answer, sources, isStreaming = true),
+        )
 
         assertEquals("Claim ${marker.token}", projection.markdown)
         assertEquals(sources.map(CitationRecord::sourceId), marker.sources.map(CitationRecord::sourceId))
         assertEquals(1, marker.additionalCount)
+        assertEquals("Claim ", streaming.markdown)
+        assertTrue(streaming.markers.isEmpty())
     }
 
     @Test
@@ -500,6 +512,33 @@ class CitationMessageContentTest {
 
         assertEquals("openai.com", citationInlineLabel(urlSource))
         assertEquals("report.pdf", citationInlineLabel(fileSource))
+    }
+
+    @Test
+    fun terminalProjectionHandoffTracksMarkdownAndLateMetadataChanges() {
+        val answer = "Answer."
+        val source = citation(
+            answer = answer,
+            title = "Example",
+            url = "https://example.com/source",
+            ranges = arrayOf(0 until 6),
+        )
+        val streaming = requireNotNull(
+            citationMarkdownProjection(answer, listOf(source), isStreaming = true),
+        )
+        val terminal = requireNotNull(
+            citationMarkdownProjection(answer, listOf(source), isStreaming = false),
+        )
+
+        assertFalse(citationProjectionRequiresTerminalHandoff(streaming, streaming.copy()))
+        assertTrue(citationProjectionRequiresTerminalHandoff(streaming, terminal))
+        assertTrue(
+            citationProjectionRequiresTerminalHandoff(
+                terminal,
+                terminal.copy(markers = emptyList()),
+            ),
+        )
+        assertTrue(citationProjectionRequiresTerminalHandoff(null, streaming))
     }
 
     @Test

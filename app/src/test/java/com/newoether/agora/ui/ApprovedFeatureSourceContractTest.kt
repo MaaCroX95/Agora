@@ -1,6 +1,7 @@
 package com.newoether.agora.ui
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -59,8 +60,10 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(dao.contains("GROUP BY e.modelId"))
         assertTrue(dao.contains("getEmbeddingCountsByModels"))
         assertTrue(entities.contains("Index(value = [\"modelId\"])"))
-        assertTrue(database.contains("CURRENT_VERSION = 23"))
-        assertTrue(database.contains("MIGRATION_22_23"))
+        assertTrue(database.contains("CURRENT_VERSION = 26"))
+        assertTrue(database.contains("MIGRATION_23_24"))
+        assertTrue(database.contains("MIGRATION_24_25"))
+        assertTrue(database.contains("MIGRATION_25_26"))
     }
 
     @Test
@@ -134,9 +137,9 @@ class ApprovedFeatureSourceContractTest {
             .substringBefore("fun dismissPendingPdf")
         val videoIngress = composerState.substringAfter("fun addSlicedVideo")
             .substringBefore("\n}")
-        val privateImageUri = "uri = Uri.fromFile(java.io.File(localPath)).toString()"
+        val privateImageUri = "uri = Uri.fromFile(java.io.File(copy.path)).toString()"
         assertTrue(
-            imageIngress.indexOf("copyToPrivate(uriObj, \"img\")") <
+            imageIngress.indexOf("when (val copy = copyToPrivate(uriObj, \"img\"))") <
                 imageIngress.indexOf(privateImageUri),
         )
         assertTrue(
@@ -145,7 +148,7 @@ class ApprovedFeatureSourceContractTest {
         )
         assertFalse(imageIngress.contains("uri = uriObj.toString()"))
         assertTrue(
-            fileIngress.indexOf("copyToPrivate(uri, ext)") <
+            fileIngress.indexOf("copyToPrivate(uri, ext, attachment.fileSize)") <
                 fileIngress.indexOf("selectedAttachments = selectedAttachments + copiedAttachments"),
         )
         assertTrue(
@@ -167,7 +170,7 @@ class ApprovedFeatureSourceContractTest {
     }
 
     @Test
-    fun streamingFadeUsesColorAlphaSpansAcrossMarkdownThinkingAndToolSummaries() {
+    fun streamingFadeKeysToolSummaryCrossfadeByPresentationState() {
         val root = sourceRoot()
         val fade = source(
             root,
@@ -185,6 +188,30 @@ class ApprovedFeatureSourceContractTest {
             root,
             "com/newoether/agora/ui/chat/message/ToolResultContent.kt",
         )
+        val stableText = source(
+            root,
+            "com/newoether/agora/ui/chat/message/StableStreamingText.kt",
+        )
+        val mutedText = source(
+            root,
+            "com/newoether/agora/ui/chat/message/StreamingMutedText.kt",
+        )
+        val lifecycle = source(
+            root,
+            "com/newoether/agora/ui/chat/message/GenerationLifecycleMotion.kt",
+        )
+        val messageItem = source(
+            root,
+            "com/newoether/agora/ui/chat/message/MessageItem.kt",
+        )
+        val assistant = source(
+            root,
+            "com/newoether/agora/ui/chat/message/AssistantMessageContent.kt",
+        )
+        val segments = source(
+            root,
+            "com/newoether/agora/ui/chat/message/MessageItemSegments.kt",
+        )
 
         assertTrue(fade.contains("fun streamingTailAnnotatedString("))
         assertTrue(fade.contains("fun rememberStreamingGlyphFade("))
@@ -193,15 +220,66 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(assets.contains("content = base,"))
         assertTrue(assets.contains("rememberStreamingGlyphFade("))
         assertFalse(assets.contains(".stableStreamingGlyphFade("))
-        assertTrue(timeline.contains("StableStreamingText("))
-        assertTrue(tool.contains("StableStreamingText("))
+        assertFalse(timeline.contains("StableStreamingText("))
+        assertEquals(2, Regex("StreamingMutedText\\(").findAll(timeline).count())
+        assertFalse(tool.contains("StableStreamingText("))
+        assertFalse(timeline.contains("tailFadeEnabled ="))
+        assertFalse(tool.contains("tailFadeEnabled ="))
+        assertTrue(mutedText.contains("internal fun ToolSummaryText("))
+        assertTrue(mutedText.contains("presentation: ToolPresentation"))
+        assertTrue(mutedText.contains("streaming: Boolean"))
+        assertEquals(2, Regex("ToolSummaryText\\(").findAll(timeline).count())
+        assertEquals(1, Regex("ToolSummaryText\\(").findAll(mutedText).count())
+        assertTrue(mutedText.contains("targetState = presentation.state"))
+        assertFalse(mutedText.contains("targetState = summary"))
+        assertTrue(mutedText.contains("text = renderedSummary"))
+        assertTrue(mutedText.contains("!transition.isRunning"))
+        assertTrue(timeline.contains("targetState = collapsedTitle"))
+        assertTrue(timeline.contains("compactSegmentTitle:\$expansionKey"))
+        assertTrue(timeline.contains("val containsToolSummary = segs.any { it.type == \"tool\" }"))
+        assertTrue(timeline.contains("forceOpaque = containsToolSummary"))
+        assertTrue(Regex("forceOpaque = seg.type == \"tool\"").findAll(timeline).count() == 2)
+        assertTrue(timeline.contains("containsToolSummary && allowSpatialTransitions ->"))
+        assertTrue(timeline.contains("EnterTransition.None"))
+        assertTrue(timeline.contains("ExitTransition.None"))
+        assertTrue(tool.contains("private fun ToolActiveContent(text: String, output: String?) {\n    Text("))
+        assertTrue(lifecycle.contains("alpha = if (forceOpaque) 1f else value"))
+        assertTrue(messageItem.contains(
+            "forceOpaque = displayMessage.segments.orEmpty().any { it.type == \"tool\" }",
+        ))
+        assertTrue(assistant.contains("forceOpaque = detailSegments.any { it.type == \"tool\" }"))
+        assertTrue(segments.contains("forceOpaque = forceOpaque"))
+        assertTrue(stableText.contains("enabled = streaming && tailFadeEnabled"))
+        assertTrue(stableText.contains("initialAlpha = tailFadeInitialAlpha"))
+        assertTrue(stableText.contains("fadeCodePoints = tailFadeCodePoints"))
+        assertTrue(stableText.contains("spatialBands = tailFadeSpatialBands"))
+        assertTrue(mutedText.contains("MUTED_STREAM_TAIL_CODE_POINTS = 42"))
+        assertTrue(mutedText.contains("MUTED_STREAM_TAIL_ALPHA_BANDS = 6"))
+        assertTrue(mutedText.contains("MUTED_STREAM_TAIL_NEWEST_ALPHA = 0.38f"))
+        val toolSummary = mutedText.substringAfter("internal fun ToolSummaryText(")
+            .substringBefore("private fun thoughtPreviewTail(")
+        assertTrue(toolSummary.contains("Crossfade("))
+        assertFalse(toolSummary.contains("StableStreamingText("))
+        assertFalse(fade.contains("TOOL_SUMMARY_"))
+        assertFalse(fade.contains("toolSummaryTailAnnotatedString"))
+        assertFalse(fade.contains("rememberToolSummaryGlyphFade"))
         // Document-level birth-time tracking survives node restructures, block promotion, and
         // subtree re-keying. Births begin only when a snapshot is first published, and the tracker
         // retains only the active not-yet-solid suffix with no fixed character-count cap.
         assertTrue(fade.contains("fadeSample: StreamingTailFadeSample?"))
         assertTrue(fade.contains("fun computeBlockFadeSpecs("))
         assertTrue(fade.contains("internal fun StreamingGlyphFadeSpec?.nodeFade("))
-        assertTrue(fade.contains("fadeTracker.update(preparedSource, nowMs)"))
+        assertTrue(fade.contains("fadeTracker.update("))
+        assertTrue(fade.contains("text = preparedSource,"))
+        assertTrue(fade.contains("nowMs = nowMs,"))
+        assertTrue(fade.contains("isStreaming || !textDeltas.isNullOrEmpty()"))
+        assertTrue(fade.contains("textDeltas = published.textDeltas,"))
+        assertTrue(fade.contains("textDeltas = pending.textDeltas,"))
+        assertTrue(fade.contains("publishedDeltaSequences"))
+        assertFalse(fade.contains("positionDelaysMs"))
+        assertFalse(fade.contains("STREAM_DELTA_POSITION_WINDOW_MS"))
+        assertTrue(fade.contains("startAlpha + (1f - startAlpha) * progress"))
+        assertTrue(fade.contains("spatialAlpha + ageAlpha"))
         assertFalse(fade.contains("STREAM_TAIL_FADE_CODE_POINTS"))
         assertFalse(fade.contains("ArrivalRecord"))
         assertFalse(fade.contains("distributeArrivalBirths"))
@@ -322,7 +400,30 @@ class ApprovedFeatureSourceContractTest {
     }
 
     @Test
-    fun skillsAreSavedOnlyFrozenCatalogToolsWithNoActiveSkill() {
+    fun toolCallCreationPublishesTheCompleteBatchBeforeExecution() {
+        val manager = source(
+            sourceRoot(),
+            "com/newoether/agora/viewmodel/GenerationManager.kt",
+        )
+        val updateBranch = manager
+            .substringAfter("is StreamEvent.ToolCallUpdate -> {")
+            .substringBefore("is StreamEvent.ToolCallRequest -> {")
+        val batchBranch = manager
+            .substringAfter("is StreamEvent.ToolCallsRequest -> {")
+            .substringBefore("\n                }\n\n                val now")
+
+        assertTrue(updateBranch.contains("val created = upsertStreamingToolSegment("))
+        assertTrue(updateBranch.contains("publishStreamUpdate(forceCheckpoint = created)"))
+        val upsertIndex = batchBranch.indexOf("event.calls.forEach")
+        val publishIndex = batchBranch.indexOf("publishStreamUpdate(forceCheckpoint = true)")
+        assertTrue(upsertIndex >= 0)
+        assertTrue(batchBranch.contains("upsertStreamingToolSegment("))
+        assertTrue(publishIndex > upsertIndex)
+        assertEquals(1, Regex("publishStreamUpdate\\(").findAll(batchBranch).count())
+    }
+
+    @Test
+    fun skillsAreSavedCatalogToolsWithRequestResolvedPromptAndNoActiveSkill() {
         val root = sourceRoot()
         val manager = source(root, "com/newoether/agora/data/SkillManager.kt")
         val provider = source(root, "com/newoether/agora/tool/SkillToolProvider.kt")
@@ -347,7 +448,10 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(provider.contains("delete_skill_file"))
         assertFalse(provider.contains("update_active_skill"))
         assertTrue(builder.contains("skillCatalog = if (skillReadAccess) skillManager.catalog()"))
-        assertTrue(builder.contains("effectiveSystemPromptWithSkills"))
+        assertTrue(builder.contains("if (includeSkillCatalog) skillManager.catalog() else \"\""))
+        assertTrue(builder.contains("PredefinedVariables.SKILL_CATALOG to skillCatalog"))
+        assertTrue(builder.contains("skillCatalog = skillCatalogDeferred.await()"))
+        assertFalse(builder.contains("effectiveSystemPromptWithSkills"))
         assertTrue(exporter.contains("memories/skill_db/"))
         assertTrue(importer.contains("memories/skill_db/"))
         assertTrue(settings.contains("settings.accessSkills.collectAsState()"))

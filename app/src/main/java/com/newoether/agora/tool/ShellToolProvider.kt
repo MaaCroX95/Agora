@@ -5,6 +5,11 @@ import com.newoether.agora.data.ShellDeviceConfig
 import com.newoether.agora.model.ToolCallData
 import com.newoether.agora.sandbox.SandboxManagerFactory
 import com.newoether.agora.util.Constants
+import com.newoether.agora.util.SHELL_COMMAND_MAX_BYTES
+import com.newoether.agora.util.SHELL_WORKDIR_MAX_BYTES
+import com.newoether.agora.util.SHELL_FILE_WRITE_MAX_BYTES
+import com.newoether.agora.util.ShellFileReadResult
+import com.newoether.agora.util.shellFileLineCount
 import com.newoether.agora.viewmodel.GenerationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -22,6 +27,64 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+
+internal fun boundedFileReadJson(
+    server: String,
+    path: String,
+    result: ShellFileReadResult,
+    maxLength: Int = Constants.MAX_TOOL_RESULT_LENGTH,
+): String {
+    require(maxLength > 0)
+
+    fun encode(content: String, truncated: Boolean): String = buildJsonObject {
+        put("type", "file_read")
+        put("server", server)
+        put("path", path)
+        put("content", content)
+        put("lines", shellFileLineCount(content))
+        put("total_lines", result.totalLines)
+        put("total_bytes", result.totalBytes)
+        put("returned_bytes", content.toByteArray(Charsets.UTF_8).size)
+        put("offset", result.offset)
+        put("limit", result.limit)
+        put("truncated", truncated)
+    }.toString()
+
+    val fullResult = encode(result.content, result.truncated)
+    if (fullResult.length <= maxLength) return fullResult
+
+    var low = 0
+    var high = result.content.length
+    var best = encode("", truncated = true)
+    while (low <= high) {
+        val midpoint = low + (high - low) / 2
+        val safeLength = if (
+            midpoint in 1 until result.content.length &&
+            result.content[midpoint - 1].isHighSurrogate() &&
+            result.content[midpoint].isLowSurrogate()
+        ) {
+            midpoint - 1
+        } else {
+            midpoint
+        }
+        val candidate = encode(result.content.substring(0, safeLength), truncated = true)
+        if (candidate.length <= maxLength) {
+            best = candidate
+            low = midpoint + 1
+        } else {
+            high = midpoint - 1
+        }
+    }
+    return best
+}
+
+private fun shellCommandValidationError(command: String, workdir: String): String? = when {
+    command.toByteArray(Charsets.UTF_8).size > SHELL_COMMAND_MAX_BYTES ->
+        "command exceeds 64KB limit"
+    workdir.toByteArray(Charsets.UTF_8).size > SHELL_WORKDIR_MAX_BYTES ->
+        "workdir exceeds 32KB limit"
+    else -> null
+}
 
 class ShellToolProvider(
     private val sandboxFactory: SandboxManagerFactory? = null,
@@ -207,6 +270,10 @@ class ShellToolProvider(
         val command = arg(args, "command")
         if (command.isBlank()) return jsonError("execute_shell_command", "no_command")
         val serverName = arg(args, "server")
+        val workdir = arg(args, "workdir")
+        shellCommandValidationError(command, workdir)?.let { message ->
+            return jsonError("execute_shell_command", message, server = serverName)
+        }
         val background = boolArg(args, "background")
         val foregroundMaxMs = Constants.TOOL_EXECUTION_TIMEOUT_MS.toInt()
         val timeoutMax = if (background) {
@@ -225,8 +292,6 @@ class ShellToolProvider(
                 server = serverName,
                 command = command,
             )).coerceIn(1000, timeoutMax)
-        val workdir = arg(args, "workdir")
-
         if (background) {
             val backend = getConchBackend(serverName, ctx)
                 ?: return jsonError(
@@ -305,6 +370,15 @@ class ShellToolProvider(
             return@flow
         }
         val serverName = arg(args, "server")
+        val workdir = arg(args, "workdir")
+        shellCommandValidationError(command, workdir)?.let { message ->
+            emit(
+                ToolExecutionEvent.Completed(
+                    jsonError("execute_shell_command", message, server = serverName),
+                ),
+            )
+            return@flow
+        }
         if (boolArg(args, "background")) {
             val device = resolveShellDevice(serverName, ctx)?.takeIf { it.type != "ssh" }
             if (device == null) {
@@ -353,7 +427,6 @@ class ShellToolProvider(
                 )
                 return@flow
             }).coerceIn(1000, foregroundMaxMs)
-        val workdir = arg(args, "workdir")
         val backend = getBackend(serverName, ctx)
         if (backend == null) {
             emit(
@@ -556,7 +629,29 @@ class ShellToolProvider(
         val backend = getBackend(serverName, ctx)
             ?: return jsonError("file_read", serverNotFoundMessage(serverName, ctx))
         try {
-            return backend.fileRead(path, offset, limit)
+            val result = try {
+                backend.fileRead(path, offset, limit)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return jsonError(
+                    "file_read",
+                    e.message ?: "Read failed",
+                    server = backend.device?.name ?: "Local Sandbox",
+                )
+            }
+            result.error?.let {
+                return jsonError(
+                    "file_read",
+                    it,
+                    server = backend.device?.name ?: "Local Sandbox",
+                )
+            }
+            return boundedFileReadJson(
+                server = backend.device?.name ?: "Local Sandbox",
+                path = path,
+                result = result,
+            )
         } finally {
             backend.close()
         }
@@ -568,6 +663,9 @@ class ShellToolProvider(
         if (path.isBlank()) return jsonError("file_write", "path is required")
         val content = arg(args, "content")
         if (content.isBlank()) return jsonError("file_write", "content is required")
+        if (content.toByteArray(Charsets.UTF_8).size > SHELL_FILE_WRITE_MAX_BYTES) {
+            return jsonError("file_write", "content exceeds 1MB limit")
+        }
         val serverName = arg(args, "server")
 
         val backend = getBackend(serverName, ctx)
@@ -614,33 +712,30 @@ class ShellToolProvider(
             ) {
                 return jsonError("file_edit", "denied_by_user: the user declined to edit this file", server = serverName)
             }
-            // Read the file
-            val rawContent = try {
-                backend.fileRead(path, 0, 0)
+            val result = try {
+                backend.fileEdit(path, oldStr, newStr, replaceAll)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                return jsonError("file_edit", "read error: ${e.message}")
+                return jsonError(
+                    "file_edit",
+                    e.message ?: "Edit failed",
+                    server = backend.device?.name ?: "Local Sandbox",
+                )
             }
-            // Extract actual content (Conch wraps it in JSON, others return raw text)
-            val actualContent = try {
-                val obj = Json.parseToJsonElement(rawContent).jsonObject
-                (obj["content"] as? JsonPrimitive)?.content ?: rawContent
-            } catch (_: Exception) { rawContent }
-
-            val count = actualContent.split(oldStr).size - 1
-            if (count == 0) {
-                return jsonError("file_edit", "old_string not found in file")
-            }
-            if (count > 1 && !replaceAll) {
-                return jsonError("file_edit", "Found $count matches. Use replace_all=true or provide more context.")
-            }
-            val replaced = actualContent.replace(oldStr, newStr)
-            val writeError = backend.fileWrite(path, replaced)
-            if (writeError != null) {
-                return jsonError("file_edit", "write error: $writeError")
+            result.error?.let {
+                return jsonError(
+                    "file_edit",
+                    it,
+                    server = backend.device?.name ?: "Local Sandbox",
+                )
             }
             return buildJsonObject {
-                put("type", "file_edit"); put("path", path)
-                put("replaced", if (replaceAll) count else 1)
+                put("type", "file_edit")
+                put("server", backend.device?.name ?: "Local Sandbox")
+                put("path", path)
+                put("replaced", result.replacements)
+                if (result.sha256.isNotBlank()) put("sha256", result.sha256)
             }.toString()
         } finally {
             backend.close()
@@ -661,10 +756,11 @@ class ShellToolProvider(
         try {
             val result = backend.fileGlob(pattern, basePath, depth)
             return result.fold(
-                onSuccess = { files ->
+                onSuccess = { (files, truncated) ->
                     buildJsonObject {
                         put("type", "file_glob"); put("pattern", pattern)
                         putJsonArray("files") { files.forEach { add(JsonPrimitive(it)) } }
+                        put("truncated", truncated)
                     }.toString()
                 },
                 onFailure = { e -> jsonError("file_glob", e.message ?: "Unknown error") }
@@ -687,7 +783,7 @@ class ShellToolProvider(
         try {
             val result = backend.fileGrep(pattern, basePath, fileGlob)
             return result.fold(
-                onSuccess = { matches ->
+                onSuccess = { (matches, truncated) ->
                     buildJsonObject {
                         put("type", "file_grep"); put("pattern", pattern)
                         putJsonArray("matches") {
@@ -697,6 +793,7 @@ class ShellToolProvider(
                                 })
                             }
                         }
+                        put("truncated", truncated)
                     }.toString()
                 },
                 onFailure = { e -> jsonError("file_grep", e.message ?: "Unknown error") }

@@ -115,6 +115,7 @@ class ShellDurableJobExecutorTest {
 
         assertEquals(listOf("one\n", "one\ntwo\n"), published)
         assertEquals("same-job", json.getValue("job_id").jsonPrimitive.content)
+        assertEquals("running", json.getValue("state").jsonPrimitive.content)
         assertTrue(json.getValue("timed_out").jsonPrimitive.content.toBoolean())
         assertEquals("one\ntwo\n", json.getValue("output").jsonPrimitive.content)
     }

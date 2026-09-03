@@ -8,26 +8,40 @@ import org.junit.Test
 class TopLevelPresentationStateTest {
     @Test
     fun ownerIsRetainedUntilMatchingExitCompletes() {
-        val state = TopLevelPresentationState()
+        val owners = mutableListOf<TopLevelPresentation>()
+        val state = TopLevelPresentationState(onOwnerChanged = owners::add)
         state.present(TopLevelPresentation.SETTINGS)
 
         assertEquals(TopLevelPresentation.SETTINGS, state.owner)
         assertTrue(state.release(TopLevelPresentation.SETTINGS))
         assertEquals(TopLevelPresentation.CHAT, state.owner)
+        assertEquals(
+            listOf(TopLevelPresentation.CHAT, TopLevelPresentation.SETTINGS, TopLevelPresentation.CHAT),
+            owners,
+        )
     }
 
     @Test
     fun restoredBlockingOwnerStartsFailClosed() {
-        val state = TopLevelPresentationState(TopLevelPresentation.TASKS)
+        val owners = mutableListOf<TopLevelPresentation>()
+        val state = TopLevelPresentationState(TopLevelPresentation.TASKS, owners::add)
+
         assertEquals(TopLevelPresentation.TASKS, state.owner)
+        assertEquals(listOf(TopLevelPresentation.TASKS), owners)
     }
+
     @Test
     fun staleExitCannotReleaseNewerPresentation() {
-        val state = TopLevelPresentationState()
+        val owners = mutableListOf<TopLevelPresentation>()
+        val state = TopLevelPresentationState(onOwnerChanged = owners::add)
         state.present(TopLevelPresentation.SETTINGS)
         state.present(TopLevelPresentation.MEDIA_PREVIEW)
 
         assertFalse(state.release(TopLevelPresentation.SETTINGS))
         assertEquals(TopLevelPresentation.MEDIA_PREVIEW, state.owner)
+        assertEquals(
+            listOf(TopLevelPresentation.CHAT, TopLevelPresentation.SETTINGS, TopLevelPresentation.MEDIA_PREVIEW),
+            owners,
+        )
     }
 }

@@ -3,6 +3,7 @@ package com.newoether.agora.viewmodel
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.RunEffect
+import com.newoether.agora.model.RunRecoveryPolicy
 import com.newoether.agora.model.RunState
 import com.newoether.agora.model.RuntimeRunIdentity
 import com.newoether.agora.model.Transition
@@ -22,6 +23,11 @@ data class ConversationGenerationSnapshot(
     val streamingMessage: ChatMessage? = null,
     val isLoading: Boolean = false,
     val isGenerating: Boolean = false,
+)
+
+private fun ChatMessage.toStoppedRuntimeSnapshot(): ChatMessage = copy(
+    status = MessageStatus.STOPPED,
+    segments = segments?.let(RunRecoveryPolicy::stopIncompleteTools),
 )
 
 /**
@@ -102,7 +108,7 @@ internal class ConversationRuntimeResources {
             .singleOrNull()
             ?.let { effect ->
                 check(uiGenToken == effect.identity.ownerToken)
-                val stopped = _streamingMessage.value?.copy(status = MessageStatus.STOPPED)
+                val stopped = _streamingMessage.value?.toStoppedRuntimeSnapshot()
                 check(stopped == null || effect.identity.runId != null) {
                     "A streaming Stop effect requires a bound Run"
                 }
@@ -135,7 +141,7 @@ internal class ConversationRuntimeResources {
             currentState is RunState.Idle ||
                 currentState is RunState.Finalizing && !currentState.persistenceFailureReported
         }
-        ?.copy(status = MessageStatus.STOPPED)
+        ?.toStoppedRuntimeSnapshot()
 
     fun streamUpdate(uiToken: Long, message: ChatMessage) {
         if (this.uiGenToken == uiToken) _streamingMessage.value = message

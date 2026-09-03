@@ -125,13 +125,6 @@ abstract class BaseOpenAiProvider : LlmProvider {
             path = if (config.responsesApiEnabled) "responses" else "chat/completions",
             retryMissingV1BaseUrl = retryMissingV1BaseUrl,
         )
-        val validatedMessages = prepareMessages(messages, config.maxContextWindow)
-        val apiMessages = convertToOpenAiMessages(
-            messages = validatedMessages,
-            systemPrompt = transformSystemPrompt(config.systemPrompt),
-            includeImages = config.includeImages
-        )
-
         try {
             if (config.openAiWebSearchEnabled && !config.responsesApiEnabled) {
                 throw RequestFormatException(
@@ -139,56 +132,60 @@ abstract class BaseOpenAiProvider : LlmProvider {
                     listOf("hosted web search requires Responses API transport"),
                 )
             }
-            val requestBodyJson = if (config.responsesApiEnabled) {
-                val request = OpenAiResponsesRequest(
-                    model = config.modelId,
-                    input = apiMessages.toResponsesInput(providerName = name),
-                    tools = buildList {
-                        addAll(config.tools.orEmpty().toResponsesTools())
-                        if (config.openAiWebSearchEnabled) add(OpenAiResponseTool(type = "web_search"))
-                    }.ifEmpty { null },
-                    reasoning = config.thinkingLevel.takeIf { config.thinkingEnabled }
-                        ?.let {
-                            OpenAiReasoning(
-                                effort = it,
-                                summary = "auto",
-                            )
-                        },
-                    serviceTier = config.openAiServiceTier,
-                    temperature = config.temperature,
-                    maxOutputTokens = config.maxTokens,
-                    topP = config.topP,
+            fun buildRequestBody(apiMessages: List<OpenAiMessage>): String {
+                val requestBodyJson = if (config.responsesApiEnabled) {
+                    val request = OpenAiResponsesRequest(
+                        model = config.modelId,
+                        input = apiMessages.toResponsesInput(providerName = name),
+                        tools = buildList {
+                            addAll(config.tools.orEmpty().toResponsesTools())
+                            if (config.openAiWebSearchEnabled) {
+                                add(OpenAiResponseTool(type = "web_search"))
+                            }
+                        }.ifEmpty { null },
+                        reasoning = config.thinkingLevel.takeIf { config.thinkingEnabled }
+                            ?.let {
+                                OpenAiReasoning(
+                                    effort = it,
+                                    summary = "auto",
+                                )
+                            },
+                        serviceTier = config.openAiServiceTier,
+                        temperature = config.temperature,
+                        maxOutputTokens = config.maxTokens,
+                        topP = config.topP,
+                        promptCacheKey = config.promptCacheKey,
+                    )
+                    request.requireValidWireFormat(name)
+                    json.encodeToString(OpenAiResponsesRequest.serializer(), request)
+                } else {
+                    var request = OpenAiChatRequest(
+                        model = config.modelId,
+                        messages = apiMessages,
+                        stream = true,
+                        streamOptions = OpenAiStreamOptions(includeUsage = true),
+                        tools = config.tools,
+                        temperature = config.temperature,
+                        maxTokens = config.maxTokens,
+                        topP = config.topP,
+                        frequencyPenalty = config.frequencyPenalty,
+                        presencePenalty = config.presencePenalty,
+                        promptCacheKey = config.promptCacheKey,
+                    )
+                    request = customizeRequest(request, config)
+                    request.requireValidWireFormat(name)
+                    json.encodeToString(OpenAiChatRequest.serializer(), request)
+                }
+                requireValidSerializedRequest(
+                    provider = name,
+                    body = requestBodyJson,
+                    requiredStringFields = setOf("model"),
+                    requiredArrayFields = setOf(
+                        if (config.responsesApiEnabled) "input" else "messages",
+                    ),
                 )
-                request.requireValidWireFormat(name)
-                json.encodeToString(OpenAiResponsesRequest.serializer(), request)
-            } else {
-                var request = OpenAiChatRequest(
-                    model = config.modelId,
-                    messages = apiMessages,
-                    stream = true,
-                    streamOptions = OpenAiStreamOptions(includeUsage = true),
-                    tools = config.tools,
-                    temperature = config.temperature,
-                    maxTokens = config.maxTokens,
-                    topP = config.topP,
-                    frequencyPenalty = config.frequencyPenalty,
-                    presencePenalty = config.presencePenalty
-                )
-                request = customizeRequest(request, config)
-                request.requireValidWireFormat(name)
-                json.encodeToString(OpenAiChatRequest.serializer(), request)
+                return requestBodyJson
             }
-            requireValidSerializedRequest(
-                provider = name,
-                body = requestBodyJson,
-                requiredStringFields = setOf("model"),
-                requiredArrayFields = setOf(if (config.responsesApiEnabled) "input" else "messages"),
-            )
-            DebugLog.d(
-                "AgoraAPI",
-                "[$name] request transport=${if (config.responsesApiEnabled) "responses" else "chat"} " +
-                    "model=${config.modelId} messages=${apiMessages.size} tools=${config.tools?.size ?: 0}",
-            )
 
             val headers = mutableMapOf("Content-Type" to "application/json")
             if (config.apiKey.isNotBlank()) headers["Authorization"] = "Bearer ${config.apiKey}"
@@ -205,6 +202,20 @@ abstract class BaseOpenAiProvider : LlmProvider {
 
                 while (endpointIndex < endpointUrls.size && !finished && !retryScheduled) {
                     val endpointUrl = endpointUrls[endpointIndex]
+                    val resolvedRequest = config.resolveRequest(messages)
+                    val apiMessages = convertToOpenAiMessages(
+                        messages = resolvedRequest.messages,
+                        systemPrompt = transformSystemPrompt(resolvedRequest.systemPrompt),
+                        includeImages = config.includeImages,
+                    )
+                    val requestBodyJson = buildRequestBody(apiMessages)
+                    DebugLog.d(
+                        "AgoraAPI",
+                        "[$name] request transport=" +
+                            "${if (config.responsesApiEnabled) "responses" else "chat"} " +
+                            "model=${config.modelId} messages=${apiMessages.size} " +
+                            "tools=${config.tools?.size ?: 0}",
+                    )
                     // Opening the request can fail before any response headers exist (connect
                     // timeout, TLS failure, reset). Those escaped the retry loop entirely before,
                     // so a single flaky connection became a hard failure. Nothing has streamed at

@@ -15,6 +15,10 @@ class StreamingMarkdownMessageSourceContractTest {
         val assistant = source(root, "AssistantMessageContent.kt")
         val timeline = source(root, "MessageItemTimeline.kt")
         val detail = source(root, "SegmentDetailSheet.kt")
+        val segments = source(root, "MessageItemSegments.kt")
+        val interaction = source(root, "StreamingMarkdownInteractionCommitGate.kt")
+        val lifecycle = source(root, "GenerationLifecycleMotion.kt")
+        val selectionHost = File(root, "com/newoether/agora/util/NoOpBringIntoView.kt").readText()
 
         assertTrue(wrapper.contains("internal fun StreamingMarkdownMessage("))
         assertTrue(wrapper.contains("IncrementalStreamingMarkdownContent("))
@@ -25,9 +29,43 @@ class StreamingMarkdownMessageSourceContractTest {
             Regex("LocalStreamingGlyphFadeSpec provides ").findAll(incremental).count(),
         )
         assertFalse(incremental.contains("takeIf { showStreamingIndicator }"))
+        assertTrue(
+            incremental.contains(
+                "mutableStateOf(isStreaming || !textDeltas.isNullOrEmpty())",
+            ),
+        )
+        assertTrue(
+            incremental.contains(
+                "if (isStreaming || !textDeltas.isNullOrEmpty()) hasStreamed = true",
+            ),
+        )
+        assertEquals(
+            2,
+            Regex("textDeltas = answerTextDeltas,").findAll(assistant).count(),
+        )
+        assertTrue(timeline.contains("textDeltas = seg.streamingTextDeltas,"))
+        assertEquals(
+            2,
+            Regex("fadeTracker = answerFadeTracker,").findAll(assistant).count(),
+        )
+        assertTrue(timeline.contains("fadeTracker = answerFadeTracker,"))
+        assertTrue(segments.contains("streamingFadeTrackers.getOrPut(key)"))
+        assertTrue(wrapper.contains("fadeTracker: StreamingTailFadeTracker"))
+        assertTrue(wrapper.contains("fadeTracker = fadeTracker,"))
+        assertTrue(incremental.contains("private val fadeTracker: StreamingTailFadeTracker"))
+        assertFalse(incremental.contains("private val fadeTracker = StreamingTailFadeTracker()"))
+        assertTrue(incremental.contains("textDeltas = pending.textDeltas,"))
+        assertTrue(incremental.contains("textDeltas = published.textDeltas,"))
+        assertTrue(incremental.contains("LaunchedEffect(state, content, isStreaming, textDeltas)"))
+        assertTrue(lifecycle.contains("val informationVisible = !isStreaming && !regenerateRequested"))
+        assertTrue(assistant.contains("informationVisible = actionAvailability.informationVisible"))
+        assertFalse(incremental.contains("internal class StreamingInteractionCommitGate"))
+        assertTrue(interaction.contains("internal class StreamingInteractionCommitGate"))
         assertTrue(wrapper.contains("emptyStreamingTextStyle: TextStyle"))
         assertTrue(wrapper.contains("AnimatedVisibility("))
         assertTrue(wrapper.contains(".padding(top = 8.dp)"))
+        assertTrue(selectionHost.contains("movableContentOf"))
+        assertTrue(selectionHost.contains("DisableSelection(content = movableContent)"))
 
         listOf(assistant, timeline, detail).forEach {
             assertTrue(it.contains("StreamingMarkdownMessage("))
@@ -36,6 +74,41 @@ class StreamingMarkdownMessageSourceContractTest {
         }
         assertFalse(detail.contains("showStreamingIndicator"))
         assertTrue(detail.contains("observedStreamingMarkdown"))
+    }
+
+    @Test
+    fun `terminal citation projection keeps one Markdown subtree and anchors size handoff`() {
+        val root = locateMainSourceRoot()
+        val assistant = source(root, "AssistantMessageContent.kt")
+        val timeline = source(root, "MessageItemTimeline.kt")
+        val citation = source(root, "CitationMessageContent.kt")
+        val handoff = source(root, "CitationTerminalProjectionHost.kt")
+        val inlineHost = citation
+            .substringAfter("internal fun CitationInlineContentHost(")
+            .substringBefore("private fun CitationInlineCapsule(")
+
+        assertTrue(assistant.contains("CitationTerminalProjectionHost("))
+        assertTrue(timeline.contains("CitationTerminalProjectionHost("))
+        assertTrue(assistant.contains("presentedProjection, presentedIsStreaming"))
+        assertTrue(timeline.contains("presentedProjection, presentedIsStreaming"))
+        assertTrue(
+            handoff.contains(
+                "LaunchedEffect(animationKey, isStreaming, projection, allowSpatialTransitions)",
+            ),
+        )
+        assertTrue(handoff.contains("currentLayoutMutationStarted(mutationKey)"))
+        assertTrue(handoff.contains("withFrameNanos { }"))
+        assertTrue(handoff.contains("animateContentSize("))
+        assertTrue(
+            handoff.contains(
+                "durationMillis = CITATION_TERMINAL_PROJECTION_SIZE_DURATION_MS",
+            ),
+        )
+        assertTrue(handoff.contains("currentLayoutMutationSettled(mutationKey)"))
+        assertFalse(handoff.contains("AnimatedContent("))
+        assertFalse(handoff.contains("Crossfade("))
+        assertFalse(Regex("content\\(\\)\\s*return").containsMatchIn(inlineHost))
+        assertEquals(1, Regex("content = content").findAll(inlineHost).count())
     }
 
     @Test
@@ -69,8 +142,9 @@ class StreamingMarkdownMessageSourceContractTest {
     }
 
     @Test
-    fun `Compact detail uses real empty content and ordinary durable error state`() {
+    fun `Compact detail and pill use stable content geometry and neutral error state`() {
         val source = source(locateMainSourceRoot(), "MessageItem.kt")
+        val pillSource = source.substringAfter("internal fun ContextCompactPill(")
 
         assertTrue(source.contains("R.string.context_compact_streaming"))
         assertTrue(source.contains("directMarkdownContent = compactDetailText"))
@@ -78,11 +152,31 @@ class StreamingMarkdownMessageSourceContractTest {
         assertFalse(source.contains("\\u200B"))
         assertTrue(source.contains("R.string.context_compact_error"))
         assertTrue(source.contains("R.string.context_compact_stopped"))
-        assertTrue(source.contains("animateColorAsState("))
-        assertTrue(source.contains("Icons.Default.Error"))
-        assertTrue(source.contains("MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)"))
-        assertTrue(source.contains("MaterialTheme.colorScheme.error.copy(alpha = 0.8f)"))
-        assertFalse(source.contains("targetValue = if (error) {\n            MaterialTheme.colorScheme.errorContainer\n"))
+        assertTrue(pillSource.contains("animateColorAsState("))
+        assertTrue(pillSource.contains("Icons.Default.Error"))
+        assertTrue(pillSource.contains("MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)"))
+        assertTrue(pillSource.contains("MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)"))
+        assertTrue(
+            Regex(
+                """targetValue = if \(error\) \{\s*MaterialTheme\.colorScheme\.onSurfaceVariant""",
+            ).containsMatchIn(pillSource),
+        )
+        assertFalse(pillSource.contains("MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)"))
+        assertFalse(pillSource.contains("MaterialTheme.colorScheme.error.copy(alpha = 0.8f)"))
+        assertTrue(pillSource.contains(".padding(horizontal = 7.dp)"))
+        assertTrue(
+            Regex(
+                """modifier = Modifier\.size\(32\.dp\),\s*contentAlignment = Alignment\.Center,""",
+            ).containsMatchIn(pillSource),
+        )
+        assertEquals(
+            2,
+            Regex("modifier = Modifier\\.size\\(32\\.dp\\)").findAll(pillSource).count(),
+        )
+        assertEquals(
+            3,
+            Regex("modifier = Modifier\\.size\\(18\\.dp\\)").findAll(pillSource).count(),
+        )
     }
 
     @Test
@@ -107,6 +201,11 @@ class StreamingMarkdownMessageSourceContractTest {
         assertTrue(citation.contains("boundedTrailingCitationWrapperStart("))
         assertTrue(citation.contains("PlainCitationArtifact.findAll(answerText)"))
         assertTrue(citation.contains("CitationPolicy.stripPrivateMarkers(projection.markdown)"))
+        val projectionPolicy = citation.substringAfter("internal fun citationMarkdownProjection(")
+            .substringBefore("internal fun citationRecordsForAnswerSlice(")
+        assertTrue(projectionPolicy.indexOf("if (isStreaming)") <
+            projectionPolicy.indexOf("projectCitationMarkdown(answerText, citations)"))
+        assertTrue(projectionPolicy.contains("markers = emptyList()"))
         assertFalse(citation.contains("answerText.lastIndexOf(\"([\")"))
     }
 

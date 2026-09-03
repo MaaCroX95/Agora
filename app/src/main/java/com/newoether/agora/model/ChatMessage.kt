@@ -2,6 +2,7 @@ package com.newoether.agora.model
 
 import androidx.compose.runtime.Immutable
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
 import java.util.UUID
 
@@ -35,6 +36,12 @@ data class ToolImageAttachment(
     val width: Int? = null,
     val height: Int? = null,
     val sha256: String,
+)
+
+@Immutable
+data class StreamingTextDelta(
+    val sequence: Long,
+    val codePointCount: Int,
 )
 
 @Serializable
@@ -78,6 +85,9 @@ data class MessageSegment(
     val responseOutputItems: List<JsonObject> = emptyList(),
     /** Provider identity that owns [responseOutputItems]; foreign transports must ignore them. */
     val responseOutputItemProvider: String? = null,
+    /** In-memory Provider delta boundaries for the active answer; never persisted to Room JSON. */
+    @Transient
+    val streamingTextDeltas: List<StreamingTextDelta> = emptyList(),
 )
 
 object ToolExecutionStates {

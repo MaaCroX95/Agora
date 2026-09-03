@@ -221,6 +221,109 @@ class DurableSelectedContextLoaderTest {
         }
 
     @Test
+    fun `terminal error after a tool round keeps its complete detail in Provider context`() =
+        runTest {
+            val errorDetail = "Formatted provider failure: INSUFFICIENT_BALANCE"
+            val root = message("root", null, Participant.USER, "question", 0, "root-run")
+            val failed = message(
+                "failed",
+                root.id,
+                Participant.MODEL,
+                "partial answer",
+                1,
+                "failed-run",
+            ).copy(
+                status = MessageStatus.ERROR,
+                toolCallJson = Json.encodeToString(
+                    listOf(
+                        MessageSegment(
+                            type = "tool",
+                            toolName = "shell",
+                            toolArgs = "{}",
+                            toolCallId = "call-1",
+                        ),
+                        MessageSegment(type = "answer", content = "partial answer"),
+                        MessageSegment(type = "error", content = errorDetail),
+                    ),
+                ),
+            )
+            val tool = message(
+                "${Constants.TOOL_MSG_PREFIX}call",
+                failed.id,
+                Participant.MODEL,
+                "",
+                2,
+                failed.runId,
+            ).copy(
+                toolCallJson = Json.encodeToString(
+                    listOf(
+                        MessageSegment(
+                            type = "tool",
+                            toolName = "shell",
+                            toolArgs = "{}",
+                            toolCallId = "call-1",
+                        ),
+                    ),
+                ),
+            )
+            val result = message(
+                "${Constants.RESULT_MSG_PREFIX}call",
+                tool.id,
+                Participant.USER,
+                "ok",
+                3,
+                failed.runId,
+            ).copy(
+                toolCallJson = Json.encodeToString(
+                    listOf(
+                        MessageSegment(
+                            type = "tool",
+                            toolName = "shell",
+                            toolArgs = "{}",
+                            toolResult = "ok",
+                            toolCallId = "call-1",
+                        ),
+                    ),
+                ),
+            )
+            val followUp = message(
+                "follow-up",
+                failed.id,
+                Participant.USER,
+                "continue",
+                4,
+                "follow-up-run",
+            )
+            val entities = listOf(root, failed, tool, result, followUp)
+
+            val loaded = loader(snapshot(entities), entities, mutableListOf()).load(
+                DurableSelectedContextRequest(
+                    conversationId = CONVERSATION_ID,
+                    anchorMessageId = followUp.id,
+                    includeStoredTranscriptions = false,
+                ),
+            )
+
+            assertEquals(
+                listOf(root.id, tool.id, result.id, failed.id, followUp.id),
+                loaded.messages.map { it.id },
+            )
+            val projectedFailure = loaded.messages.single { it.id == failed.id }
+            assertEquals(Participant.MODEL, projectedFailure.participant)
+            assertEquals(MessageStatus.SUCCESS, projectedFailure.status)
+            assertTrue(projectedFailure.text.startsWith("partial answer"))
+            assertEquals(
+                1,
+                Regex(Regex.escape(errorDetail)).findAll(projectedFailure.text).count(),
+            )
+            assertTrue(projectedFailure.text.contains("[Generation status: ERROR]"))
+            val retainedSegments = Json.decodeFromString<List<MessageSegment>>(
+                requireNotNull(loaded.entities.single { it.id == failed.id }.toolCallJson),
+            )
+            assertEquals(listOf("answer", "error"), retainedSegments.map { it.type })
+        }
+
+    @Test
     fun `branch switch rebuilds the selected path from the new immutable snapshot`() = runTest {
         val root = message("root", null, Participant.USER, "root", 0, "root-run")
         val first = message("first", root.id, Participant.MODEL, "first", 1, "run-a")

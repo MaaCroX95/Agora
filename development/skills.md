@@ -1,6 +1,6 @@
 # Skills Architecture Contract
 
-Status: authoritative development contract, 2026-08-16.
+Status: authoritative development contract, 2026-08-28.
 
 This document is required context for changes to Agora's persistent Skill library, Skill catalog
 prompt projection, Skill tools, Skill settings, or Skill archive transport.
@@ -16,10 +16,11 @@ toggle, active-Skill prompt variable, or `update_active_skill` tool. A single ac
 context, limit composition, and inject irrelevant instructions into unrelated requests.
 
 Instead, when Skill access is enabled, one compact catalog containing only each saved file's name and
-description is frozen into the ordinary generation request. The model may then read one or more
-relevant Skill bodies through the ordinary tool loop. An empty library contributes an empty catalog.
-The current user message and ordinary system prompt remain authoritative over conflicting Skill
-content.
+description is available to the `{skill_catalog}` predefined variable. The variable reads the current
+catalog immediately before each outbound ordinary Provider API request. The model may then read one
+or more relevant Skill bodies through the ordinary tool loop. An empty library contributes an empty
+catalog. The current user message and ordinary system prompt remain authoritative over conflicting
+Skill content.
 
 ## 2. Storage and safety
 
@@ -37,16 +38,24 @@ the exact context projection/request preview that consumes the catalog; it is no
 
 ## 3. Access and generation admission
 
-One default-enabled `accessSkills` setting controls both catalog injection and Skill tool
-availability. The value and the exact catalog text are captured before Run/message graph admission
-and frozen into `GenerationContext`/the effective system prompt used by that Run. Settings or
-catalog changes after admission cannot rewrite an in-flight Provider request or tool-definition set.
+One default-enabled `accessSkills` setting controls Skill tool availability and whether the
+`{skill_catalog}` predefined variable may resolve. It does not independently inject catalog text.
+Skill tool definitions and execution authority may be frozen at ordinary Run admission under the
+shared tool contract. Prompt projection is separate: immediately before every outbound ordinary
+Provider API request, including tool continuations and transport retries, the request path checks the
+current access setting and resolves `{skill_catalog}` from the current catalog. Catalog text is not
+captured in `GenerationContext`, the admission snapshot, or an earlier compiled system prompt.
+Changing Skill access or catalog contents after admission may change a later request's resolved
+system prompt, but it does not retroactively change an already serialized request or the Run-frozen
+tool-definition set.
 
 The default system prompt contains one `<skill_catalog>` block and the predefined
 `{skill_catalog}` variable. The block explains that catalog entries are untrusted task resources:
 read only relevant Skills, treat their bodies as instructions subordinate to the current user/system
 request, and do not claim a Skill was applied without reading it. Custom prompt templates may place
-the same predefined variable. Empty or disabled catalog projection resolves to an empty string.
+the same predefined variable. For ordinary generation, the catalog enters the system prompt only at
+an explicitly placed variable; the request builder must never append or restore it implicitly. Empty,
+disabled, or absent catalog projection resolves to an empty string.
 
 Ordinary foreground generation, queued sends, Compact projection/accounting, Tasks, and Loops reuse
 the same immutable request builder and tool executor. Skills never create a second context builder,
@@ -66,8 +75,13 @@ When `accessSkills` is true, the ordinary `GenerationToolExecutor` exposes exact
 
 Definitions, argument validation, multi-read formatting, exact-once patching, result JSON, timeout,
 accepted tool-batch identity, durable tool/result persistence, and error handling mirror the saved
-Memory tools. When access is false, no Skill definitions are advertised and Skill names are not
-handled through a hidden path. There is no active-Skill update tool.
+Memory tools. `edit_skill_file` requires an explicit `operation` of `replace`, `patch`, `rename`, or
+`describe`. The executor reads only the selected operation's value, so runtime-required empty
+placeholders for unrelated fields cannot create conflicting edits. Empty replacement content clears
+the file, an empty patch replacement deletes the unique match, and an empty description removes the
+catalog description. Unknown operations and missing patch/rename inputs fail before `SkillManager`
+is called. When access is false, no Skill definitions are advertised and Skill names are not handled
+through a hidden path. There is no active-Skill update tool.
 
 Tool presentation owns localized labels/icons and structured list-result formatting. Unknown,
 malformed, or failed operations return ordinary tool failure content; they do not mutate generation
@@ -113,7 +127,7 @@ not corrupt Memory, Room, settings, or unrelated archive categories.
 |---|---|---|
 | SkillManager | Private files, metadata, catalog text/revision, safe CRUD. | Prompt compilation, Provider calls, Room, or generation lifecycle. |
 | SettingsManager/Repository | Persist and expose the access toggle. | File bodies or catalog construction. |
-| GenerationRequestBuilder | Freeze access and exact catalog into the ordinary request/prompt. | Live re-read after admission or tool execution. |
+| GenerationRequestBuilder/request projection | Preserve the selected structured variable and resolve the current authorized catalog immediately before each outbound ordinary Provider request. | Admission-time catalog capture, implicit catalog injection, Provider calls, or tool execution. |
 | SkillToolProvider | Definitions, validation, and manager calls. | Independent tool loop, persistence, or admission. |
 | GenerationToolExecutor | Register/execute/present Skill tools through the shared tool path. | Skill-specific Run or settlement. |
 | Import/export/backup owners | Additive archive transport with Memory-equivalent conflict rules. | Silent destructive fallback. |
@@ -123,8 +137,9 @@ not corrupt Memory, Room, settings, or unrelated archive categories.
 
 Focused verification covers path containment, extension normalization, create/read/list/edit/rename/
 patch/delete and metadata behavior, catalog ordering/escaping/revision, tool visibility and all five
-definitions, disabled access, multi-read and validation failures, immutable request catalog capture,
-default/custom prompt variable compilation, context-projection invalidation, ordinary/automation
+definitions, disabled access, multi-read and validation failures, per-request authorized catalog
+resolution across initial requests, tool continuations, and retries, absence of admission-time catalog
+capture, default/custom prompt variable compilation, context-projection invalidation, ordinary/automation
 wiring, localized tool presentation, settings navigation/CRUD, Memory-parity loading/empty/list/add
 states, overflow actions, dialog geometry, mutation guarding and list refresh, export/import merge and
 replace, auto-backup, old-archive compatibility, locale key and format-placeholder parity, and the

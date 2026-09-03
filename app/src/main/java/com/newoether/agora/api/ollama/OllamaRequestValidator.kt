@@ -4,12 +4,24 @@ import com.newoether.agora.api.util.requireValidRequestFormat
 import com.newoether.agora.api.util.safeWireToolName
 import com.newoether.agora.api.util.validateToolDefinitions
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 
 internal fun OllamaChatRequest.requireValidWireFormat() {
     val violations = mutableListOf<String>()
     if (model.isBlank()) violations += "model is blank"
     if (messages.isEmpty()) violations += "messages is empty"
     violations += validateToolDefinitions(tools)
+    when (val think = think) {
+        null -> Unit
+        !is JsonPrimitive -> violations += "think must be a Boolean or effort string"
+        else -> if (
+            think.booleanOrNull == null &&
+            (!think.isString || think.content !in setOf("low", "medium", "high"))
+        ) {
+            violations += "think must be a Boolean or low/medium/high"
+        }
+    }
 
     val pendingToolNames = ArrayDeque<String>()
     var sawNonSystem = false

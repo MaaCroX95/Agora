@@ -14,6 +14,7 @@ add_compile_options(
 set(LLAMA_BUILD_NUMBER 0)
 set(LLAMA_BUILD_COMMIT "unknown")
 set(LLAMA_INSTALL_VERSION "0.0.0")
+set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "")
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "")
 set(LLAMA_BUILD_SERVER OFF CACHE BOOL "")
@@ -21,7 +22,6 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "")
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(${LLAMA_CPP_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama)
-add_subdirectory(${LLAMA_CPP_DIR}/common ${CMAKE_CURRENT_BINARY_DIR}/common)
 add_subdirectory(${LLAMA_CPP_DIR}/tools/mtmd ${CMAKE_CURRENT_BINARY_DIR}/mtmd)
 
 foreach(cli llama-mtmd-cli llama-mtmd-debug
@@ -46,7 +46,7 @@ target_compile_definitions(ggml-base PRIVATE GGML_COMMIT="unknown")
 
 # Build llama JNI wrapper
 add_library(agora_llama SHARED llama_jni.cpp llama_chat_jni.cpp)
-target_link_libraries(agora_llama llama mtmd log)
+target_link_libraries(agora_llama llama llama-common mtmd log)
 target_include_directories(agora_llama PRIVATE ${LLAMA_CPP_DIR}/include ${LLAMA_CPP_DIR}/tools/mtmd)
 target_link_options(agora_llama PRIVATE
     -Wl,--build-id=none -Wl,--hash-style=gnu -Wl,--icf=all -Wl,--threads=1

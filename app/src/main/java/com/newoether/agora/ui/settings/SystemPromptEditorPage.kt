@@ -59,7 +59,11 @@ private fun variableDisplayName(key: String): String = when (key) {
     PredefinedVariables.SENT_TIME -> "Send Time"
     PredefinedVariables.SENT_DATE -> "Send Date"
     PredefinedVariables.ACTIVE_MEMORY -> "Active Memory"
-    PredefinedVariables.MODEL_ID -> "Model ID"
+    PredefinedVariables.SKILL_CATALOG -> "Skill Catalog"
+    PredefinedVariables.CURRENT_MODEL_ID -> "Current Model ID"
+    PredefinedVariables.MESSAGE_MODEL_ID -> "Message Model ID"
+    PredefinedVariables.MODEL_ID -> "Current Model ID (Legacy)"
+    PredefinedVariables.PROMPT -> "Prompt"
     else -> key
 }
 
@@ -69,7 +73,11 @@ private fun variableIcon(key: String): ImageVector = when (key) {
     PredefinedVariables.SENT_TIME -> Icons.Default.History
     PredefinedVariables.SENT_DATE -> Icons.Default.CalendarMonth
     PredefinedVariables.ACTIVE_MEMORY -> Icons.Default.Memory
+    PredefinedVariables.SKILL_CATALOG -> Icons.Default.Info
+    PredefinedVariables.CURRENT_MODEL_ID,
+    PredefinedVariables.MESSAGE_MODEL_ID,
     PredefinedVariables.MODEL_ID -> Icons.Default.Info
+    PredefinedVariables.PROMPT -> Icons.Default.TextFields
     else -> Icons.Default.Info
 }
 
@@ -82,8 +90,8 @@ fun SystemPromptEditorPage(
     onSave: (
         title: String,
         systemItems: List<PromptTemplateItem>,
-        userPrependItems: List<PromptTemplateItem>,
-        userPostpendItems: List<PromptTemplateItem>
+        userItems: List<PromptTemplateItem>,
+        assistantItems: List<PromptTemplateItem>,
     ) -> Unit,
     onBack: () -> Unit,
     showDocFab: Boolean = true
@@ -98,14 +106,14 @@ fun SystemPromptEditorPage(
             entry?.resolvedSystemItems?.let { list.addAll(it) }
         }
     }
-    val userPrependItems = remember {
+    val userItems = remember {
         mutableStateListOf<PromptTemplateItem>().also { list ->
-            entry?.userPrependItems?.let { list.addAll(it) }
+            list.addAll(entry?.resolvedUserItems ?: PredefinedVariables.normalizeMessageTemplate(emptyList()))
         }
     }
-    val userPostpendItems = remember {
+    val assistantItems = remember {
         mutableStateListOf<PromptTemplateItem>().also { list ->
-            entry?.userPostpendItems?.let { list.addAll(it) }
+            list.addAll(entry?.resolvedAssistantItems ?: PredefinedVariables.normalizeMessageTemplate(emptyList()))
         }
     }
 
@@ -115,8 +123,8 @@ fun SystemPromptEditorPage(
 
     val currentItems: MutableList<PromptTemplateItem> = when (selectedTab) {
         0 -> systemItems
-        1 -> userPrependItems
-        else -> userPostpendItems
+        1 -> userItems
+        else -> assistantItems
     }
 
     BackHandler(enabled = showVariablePicker) {
@@ -135,7 +143,12 @@ fun SystemPromptEditorPage(
                     titleError = true
                     return@IconButton
                 }
-                onSave(title, systemItems.toList(), userPrependItems.toList(), userPostpendItems.toList())
+                onSave(
+                    title,
+                    systemItems.toList(),
+                    PredefinedVariables.normalizeMessageTemplate(userItems),
+                    PredefinedVariables.normalizeMessageTemplate(assistantItems),
+                )
             }) {
                 Icon(Icons.Default.Save, contentDescription = stringResource(R.string.provider_save))
             }
@@ -159,13 +172,13 @@ fun SystemPromptEditorPage(
 
             val tabLabels = listOf(
                 stringResource(R.string.template_tab_system),
-                stringResource(R.string.template_tab_prepend),
-                stringResource(R.string.template_tab_postpend),
+                stringResource(R.string.template_tab_user),
+                stringResource(R.string.template_tab_assistant),
             )
             val tabDescriptions = listOf(
                 stringResource(R.string.template_tab_system_desc),
-                stringResource(R.string.template_tab_prepend_desc),
-                stringResource(R.string.template_tab_postpend_desc),
+                stringResource(R.string.template_tab_user_desc),
+                stringResource(R.string.template_tab_assistant_desc),
             )
             PillTabSwitcher(
                 tabs = tabLabels,
@@ -245,6 +258,7 @@ fun SystemPromptEditorPage(
 
                     for (i in currentItems.indices) {
                         val item = currentItems[i]
+                        val isPrompt = PredefinedVariables.isPromptItem(item)
 
                         InsertBetweenButton(
                             onInsertText = {
@@ -259,23 +273,19 @@ fun SystemPromptEditorPage(
                         TemplateItemRow(
                             item = item,
                             onChange = { updated -> currentItems[i] = updated },
-                            onDelete = { currentItems.removeAt(i) },
-                            onMoveUp = if (i > 0) {
+                            onDelete = if (isPrompt) null else ({ currentItems.removeAt(i) }),
+                            onMoveUp = if (!isPrompt && i > 0) {
                                 {
-                                    val moved = currentItems.removeAt(i); currentItems.add(
-                                    i - 1,
-                                    moved
-                                )
+                                    val moved = currentItems.removeAt(i)
+                                    currentItems.add(i - 1, moved)
                                 }
                             } else null,
-                            onMoveDown = if (i < currentItems.lastIndex) {
+                            onMoveDown = if (!isPrompt && i < currentItems.lastIndex) {
                                 {
-                                    val moved = currentItems.removeAt(i); currentItems.add(
-                                    i + 1,
-                                    moved
-                                )
+                                    val moved = currentItems.removeAt(i)
+                                    currentItems.add(i + 1, moved)
                                 }
-                            } else null
+                            } else null,
                         )
                     }
 
@@ -428,27 +438,31 @@ private fun InsertBetweenButton(
 private fun TemplateItemRow(
     item: PromptTemplateItem,
     onChange: (PromptTemplateItem) -> Unit,
-    onDelete: () -> Unit,
+    onDelete: (() -> Unit)?,
     onMoveUp: (() -> Unit)? = null,
     onMoveDown: (() -> Unit)? = null
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            if (onMoveUp != null) {
-                IconButton(onClick = onMoveUp, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = stringResource(R.string.template_move_up), modifier = Modifier.size(18.dp))
+        if (onMoveUp != null || onMoveDown != null || onDelete != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                if (onMoveUp != null) {
+                    IconButton(onClick = onMoveUp, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = stringResource(R.string.template_move_up), modifier = Modifier.size(18.dp))
+                    }
                 }
-            }
-            if (onMoveDown != null) {
-                IconButton(onClick = onMoveDown, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = stringResource(R.string.template_move_down), modifier = Modifier.size(18.dp))
+                if (onMoveDown != null) {
+                    IconButton(onClick = onMoveDown, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = stringResource(R.string.template_move_down), modifier = Modifier.size(18.dp))
+                    }
                 }
-            }
-            IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.provider_delete), modifier = Modifier.size(18.dp))
+                if (onDelete != null) {
+                    IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.provider_delete), modifier = Modifier.size(18.dp))
+                    }
+                }
             }
         }
         when (item.type) {

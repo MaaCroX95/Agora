@@ -45,16 +45,23 @@ internal class GenerationApiPathBuilder(
         withContext(Dispatchers.Default) {
             val config = request.config
             val definitions = toolDefinitions.definitions(request.context)
-            val fixedTokenCost = ContextTokenEstimator.estimateFixed(
-                systemPrompt = config.effectiveSystemPrompt,
-                tools = definitions,
-                initialUserPrompt = config.initialUserPrompt,
-                codeExecutionEnabled = config.codeExecutionEnabled,
-                googleSearchEnabled = config.googleSearchEnabled,
-                openAiWebSearchEnabled = config.openAiWebSearchEnabled,
-            )
-            val providerTokenBudget =
+            val fixedTokenCost = if (config.requestResolver == null) {
+                ContextTokenEstimator.estimateFixed(
+                    systemPrompt = config.effectiveSystemPrompt,
+                    tools = definitions,
+                    initialUserPrompt = config.initialUserPrompt,
+                    codeExecutionEnabled = config.codeExecutionEnabled,
+                    googleSearchEnabled = config.googleSearchEnabled,
+                    openAiWebSearchEnabled = config.openAiWebSearchEnabled,
+                )
+            } else {
+                0
+            }
+            val providerTokenBudget = if (config.requestResolver == null) {
                 (config.maxContextWindow - fixedTokenCost).coerceAtLeast(1)
+            } else {
+                config.maxContextWindow
+            }
             val currentPath = request.loadedMessages?.let { loaded ->
                 projectLoadedSnapshot(
                     parentId = request.parentId,
@@ -99,6 +106,10 @@ internal class GenerationApiPathBuilder(
                     topP = config.topP,
                     frequencyPenalty = config.frequencyPenalty,
                     presencePenalty = config.presencePenalty,
+                    promptCacheKey = request.conversationId.takeIf {
+                        config.providerName == Constants.PROVIDER_OPENAI
+                    },
+                    requestResolver = config.requestResolver,
                 ),
             )
         }

@@ -82,10 +82,12 @@ internal fun MessageItem(
     isStreaming: Boolean = false,
     liveCompactPreview: StateFlow<String>? = null,
     isLoading: Boolean = false,
+    isStopping: Boolean = false,
     compactActionsEnabled: Boolean = true,
     isRegenerationExiting: Boolean = false,
     isEditingAllowed: Boolean = true,
     isEditing: Boolean = false,
+    userBubbleSizeAnimationReady: Boolean = true,
     isSwitching: Boolean = false,
     isInContext: Boolean = false,
     modelAliases: StableModelAliases = StableModelAliases(),
@@ -115,6 +117,7 @@ internal fun MessageItem(
     onMediaClick: (List<String>, Int) -> Unit = { _, _ -> },
     onFileContentClick: ((fileName: String, content: String) -> Unit)? = null,
     onPdfPagesClick: ((pages: List<String>, startIndex: Int) -> Unit)? = null,
+    onSegmentDetailRequest: (String, List<Int>, Boolean) -> Unit = { _, _, _ -> },
     onHeightChanged: (Int) -> Unit = {},
     searchQuery: String = "",
     activeSearchMatch: ConversationSearchMatch? = null,
@@ -132,10 +135,6 @@ internal fun MessageItem(
     val displayActionCopyText = remember(actionCopyText, customProviders) {
         actionCopyText?.let { replaceCustomProviderIdsForDisplay(it, customProviders) }
     }
-    var showSegmentDetail by remember { mutableStateOf(false) }
-    var detailUsesExplicitBackHandler by remember { mutableStateOf(false) }
-    var selectedSegmentIndex by remember { mutableIntStateOf(-1) }
-    var selectedSegmentIndices by remember { mutableStateOf<List<Int>>(emptyList()) }
     var showInfoDialog by remember { mutableStateOf(false) }
     var showUserTextSelection by remember(message.id) { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -230,6 +229,7 @@ internal fun MessageItem(
         animationKey = "message:${message.id}",
         animate = animateEntrance && !isSwitching,
         durationMillis = MESSAGE_ENTER_DURATION_MS,
+        forceOpaque = displayMessage.segments.orEmpty().any { it.type == "tool" },
     )
 
     Row(
@@ -295,6 +295,7 @@ internal fun MessageItem(
                         textColor = textColor,
                         contextAlpha = contextAlpha,
                         isEditing = isEditing,
+                        sizeAnimationReady = userBubbleSizeAnimationReady,
                         isLoading = isLoading,
                         isEditingAllowed = isEditingAllowed,
                         showActions = showActions,
@@ -321,6 +322,7 @@ internal fun MessageItem(
                         contextAlpha = contextAlpha,
                         isStreaming = isStreaming,
                         isLoading = isLoading,
+                        isStopping = isStopping,
                         isRegenerationExiting = isRegenerationExiting,
                         isEditingAllowed = isEditingAllowed,
                         showActions = showActions,
@@ -349,10 +351,7 @@ internal fun MessageItem(
                         onShowInfo = { showInfoDialog = true },
                         onShowDelete = { showDeleteConfirm = true },
                         onSegmentSelected = { indices, showListFirst ->
-                            selectedSegmentIndices = indices
-                            selectedSegmentIndex = indices.firstOrNull() ?: -1
-                            detailUsesExplicitBackHandler = showListFirst
-                            showSegmentDetail = true
+                            onSegmentDetailRequest(message.id, indices, showListFirst)
                         },
                         onLayoutMutationStarted = onLayoutMutationStarted,
                         onLayoutMutationSettled = onLayoutMutationSettled,
@@ -423,21 +422,6 @@ internal fun MessageItem(
             onDismiss = { showCompactDetail = false },
         )
     }
-
-    // Segment detail bottom sheet (self-contained draggable sheet + FSM).
-    if (showSegmentDetail && selectedSegmentIndex >= 0) {
-        SegmentDetailSheet(
-            message = displayMessage,
-            selectedSegmentIndex = selectedSegmentIndex,
-            selectedSegmentIndices = selectedSegmentIndices,
-            isStreaming = isStreaming,
-            markdownRenderContext = thoughtMarkdownRenderContext,
-            onMediaClick = onMediaClick,
-            handleBackInternally = detailUsesExplicitBackHandler,
-            showSegmentListFirst = detailUsesExplicitBackHandler,
-            onDismiss = { showSegmentDetail = false }
-        )
-    }
 }
 
 @Composable
@@ -454,7 +438,7 @@ internal fun ContextCompactPill(
     val pillShape = RoundedCornerShape(100.dp)
     val containerColor by animateColorAsState(
         targetValue = if (error) {
-            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
         } else {
             MaterialTheme.colorScheme.secondaryContainer
         },
@@ -463,7 +447,7 @@ internal fun ContextCompactPill(
     )
     val contentColor by animateColorAsState(
         targetValue = if (error) {
-            MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
         } else {
             MaterialTheme.colorScheme.onSecondaryContainer
         },
@@ -472,7 +456,7 @@ internal fun ContextCompactPill(
     )
     val iconColor by animateColorAsState(
         targetValue = if (error) {
-            MaterialTheme.colorScheme.error
+            MaterialTheme.colorScheme.onSurfaceVariant
         } else {
             MaterialTheme.colorScheme.onSecondaryContainer
         },
@@ -497,17 +481,17 @@ internal fun ContextCompactPill(
         Row(
             modifier = Modifier
                 .heightIn(min = 42.dp)
-                .padding(start = 14.dp, end = 7.dp),
+                .padding(horizontal = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             Box(
-                modifier = Modifier.size(16.dp),
+                modifier = Modifier.size(32.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 if (inProgress) {
                     com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
                     )
                 } else {
@@ -520,7 +504,7 @@ internal fun ContextCompactPill(
                             else -> androidx.compose.material.icons.Icons.Default.Compress
                         },
                         contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.size(18.dp),
                         tint = iconColor,
                     )
                 }

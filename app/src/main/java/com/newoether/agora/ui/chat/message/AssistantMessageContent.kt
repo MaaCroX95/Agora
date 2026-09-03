@@ -1,7 +1,7 @@
 package com.newoether.agora.ui.chat.message
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.LinearEasing
@@ -54,14 +54,14 @@ import com.newoether.agora.model.ToolCallDisplayModes
 import com.newoether.agora.model.ThinkingSegmentDisplayModes
 import com.newoether.agora.model.citationRecords
 import com.newoether.agora.ui.chat.GenerationActivityDot
-import com.newoether.agora.ui.chat.GenerationActivityDotSize
-import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
+import com.newoether.agora.ui.chat.StreamingTailAnchorHeight
+import com.newoether.agora.ui.chat.shouldShowStreamingTailIndicator
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.ui.theme.ChatType
 
 internal val AssistantMessageHorizontalInset = 8.dp
 private val FormerAssistantStatusSpacerHeight = 6.dp
-private val AssistantInlineActivityHeight = GenerationActivityDotSize + 6.dp
+private val AssistantInlineActivityHeight = StreamingTailAnchorHeight
 
 internal data class TokenUsagePresentation(
     val input: Int?,
@@ -115,14 +115,40 @@ internal fun assistantInlineActivityMode(
     else -> AssistantInlineActivityMode.NONE
 }
 
+internal data class AssistantInlineActivityPresentation(
+    val mode: AssistantInlineActivityMode,
+    val retainLayout: Boolean,
+)
+
+internal fun assistantInlineActivityPresentation(
+    generationActive: Boolean,
+    isStopping: Boolean,
+    hasAnswer: Boolean,
+    hasVisibleInfoSegment: Boolean,
+    retryText: String?,
+): AssistantInlineActivityPresentation {
+    val ownedMode = assistantInlineActivityMode(
+        generationActive,
+        hasAnswer,
+        hasVisibleInfoSegment,
+        retryText,
+    )
+    return AssistantInlineActivityPresentation(
+        mode = if (isStopping) AssistantInlineActivityMode.NONE else ownedMode,
+        retainLayout = isStopping && ownedMode != AssistantInlineActivityMode.NONE,
+    )
+}
+
 @Composable
 private fun AssistantInlineActivity(
     mode: AssistantInlineActivityMode,
     retryText: String?,
     visibilityTransition: Transition<Boolean>,
     activityOpacity: Float,
-    activityLayoutProgress: Float,
     retainExitLayout: Boolean,
+    terminalText: String?,
+    terminalIsError: Boolean,
+    precededByCard: Boolean,
 ) {
     var retainedMode by remember {
         mutableStateOf(
@@ -138,34 +164,44 @@ private fun AssistantInlineActivity(
         }
     }
     val activityVisible = visibilityTransition.targetState
-    val visibleMode = if (activityVisible) mode else retainedMode
-    val visibleRetryText = if (activityVisible) retryText else retainedRetryText
-    if (
-        visibilityTransition.targetState ||
-        (retainExitLayout && visibilityTransition.currentState)
-    ) {
-        Row(
+    val ownsCurrentActivity = activityVisible && mode != AssistantInlineActivityMode.NONE
+    val visibleMode = if (ownsCurrentActivity) mode else retainedMode
+    val visibleRetryText = if (ownsCurrentActivity) retryText else retainedRetryText
+    if (visibilityTransition.targetState || retainExitLayout || terminalText != null) {
+        Box(
             modifier = Modifier
-                .then(
-                    if (visibleMode == AssistantInlineActivityMode.RETRY) {
-                        Modifier
-                    } else {
-                        Modifier.height(AssistantInlineActivityHeight * activityLayoutProgress)
-                    },
-                )
-                .graphicsLayer {
-                    compositingStrategy = CompositingStrategy.ModulateAlpha
-                    alpha = activityOpacity
-                    clip = false
-                },
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(top = if (precededByCard) 12.dp else 0.dp)
+                .heightIn(min = AssistantInlineActivityHeight),
         ) {
-            if (visibleMode == AssistantInlineActivityMode.RETRY) {
-                RetryActivityIndicator(
-                    label = visibleRetryText.orEmpty() + "...",
-                )
-            } else {
-                GenerationActivityDot()
+            Crossfade(
+                targetState = terminalText,
+                animationSpec = tween(durationMillis = 180, easing = LinearEasing),
+                label = "AssistantInlineTerminalTransition",
+            ) { visibleTerminalText ->
+                if (visibleTerminalText == null) {
+                    Row(
+                        modifier = Modifier.graphicsLayer {
+                            compositingStrategy = CompositingStrategy.ModulateAlpha
+                            // Crossfade exclusively owns alpha after the terminal handoff begins.
+                            alpha = if (terminalText == null) activityOpacity else 1f
+                            clip = false
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (visibleMode == AssistantInlineActivityMode.RETRY) {
+                            RetryActivityIndicator(label = visibleRetryText.orEmpty() + "...")
+                        } else {
+                            GenerationActivityDot()
+                        }
+                    }
+                } else {
+                    GenerationTerminalText(
+                        visibleTerminalText,
+                        selectable = terminalIsError,
+                        fillWidth = terminalIsError,
+                        normalizeError = terminalIsError,
+                    )
+                }
             }
         }
     }
@@ -189,6 +225,7 @@ internal fun AssistantMessageContent(
     contextAlpha: Modifier,
     isStreaming: Boolean,
     isLoading: Boolean,
+    isStopping: Boolean,
     isRegenerationExiting: Boolean,
     isEditingAllowed: Boolean,
     showActions: Boolean,
@@ -314,6 +351,13 @@ internal fun AssistantMessageContent(
     val mergedSegments = remember(segmentsOrNull) {
         mergeAdjacentSegments(segmentsOrNull.orEmpty())
     }
+    val answerTextDeltas = remember(mergedSegments) {
+        mergedSegments
+            .filter { it.isVisibleAnswerSegment() }
+            .flatMap { it.streamingTextDeltas }
+    }
+    val answerFadeTracker =
+        segmentAppearanceRegistry.streamingFadeTracker("${message.id}:answer")
     val generationActive = message.participant == Participant.MODEL &&
         (
             isStreaming ||
@@ -324,43 +368,22 @@ internal fun AssistantMessageContent(
         )
     val hasAnswerContent =
         message.text.isNotBlank() || mergedSegments.any { it.isVisibleAnswerSegment() }
-    val inlineActivityMode = if (message.participant == Participant.MODEL) {
-        assistantInlineActivityMode(
-            generationActive = generationActive,
-            hasAnswer = hasAnswerContent,
-            hasVisibleInfoSegment = mergedSegments.any { it.isInfoSegment() },
-            retryText = message.retryText,
-        )
-    } else {
-        AssistantInlineActivityMode.NONE
-    }
-    val inlineActivityVisible = inlineActivityMode != AssistantInlineActivityMode.NONE
+    val inlineActivityPresentation = assistantInlineActivityPresentation(
+        generationActive = generationActive,
+        isStopping = isStopping,
+        hasAnswer = hasAnswerContent,
+        hasVisibleInfoSegment = mergedSegments.any { it.isInfoSegment() },
+        retryText = message.retryText,
+    )
+    val inlineActivityMode = inlineActivityPresentation.mode
     val inlineActivityTransition = updateTransition(
-        targetState = inlineActivityVisible,
+        targetState = inlineActivityMode != AssistantInlineActivityMode.NONE ||
+            inlineActivityPresentation.retainLayout,
         label = "AssistantInlineActivityVisibility",
     )
-    val allowSpatialTransitions = LocalAgoraMotionPolicy.current.allowSpatialTransitions
     val inlineActivityOpacity by inlineActivityTransition.animateFloat(
-        transitionSpec = {
-            if (targetState) {
-                snap()
-            } else {
-                tween(durationMillis = 320, easing = FastOutSlowInEasing)
-            }
-        },
+        transitionSpec = { snap() },
         label = "AssistantInlineActivityOpacity",
-    ) { visible ->
-        if (visible) 1f else 0f
-    }
-    val activityLayoutProgress by inlineActivityTransition.animateFloat(
-        transitionSpec = {
-            if (targetState || !allowSpatialTransitions) {
-                snap()
-            } else {
-                tween(durationMillis = 320, easing = FastOutSlowInEasing)
-            }
-        },
-        label = "AssistantInlineActivityLayoutProgress",
     ) { visible ->
         if (visible) 1f else 0f
     }
@@ -467,6 +490,7 @@ internal fun AssistantMessageContent(
                         animationKey = compactAppearanceKey,
                         appearanceRegistry = segmentAppearanceRegistry,
                         isStreaming = isStreaming,
+                        forceOpaque = detailSegments.any { it.type == "tool" },
                     ) {
                         CompactSegmentBlock(
                             segs = detailSegments,
@@ -505,17 +529,6 @@ internal fun AssistantMessageContent(
                     }
                 }
 
-                if (message.participant == Participant.MODEL) {
-                    AssistantInlineActivity(
-                        mode = inlineActivityMode,
-                        retryText = message.retryText,
-                        visibilityTransition = inlineActivityTransition,
-                        activityOpacity = inlineActivityOpacity,
-                        activityLayoutProgress = activityLayoutProgress,
-                        retainExitLayout = !hasAnswerContent,
-                    )
-                }
-
                 val answerBodyText = errorContent?.answerText ?: renderedText.takeIf { !isError }
                 val answerProjection = remember(answerBodyText, citations, isStreaming) {
                     citationMarkdownProjection(
@@ -537,38 +550,72 @@ internal fun AssistantMessageContent(
                 } else {
                     compactVisible && answerContent.isEmpty()
                 }
+                val inlineTerminalText = when {
+                    hasAnswerContent -> null
+                    errorContent != null -> errorContent.errorText
+                    !isStreaming && message.status == MessageStatus.STOPPED ->
+                        stringResource(R.string.generation_stopped)
+                    else -> null
+                }
+                if (message.participant == Participant.MODEL) {
+                    AssistantInlineActivity(
+                        mode = inlineActivityMode,
+                        retryText = message.retryText,
+                        visibilityTransition = inlineActivityTransition,
+                        activityOpacity = inlineActivityOpacity,
+                        retainExitLayout = inlineActivityPresentation.retainLayout,
+                        terminalText = inlineTerminalText,
+                        terminalIsError = errorContent != null,
+                        precededByCard = terminalImmediatelyFollowsCard,
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .noOpBringIntoView()
                 ) {
                     if (answerContent.isNotEmpty() && !useTimelineSegments) {
-                        CitationInlineContentHost(
+                        CitationTerminalProjectionHost(
+                            animationKey = "${message.id}:answer",
                             projection = answerProjection,
-                            onActivate = onCitationActivate,
-                        ) {
-                            if (compactAnswerAppearanceKey != null) {
-                                AnimatedTimelineBlockAppearance(
-                                    animationKey = compactAnswerAppearanceKey,
-                                    appearanceRegistry = segmentAppearanceRegistry,
-                                    isStreaming = isStreaming,
-                                ) {
-                                    StreamingMarkdownMessage(
-                                        content = answerContent,
+                            isStreaming = isStreaming,
+                            onLayoutMutationStarted = onLayoutMutationStarted,
+                            onLayoutMutationSettled = onLayoutMutationSettled,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { presentedProjection, presentedIsStreaming ->
+                            val presentedContent =
+                                presentedProjection?.markdown ?: answerBodyText.orEmpty()
+                            CitationInlineContentHost(
+                                projection = presentedProjection,
+                                onActivate = onCitationActivate,
+                            ) {
+                                if (compactAnswerAppearanceKey != null) {
+                                    AnimatedTimelineBlockAppearance(
+                                        animationKey = compactAnswerAppearanceKey,
+                                        appearanceRegistry = segmentAppearanceRegistry,
                                         isStreaming = isStreaming,
+                                    ) {
+                                        StreamingMarkdownMessage(
+                                            content = presentedContent,
+                                            isStreaming = presentedIsStreaming,
+                                            renderContext = renderContext,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            selectionEnabled = !presentedIsStreaming,
+                                            textDeltas = answerTextDeltas,
+                                            fadeTracker = answerFadeTracker,
+                                        )
+                                    }
+                                } else {
+                                    StreamingMarkdownMessage(
+                                        content = presentedContent,
+                                        isStreaming = presentedIsStreaming,
                                         renderContext = renderContext,
                                         modifier = Modifier.fillMaxWidth(),
-                                        selectionEnabled = !isStreaming,
+                                        selectionEnabled = !presentedIsStreaming,
+                                        textDeltas = answerTextDeltas,
+                                        fadeTracker = answerFadeTracker,
                                     )
                                 }
-                            } else {
-                                StreamingMarkdownMessage(
-                                    content = answerContent,
-                                    isStreaming = isStreaming,
-                                    renderContext = renderContext,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    selectionEnabled = !isStreaming,
-                                )
                             }
                         }
                     }
@@ -578,7 +625,7 @@ internal fun AssistantMessageContent(
                     errorContent?.errorText?.let { retainedErrorText = it }
                 }
                 AnimatedVisibility(
-                    visible = errorContent != null,
+                    visible = hasAnswerContent && errorContent != null,
                     enter = fadeIn(tween(durationMillis = 180, easing = LinearEasing)),
                     exit = fadeOut(tween(durationMillis = 180, easing = LinearEasing)),
                 ) {
@@ -588,12 +635,12 @@ internal fun AssistantMessageContent(
                     )
                 }
                 AnimatedVisibility(
-                    visible = !isStreaming && message.status == MessageStatus.STOPPED,
+                    visible = hasAnswerContent && !isStreaming &&
+                        message.status == MessageStatus.STOPPED,
                     enter = fadeIn(tween(durationMillis = 180, easing = LinearEasing)),
                     exit = fadeOut(tween(durationMillis = 180, easing = LinearEasing)),
                 ) {
                     StoppedGenerationBar(
-                        hasBodyContent = renderedText.isNotEmpty(),
                         precededByCard = terminalImmediatelyFollowsCard,
                     )
                 }
@@ -659,7 +706,7 @@ internal fun AssistantMessageContent(
                         MaterialTheme.colorScheme.error.copy(
                             alpha = if (actionAvailability.terminalEnabled) 1f else 0.38f
                         )
-                    if (citations.isNotEmpty()) {
+                    if (sourcesSummaryVisible) {
                         CitationSourcesSummaryCapsule(
                             messageId = message.id,
                             citations = citations,
@@ -675,16 +722,8 @@ internal fun AssistantMessageContent(
                                 .padding(top = 12.dp),
                         )
                     }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            // Reserve the terminal action row from the first Sending frame. Only
-                            // its draw alpha changes, so completion cannot grow the message item.
-                            .height(44.dp)
-                            .padding(top = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
+                    val answerTailVisible = shouldShowStreamingTailIndicator(isStreaming, isStopping, message)
+                    val actionContent: @Composable RowScope.() -> Unit = {
                         if (!actionCopyText.isNullOrBlank()) {
                             IconButton(
                                 onClick = {
@@ -854,6 +893,17 @@ internal fun AssistantMessageContent(
                                 }
                             }
                         }
+                    }
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(44.dp).padding(top = 12.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (answerTailVisible) GenerationActivityDot()
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            content = actionContent,
+                        )
                     }
                 }
 

@@ -30,14 +30,14 @@ class OpenAiConversationServiceTierTest {
             globalTier = OpenAiServiceTiers.FLEX,
             conversationOverride = ConversationSettings(
                 openAiServiceTierEnabled = false,
-                openAiServiceTier = OpenAiServiceTiers.FAST,
+                openAiServiceTier = OpenAiServiceTiers.PRIORITY,
             ),
             providerName = Constants.PROVIDER_OPENAI,
             builtInOpenAiResponsesEnabled = true,
             customProviders = emptyList(),
         )
         assertFalse(overridden.enabled)
-        assertEquals(OpenAiServiceTiers.FAST, overridden.tier)
+        assertEquals(OpenAiServiceTiers.PRIORITY, overridden.tier)
     }
 
     @Test

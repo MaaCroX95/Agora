@@ -5,6 +5,7 @@ import android.content.Context
 import com.newoether.agora.R
 import com.newoether.agora.api.local.LocalProvider
 import com.newoether.agora.automation.ConversationExecutionCoordinator
+import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.SettingsRepository
@@ -13,6 +14,7 @@ import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.RunEffect
 import com.newoether.agora.model.SelectedAttachment
+import com.newoether.agora.service.AppForegroundTracker
 import com.newoether.agora.util.Constants
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -106,8 +108,10 @@ internal class MessageGenerationController(
     private val renderStore: ConversationRenderStore,
     private val currentConversationId: StateFlow<String?>,
     private val isNewChatMode: StateFlow<Boolean>,
-    private val applyPendingConversationSettings: suspend (String) -> Unit,
-    private val pendingSystemPromptId: StateFlow<String?>,
+    private val awaitNewChatWorkspace: suspend () -> NewChatWorkspaceSnapshot,
+    private val applyCommittedNewConversationState: suspend (String) -> Unit,
+    private val clearCommittedNewChatWorkspace: suspend () -> Unit,
+    private val globalDefaultModel: StateFlow<String>,
     private val currentActiveModel: StateFlow<String>,
     private val messages: StateFlow<List<ChatMessage>>,
     // -- Callbacks into ChatViewModel-owned side effects --
@@ -127,8 +131,8 @@ internal class MessageGenerationController(
     // conversation-open auto-scroll (the send's own physical-bottom scroll handles it) and
     // avoid a double scroll on the first message of a new chat.
     private val onConversationCreatedBySend: (String) -> Unit = {},
-    /** Publishes the first durable Send's conversation into the selection state owner. */
-    private val onConversationAcceptedBySend: (String) -> Unit = {},
+    /** Publishes the first durable Send's conversation and captured model into selection state. */
+    private val onConversationAcceptedBySend: (String, String) -> Unit = { _, _ -> },
     // Called once when a hidden task/loop execution becomes searchable. The callback
     // only enqueues background work; embedding computation must not run under the send lock.
     // Called after a USER message row is persisted (send / edit), so incremental RAG
@@ -153,6 +157,10 @@ internal class MessageGenerationController(
         failureText = { appContext.getString(R.string.failed_to_generate) },
         toUiMessage = { it.toUiChatMessage(appContext) },
         onSnackbar = onSnackbar,
+        isConversationVisible = ::isConversationVisible,
+        onTerminalNotification = { text, conversationId, status ->
+            generationManagerProvider().showTerminalNotification(text, conversationId, status)
+        },
     )
     private val boundRunGenerationLauncher = BoundRunGenerationLauncher(
         conversations = convRepo,
@@ -160,6 +168,7 @@ internal class MessageGenerationController(
         automaticCompactNeeded = contextCompactor::automaticNeeded,
         terminalSettlement = terminalSettlement,
         toUiMessage = { it.toUiChatMessage(appContext) },
+        isConversationVisible = ::isConversationVisible,
         onAutomaticCompactContinuation = ::scheduleAutomaticCompactContinuation,
     )
     private val standardContinuationLauncher = StandardGenerationContinuationLauncher(
@@ -198,9 +207,10 @@ internal class MessageGenerationController(
         acceptanceNotifier = acceptanceNotifier,
         toUiMessage = { it.toUiChatMessage(appContext) },
         isConversationOpen = { currentConversationId.value == it },
-        applyPendingConversationSettings = applyPendingConversationSettings,
-        publishNewConversation = { conversationId ->
-            onConversationAcceptedBySend(conversationId)
+        applyCommittedNewConversationState = applyCommittedNewConversationState,
+        clearCommittedNewChatWorkspace = clearCommittedNewChatWorkspace,
+        publishNewConversation = { conversationId, modelId ->
+            onConversationAcceptedBySend(conversationId, modelId)
             onConversationCreatedBySend(conversationId)
         },
         onUserMessagePersisted = onUserMessagePersisted,
@@ -298,6 +308,11 @@ internal class MessageGenerationController(
         if (currentConversationId.value == genId) block()
     }
 
+    private fun isConversationVisible(conversationId: String): Boolean =
+        AppForegroundTracker.isInForeground &&
+            AppForegroundTracker.isChatPresented &&
+            currentConversationId.value == conversationId
+
     suspend fun compactManual(request: CompactRequest): CompactResult {
         val conversationId = currentConversationId.value
             ?: return CompactResult.Failed(CompactFailureReason.OPEN_CONVERSATION)
@@ -394,7 +409,16 @@ internal class MessageGenerationController(
         attachments: List<SelectedAttachment>,
         onAccepted: suspend (SendAcceptance) -> Unit,
     ): SendAcceptance? {
-        val selectedModelId = currentActiveModel.value
+
+        val wasNewChat = isNewChatMode.value || currentConversationId.value == null
+        val newChatAdmission = if (wasNewChat) {
+            awaitNewChatWorkspace().toSendAdmission(globalDefaultModel.value)
+        } else {
+            null
+        }
+        val selectedModelId = newChatAdmission?.modelId ?: currentActiveModel.value
+        val capturedNewChatSystemPromptId = newChatAdmission?.systemPromptId
+        val capturedNewConversationSettings = newChatAdmission?.conversationSettings
         // Pre-flight: a blank model fails fast BEFORE creating a new-chat row or enqueueing, so the
         // Send button never swallows a message into a conversation that can't generate.
         if (selectedModelId.isBlank()) {
@@ -413,7 +437,7 @@ internal class MessageGenerationController(
         // Resolve a stable id before claiming the generation slot, but do not publish a new-chat
         // transition yet. Its conversation + Run + message graph commit atomically below; only
         // after the composer acknowledges that durable success may the screen switch and render.
-        val wasNewChat = isNewChatMode.value || currentConversationId.value == null
+
         val genId = if (wasNewChat) {
             UUID.randomUUID().toString()
         } else {
@@ -429,7 +453,7 @@ internal class MessageGenerationController(
                     runId = preflightRunId,
                     modelId = selectedModelId,
                 )
-                val fixedTokenCost = generationManagerProvider().fixedContextTokenCost(
+                val fixedTokenCost = generationManagerProvider().resolvedFixedContextTokenCost(
                     snapshot.config,
                     snapshot.context,
                 )
@@ -457,9 +481,12 @@ internal class MessageGenerationController(
         val newConversation = if (wasNewChat) {
             ChatEntity(
                 id = genId,
-                title = appContext.getString(R.string.new_chat),
+                title = initialConversationTitle(
+                    prompt = text,
+                    fallback = appContext.getString(R.string.new_chat),
+                ),
                 modelId = selectedModelId,
-                systemPromptId = pendingSystemPromptId.value,
+                systemPromptId = capturedNewChatSystemPromptId,
             )
         } else {
             null
@@ -472,6 +499,7 @@ internal class MessageGenerationController(
             images = images,
             attachments = attachments,
             modelId = selectedModelId,
+            newConversationSettings = capturedNewConversationSettings,
             onAccepted = onAccepted,
         )
     }
@@ -498,6 +526,7 @@ internal class MessageGenerationController(
         attachments: List<SelectedAttachment>,
         modelId: String,
         onAccepted: suspend (SendAcceptance) -> Unit,
+        newConversationSettings: ConversationSettings? = null,
         scrollPolicy: SendScrollPolicy = SendScrollPolicy.FORCE,
         alreadyHoldsLock: Boolean = false,
         directOnly: Boolean = false,
@@ -644,6 +673,7 @@ internal class MessageGenerationController(
                 userText = text,
                 payloadLease = payloadLease,
                 modelId = modelId,
+                newConversationSettings = newConversationSettings,
                 alreadyHoldsLock = alreadyHoldsLock,
                 requestScroll = resolveScrollCallback(scrollPolicy),
                 onAccepted = onAccepted,

@@ -271,11 +271,11 @@
     <string name="prompts_delete_text">Voulez-vous vraiment supprimer \'%1$s\' ? Cette action est irréversible.</string>
     <string name="template_title_required">Le titre est obligatoire</string>
     <string name="template_tab_system">Système</string>
-    <string name="template_tab_prepend">Préfixe</string>
-    <string name="template_tab_postpend">Suffixe</string>
-    <string name="template_tab_system_desc">Envoyé comme instruction système.</string>
-    <string name="template_tab_prepend_desc">Inséré avant chaque message utilisateur.</string>
-    <string name="template_tab_postpend_desc">Inséré après chaque message utilisateur.</string>
+    <string name="template_tab_user">Utilisateur</string>
+    <string name="template_tab_assistant">Assistant</string>
+    <string name="template_tab_system_desc">Définit le message système envoyé au modèle.</string>
+    <string name="template_tab_user_desc">Définit la structure autour de chaque message utilisateur ordinaire.</string>
+    <string name="template_tab_assistant_desc">Définit la structure autour de chaque message assistant ordinaire.</string>
     <string name="template_empty_hint">Aucun élément. Ajoutez du texte ou des variables ci-dessous.</string>
     <string name="template_add_text">Ajouter du texte</string>
     <string name="template_add_variable">Ajouter une variable</string>
@@ -370,6 +370,9 @@
     <string name="advanced_generation_title">Paramètres avancés</string>
     <string name="advanced_per_conversation">Réglages par conversation</string>
     <string name="appearance_interface">Interface</string>
+    <string name="appearance_theme_color">Thème et couleurs</string>
+    <string name="appearance_motion_feedback">Mouvement et retour</string>
+    <string name="appearance_chat_display">Affichage du chat</string>
     <string name="message_display">Affichage des messages</string>
     <string name="tool_call_display_mode">Blocs de réflexion et d\'outils</string>
     <string name="tool_call_display_mode_timeline">Chronologie</string>
@@ -731,6 +734,10 @@
     <!-- Local Chat Provider -->
     <string name="local_chat_models">Modèles de chat locaux</string>
     <string name="local_models_title">Modèles locaux</string>
+    <string name="local_model_idle_retention">Conservation du modèle inactif</string>
+    <string name="local_model_idle_retention_desc">Durée de maintien en mémoire d’un modèle local inactif avant son déchargement</string>
+    <string name="local_model_idle_retention_immediate">Immédiat</string>
+    <string name="local_model_idle_retention_minutes">%1$d min</string>
     <string name="local_chat_models_count">%1$d modèle(s) importé(s)</string>
     <string name="local_title">Local</string>
     <string name="not_configured">Non configuré</string>
@@ -800,7 +807,7 @@
     <string name="rating_submitting">Envoi…</string>
     <string name="rating_success">Merci pour vos retours !</string>
     <string name="rating_failed">Échec de l\'envoi. Veuillez réessayer.</string>
-    <string name="rating_privacy">Votre note sera envoyée de manière anonyme à newoether.space. Seuls les champs que vous remplissez sont transmis. Aucune autre donnée n\'est collectée.</string>
+    <string name="rating_privacy">Votre note sera envoyée de manière anonyme à newoether.com. Seuls les champs que vous remplissez sont transmis. Aucune autre donnée n\'est collectée.</string>
 
     <!-- Data Control -->
     <string name="settings_data_control">Contrôle des données</string>
@@ -882,7 +889,8 @@
     <string name="file_unsupported_title">Fichier non pris en charge</string>
     <string name="file_unknown_type">Type de fichier inconnu</string>
     <string name="file_unsupported_type">Type de fichier non pris en charge : %1$s</string>
-    <string name="file_too_large">Fichier trop volumineux (max 20 Mo)</string>
+    <string name="file_too_large">Fichier trop volumineux (max. 100 Mio)</string>
+    <string name="file_sandbox_required">Installez et activez Local Sandbox pour joindre ce fichier.</string>
     <string name="attachment_copy_failed_image">Échec du chargement de l\'image</string>
     <string name="attachment_copy_failed_file">Échec du chargement du fichier</string>
     <string name="pdf_render_failed">Échec du rendu du PDF</string>
@@ -999,7 +1007,7 @@
     <string name="crash_message">Désolé pour ce désagrément. Vous pouvez aider à corriger cela en envoyant un rapport de plantage anonyme.</string>
     <string name="crash_submit">Envoyer le rapport</string>
     <string name="crash_dismiss">Ne pas envoyer</string>
-    <string name="crash_privacy_note">Seul le journal de plantage est envoyé à newoether.space. Aucune autre information n\'est collectée.</string>
+    <string name="crash_privacy_note">Seul le journal de plantage est envoyé à newoether.com. Aucune autre information n\'est collectée.</string>
     <string name="crash_submitted">Rapport de plantage envoyé. Merci !</string>
     <string name="settings_group_network">Réseau</string>
     <string name="settings_proxy">Proxy</string>
@@ -1077,7 +1085,10 @@
     <string name="openai_service_tier_auto">Automatique</string>
     <string name="openai_service_tier_default">Par défaut</string>
     <string name="openai_service_tier_flex">Flexible</string>
+    <string name="openai_service_tier_scale">Échelle</string>
+    <string name="openai_service_tier_priority">Prioritaire</string>
     <string name="openai_service_tier_fast">Rapide</string>
+    <string name="openai_service_tier_ultrafast">Ultra-rapide</string>
     <string name="context_title">Contexte</string>
     <string name="context_desc">Gestion du contexte</string>
     <string name="context_compact">Compactage du contexte</string>
@@ -1207,4 +1218,5 @@
     <string name="tool_create_skill">Créer une compétence</string>
     <string name="tool_edit_skill">Modifier la compétence</string>
     <string name="tool_delete_skill">Supprimer la compétence</string>
+    <string name="tool_read_file_truncated">Contenu partiel affiché · continuer à l’octet %1$d</string>
 </resources>

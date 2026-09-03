@@ -49,6 +49,11 @@ import com.newoether.agora.ui.theme.ChatType
  * Extracted from [MessageItem]; the parent owns the info/delete dialogs, triggered
  * here via [onShowInfo] / [onShowDelete].
  */
+internal fun userBubbleSizeAnimationEnabled(
+    sizeAnimationReady: Boolean,
+    allowSpatialTransitions: Boolean,
+): Boolean = sizeAnimationReady && allowSpatialTransitions
+
 @Composable
 internal fun UserMessageBubble(
     message: ChatMessage,
@@ -57,6 +62,7 @@ internal fun UserMessageBubble(
     textColor: Color,
     contextAlpha: Modifier,
     isEditing: Boolean,
+    sizeAnimationReady: Boolean,
     isLoading: Boolean,
     isEditingAllowed: Boolean,
     showActions: Boolean,
@@ -108,7 +114,7 @@ internal fun UserMessageBubble(
                 // measurement is immediate; subsequent editor enter/exit changes animate
                 // without involving the message row or assistant streaming layout.
                 .then(
-                    if (allowSpatialTransitions) {
+                    if (userBubbleSizeAnimationEnabled(sizeAnimationReady, allowSpatialTransitions)) {
                         Modifier.animateContentSize(
                             animationSpec = tween(durationMillis = 500),
                         )

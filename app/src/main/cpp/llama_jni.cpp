@@ -130,6 +130,11 @@ Java_com_newoether_agora_api_LlamaEngine_nativeComputeEmbedding(
         tokens.resize(512);
     }
 
+    // Every input is an independent embedding sequence, even when the native model/context stays
+    // resident across a batch or later request. Positions restart at zero below, so stale sequence
+    // memory must be cleared before encode/decode.
+    llama_memory_clear(llama_get_memory(handle->ctx), true);
+
     // Create batch
     llama_batch batch = llama_batch_init(n_tokens, 0, 1);
     for (int i = 0; i < n_tokens; i++) {

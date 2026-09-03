@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +47,9 @@ import androidx.compose.ui.unit.sp
 import com.newoether.agora.R
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageSegment
+import com.newoether.agora.model.MessageStatus
+import com.newoether.agora.ui.chat.ConversationSearchMatch
+import com.newoether.agora.ui.chat.conversationSearchMatchRanges
 import com.newoether.agora.ui.components.CircularBackButton
 import com.newoether.agora.ui.components.SmoothBottomSheet
 import com.newoether.agora.ui.components.rememberSmoothBottomSheetState
@@ -54,8 +58,121 @@ import com.newoether.agora.ui.theme.ChatType
 import com.newoether.agora.util.NoAutoScrollSelectionContainer
 import com.newoether.agora.util.noOpBringIntoView
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 
 internal enum class SegmentSheetBackAction { DISMISS, SHOW_LIST }
+
+internal fun resolveSegmentDetailMessage(
+    messageId: String,
+    streamingMessage: ChatMessage?,
+    authoritativeMessage: ChatMessage?,
+    roomMessage: ChatMessage?,
+): ChatMessage? = when {
+    streamingMessage?.id == messageId -> streamingMessage
+    authoritativeMessage?.id == messageId && authoritativeMessage.hasSegmentDetailPayload() ->
+        authoritativeMessage
+    roomMessage?.id == messageId -> roomMessage
+    else -> null
+}
+
+internal fun segmentDetailIndicesForSnapshot(
+    message: ChatMessage,
+    requestedIndices: List<Int>,
+    showSegmentListFirst: Boolean,
+): List<Int> {
+    if (!showSegmentListFirst) return requestedIndices
+    return mergeAdjacentSegments(message.segments.orEmpty())
+        .filter { segment -> segment.type != "answer" }
+        .mapIndexedNotNull { index, segment -> index.takeIf { segment.isInfoSegment() } }
+}
+
+private fun ChatMessage.hasSegmentDetailPayload(): Boolean =
+    mergeAdjacentSegments(segments.orEmpty()).any(MessageSegment::isInfoSegment)
+
+private fun MessageStatus.isSegmentDetailStreaming(): Boolean =
+    this == MessageStatus.SENDING ||
+        this == MessageStatus.THINKING ||
+        this == MessageStatus.TOOL_CALLING ||
+        this == MessageStatus.TRANSCRIBING
+
+@Composable
+internal fun MessageSegmentDetailHost(
+    conversationId: String?,
+    authoritativeMessages: List<ChatMessage>,
+    streamingMessage: ChatMessage?,
+    observeMessage: (String) -> Flow<ChatMessage?>,
+    searchQuery: String,
+    activeSearchMatch: ConversationSearchMatch?,
+    parseInlineDollarMath: Boolean,
+    onMediaClick: (List<String>, Int) -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ((String, List<Int>, Boolean) -> Unit) -> Unit,
+) {
+    var selectedMessageId by remember(conversationId) { mutableStateOf<String?>(null) }
+    var requestedSegmentIndices by remember(conversationId) {
+        mutableStateOf<List<Int>>(emptyList())
+    }
+    var showSegmentListFirst by remember(conversationId) { mutableStateOf(false) }
+
+    Box(modifier = modifier) {
+        content { messageId, segmentIndices, listFirst ->
+            selectedMessageId = messageId
+            requestedSegmentIndices = segmentIndices
+            showSegmentListFirst = listFirst
+        }
+    }
+
+    val messageId = selectedMessageId ?: return
+    val roomMessage by remember(messageId, observeMessage) {
+        observeMessage(messageId)
+    }.collectAsState(initial = null)
+    val authoritativeMessage = authoritativeMessages.firstOrNull { message ->
+        message.id == messageId
+    }
+    val message = resolveSegmentDetailMessage(
+        messageId = messageId,
+        streamingMessage = streamingMessage,
+        authoritativeMessage = authoritativeMessage,
+        roomMessage = roomMessage,
+    ) ?: return
+    val selectedIndices = segmentDetailIndicesForSnapshot(
+        message = message,
+        requestedIndices = requestedSegmentIndices,
+        showSegmentListFirst = showSegmentListFirst,
+    )
+    val searchHighlight = searchQuery.takeIf(String::isNotBlank)?.let { query ->
+        val active = activeSearchMatch?.takeIf { match -> match.messageId == message.id }
+        SearchHighlightSpec(
+            query = query,
+            activeRange = active
+                ?.takeIf { match -> match.citationSourceId == null }
+                ?.let { match -> match.start until match.endExclusive },
+            activeKey = active?.key,
+            matchKeys = conversationSearchMatchRanges(message, query).map { range ->
+                "${message.id}:${range.first}:${range.last + 1}"
+            },
+            onMatchPosition = { _, _ -> },
+        )
+    }
+    val markdownRenderContext = rememberChatMarkdownAssets(
+        textColor = MaterialTheme.colorScheme.onSurface,
+        searchHighlight = searchHighlight,
+        parseInlineDollarMath = parseInlineDollarMath,
+    ).thoughtRenderContext
+
+    SegmentDetailSheet(
+        message = message,
+        selectedSegmentIndex = selectedIndices.firstOrNull() ?: -1,
+        selectedSegmentIndices = selectedIndices,
+        isStreaming = streamingMessage?.id == messageId &&
+            streamingMessage.status.isSegmentDetailStreaming(),
+        markdownRenderContext = markdownRenderContext,
+        onMediaClick = onMediaClick,
+        handleBackInternally = showSegmentListFirst,
+        showSegmentListFirst = showSegmentListFirst,
+        onDismiss = { selectedMessageId = null },
+    )
+}
 
 internal fun usesVirtualizedSegmentDetail(
     selectedSegmentCount: Int,
@@ -86,7 +203,7 @@ internal fun segmentSheetBackAction(
 //
 // A self-contained draggable bottom sheet with its own finite-state machine
 // (Collapsed / Half / Full) driving an Animatable fraction; the whole gesture +
-// snap + dim subsystem lives here. The host (MessageItem) only decides WHICH
+// snap + dim subsystem lives here. The stable list-level host decides WHICH
 // segment(s) to show and toggles visibility via [onDismiss].
 @Composable
 internal fun SegmentDetailSheet(
@@ -136,15 +253,19 @@ internal fun SegmentDetailSheet(
             onDismiss()
         }
     } else {
-        var detailPageIndex by remember(message.id, selectedSegmentIndices, showSegmentListFirst) {
+        var detailPageIndex by remember(message.id, showSegmentListFirst) {
             mutableIntStateOf(if (showSegmentListFirst) -1 else 0)
         }
-        var lastDetailPageIndex by remember(message.id, selectedSegmentIndices) {
+        var lastDetailPageIndex by remember(message.id) {
             mutableIntStateOf(0)
         }
         val showSegmentListPage = showSegmentListFirst && detailPageIndex < 0
         val renderedEntries = if (showSegmentListFirst) {
-            listOfNotNull(selectedEntries.getOrNull(lastDetailPageIndex))
+            listOfNotNull(
+                selectedEntries.getOrNull(
+                    lastDetailPageIndex.coerceIn(0, selectedEntries.lastIndex),
+                ),
+            )
         } else {
             selectedEntries
         }

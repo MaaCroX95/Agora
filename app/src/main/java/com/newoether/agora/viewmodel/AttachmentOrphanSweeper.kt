@@ -69,6 +69,16 @@ internal class AttachmentOrphanSweeper(
             afterConversationId = page.lastOrNull()?.id
             if (page.size < DATABASE_SCAN_PAGE_SIZE) break
         }
+
+        conversations.getNewChatDraftAttachmentReference()?.let { newChat ->
+            runCatching {
+                Json.decodeFromString<List<SelectedAttachment>>(newChat.draftAttachments)
+            }.getOrNull()?.forEach { attachment ->
+                attachment.localPath?.let { referenced.add(it) }
+                attachment.processedFrames?.forEach { referenced.add(it) }
+                attachment.preRenderedPaths?.forEach { referenced.add(it) }
+            }
+        }
     }
 
     private fun deleteOldUnreferencedRootAttachments(

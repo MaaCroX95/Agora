@@ -255,27 +255,50 @@ class AgoraForegroundService : Service() {
             manager.createNotificationChannel(channel)
         }
 
-        fun showCompletionNotification(context: Context, responseText: String, conversationId: String) {
+        fun showTerminalNotification(
+            context: Context,
+            responseText: String,
+            conversationId: String,
+            isError: Boolean,
+        ) {
             createCompletionChannel(context)
             val manager = context.getSystemService(NotificationManager::class.java)
+            val displayText = if (responseText.length > 200) {
+                responseText.take(200) + "…"
+            } else {
+                responseText
+            }
             val notification = NotificationCompat.Builder(context, COMPLETION_CHANNEL_ID)
-                .setContentTitle(context.getString(R.string.agora_responded))
-                .setContentText(if (responseText.length > 200) responseText.take(200) + "…" else responseText)
+                .setContentTitle(
+                    context.getString(if (isError) R.string.app_name else R.string.agora_responded)
+                )
+                .setContentText(displayText)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentIntent(createPendingIntent(context, stableCompletionNotificationId(conversationId), conversationId))
-                .setAutoCancel(true)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setStyle(
-                    NotificationCompat.BigTextStyle().bigText(
-                        if (responseText.length > 200) responseText.take(200) + "…" else responseText
+                .setContentIntent(
+                    createPendingIntent(
+                        context,
+                        stableCompletionNotificationId(conversationId),
+                        conversationId,
                     )
                 )
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(displayText))
                 .build()
 
             try {
                 manager.notify(stableCompletionNotificationId(conversationId), notification)
             } catch (e: RuntimeException) {
-                DebugLog.w(TAG, "Failed to show completion notification", e)
+                DebugLog.w(TAG, "Failed to show terminal notification", e)
+            }
+        }
+
+        fun cancelTerminalNotification(context: Context, conversationId: String) {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            try {
+                manager.cancel(stableCompletionNotificationId(conversationId))
+            } catch (e: RuntimeException) {
+                DebugLog.w(TAG, "Failed to cancel terminal notification", e)
             }
         }
 

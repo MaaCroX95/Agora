@@ -141,6 +141,7 @@ class BoundRunGenerationLauncherTest {
                 state = fixture.state,
                 failedMessage = capture(failedMessage),
                 effectId = "request-finalize-run-3",
+                notificationText = any(),
             )
         } returns true
         mockDebugLog()
@@ -235,7 +236,7 @@ class BoundRunGenerationLauncherTest {
 
         init {
             state.bindRun(uiToken, "run", pass = 3)
-            every { manager.fixedContextTokenCost(any(), any()) } returns 0
+            coEvery { manager.resolvedFixedContextTokenCost(any(), any()) } returns 0
             coEvery {
                 compactController.automaticNeeded(any(), any(), any())
             } returns false

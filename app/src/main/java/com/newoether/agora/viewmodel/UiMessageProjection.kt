@@ -1,6 +1,7 @@
 package com.newoether.agora.viewmodel
 
 import android.content.Context
+import com.newoether.agora.data.local.MessageContextTopology
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.model.AttachmentMeta
 import com.newoether.agora.model.ChatMessage
@@ -15,6 +16,24 @@ import com.newoether.agora.util.SearchResultFormatter
 import kotlinx.serialization.json.Json
 private val persistedSegmentJson = Json { ignoreUnknownKeys = true }
 
+internal fun MessageContextTopology.toUiChatMessageStub(): ChatMessage =
+    ChatMessage(
+        id = id,
+        parentId = parentId,
+        text = "",
+        tokenCount = if (id.isSyntheticMessageId()) 0 else tokenCount,
+        status = status,
+        participant = participant,
+        timestamp = timestamp,
+        modelName = modelName,
+        runId = runId,
+        runSequence = runSequence,
+        consumedAtPass = consumedAtPass,
+    )
+
+private fun String.isSyntheticMessageId(): Boolean =
+    startsWith(Constants.TOOL_MSG_PREFIX) || startsWith(Constants.RESULT_MSG_PREFIX)
+
 /**
  * The single projection from a durable message row into UI state.
  *
@@ -28,9 +47,7 @@ internal fun MessageEntity.toUiChatMessage(context: Context): ChatMessage =
 internal fun MessageEntity.toUiChatMessage(
     formatText: (String) -> String,
 ): ChatMessage {
-    val isSynthetic =
-        id.startsWith(Constants.TOOL_MSG_PREFIX) ||
-            id.startsWith(Constants.RESULT_MSG_PREFIX)
+    val isSynthetic = id.isSyntheticMessageId()
     // Protocol rows only participate in the branch walk. Provider history is built from
     // MessageEntity snapshots, so copying their potentially huge results into UI state only
     // increases allocation and GC pressure.
@@ -71,6 +88,7 @@ internal fun MessageEntity.toUiChatMessage(
                 totalTokenCount = tokenCount,
                 inputTokenCount = inputTokenCount,
                 cachedInputTokenCount = cachedInputTokenCount,
+                cacheWriteInputTokenCount = cacheWriteInputTokenCount,
                 uncachedInputTokenCount = uncachedInputTokenCount,
                 outputTokenCount = outputTokenCount,
                 reasoningTokenCount = reasoningTokenCount,

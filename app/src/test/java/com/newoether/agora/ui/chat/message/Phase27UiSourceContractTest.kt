@@ -21,7 +21,9 @@ class Phase27UiSourceContractTest {
         assertFalse(list.contains("LocalInlineActivityDotOverlayState"))
         assertFalse(list.contains("InlineActivityDotFollower("))
         assertTrue(assistant.contains("GenerationActivityDot()"))
-        assertTrue(assistant.contains("alpha = activityOpacity"))
+        assertTrue(assistant.contains(
+            "alpha = if (terminalText == null) activityOpacity else 1f"
+        ))
         assertTrue(assistant.contains("clip = false"))
         assertFalse(assistant.contains("InlineActivityDotMarker"))
         assertFalse(assistant.contains("positionInWindow()"))

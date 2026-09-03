@@ -1,5 +1,7 @@
 # Settings UI and UX Contract
 
+Status: authoritative shared Settings-surface contract.
+
 This document defines the visual, interaction, copy, and asset-import rules for
 Agora settings surfaces. New settings pages and revisions to existing pages
 must follow the same contract.
@@ -34,11 +36,11 @@ must follow the same contract.
 
 ## Copy and localization
 
-- English page, group, row, action, and dialog titles use Title Case.
-- Technical acronyms remain uppercase: MCP, API, URL, HTTP, SSE, SSH, PDF, and
-  GGUF.
-- Field labels, descriptions, and status text use sentence case. Status text
-  has no trailing period.
+- All title-like UI copy follows the hard global capitalization contract in
+  `development/application-ui.md`. Settings pages, groups, row headlines,
+  actions, and dialogs are explicitly in scope.
+- Field labels, descriptions, helper text, and status text use sentence case.
+  Status text has no trailing period.
 - Confirmation dialog titles are bold and end with a question mark.
 - Other locales use their native casing and punctuation conventions.
 - Every default string key must exist in every supported locale.

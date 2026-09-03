@@ -8,6 +8,7 @@ import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.TokenUsage
+import com.newoether.agora.model.StreamingTextDelta
 
 internal class GenerationThoughtTiming(
     private val nowMs: () -> Long = System::currentTimeMillis,
@@ -73,6 +74,7 @@ internal fun appendMergedSegment(
             signature = segment.signature ?: last.signature,
             signatureProvider = segment.signatureProvider ?: last.signatureProvider,
             durationMs = mergeDurationMs(last.durationMs, segment.durationMs),
+            streamingTextDeltas = last.streamingTextDeltas + segment.streamingTextDeltas,
         )
     } else {
         target.add(segment)
@@ -113,11 +115,19 @@ internal fun buildLiveSegments(
     signatureProvider: String? = null,
     thoughtDurationMs: Long? = null,
     errorMessage: String? = null,
+    answerDeltas: List<StreamingTextDelta> = emptyList(),
 ): List<MessageSegment>? {
     val citations = flushed.filter { it.type == "citation" }
     val result = flushed.filterTo(mutableListOf()) { it.type != "citation" }
     if (answer.isNotEmpty()) {
-        appendMergedSegment(result, MessageSegment(type = "answer", content = answer.toString()))
+        appendMergedSegment(
+            result,
+            MessageSegment(
+                type = "answer",
+                content = answer.toString(),
+                streamingTextDeltas = answerDeltas.toList(),
+            ),
+        )
     }
     if (thought.isNotEmpty()) {
         appendMergedSegment(
@@ -148,11 +158,30 @@ internal fun terminalGenerationErrorMessage(
     currentError
 }
 
-internal fun ChatMessage.withBoundedFinalTextTransform(
+internal fun ChatMessage.withBoundedOutputTextTransform(
     transform: (String, MessageStatus) -> String,
-): ChatMessage = copy(
-    text = MessagePersistenceGuard.clipText(transform(text, status)),
-)
+): ChatMessage {
+    val transformedText = MessagePersistenceGuard.clipText(transform(text, status))
+    if (transformedText == text) return this
+    val answerSegmentCount = segments.orEmpty().count { it.type == "answer" }
+    var answerSegmentIndex = 0
+    var transformedCursor = 0
+    val transformedSegments = segments?.map { segment ->
+        if (segment.type != "answer") return@map segment
+        answerSegmentIndex += 1
+        val content = if (answerSegmentIndex == answerSegmentCount) {
+            transformedText.substring(transformedCursor.coerceAtMost(transformedText.length))
+        } else {
+            val end = (transformedCursor + segment.content.length)
+                .coerceAtMost(transformedText.length)
+            transformedText.substring(transformedCursor, end).also {
+                transformedCursor = end
+            }
+        }
+        segment.copy(content = content, streamingTextDeltas = emptyList())
+    }
+    return copy(text = transformedText, segments = transformedSegments)
+}
 
 internal data class GenerationFinalSnapshot(
     val messageId: String,
@@ -176,6 +205,7 @@ internal data class GenerationFinalSnapshot(
     val errorMessage: String?,
     val runId: String,
     val runSequence: Long,
+    val answerDeltas: List<StreamingTextDelta> = emptyList(),
 )
 
 internal fun GenerationFinalSnapshot.toMessage(): ChatMessage = ChatMessage(
@@ -200,6 +230,7 @@ internal fun GenerationFinalSnapshot.toMessage(): ChatMessage = ChatMessage(
         thoughtSignatureProvider,
         thoughtDurationMs,
         errorMessage,
+        answerDeltas = answerDeltas,
     ) ?: flushedSegments.ifEmpty { null },
     runId = runId,
     runSequence = runSequence,

@@ -3,6 +3,7 @@ package com.newoether.agora.ui.chat
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.sp
 import com.newoether.agora.ui.chat.message.scaledMarkdownTextStyle
 import java.io.File
@@ -13,7 +14,7 @@ import org.junit.Test
 
 class TextFileViewerTypographyTest {
     @Test
-    fun `shared markdown scaler preserves app font and size at exact one point one line height`() {
+    fun `shared markdown scaler preserves app typography with centered one point one line height`() {
         val appStyle = TextStyle(
             fontFamily = FontFamily.SansSerif,
             fontWeight = FontWeight.Medium,
@@ -27,6 +28,8 @@ class TextFileViewerTypographyTest {
         assertEquals(FontWeight.Medium, scaled.fontWeight)
         assertEquals(13.sp, scaled.fontSize)
         assertEquals(22.sp, scaled.lineHeight)
+        assertEquals(LineHeightStyle.Alignment.Center, scaled.lineHeightStyle?.alignment)
+        assertEquals(LineHeightStyle.Trim.Both, scaled.lineHeightStyle?.trim)
     }
 
     @Test

@@ -20,8 +20,8 @@ Data leaves the device only through features you use:
 - MCP calls go to enabled MCP servers;
 - Conch and SSH operations go to configured remote devices;
 - release metadata can be checked when the app starts, at most once per day;
-- the optional rating form sends only the rating, name, email, and comment you explicitly submit to `https://newoether.space/api/rating`;
-- after a crash, one pending report is stored locally and the next launch asks whether to send it to `https://newoether.space/crash`. It contains the stack trace, app/Android version, device manufacturer/model, timestamp, and bounded diagnostic event tags, but no conversation text, credentials, or device identifiers.
+- the optional rating form sends only the rating, name, email, and comment you explicitly submit to `https://newoether.com/api/rating`;
+- after a crash, one pending report is stored locally and the next launch asks whether to send it to `https://newoether.com/crash`. It contains the stack trace, app/Android version, device manufacturer/model, timestamp, and bounded diagnostic event tags, but no conversation text, credentials, or device identifiers.
 
 Crash reports are never submitted automatically. Agora does not include a general analytics path. Third-party endpoints have their own privacy and retention policies.
 
@@ -68,8 +68,8 @@ Agora 是 BYOK Android 客户端，不运营聊天补全中转服务：模型请
 - MCP 调用发往已启用服务器；
 - Conch/SSH 操作发往已配置远程设备；
 - 应用启动时最多每天一次检查发布元数据；
-- 可选评分表单只把你明确提交的评分、姓名、邮箱和评论发送到 `https://newoether.space/api/rating`；
-- 崩溃后只在本地保存一份待处理报告，下次启动时询问是否发送到 `https://newoether.space/crash`。报告包含堆栈、应用/Android 版本、设备厂商/型号、时间戳和有界诊断事件，不含对话文本、凭据或设备标识符。
+- 可选评分表单只把你明确提交的评分、姓名、邮箱和评论发送到 `https://newoether.com/api/rating`；
+- 崩溃后只在本地保存一份待处理报告，下次启动时询问是否发送到 `https://newoether.com/crash`。报告包含堆栈、应用/Android 版本、设备厂商/型号、时间戳和有界诊断事件，不含对话文本、凭据或设备标识符。
 
 崩溃报告不会自动提交。Agora 不包含通用分析路径。第三方端点有各自的隐私与保留政策。
 

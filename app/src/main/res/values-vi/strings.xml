@@ -274,11 +274,11 @@
     <string name="prompts_delete_text">Bạn có chắc chắn muốn xóa \'%1$s\'? Hành động này không thể hoàn tác.</string>
     <string name="template_title_required">Yêu cầu phải có tiêu đề</string>
     <string name="template_tab_system">Hệ thống</string>
-    <string name="template_tab_prepend">Tiền tố</string>
-    <string name="template_tab_postpend">Hậu tố</string>
-    <string name="template_tab_system_desc">Được gửi dưới dạng hướng dẫn hệ thống.</string>
-    <string name="template_tab_prepend_desc">Được chèn trước mỗi tin nhắn của người dùng.</string>
-    <string name="template_tab_postpend_desc">Được chèn sau mỗi tin nhắn của người dùng.</string>
+    <string name="template_tab_user">Người dùng</string>
+    <string name="template_tab_assistant">Trợ lý</string>
+    <string name="template_tab_system_desc">Xác định thông điệp hệ thống được gửi tới mô hình.</string>
+    <string name="template_tab_user_desc">Xác định cấu trúc bao quanh mỗi tin nhắn thông thường của người dùng.</string>
+    <string name="template_tab_assistant_desc">Xác định cấu trúc bao quanh mỗi tin nhắn thông thường của trợ lý.</string>
     <string name="template_empty_hint">Không có mục nào. Thêm văn bản hoặc biến bên dưới.</string>
     <string name="template_add_text">Thêm văn bản</string>
     <string name="template_add_variable">Thêm biến</string>
@@ -568,6 +568,9 @@
     <string name="settings_appearance_desc">Chủ đề, bảng màu và màu sắc động</string>
     <string name="appearance_title">Giao diện</string>
     <string name="appearance_interface">Giao diện người dùng</string>
+    <string name="appearance_theme_color">Chủ đề &amp; màu sắc</string>
+    <string name="appearance_motion_feedback">Chuyển động &amp; phản hồi</string>
+    <string name="appearance_chat_display">Hiển thị trò chuyện</string>
     <string name="theme_mode">Chế độ chủ đề</string>
     <string name="theme_mode_light">Sáng</string>
     <string name="theme_mode_dark">Tối</string>
@@ -734,6 +737,10 @@
     <!-- Local Chat Provider -->
     <string name="local_chat_models">Mô hình trò chuyện cục bộ</string>
     <string name="local_models_title">Mô hình cục bộ</string>
+    <string name="local_model_idle_retention">Thời gian giữ mô hình khi rảnh</string>
+    <string name="local_model_idle_retention_desc">Khoảng thời gian giữ mô hình cục bộ không hoạt động trong bộ nhớ trước khi dỡ tải</string>
+    <string name="local_model_idle_retention_immediate">Ngay lập tức</string>
+    <string name="local_model_idle_retention_minutes">%1$d phút</string>
     <string name="local_chat_models_count">Đã nhập %1$d mô hình</string>
     <string name="local_title">Cục bộ</string>
     <string name="not_configured">Chưa được cấu hình</string>
@@ -803,7 +810,7 @@
     <string name="rating_submitting">Đang gửi…</string>
     <string name="rating_success">Cảm ơn phản hồi của bạn!</string>
     <string name="rating_failed">Gửi thất bại. Vui lòng thử lại.</string>
-    <string name="rating_privacy">Đánh giá của bạn sẽ được tải lên ẩn danh tới newoether.space. Chỉ các trường bạn điền được gửi đi. Không thu thập dữ liệu khác.</string>
+    <string name="rating_privacy">Đánh giá của bạn sẽ được tải lên ẩn danh tới newoether.com. Chỉ các trường bạn điền được gửi đi. Không thu thập dữ liệu khác.</string>
 
     <!-- Data Control -->
     <string name="settings_data_control">Kiểm soát dữ liệu</string>
@@ -884,7 +891,8 @@
     <string name="file_unsupported_title">Tệp không được hỗ trợ</string>
     <string name="file_unknown_type">Loại tệp không xác định</string>
     <string name="file_unsupported_type">Loại tệp không được hỗ trợ: %1$s</string>
-    <string name="file_too_large">Tệp quá lớn (tối đa 20 MB)</string>
+    <string name="file_too_large">Tệp quá lớn (tối đa 100 MiB)</string>
+    <string name="file_sandbox_required">Hãy cài đặt và bật Local Sandbox để đính kèm tệp này.</string>
     <string name="attachment_copy_failed_image">Không thể tải hình ảnh</string>
     <string name="attachment_copy_failed_file">Không thể tải tệp</string>
     <string name="pdf_render_failed">Hiển thị PDF thất bại</string>
@@ -1008,7 +1016,7 @@
     <string name="crash_message">Rất tiếc vì sự cố này. Bạn có thể giúp khắc phục lỗi bằng cách gửi một báo cáo sự cố ẩn danh.</string>
     <string name="crash_submit">Gửi báo cáo</string>
     <string name="crash_dismiss">Không gửi</string>
-    <string name="crash_privacy_note">Chỉ có nhật ký sự cố được gửi đến newoether.space. Không thu thập thêm thông tin nào khác.</string>
+    <string name="crash_privacy_note">Chỉ có nhật ký sự cố được gửi đến newoether.com. Không thu thập thêm thông tin nào khác.</string>
     <string name="crash_submitted">Báo cáo sự cố đã được gửi. Xin cảm ơn bạn!</string>
     <string name="settings_group_network">Mạng</string>
     <string name="settings_proxy">Proxy</string>
@@ -1083,7 +1091,10 @@
     <string name="openai_service_tier_auto">Tự động</string>
     <string name="openai_service_tier_default">Mặc định</string>
     <string name="openai_service_tier_flex">Linh hoạt</string>
+    <string name="openai_service_tier_scale">Quy mô</string>
+    <string name="openai_service_tier_priority">Ưu tiên</string>
     <string name="openai_service_tier_fast">Nhanh</string>
+    <string name="openai_service_tier_ultrafast">Siêu nhanh</string>
     <string name="context_title">Ngữ cảnh</string>
     <string name="context_desc">Quản lý ngữ cảnh</string>
     <string name="context_compact">Thu gọn ngữ cảnh</string>
@@ -1213,4 +1224,5 @@
     <string name="tool_create_skill">Tạo kỹ năng</string>
     <string name="tool_edit_skill">Sửa kỹ năng</string>
     <string name="tool_delete_skill">Xóa kỹ năng</string>
+    <string name="tool_read_file_truncated">Đang hiển thị một phần nội dung · tiếp tục từ byte %1$d</string>
 </resources>

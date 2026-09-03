@@ -58,6 +58,89 @@ class SettingsContractsTest {
     }
 
     @Test
+    fun explicitUserItemsTakePrecedenceOverLegacyMessageWrappers() {
+        val currentPrompt = PredefinedVariables.promptItem()
+        val entry = SystemPromptEntry(
+            title = "Current",
+            userItems = listOf(
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "current-before"),
+                currentPrompt,
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "current-after"),
+            ),
+            userPrependItems = listOf(
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "legacy-before"),
+            ),
+            userPostpendItems = listOf(
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "legacy-after"),
+            ),
+        )
+        val resolved = PredefinedVariables.splitMessageTemplate(entry.resolvedUserItems)
+        assertEquals(listOf("current-before"), resolved.beforePrompt.map(PromptTemplateItem::value))
+        assertEquals(listOf("current-after"), resolved.afterPrompt.map(PromptTemplateItem::value))
+        assertEquals(currentPrompt.id, entry.resolvedUserItems.single(PredefinedVariables::isPromptItem).id)
+    }
+    @Test
+    fun legacyMessageWrappersAreUsedOnlyWhenStructuredUserItemsAreMissing() {
+        val entry = SystemPromptEntry(
+            title = "Legacy",
+            userPrependItems = listOf(
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "legacy-before"),
+            ),
+            userPostpendItems = listOf(
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "legacy-after"),
+            ),
+        )
+        val resolved = PredefinedVariables.splitMessageTemplate(entry.resolvedUserItems)
+        assertEquals(listOf("legacy-before"), resolved.beforePrompt.map(PromptTemplateItem::value))
+        assertEquals(listOf("legacy-after"), resolved.afterPrompt.map(PromptTemplateItem::value))
+        assertEquals(1, entry.resolvedUserItems.count(PredefinedVariables::isPromptItem))
+    }
+    @Test
+    fun messageTemplatesContainExactlyOneStructuralPromptItem() {
+        val firstPrompt = PredefinedVariables.promptItem()
+        val entry = SystemPromptEntry(
+            title = "Structured",
+            userItems = listOf(
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "before"),
+                firstPrompt,
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "middle"),
+                PredefinedVariables.promptItem(),
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "after"),
+            ),
+            assistantItems = listOf(
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "assistant suffix"),
+            ),
+        )
+
+        assertEquals(1, entry.resolvedUserItems.count(PredefinedVariables::isPromptItem))
+        assertEquals(
+            firstPrompt.id,
+            entry.resolvedUserItems.single(PredefinedVariables::isPromptItem).id,
+        )
+        assertEquals(
+            listOf("before"),
+            PredefinedVariables.splitMessageTemplate(entry.resolvedUserItems)
+                .beforePrompt.map(PromptTemplateItem::value),
+        )
+        assertEquals(
+            listOf("middle", "after"),
+            PredefinedVariables.splitMessageTemplate(entry.resolvedUserItems)
+                .afterPrompt.map(PromptTemplateItem::value),
+        )
+        assertEquals(1, entry.resolvedAssistantItems.count(PredefinedVariables::isPromptItem))
+        assertTrue(PredefinedVariables.isPromptItem(entry.resolvedAssistantItems.last()))
+    }
+
+    @Test
+    fun currentAndMessageModelVariablesHaveDistinctScopes() {
+        assertTrue(PredefinedVariables.CURRENT_MODEL_ID in PredefinedVariables.ALL)
+        assertTrue(PredefinedVariables.MESSAGE_MODEL_ID in PredefinedVariables.ALL)
+        assertFalse(PredefinedVariables.MODEL_ID in PredefinedVariables.ALL)
+        assertFalse(PredefinedVariables.CURRENT_MODEL_ID in PredefinedVariables.PER_MESSAGE_VARS)
+        assertTrue(PredefinedVariables.MESSAGE_MODEL_ID in PredefinedVariables.PER_MESSAGE_VARS)
+    }
+
+    @Test
     fun conversationSettingsReportsWhetherAnyOverrideExists() {
         assertTrue(ConversationSettings().isAllNull())
         assertFalse(ConversationSettings(openAiWebSearchEnabled = false).isAllNull())

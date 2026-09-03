@@ -1,5 +1,6 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.model.AttachmentStorage
 import com.newoether.agora.model.SelectedAttachment
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -61,6 +62,46 @@ class ComposerSendAdapterTest {
 
         assertEquals(acceptance, result)
         assertEquals(listOf("send:text::", "clear:conversation", "ui"), fixture.events)
+        coVerify(exactly = 0) { fixture.drafts.reclaimAttachments(any()) }
+    }
+
+    @Test
+    fun newChatAcceptanceClearsWorkspaceOwnerInsteadOfCreatedConversation() = runTest {
+        val acceptance = SendAcceptance.Direct("message", "created-conversation")
+        val fixture = Fixture(this, acceptance)
+        val result = fixture.adapter.sendMessage(
+            text = "text",
+            draftOwnerId = NEW_CHAT_WORKSPACE_ID,
+            onAccepted = { fixture.events += "ui" },
+        )
+        runCurrent()
+        assertEquals(acceptance, result)
+        assertEquals(
+            listOf("send:text::", "clear:$NEW_CHAT_WORKSPACE_ID", "ui"),
+            fixture.events,
+        )
+        coVerify(exactly = 0) { fixture.drafts.clearAccepted("created-conversation") }
+    }
+    @Test
+    fun stalePendingDraftCannotReclaimSubmittedRuntimeAttachment() = runTest {
+        val stalePending = SelectedAttachment(
+            localId = "stable-id",
+            uri = "uri",
+            type = "file",
+            storage = AttachmentStorage.LOCAL_SANDBOX_PENDING,
+        )
+        val submitted = stalePending.copy(storage = AttachmentStorage.LOCAL_SANDBOX_RUNTIME)
+        val acceptance = SendAcceptance.Direct("message", "conversation")
+        val fixture = Fixture(this, acceptance, listOf(stalePending))
+
+        fixture.adapter.sendMessage(
+            text = "inspect",
+            attachments = listOf(submitted),
+            onAccepted = { fixture.events += "ui" },
+        )
+        runCurrent()
+
+        assertEquals(listOf("send:inspect::uri", "clear:conversation", "ui"), fixture.events)
         coVerify(exactly = 0) { fixture.drafts.reclaimAttachments(any()) }
     }
 

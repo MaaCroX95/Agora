@@ -8,6 +8,7 @@ import com.newoether.agora.data.BuiltInPrompts
 import com.newoether.agora.data.DEFAULT_CONTEXT_COMPACT_ENABLED
 import com.newoether.agora.data.DEFAULT_CONTEXT_COMPACT_RETAIN_COUNT
 import com.newoether.agora.data.DEFAULT_CONTEXT_COMPACT_THRESHOLD_PERCENT
+import com.newoether.agora.data.DEFAULT_LOCAL_MODEL_IDLE_RETENTION_MINUTES
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.CustomEndpointProtocol
 import com.newoether.agora.data.CustomEndpointResolution
@@ -16,6 +17,7 @@ import com.newoether.agora.data.CustomProviderIdentityMigration
 import com.newoether.agora.data.CustomProviderNamePolicy
 import com.newoether.agora.data.EmbeddingModelConfig
 import com.newoether.agora.data.LocalChatModelConfig
+import com.newoether.agora.data.PredefinedVariables
 import com.newoether.agora.data.PromptTemplateItem
 import com.newoether.agora.data.SettingsManager
 import com.newoether.agora.data.ShellDeviceConfig
@@ -25,6 +27,7 @@ import com.newoether.agora.model.ModelId
 import com.newoether.agora.model.OpenAiServiceTiers
 import com.newoether.agora.model.ToolCallDisplayModes
 import com.newoether.agora.util.Constants
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -233,6 +236,10 @@ class SettingsRepository(
     val searchMatchLimit: StateFlow<Int> = hot(settingsManager.searchMatchLimit, 10)
     val ragThreshold: StateFlow<Float> = hot(settingsManager.ragThreshold, 0.5f)
     val localChatModels: StateFlow<List<LocalChatModelConfig>> = hot(settingsManager.localChatModels, emptyList())
+    val localModelIdleRetentionMinutes: StateFlow<Int> = hot(
+        settingsManager.localModelIdleRetentionMinutes,
+        DEFAULT_LOCAL_MODEL_IDLE_RETENTION_MINUTES,
+    )
     val customProviders: StateFlow<List<CustomProviderConfig>> = hot(settingsManager.customProviders, emptyList())
     val lastModelsFetchFingerprint: StateFlow<String> = hot(settingsManager.lastModelsFetchFingerprint, "")
     // ── Auto Backup ───────────────────────────────────────────
@@ -342,11 +349,18 @@ class SettingsRepository(
 
     // System prompts
     fun addSystemPrompt(
-        title: String, systemItems: List<PromptTemplateItem>,
-        userPrependItems: List<PromptTemplateItem>, userPostpendItems: List<PromptTemplateItem>
+        title: String,
+        systemItems: List<PromptTemplateItem>,
+        userItems: List<PromptTemplateItem>,
+        assistantItems: List<PromptTemplateItem>,
     ) {
         scope.launch {
-            val newList = systemPrompts.value + SystemPromptEntry(title = title, systemItems = systemItems, userPrependItems = userPrependItems, userPostpendItems = userPostpendItems)
+            val newList = systemPrompts.value + SystemPromptEntry(
+                title = title,
+                systemItems = systemItems,
+                userItems = PredefinedVariables.normalizeMessageTemplate(userItems),
+                assistantItems = PredefinedVariables.normalizeMessageTemplate(assistantItems),
+            )
             settingsManager.saveSystemPrompts(newList)
             if (activeSystemPromptId.value == null) settingsManager.setActiveSystemPromptId(newList.last().id)
         }
@@ -361,11 +375,28 @@ class SettingsRepository(
     }
 
     fun updateSystemPrompt(
-        id: String, title: String, systemItems: List<PromptTemplateItem>,
-        userPrependItems: List<PromptTemplateItem>, userPostpendItems: List<PromptTemplateItem>
+        id: String,
+        title: String,
+        systemItems: List<PromptTemplateItem>,
+        userItems: List<PromptTemplateItem>,
+        assistantItems: List<PromptTemplateItem>,
     ) {
         scope.launch {
-            settingsManager.saveSystemPrompts(systemPrompts.value.map { if (it.id == id) it.copy(title = title, content = "", systemItems = systemItems, userPrependItems = userPrependItems, userPostpendItems = userPostpendItems) else it })
+            settingsManager.saveSystemPrompts(systemPrompts.value.map { entry ->
+                if (entry.id == id) {
+                    entry.copy(
+                        title = title,
+                        content = "",
+                        systemItems = systemItems,
+                        userItems = PredefinedVariables.normalizeMessageTemplate(userItems),
+                        assistantItems = PredefinedVariables.normalizeMessageTemplate(assistantItems),
+                        userPrependItems = emptyList(),
+                        userPostpendItems = emptyList(),
+                    )
+                } else {
+                    entry
+                }
+            })
         }
     }
 
@@ -476,6 +507,13 @@ class SettingsRepository(
         persistConversationSettings(conversationSettingsState.set(convId, settings))
     }
 
+    suspend fun setConversationSettingsAndAwait(
+        convId: String,
+        settings: ConversationSettings?,
+    ) {
+        persistConversationSettingsWrite(conversationSettingsState.set(convId, settings))
+    }
+
     fun updateConversationSettings(
         convId: String,
         update: (ConversationSettings) -> ConversationSettings,
@@ -485,21 +523,33 @@ class SettingsRepository(
 
     private fun persistConversationSettings(write: ConversationSettingsWrite) {
         scope.launch {
-            conversationSettingsWriteMutex.withLock {
-                if (!conversationSettingsState.isLatest(write)) return@withLock
-                runCatching {
-                    settingsManager.saveConversationSettings(
-                        conversationId = write.conversationId,
-                        settings = write.settings,
-                    )
-                }.onSuccess { persisted ->
-                    conversationSettingsState.complete(write, persisted)
-                }.onFailure {
-                    val persisted = runCatching {
-                        settingsManager.conversationSettings.first()
-                    }.getOrNull()
-                    conversationSettingsState.fail(write, persisted)
-                }
+            try {
+                persistConversationSettingsWrite(write)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // The optimistic state is reconciled by persistConversationSettingsWrite.
+            }
+        }
+    }
+
+    private suspend fun persistConversationSettingsWrite(write: ConversationSettingsWrite) {
+        conversationSettingsWriteMutex.withLock {
+            if (!conversationSettingsState.isLatest(write)) return@withLock
+            try {
+                val persisted = settingsManager.saveConversationSettings(
+                    conversationId = write.conversationId,
+                    settings = write.settings,
+                )
+                conversationSettingsState.complete(write, persisted)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                val persisted = runCatching {
+                    settingsManager.conversationSettings.first()
+                }.getOrNull()
+                conversationSettingsState.fail(write, persisted)
+                throw error
             }
         }
     }
@@ -680,6 +730,9 @@ class SettingsRepository(
     suspend fun saveLastModelsFetchFingerprint(fingerprint: String) = settingsManager.saveLastModelsFetchFingerprint(fingerprint)
     suspend fun incrementMessagesSent() = settingsManager.incrementMessagesSent()
     suspend fun saveLocalChatModels(models: List<LocalChatModelConfig>) = settingsManager.saveLocalChatModels(models)
+    fun setLocalModelIdleRetentionMinutes(minutes: Int) = scope.launch {
+        settingsManager.saveLocalModelIdleRetentionMinutes(minutes)
+    }
     suspend fun saveEmbeddingModels(models: List<EmbeddingModelConfig>) = settingsManager.saveEmbeddingModels(models)
     suspend fun setActiveEmbeddingModelId(id: String) = settingsManager.setActiveEmbeddingModelId(id)
     suspend fun saveAutoBackupEnabled(enabled: Boolean) = settingsManager.saveAutoBackupEnabled(enabled)

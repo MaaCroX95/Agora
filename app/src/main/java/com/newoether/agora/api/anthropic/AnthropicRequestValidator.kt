@@ -51,7 +51,7 @@ internal fun AnthropicRequest.requireValidWireFormat() {
         val laterThinking = message.content.drop(leadingThinking.size).any { it.type == "thinking" }
         if (laterThinking) violations += "$location has thinking after another content type"
         if (
-            thinking != null &&
+            thinking?.type in setOf("enabled", "adaptive") &&
             message.content.any { it.type == "tool_use" } &&
             leadingThinking.isEmpty()
         ) {
@@ -160,7 +160,7 @@ private fun AnthropicRequest.validateThinking(violations: MutableList<String>) {
         if (outputConfig != null) violations += "output_config requires adaptive thinking"
         return
     }
-    if (thinking.type !in setOf("enabled", "adaptive")) {
+    if (thinking.type !in setOf("enabled", "adaptive", "disabled")) {
         violations += "thinking.type is invalid"
     }
     if (thinking.type == "enabled" && (thinking.budgetTokens == null || thinking.budgetTokens < 1024)) {
@@ -169,8 +169,11 @@ private fun AnthropicRequest.validateThinking(violations: MutableList<String>) {
     if (thinking.type == "adaptive" && thinking.budgetTokens != null) {
         violations += "adaptive thinking cannot carry budget_tokens"
     }
-    if (outputConfig != null && thinking.type != "adaptive") {
-        violations += "output_config is only valid with adaptive thinking"
+    if (thinking.type == "disabled" && (thinking.budgetTokens != null || thinking.display != null)) {
+        violations += "disabled thinking cannot carry budget_tokens or display"
+    }
+    if (outputConfig != null && thinking.type !in setOf("adaptive", "disabled")) {
+        violations += "output_config requires adaptive or disabled thinking"
     }
 }
 

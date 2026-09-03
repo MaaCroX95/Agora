@@ -2,9 +2,11 @@ package com.newoether.agora.data
 
 import com.newoether.agora.model.AttachmentItem
 import com.newoether.agora.model.AttachmentMeta
+import com.newoether.agora.model.AttachmentStorage
 import com.newoether.agora.model.CitationAnchor
 import com.newoether.agora.model.CitationPolicy
 import com.newoether.agora.model.MessageSegment
+import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.model.ToolImageAttachment
 import com.newoether.agora.model.citationRecords
 import com.newoether.agora.model.toMessageSegment
@@ -16,6 +18,27 @@ import org.junit.Test
 
 class NativeBackupMediaPolicyTest {
     private val json = Json { ignoreUnknownKeys = true }
+
+    @Test
+    fun nativeBackupExcludesPendingAndRuntimeSandboxDraftPayloads() {
+        val private = SelectedAttachment(uri = "private", type = "file")
+        val pending = SelectedAttachment(
+            uri = "pending",
+            type = "file",
+            storage = AttachmentStorage.LOCAL_SANDBOX_PENDING,
+        )
+        val runtime = pending.copy(
+            uri = "runtime",
+            storage = AttachmentStorage.LOCAL_SANDBOX_RUNTIME,
+        )
+
+        assertEquals(
+            listOf(private),
+            NativeBackupMediaPolicy.exportableDraftAttachments(
+                listOf(private, pending, runtime),
+            ),
+        )
+    }
 
     @Test
     fun attachmentRoundTrip_reindexesPagesAndRestoresEachVideoIndependently() {

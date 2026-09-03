@@ -1,5 +1,6 @@
 package com.newoether.agora.data
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -15,7 +16,26 @@ class SettingsPreferenceSchemaTest {
         assertEquals("openai_responses_api_enabled", OPENAI_RESPONSES_API_ENABLED.name)
         assertEquals("mcp_servers_json", MCP_SERVERS_JSON.name)
         assertEquals("stick_to_bottom", STICK_TO_BOTTOM.name)
+        assertEquals(
+            "local_model_idle_retention_minutes",
+            LOCAL_MODEL_IDLE_RETENTION_MINUTES.name,
+        )
         assertEquals("last_models_fetch_fingerprint", LAST_MODELS_FETCH_FINGERPRINT.name)
+    }
+
+    @Test
+    fun localModelIdleRetentionUsesClosedPresetsAndFiveMinuteDefault() {
+        assertEquals(5, DEFAULT_LOCAL_MODEL_IDLE_RETENTION_MINUTES)
+        assertArrayEquals(
+            intArrayOf(0, 1, 2, 5, 10, 15, 30),
+            LOCAL_MODEL_IDLE_RETENTION_PRESETS,
+        )
+        LOCAL_MODEL_IDLE_RETENTION_PRESETS.forEach {
+            assertEquals(it, normalizeLocalModelIdleRetentionMinutes(it))
+        }
+        listOf(null, -1, 3, 31).forEach {
+            assertEquals(5, normalizeLocalModelIdleRetentionMinutes(it))
+        }
     }
 
     @Test

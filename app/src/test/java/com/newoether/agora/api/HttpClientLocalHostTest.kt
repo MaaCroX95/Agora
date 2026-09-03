@@ -42,7 +42,7 @@ class HttpClientLocalHostTest {
     fun publicHosts_areNotLocal() {
         listOf(
             "api.openai.com", "api.anthropic.com", "generativelanguage.googleapis.com",
-            "newoether.space", "8.8.8.8",
+            "newoether.com", "8.8.8.8",
             "100.63.255.255",        // just below the CGNAT range
             "100.128.0.1",           // just above it
             "172.15.0.1", "172.32.0.1", // just outside 172.16/12

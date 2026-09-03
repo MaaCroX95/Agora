@@ -31,6 +31,79 @@ class ContextCompactTest {
     }
 
     @Test
+    fun genericContextKeepsRawSummaryAndSeparatesFollowingUserInput() {
+        val canonical = canonicalContextMessages(
+            listOf(
+                message("u0", "old", Participant.USER),
+                message("compact_boundary", "summary", Participant.MODEL),
+                message("u1", "new request", Participant.USER),
+            )
+        )
+
+        assertEquals(1, canonical.size)
+        assertEquals("summary\n\nnew request", canonical.single().text)
+        assertTrue(canonical.none { it.text.contains("<context_summary>") })
+    }
+
+    @Test
+    fun apiRequestMarksSummaryAndSeparatesFollowingUserInput() {
+        val source = listOf(
+            message("u0", "old", Participant.USER),
+            message("compact_boundary", "summary", Participant.MODEL),
+            message("u1", "new request", Participant.USER),
+        )
+
+        val prepared = prepareMessages(source, contextTokenBudget = 4_096)
+
+        assertEquals(1, prepared.size)
+        assertEquals(
+            "<context_summary>\nsummary\n</context_summary>\n\nnew request",
+            prepared.single().text,
+        )
+        assertTrue(prepared.single().text.contains("Please continue.").not())
+        assertEquals("summary", source[1].text)
+        assertTrue(source.none { it.text.contains("<context_summary>") })
+    }
+
+    @Test
+    fun compactOnlyApiRequestAppendsContinuation() {
+        val prepared = prepareMessages(
+            listOf(
+                message("u0", "old", Participant.USER),
+                message("compact_boundary", " summary ", Participant.MODEL),
+            ),
+            contextTokenBudget = 4_096,
+        )
+
+        assertEquals(1, prepared.size)
+        assertEquals(Participant.USER, prepared.single().participant)
+        assertEquals(
+            "<context_summary>\nsummary\n</context_summary>\n\nPlease continue.",
+            prepared.single().text,
+        )
+    }
+
+    @Test
+    fun initialApiUserPromptSuppressesCompactContinuation() {
+        val compact = message("compact_boundary", "summary", Participant.MODEL)
+        val prompt = message(
+            "api_initial_user_${compact.id}",
+            "Create the compact context summary now.",
+            Participant.USER,
+        ).copy(parentId = compact.id)
+
+        val prepared = prepareMessages(
+            listOf(message("u0", "old", Participant.USER), compact, prompt),
+            contextTokenBudget = 4_096,
+        )
+
+        assertEquals(2, prepared.size)
+        assertEquals("<context_summary>\nsummary\n</context_summary>", prepared[0].text)
+        assertEquals("Create the compact context summary now.", prepared[1].text)
+        assertTrue(prepared.none { it.text.contains("Please continue.") })
+    }
+
+    @Test
     fun deletingNewestCompactNaturallyRevealsPreviousBoundary() {
         val withoutNewest = listOf(
             message("u0", "old", Participant.USER),
@@ -97,9 +170,13 @@ class ContextCompactTest {
         )
 
         val canonical = canonicalContextMessages(history)
+        val prepared = prepareMessages(history, contextTokenBudget = 4_096)
 
-        assertEquals(listOf("old\nordinary follow-up"), canonical.map { it.text })
+        assertEquals(listOf("old\n\nordinary follow-up"), canonical.map { it.text })
+        assertEquals(canonical.map { it.text }, prepared.map { it.text })
         assertTrue(canonical.none { it.text.contains("private partial summary") })
+        assertTrue(prepared.none { it.text.contains("<context_summary>") })
+        assertTrue(prepared.none { it.text.contains("Please continue.") })
     }
 
     @Test

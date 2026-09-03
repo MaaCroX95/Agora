@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -38,6 +39,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,6 +53,7 @@ import com.mikepenz.markdown.compose.LocalMarkdownPadding
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.markdownPadding
+import com.mikepenz.markdown.model.markdownDimens
 import com.mikepenz.markdown.model.MarkdownColors
 import com.mikepenz.markdown.model.MarkdownPadding
 import com.mikepenz.markdown.model.MarkdownTypography
@@ -133,8 +136,13 @@ internal fun buildCitationAwareMarkdownAnnotatedString(
 
 private const val MARKDOWN_LINE_HEIGHT_MULTIPLIER = 1.1f
 
+// Center extra leading so bold-only lines do not crowd adjacent regular lines.
 internal fun scaledMarkdownTextStyle(style: TextStyle): TextStyle = style.copy(
     lineHeight = style.lineHeight * MARKDOWN_LINE_HEIGHT_MULTIPLIER,
+    lineHeightStyle = LineHeightStyle(
+        alignment = LineHeightStyle.Alignment.Center,
+        trim = LineHeightStyle.Trim.Both,
+    ),
 )
 @Composable
 internal fun rememberChatMarkdownAssets(
@@ -451,25 +459,30 @@ internal fun ChatMarkdownCodeBlock(
     modifier: Modifier = Modifier,
 ) {
     val assets = rememberChatMarkdownAssets(MaterialTheme.colorScheme.onSurface)
-    MarkdownCodeBackground(
-        color = assets.renderContext.colors.codeBackground,
-        shape = RoundedCornerShape(LocalMarkdownDimens.current.codeBackgroundCornerSize),
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        showHeader = true,
-        language = null,
-        code = code,
+    CompositionLocalProvider(
+        LocalMarkdownColors provides assets.renderContext.colors,
+        LocalMarkdownDimens provides markdownDimens(),
     ) {
-        MarkdownBasicText(
-            text = AnnotatedString(code),
-            style = assets.renderContext.typography.code.copy(
-                color = MaterialTheme.colorScheme.onSurface,
-            ),
-            modifier = Modifier
-                .horizontalScroll(rememberScrollState())
-                .padding(assets.renderContext.padding.codeBlock),
-        )
+        MarkdownCodeBackground(
+            color = assets.renderContext.colors.codeBackground,
+            shape = RoundedCornerShape(LocalMarkdownDimens.current.codeBackgroundCornerSize),
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            showHeader = true,
+            language = null,
+            code = code,
+        ) {
+            MarkdownBasicText(
+                text = AnnotatedString(code),
+                style = assets.renderContext.typography.code.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                modifier = Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .padding(assets.renderContext.padding.codeBlock),
+            )
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.data.local.MessageContextTopology
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.data.local.RunEntity
 import com.newoether.agora.util.Constants
@@ -16,6 +17,13 @@ internal data class ConversationBranchPath(
     /** [selectedPathMessages] plus protocol side-chain rows needed for provider-valid history. */
     val structuralMessages: List<MessageEntity>,
     val visibleMessages: List<MessageEntity>,
+    val runIds: List<String>,
+)
+
+internal data class ConversationBranchTopology(
+    val selectedPathMessages: List<MessageContextTopology>,
+    val structuralMessages: List<MessageContextTopology>,
+    val visibleMessages: List<MessageContextTopology>,
     val runIds: List<String>,
 )
 
@@ -104,6 +112,109 @@ internal fun resolveConversationBranchPath(
     )
 }
 
+internal fun resolveConversationBranchTopology(
+    messages: List<MessageContextTopology>,
+    runs: List<RunEntity>,
+    selectedChildren: Map<String?, String>,
+    throughMessageId: String? = null,
+): ConversationBranchTopology? {
+    if (messages.isEmpty()) {
+        return ConversationBranchTopology(emptyList(), emptyList(), emptyList(), emptyList())
+    }
+    val structuralPath = resolveStructuralTopologyPath(messages, selectedChildren) ?: return null
+    val visiblePath = structuralPath.filterNot { it.isSynthetic() }
+    val endMessage = throughMessageId?.let { messageId ->
+        visiblePath.firstOrNull { it.id == messageId } ?: return null
+    }
+    val structuralEndIndex = endMessage?.let { message ->
+        structuralPath.indexOfFirst { it.id == message.id }
+    } ?: structuralPath.lastIndex
+    val selectedStructuralPath = structuralPath.take(structuralEndIndex + 1)
+    val runsById = runs.associateBy { it.id }
+    val orderedRunIds = linkedSetOf<String>()
+    val visiting = mutableSetOf<String>()
+
+    fun includeRunWithAncestors(runId: String): Boolean {
+        if (runId in orderedRunIds) return true
+        if (!visiting.add(runId)) return false
+        val run = runsById[runId] ?: return false
+        val parentIncluded = run.parentRunId?.let(::includeRunWithAncestors) ?: true
+        visiting.remove(runId)
+        if (!parentIncluded) return false
+        orderedRunIds += runId
+        return true
+    }
+
+    for (message in selectedStructuralPath) {
+        if (!includeRunWithAncestors(message.runId)) return null
+    }
+    val includedRunIds = orderedRunIds.toSet()
+    val includedMessages = linkedMapOf<String, MessageContextTopology>()
+    selectedStructuralPath.forEach { includedMessages[it.id] = it }
+    val protocolChildren = messages
+        .asSequence()
+        .filter { it.isSynthetic() && it.runId in includedRunIds }
+        .groupBy { it.parentId }
+
+    fun includeProtocolDescendants(parentId: String) {
+        protocolChildren[parentId]
+            .orEmpty()
+            .sortedWith(topologyMessageOrder)
+            .forEach { child ->
+                if (includedMessages.putIfAbsent(child.id, child) == null) {
+                    includeProtocolDescendants(child.id)
+                }
+            }
+    }
+
+    selectedStructuralPath.forEach { includeProtocolDescendants(it.id) }
+    val selectedStructuralIds = selectedStructuralPath.mapTo(mutableSetOf()) { it.id }
+    return ConversationBranchTopology(
+        selectedPathMessages = selectedStructuralPath,
+        structuralMessages = selectedStructuralPath +
+            includedMessages.values
+                .asSequence()
+                .filter { it.id !in selectedStructuralIds }
+                .sortedWith(
+                    compareBy<MessageContextTopology> {
+                        orderedRunIds.indexOf(it.runId).let { index ->
+                            if (index >= 0) index else Int.MAX_VALUE
+                        }
+                    }.then(topologyMessageOrder)
+                )
+                .toList(),
+        visibleMessages = selectedStructuralPath.filterNot { it.isSynthetic() },
+        runIds = orderedRunIds.toList(),
+    )
+}
+
+private fun resolveStructuralTopologyPath(
+    messages: List<MessageContextTopology>,
+    selectedChildren: Map<String?, String>,
+): List<MessageContextTopology>? {
+    val messagesByParent = messages
+        .groupBy { it.parentId }
+        .mapValues { (_, siblings) -> siblings.sortedWith(topologyMessageOrder) }
+    val path = mutableListOf<MessageContextTopology>()
+    val visited = mutableSetOf<String>()
+    var cursor: String? = null
+    while (true) {
+        val siblings = messagesByParent[cursor].orEmpty()
+        if (siblings.isEmpty()) break
+        val selectedId = selectedChildren[cursor]
+        val visibleSiblings = siblings.filterNot { it.isSynthetic() }
+        val selected = if (visibleSiblings.isNotEmpty()) {
+            visibleSiblings.firstOrNull { it.id == selectedId } ?: visibleSiblings.last()
+        } else {
+            siblings.firstOrNull { it.id == selectedId } ?: siblings.last()
+        }
+        if (!visited.add(selected.id)) return null
+        path += selected
+        cursor = selected.id
+    }
+    return path
+}
+
 /**
  * Mirrors [ConversationUiState.resolvePath], but retains synthetic tool/result rows so a cloned
  * protocol graph can preserve the exact selected edge at every parent.
@@ -142,7 +253,16 @@ internal fun MessageEntity.isSynthetic(): Boolean =
     id.startsWith(Constants.TOOL_MSG_PREFIX) ||
         id.startsWith(Constants.RESULT_MSG_PREFIX)
 
+internal fun MessageContextTopology.isSynthetic(): Boolean =
+    id.startsWith(Constants.TOOL_MSG_PREFIX) ||
+        id.startsWith(Constants.RESULT_MSG_PREFIX)
+
 private val messageOrder =
     compareBy<MessageEntity> { it.runSequence }
+        .thenBy { it.timestamp }
+        .thenBy { it.id }
+
+private val topologyMessageOrder =
+    compareBy<MessageContextTopology> { it.runSequence }
         .thenBy { it.timestamp }
         .thenBy { it.id }

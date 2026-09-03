@@ -280,6 +280,7 @@ private fun runningSummary(
 internal sealed interface ShellPresentationStatus {
     data object Executing : ShellPresentationStatus
     data class Background(val jobId: String?) : ShellPresentationStatus
+    data object Stopped : ShellPresentationStatus
     data class Exit(val code: Int?) : ShellPresentationStatus
 }
 
@@ -288,6 +289,7 @@ internal fun shellPresentationStatus(presentation: ToolPresentation): ShellPrese
         presentation.state == ToolPresentationState.BACKGROUND_RUNNING ->
             ShellPresentationStatus.Background(presentation.jobId)
         presentation.isActive -> ShellPresentationStatus.Executing
+        presentation.state == ToolPresentationState.STOPPED -> ShellPresentationStatus.Stopped
         else -> ShellPresentationStatus.Exit(presentation.exitCode)
     }
 
@@ -301,6 +303,7 @@ internal fun shellToolSummary(presentation: ToolPresentation): String =
         )
         is ShellPresentationStatus.Background ->
             stringResource(R.string.tool_background_job_running_default)
+        ShellPresentationStatus.Stopped -> stringResource(R.string.tool_state_stopped)
         is ShellPresentationStatus.Exit -> status.code?.let { code ->
             stringResource(R.string.tool_shell_returned_code, code)
         } ?: stringResource(R.string.tool_shell_execution_completed)
@@ -312,6 +315,7 @@ internal fun shellExecutionSummary(presentation: ToolPresentation): String =
         ShellPresentationStatus.Executing -> stringResource(R.string.tool_state_executing)
         is ShellPresentationStatus.Background ->
             stringResource(R.string.tool_background_job_running_default)
+        ShellPresentationStatus.Stopped -> stringResource(R.string.tool_state_stopped)
         is ShellPresentationStatus.Exit -> status.code?.let { code ->
             stringResource(R.string.tool_shell_detail_returned_code, code)
         } ?: stringResource(R.string.tool_shell_detail_executed)
@@ -439,11 +443,7 @@ private fun completedSummary(
         R.string.tool_shell_job_count,
         presentation.count ?: 0,
     )
-    ToolKind.SHELL_JOB_WAIT -> optionalSubjectSummary(
-        presentation.jobId ?: subject,
-        R.string.tool_waited_shell_job,
-        R.string.tool_waited_shell_job_default,
-    )
+    ToolKind.SHELL_JOB_WAIT -> shellToolSummary(presentation)
     ToolKind.SHELL_JOB_GET -> optionalSubjectSummary(
         presentation.jobId ?: subject,
         R.string.tool_shell_job_status,

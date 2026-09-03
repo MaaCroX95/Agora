@@ -20,6 +20,7 @@ import com.newoether.agora.mcp.McpRegistry
 import com.newoether.agora.data.local.ChatDao
 import com.newoether.agora.data.local.ChatDatabase
 import com.newoether.agora.data.repository.ConversationRepository
+import com.newoether.agora.data.repository.ConversationSettingsTransferCoordinator
 import com.newoether.agora.data.repository.SettingsRepository
 import com.newoether.agora.sandbox.SandboxManagerFactory
 
@@ -35,6 +36,7 @@ class ChatViewModelFactory(
     private val autoBackupManager: AutoBackupManager,
     private val conversationRepository: ConversationRepository,
     private val settingsRepository: SettingsRepository,
+    private val conversationSettingsTransfers: ConversationSettingsTransferCoordinator,
     private val localProvider: LocalProvider,
     private val providerRegistry: ProviderRegistry,
     private val taskManager: TaskManager,
@@ -53,7 +55,8 @@ class ChatViewModelFactory(
             @Suppress("UNCHECKED_CAST")
             return ChatViewModel(
                 application, database, chatDao, settingsManager, memoryManager, skillManager, context, sandboxFactory,
-                autoBackupManager, conversationRepository, settingsRepository, localProvider, providerRegistry,
+                autoBackupManager, conversationRepository, settingsRepository,
+                conversationSettingsTransfers, localProvider, providerRegistry,
                 taskManager, loopManager, automationToolProvider, conversationExecutionCoordinator,
                 automationExecutionGate, conversationStateRegistry, shellConfirmationController,
                 mcpRegistry, mcpToolProvider, taskExecutionEngine,

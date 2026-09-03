@@ -9,7 +9,6 @@ import com.newoether.agora.AgoraApplication
 import com.newoether.agora.api.EmbeddingClient
 import com.newoether.agora.api.LlamaEngine
 import com.newoether.agora.api.ProviderDefaults
-import com.newoether.agora.api.local.LocalProvider
 import com.newoether.agora.data.EmbeddingCacheLocks
 import com.newoether.agora.data.EmbeddingModelType
 import com.newoether.agora.data.EmbeddingIndexer
@@ -69,7 +68,7 @@ class EmbeddingCacheWorker(
 
         // Same process-wide lock as RagManager's in-app runner: never compute alongside it.
         EmbeddingCacheLocks.forModel(modelId).withLock {
-            cacheModel(modelId, container.chatDao, container.settingsManager, container.localProvider)
+            cacheModel(modelId, container.chatDao, container.settingsManager)
         }
     }
 
@@ -77,7 +76,6 @@ class EmbeddingCacheWorker(
         modelId: String,
         chatDao: ChatDao,
         settingsManager: SettingsManager,
-        localProvider: LocalProvider
     ): Result {
         val models = settingsManager.embeddingModels.first()
         val model = models.find { it.id == modelId }
@@ -134,11 +132,7 @@ class EmbeddingCacheWorker(
 
                 val texts = batch.map { it.text.take(Constants.MAX_EMBEDDING_TEXT_LENGTH) }
                 val embeddings = if (model.type == EmbeddingModelType.LOCAL) {
-                    // Release any resident chat engine first — same OOM guard as the in-app
-                    // runner (chat model + embedding model resident together can OOM).
-                    LlamaEngine.computeEmbeddings(texts, model.localFilePath) {
-                        localProvider.releaseEngineBlocking()
-                    }
+                    LlamaEngine.computeEmbeddings(texts, model.localFilePath)
                 } else {
                     val (apiKey, baseUrl) = requireNotNull(remoteConfig)
                     EmbeddingClient.computeEmbeddings(

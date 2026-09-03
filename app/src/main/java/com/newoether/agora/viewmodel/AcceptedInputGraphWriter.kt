@@ -1,5 +1,6 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.data.local.RunEntity
@@ -8,6 +9,8 @@ import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.RunEffect
 import com.newoether.agora.model.RunStatus
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 /**
  * Exact durable boundary shared by foreground and headless ordinary sends.
@@ -30,6 +33,7 @@ internal class AcceptedInputGraphWriter(
         val modelId: String,
         val userTimestamp: Long,
         val newConversation: ChatEntity? = null,
+        val newConversationSettings: ConversationSettings? = null,
     ) {
         val conversationId: String get() = inputEffect.identity.conversationId
         val runId: String get() = inputEffect.identity.runId
@@ -113,6 +117,7 @@ internal class AcceptedInputGraphWriter(
                 messages = listOf(userMessage, modelMessage),
                 messageSelectionUpdates = selectionUpdates,
                 conversationModelId = request.modelId,
+                conversationSettingsJson = request.newConversationSettings?.let(Json::encodeToString),
             )
         } ?: conversations.createRunWithMessages(
             run = run,

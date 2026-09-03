@@ -9,20 +9,26 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
+import com.newoether.agora.model.AttachmentStorage
 import com.newoether.agora.model.SelectedAttachment
+import com.newoether.agora.sandbox.SandboxManager
 import com.newoether.agora.ui.chat.VideoSliceDialog
 import com.newoether.agora.util.DebugLog
 import com.newoether.agora.ui.common.AgoraHaptics
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.util.FileValidator
+import com.newoether.agora.util.AttachmentFiles
 import com.newoether.agora.util.PdfPageRenderer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -56,6 +62,9 @@ class ChatComposerState(
     private val context: Context,
     private val haptics: AgoraHaptics,
     private val scope: CoroutineScope,
+    private val sandboxManager: SandboxManager? = null,
+    private val sandboxEnabled: () -> Boolean = { false },
+    private val isSandboxFlavor: Boolean = false,
 ) {
     var selectedAttachments by mutableStateOf<List<SelectedAttachment>>(emptyList())
     var processingStates by mutableStateOf<Map<String, Float>>(emptyMap())
@@ -81,6 +90,7 @@ class ChatComposerState(
     // In-flight video frame-extraction jobs, keyed by video uri, so removing a video while
     // it is still extracting can cancel the job (which deletes its partial frame files).
     val videoExtractionJobs = mutableMapOf<String, Job>()
+    private val attachmentCopyJobs = mutableMapOf<String, Job>()
 
     // Video slicing dialog state
     var showVideoSliceDialog by mutableStateOf(false)
@@ -108,16 +118,55 @@ class ChatComposerState(
 
     private data class InspectedFile(
         val uri: Uri,
-        val validation: FileValidator.Result,
+        val mimeType: String?,
         val fileName: String?,
+        val fileSize: Long?,
         val pageCount: Int,
     )
+
+    private sealed interface PrivateCopyResult {
+        data class Success(val path: String, val bytesCopied: Long) : PrivateCopyResult
+        data object TooLarge : PrivateCopyResult
+        data object Failure : PrivateCopyResult
+    }
 
     /** Clear the attachment list after a successful send. The extracted-frame / rendered-page
      *  files are now owned by the stored message (via images field in MessageEntity) — they
      *  must NOT be deleted here; message deletion handles that. */
     fun clearAttachments() {
         selectedAttachments = emptyList()
+    }
+
+    /** Reclaim pending Sandbox uploads from a new chat that never acquired a draft owner. */
+    fun abandonUnownedSandboxAttachments() {
+        if (draftOwnerConversationId != null) return
+        val abandoned = selectedAttachments.filter {
+            it.storage == AttachmentStorage.LOCAL_SANDBOX_PENDING
+        }
+        if (abandoned.isEmpty()) return
+        val abandonedIds = abandoned.mapTo(hashSetOf(), SelectedAttachment::localId)
+        abandonedIds.forEach { id -> attachmentCopyJobs.remove(id)?.cancel() }
+        selectedAttachments = selectedAttachments.filterNot { it.localId in abandonedIds }
+        processingStates = processingStates - abandonedIds
+        if (selectedAttachments.isEmpty()) pendingSend = false
+        scope.launch(NonCancellable + Dispatchers.IO) {
+            AttachmentFiles.deleteBacking(abandoned)
+        }
+    }
+
+    /** Transfer pending Sandbox files to runtime ownership at the send submission boundary. */
+    fun transferAttachmentsForSend(
+        attachments: List<SelectedAttachment>,
+    ): List<SelectedAttachment> {
+        val submittedIds = attachments.mapTo(mutableSetOf()) { it.localId }
+        val transferred = attachments.map { attachment ->
+            attachment.copy(storage = attachment.storage.transferForSend())
+        }
+        val byId = transferred.associateBy { it.localId }
+        selectedAttachments = selectedAttachments.map { current ->
+            if (current.localId in submittedIds) byId.getValue(current.localId) else current
+        }
+        return transferred
     }
 
     fun bindDraftOwner(conversationId: String?) {
@@ -154,22 +203,29 @@ class ChatComposerState(
         deleteFilesAsync(discardedPaths)
         processingStates = processingStates + (uri to 0f)
         scope.launch {
-            val localPath = copyToPrivate(Uri.parse(uri), "pdf")
-            if (localPath != null) {
-                selectedAttachments = selectedAttachments + SelectedAttachment(
-                    uri = uri,
-                    type = "pdf",
-                    mimeType = mimeType,
-                    fileName = fileName,
-                    selectedPages = keptPaths.indices.toSet(),
-                    preRenderedPaths = keptPaths,
-                    localPath = localPath,
-                )
-            } else {
-                deleteFilesAsync(keptPaths)
-                rejectedMessage = context.getString(
-                    com.newoether.agora.R.string.attachment_copy_failed_file,
-                )
+            when (val copy = copyToPrivate(Uri.parse(uri), "pdf")) {
+                is PrivateCopyResult.Success -> {
+                    selectedAttachments = selectedAttachments + SelectedAttachment(
+                        uri = uri,
+                        type = "pdf",
+                        mimeType = mimeType,
+                        fileName = fileName,
+                        fileSize = copy.bytesCopied,
+                        selectedPages = keptPaths.indices.toSet(),
+                        preRenderedPaths = keptPaths,
+                        localPath = copy.path,
+                    )
+                }
+                PrivateCopyResult.TooLarge -> {
+                    deleteFilesAsync(keptPaths)
+                    rejectedMessage = context.getString(com.newoether.agora.R.string.file_too_large)
+                }
+                PrivateCopyResult.Failure -> {
+                    deleteFilesAsync(keptPaths)
+                    rejectedMessage = context.getString(
+                        com.newoether.agora.R.string.attachment_copy_failed_file,
+                    )
+                }
             }
             processingStates = processingStates - uri
         }
@@ -206,20 +262,32 @@ class ChatComposerState(
         }
     }
 
-    /** Copy a content URI to app-private storage, returning the absolute path (or null). */
-    private suspend fun copyToPrivate(uri: Uri, ext: String): String? {
+    /** Copy a content URI to app-private storage with the shared actual-byte limit. */
+    private suspend fun copyToPrivate(
+        uri: Uri,
+        ext: String,
+        expectedSize: Long? = null,
+    ): PrivateCopyResult {
         return withContext(Dispatchers.IO) {
             val target = java.io.File(context.filesDir, "att_${UUID.randomUUID()}.$ext")
             try {
                 val input = context.contentResolver.openInputStream(uri)
-                    ?: return@withContext null
-                input.use {
-                    target.outputStream().use { output -> input.copyTo(output) }
+                    ?: return@withContext PrivateCopyResult.Failure
+                val sizeHint = expectedSize ?: FileValidator.resolveFileSize(context, uri)
+                when (val result = AttachmentFiles.copyBounded(input, target, sizeHint)) {
+                    is AttachmentFiles.CopyResult.Success -> PrivateCopyResult.Success(
+                        path = target.absolutePath,
+                        bytesCopied = result.bytesCopied,
+                    )
+                    AttachmentFiles.CopyResult.TooLarge -> PrivateCopyResult.TooLarge
+                    is AttachmentFiles.CopyResult.Failure -> PrivateCopyResult.Failure
                 }
-                target.absolutePath
+            } catch (cancelled: CancellationException) {
+                runCatching { target.delete() }
+                throw cancelled
             } catch (_: Exception) {
                 runCatching { target.delete() }
-                null
+                PrivateCopyResult.Failure
             }
         }
     }
@@ -258,13 +326,16 @@ class ChatComposerState(
      */
     fun completeCameraCapture(privatePath: String, captured: Boolean) {
         scope.launch {
-            val attachment = withContext(Dispatchers.IO) {
+            val (attachment, tooLarge) = withContext(Dispatchers.IO) {
                 val file = privateCameraFile(privatePath)
                 if (file == null) {
-                    null
+                    null to false
                 } else if (!captured || !file.isFile || file.length() <= 0L) {
                     runCatching { file.delete() }
-                    null
+                    null to false
+                } else if (file.length() > AttachmentFiles.MAX_ATTACHMENT_BYTES) {
+                    runCatching { file.delete() }
+                    null to true
                 } else {
                     runCatching {
                         val uri = FileProvider.getUriForFile(
@@ -279,11 +350,11 @@ class ChatComposerState(
                             mimeType = "image/jpeg",
                             fileSize = file.length(),
                             localPath = file.absolutePath,
-                        )
+                        ) to false
                     }.getOrElse { error ->
                         runCatching { file.delete() }
                         DebugLog.e("ChatComposer", "Unable to attach camera capture", error)
-                        null
+                        null to false
                     }
                 }
             }
@@ -292,7 +363,8 @@ class ChatComposerState(
                 selectedAttachments = selectedAttachments + attachment
             } else if (captured) {
                 rejectedMessage = context.getString(
-                    com.newoether.agora.R.string.attachment_copy_failed_image,
+                    if (tooLarge) com.newoether.agora.R.string.file_too_large
+                    else com.newoether.agora.R.string.attachment_copy_failed_image,
                 )
             }
         }
@@ -322,9 +394,10 @@ class ChatComposerState(
             videoExtractionJobs[removed.uri]?.cancel()
             videoExtractionJobs.remove(removed.uri)
         }
+        attachmentCopyJobs.remove(removed.localId)?.cancel()
         val uriStr = removed.uri
         selectedAttachments = selectedAttachments.toMutableList().also { it.removeAt(index) }
-        processingStates = processingStates - uriStr
+        processingStates = processingStates - uriStr - removed.localId
         val ownerConversationId = draftOwnerConversationId
         if (ownerConversationId == null) {
             // A new-chat attachment has never entered a persisted draft. It is still unique to
@@ -436,6 +509,7 @@ class ChatComposerState(
         scope.launch {
             val copiedAttachments = mutableListOf<SelectedAttachment>()
             var copyFailed = false
+            var copyTooLarge = false
             for (uriObj in uris) {
                 val mimeType = withContext(Dispatchers.IO) {
                     try {
@@ -444,25 +518,30 @@ class ChatComposerState(
                         null
                     }
                 }
-                val localPath = copyToPrivate(uriObj, "img")
-                if (localPath != null) {
-                    copiedAttachments += SelectedAttachment(
-                        uri = Uri.fromFile(java.io.File(localPath)).toString(),
+                when (val copy = copyToPrivate(uriObj, "img")) {
+                    is PrivateCopyResult.Success -> copiedAttachments += SelectedAttachment(
+                        uri = Uri.fromFile(java.io.File(copy.path)).toString(),
                         type = "image",
                         mimeType = mimeType,
-                        localPath = localPath,
+                        fileSize = copy.bytesCopied,
+                        localPath = copy.path,
                     )
-                } else {
-                    copyFailed = true
+                    PrivateCopyResult.TooLarge -> {
+                        copyTooLarge = true
+                    }
+                    PrivateCopyResult.Failure -> copyFailed = true
                 }
             }
             if (copiedAttachments.isNotEmpty()) {
                 selectedAttachments = selectedAttachments + copiedAttachments
             }
+            if (copyTooLarge) {
+                appendRejection(context.getString(com.newoether.agora.R.string.file_too_large))
+            }
             if (copyFailed) {
-                rejectedMessage = context.getString(
+                appendRejection(context.getString(
                     com.newoether.agora.R.string.attachment_copy_failed_image,
-                )
+                ))
             }
             processingStates = processingStates - processingKeys
         }
@@ -481,50 +560,63 @@ class ChatComposerState(
     fun onPickFiles(uris: List<Uri>, onInitPdfSelection: ((Set<Int>) -> Unit)?) {
         if (uris.isEmpty()) return
         scope.launch {
+            val sandboxEnabledNow = isSandboxFlavor && sandboxEnabled()
             // SAF providers can block on MIME, metadata and page-count queries. Serialize commits
             // on Main, but perform the complete inspection batch on IO.
             attachmentInspectionMutex.withLock {
                 val inspected = withContext(Dispatchers.IO) {
                     uris.map { uri ->
-                        val validation = FileValidator.validate(context, uri)
-                        val fileName = if (validation.valid) {
-                            FileValidator.resolveFileName(context, uri)
-                        } else {
-                            null
-                        }
+                        val mimeType = FileValidator.resolveMimeType(context, uri.toString())
+                        val fileName = FileValidator.resolveFileName(context, uri)
+                        val fileSize = FileValidator.resolveFileSize(context, uri)
                         val pageCount = if (
-                            validation.valid &&
-                            validation.mimeType == "application/pdf"
+                            mimeType == "application/pdf" &&
+                            fileSize?.let { it <= AttachmentFiles.MAX_ATTACHMENT_BYTES } != false
                         ) {
                             PdfPageRenderer.getPageCount(context, uri)
                         } else {
                             0
                         }
-                        InspectedFile(uri, validation, fileName, pageCount)
+                        InspectedFile(uri, mimeType, fileName, fileSize, pageCount)
                     }
                 }
 
                 val attachmentsToCopy = mutableListOf<Pair<Uri, SelectedAttachment>>()
                 val rejectedMessages = mutableListOf<String>()
+                val images = mutableListOf<Uri>()
+                val videos = mutableListOf<Uri>()
                 for (item in inspected) {
-                    val validation = item.validation
-                    if (!validation.valid) {
-                        rejectedMessages.add(
-                            FileValidator.errorMessage(
-                                context,
-                                checkNotNull(validation.error),
-                                validation.mimeType,
-                            )
+                    if (item.fileSize?.let { it > AttachmentFiles.MAX_ATTACHMENT_BYTES } == true) {
+                        rejectedMessages += context.getString(
+                            com.newoether.agora.R.string.file_too_large,
                         )
                         continue
                     }
-                    val mimeType = validation.mimeType
-                    val type = if (mimeType == "application/pdf") "pdf" else "file"
+                    when (FileValidator.routeForMimeType(item.mimeType)) {
+                        FileValidator.AttachmentRoute.IMAGE -> {
+                            images += item.uri
+                            continue
+                        }
+                        FileValidator.AttachmentRoute.VIDEO -> {
+                            videos += item.uri
+                            continue
+                        }
+                        FileValidator.AttachmentRoute.LOCAL_SANDBOX -> {
+                            if (sandboxEnabledNow) {
+                                startSandboxAttachmentCopy(item)
+                            } else {
+                                rejectedMessages += unsupportedFileMessage(item.mimeType)
+                            }
+                            continue
+                        }
+                        else -> Unit
+                    }
+                    val type = if (item.mimeType == "application/pdf") "pdf" else "file"
                     if (type == "pdf" && !showPdfPageDialog && item.pageCount > 0) {
                         pendingPdfUri = item.uri.toString()
                         pendingPdfPages = item.pageCount
                         pendingPdfFileName = item.fileName
-                        pendingPdfMimeType = mimeType
+                        pendingPdfMimeType = item.mimeType
                         pendingPdfRenderedPaths = emptyList()
                         pendingPdfIsRendering = true
                         pendingPdfRenderProgress = 0 to item.pageCount
@@ -553,15 +645,18 @@ class ChatComposerState(
                     val attachment = SelectedAttachment(
                         uri = item.uri.toString(),
                         type = type,
-                        mimeType = mimeType,
+                        mimeType = item.mimeType,
                         fileName = item.fileName,
+                        fileSize = item.fileSize,
                     )
                     attachmentsToCopy.add(item.uri to attachment)
                 }
                 if (rejectedMessages.isNotEmpty()) {
                     haptics.reject()
-                    rejectedMessage = rejectedMessages.joinToString("\n")
+                    appendRejection(rejectedMessages.distinct().joinToString("\n"))
                 }
+                if (images.isNotEmpty()) onPickImages(images)
+                if (videos.isNotEmpty()) onPickVideos(videos)
                 if (attachmentsToCopy.isNotEmpty()) haptics.selection()
 
                 // Every external source becomes composer-visible only after its private copy exists.
@@ -574,13 +669,17 @@ class ChatComposerState(
                         attachment.fileName?.substringAfterLast('.', "bin") ?: "bin"
                     }
                     processingStates = processingStates + (uriStr to 0f)
-                    val localPath = copyToPrivate(uri, ext)
-                    if (localPath != null) {
-                        copiedAttachments += attachment.copy(localPath = localPath)
-                    } else {
-                        rejectedMessage = context.getString(
-                            com.newoether.agora.R.string.attachment_copy_failed_file,
+                    when (val copy = copyToPrivate(uri, ext, attachment.fileSize)) {
+                        is PrivateCopyResult.Success -> copiedAttachments += attachment.copy(
+                            localPath = copy.path,
+                            fileSize = copy.bytesCopied,
                         )
+                        PrivateCopyResult.TooLarge -> appendRejection(
+                            context.getString(com.newoether.agora.R.string.file_too_large),
+                        )
+                        PrivateCopyResult.Failure -> appendRejection(context.getString(
+                            com.newoether.agora.R.string.attachment_copy_failed_file,
+                        ))
                     }
                     processingStates = processingStates - uriStr
                 }
@@ -588,6 +687,155 @@ class ChatComposerState(
                     selectedAttachments = selectedAttachments + copiedAttachments
                 }
             }
+        }
+    }
+
+    private fun startSandboxAttachmentCopy(item: InspectedFile) {
+        val localId = UUID.randomUUID().toString()
+        val fileName = AttachmentFiles.sanitizeFileName(item.fileName)
+        val sandboxPath = "/home/agora/attachments/$localId/$fileName"
+        val pending = SelectedAttachment(
+            localId = localId,
+            uri = item.uri.toString(),
+            type = "file",
+            fileName = fileName,
+            mimeType = item.mimeType,
+            fileSize = item.fileSize,
+            storage = AttachmentStorage.LOCAL_SANDBOX_PENDING,
+            sandboxPath = sandboxPath,
+        )
+        haptics.selection()
+        selectedAttachments = selectedAttachments + pending
+        processingStates = processingStates + (
+            localId to if (item.fileSize == null) Float.NaN else 0f
+        )
+
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            var pendingWithPath = pending
+            try {
+                val homeDir = withContext(Dispatchers.IO) {
+                    val ready = try {
+                        sandboxManager?.isAvailable() == true
+                    } catch (_: Exception) {
+                        false
+                    }
+                    if (ready) sandboxManager?.getSandboxHomeDir() else null
+                }
+                ensureActive()
+                if (homeDir == null) {
+                    failSandboxAttachment(pending, unsupportedFileMessage(item.mimeType))
+                    return@launch
+                }
+
+                val target = java.io.File(
+                    java.io.File(java.io.File(homeDir, "attachments"), localId),
+                    fileName,
+                )
+                pendingWithPath = pending.copy(localPath = target.absolutePath)
+                selectedAttachments = selectedAttachments.map { attachment ->
+                    if (attachment.localId == localId) pendingWithPath else attachment
+                }
+                var lastProgress = -1f
+                val copyResult = withContext(Dispatchers.IO) {
+                    val input = try {
+                        context.contentResolver.openInputStream(item.uri)
+                    } catch (error: Exception) {
+                        return@withContext AttachmentFiles.CopyResult.Failure(error)
+                    } ?: return@withContext AttachmentFiles.CopyResult.Failure(
+                        IllegalStateException("Unable to open attachment source"),
+                    )
+                    AttachmentFiles.copyBounded(
+                        input = input,
+                        target = target,
+                        expectedSize = item.fileSize,
+                        onProgress = { copiedBytes, totalBytes ->
+                            val total = totalBytes?.takeIf { it > 0L } ?: return@copyBounded
+                            val progress = (copiedBytes.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+                            if (progress == 1f || progress - lastProgress >= 0.01f) {
+                                lastProgress = progress
+                                scope.launch {
+                                    if (localId in processingStates) {
+                                        processingStates = processingStates + (localId to progress)
+                                    }
+                                }
+                            }
+                        },
+                    )
+                }
+                ensureActive()
+                when (copyResult) {
+                    is AttachmentFiles.CopyResult.Success -> {
+                        if (selectedAttachments.none { it.localId == localId }) {
+                            withContext(Dispatchers.IO) {
+                                AttachmentFiles.deleteBacking(pendingWithPath)
+                            }
+                        } else {
+                            selectedAttachments = selectedAttachments.map { attachment ->
+                                if (attachment.localId == localId) {
+                                    pendingWithPath.copy(fileSize = copyResult.bytesCopied)
+                                } else {
+                                    attachment
+                                }
+                            }
+                        }
+                    }
+                    AttachmentFiles.CopyResult.TooLarge -> failSandboxAttachment(
+                        pendingWithPath,
+                        context.getString(com.newoether.agora.R.string.file_too_large),
+                    )
+                    is AttachmentFiles.CopyResult.Failure -> failSandboxAttachment(
+                        pendingWithPath,
+                        context.getString(com.newoether.agora.R.string.attachment_copy_failed_file),
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    AttachmentFiles.deleteBacking(pendingWithPath)
+                }
+                throw cancelled
+            } finally {
+                processingStates = processingStates - localId
+                attachmentCopyJobs.remove(localId)
+            }
+        }
+        attachmentCopyJobs[localId] = job
+        job.start()
+    }
+
+    private suspend fun failSandboxAttachment(
+        attachment: SelectedAttachment,
+        message: String,
+    ) {
+        val wasVisible = selectedAttachments.any { it.localId == attachment.localId }
+        selectedAttachments = selectedAttachments.filterNot { it.localId == attachment.localId }
+        withContext(Dispatchers.IO) { AttachmentFiles.deleteBacking(attachment) }
+        if (wasVisible) {
+            haptics.reject()
+            appendRejection(message)
+        }
+    }
+
+    private fun unsupportedFileMessage(mimeType: String?): String {
+        val error = if (mimeType == null) {
+            FileValidator.Error.UNKNOWN_TYPE
+        } else {
+            FileValidator.Error.UNSUPPORTED_TYPE
+        }
+        val original = FileValidator.errorMessage(context, error, mimeType)
+        return if (isSandboxFlavor) {
+            "$original\n\n${context.getString(com.newoether.agora.R.string.file_sandbox_required)}"
+        } else {
+            original
+        }
+    }
+
+    private fun appendRejection(message: String) {
+        val existing = rejectionMessageState
+        rejectionTitleState = com.newoether.agora.R.string.file_unsupported_title
+        rejectionMessageState = when {
+            existing.isNullOrBlank() -> message
+            message in existing.lines() -> existing
+            else -> "$existing\n$message"
         }
     }
 
@@ -615,15 +863,20 @@ class ChatComposerState(
                     mimeType?.contains("quicktime") == true -> "mov"
                     else -> "mp4"
                 }
-            val localPath = copyToPrivate(sourceUri, ext)
-            if (localPath == null) {
-                rejectedMessage = context.getString(
-                    com.newoether.agora.R.string.attachment_copy_failed_file,
-                )
+            val copy = copyToPrivate(sourceUri, ext)
+            if (copy !is PrivateCopyResult.Success) {
+                appendRejection(context.getString(
+                    if (copy == PrivateCopyResult.TooLarge) {
+                        com.newoether.agora.R.string.file_too_large
+                    } else {
+                        com.newoether.agora.R.string.attachment_copy_failed_file
+                    },
+                ))
                 processingStates = processingStates - vidUri
                 videoExtractionJobs.remove(vidUri)
                 return@launch
             }
+            val localPath = copy.path
 
             val attachment = SelectedAttachment(
                 uri = vidUri,
@@ -632,7 +885,7 @@ class ChatComposerState(
                 sliceIntervalMs = intervalMs,
                 fileName = fileName,
                 mimeType = mimeType ?: "video/*",
-                fileSize = java.io.File(localPath).length(),
+                fileSize = copy.bytesCopied,
                 localPath = localPath,
             )
             selectedAttachments = selectedAttachments + attachment
@@ -656,9 +909,23 @@ class ChatComposerState(
 }
 
 @Composable
-fun rememberChatComposerState(): ChatComposerState {
+fun rememberChatComposerState(
+    sandboxManager: SandboxManager? = null,
+    sandboxEnabled: Boolean = false,
+    isSandboxFlavor: Boolean = false,
+): ChatComposerState {
     val context = LocalContext.current
     val haptics = LocalAgoraHaptics.current
     val scope = rememberCoroutineScope()
-    return remember(context, haptics, scope) { ChatComposerState(context, haptics, scope) }
+    val latestSandboxEnabled = rememberUpdatedState(sandboxEnabled)
+    return remember(context, haptics, scope, sandboxManager, isSandboxFlavor) {
+        ChatComposerState(
+            context = context,
+            haptics = haptics,
+            scope = scope,
+            sandboxManager = sandboxManager,
+            sandboxEnabled = { latestSandboxEnabled.value },
+            isSandboxFlavor = isSandboxFlavor,
+        )
+    }
 }

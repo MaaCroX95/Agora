@@ -4,6 +4,7 @@ import com.newoether.agora.api.util.ContextTokenEstimator
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.model.AttachmentItem
 import com.newoether.agora.model.AttachmentMeta
+import com.newoether.agora.model.AttachmentStorage
 import com.newoether.agora.model.CitationRecord
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
@@ -17,6 +18,38 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProviderMessageProjectorTest {
+    @Test
+    fun `sandbox attachment projects path mime size and read instruction for every provider`() {
+        val item = AttachmentItem(
+            type = "file",
+            fileName = "archive.apk",
+            mimeType = "application/vnd.android.package-archive",
+            storage = AttachmentStorage.LOCAL_SANDBOX_RUNTIME,
+            sandboxPath = "/home/agora/attachments/id/archive.apk",
+            fileSize = 4096L,
+        )
+        val entity = MessageEntity(
+            id = "user",
+            conversationId = "conversation",
+            text = "inspect this",
+            attachmentMeta = Json.encodeToString(AttachmentMeta(listOf(item))),
+            status = MessageStatus.SUCCESS,
+            participant = Participant.USER,
+            timestamp = 1L,
+            runId = "run",
+        )
+
+        val projected = projectProviderMessages(listOf(entity), false).single()
+
+        assertEquals(
+            "inspect this" + sandboxAttachmentInstruction(item),
+            projected.text,
+        )
+        assertTrue(projected.text.contains(item.sandboxPath!!))
+        assertTrue(projected.text.contains("4096 bytes"))
+        assertTrue(projected.text.contains("file_read"))
+    }
+
     @Test
     fun `stored transcription removes only its source image and keeps fresh tool images`() {
         val source = MessageEntity(

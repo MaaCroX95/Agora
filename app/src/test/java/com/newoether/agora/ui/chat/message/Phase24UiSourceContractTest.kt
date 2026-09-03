@@ -30,6 +30,7 @@ class Phase24UiSourceContractTest {
     @Test
     fun `Thinking durations use one localized seconds minutes and hours breakdown`() {
         val presentation = source("message/ThinkingSegmentPresentation.kt")
+        val timeline = source("message/MessageItemTimeline.kt")
 
         listOf(
             "thinking_for_seconds_ellipsis",
@@ -45,6 +46,30 @@ class Phase24UiSourceContractTest {
         assertTrue(presentation.contains("seconds / 3_600"))
         assertTrue(presentation.contains("(seconds % 3_600) / 60"))
         assertTrue(presentation.contains("seconds % 60"))
+        val terminalTitle = presentation
+            .substringAfter("internal fun compactSegmentTitle(")
+            .substringBefore("internal fun compactSegmentDisplayTitle(")
+        assertTrue(terminalTitle.contains("val hasThought = segs.any { it.type == \"thought\" }"))
+        assertTrue(terminalTitle.contains(
+            "hasThought -> thoughtDurationTitle(thoughtMs?.coerceAtLeast(0L) ?: 0L, toolCount)"
+        ))
+        assertTrue(terminalTitle.contains(
+            "toolCount > 0 -> stringResource(R.string.called_n_tools, toolCount)"
+        ))
+        val compactBlock = timeline
+            .substringAfter("internal fun CompactSegmentBlock(")
+            .substringBefore("internal fun retainExpandedLayoutDuringFade(")
+        val allToolSegmentCount = "val toolCount = segs.count { it.type == \"tool\" }"
+        assertTrue(terminalTitle.contains(allToolSegmentCount))
+        assertTrue(compactBlock.contains(allToolSegmentCount))
+        assertFalse(terminalTitle.contains("toolResult != null"))
+        assertFalse(compactBlock.contains("toolResult != null"))
+        assertFalse(terminalTitle.contains(
+            "message.thoughtTitle != null -> message.thoughtTitle"
+        ))
+        assertFalse(terminalTitle.contains(
+            "else -> stringResource(R.string.thinking_complete)"
+        ))
 
         val expectedPlaceholders = mapOf(
             "thinking_for_minutes_ellipsis" to setOf(1, 2),

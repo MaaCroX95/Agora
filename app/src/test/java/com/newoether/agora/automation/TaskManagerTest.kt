@@ -137,9 +137,6 @@ class TaskManagerTest {
         val success = result as TaskManager.ExecutionResult.Success
         assertEquals("execution", success.conversationId)
         assertEquals("done", success.response)
-        coVerify(exactly = 0) {
-            conversations.getMessagesForConversationSnapshot(any())
-        }
         coVerify(exactly = 0) { engine.runOnce(any(), any(), any(), any(), any(), any()) }
     }
 

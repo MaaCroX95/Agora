@@ -1,6 +1,5 @@
 package com.newoether.agora.viewmodel
 
-import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -25,23 +24,6 @@ class ConversationLifecycleControllerTest {
 
         coVerify(exactly = 1) {
             fixture.conversations.updateConversationTitle("conversation", "New title")
-        }
-    }
-
-    @Test
-    fun systemPromptUpdatesOnlyAnExistingConversation() = runTest {
-        val fixture = Fixture(this)
-        val existing = ChatEntity("conversation", "Title", systemPromptId = "old")
-        coEvery { fixture.conversations.getConversation("conversation") } returns existing
-        coEvery { fixture.conversations.getConversation("missing") } returns null
-        coEvery { fixture.conversations.upsertConversation(any()) } returns Unit
-
-        fixture.controller.setSystemPrompt("conversation", "new")
-        fixture.controller.setSystemPrompt("missing", "ignored")
-        runCurrent()
-
-        coVerify(exactly = 1) {
-            fixture.conversations.upsertConversation(existing.copy(systemPromptId = "new"))
         }
     }
 

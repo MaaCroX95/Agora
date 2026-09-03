@@ -64,13 +64,28 @@ data class SystemPromptEntry(
     val title: String,
     val content: String = "",
     val systemItems: List<PromptTemplateItem> = emptyList(),
+    val userItems: List<PromptTemplateItem> = emptyList(),
+    val assistantItems: List<PromptTemplateItem> = emptyList(),
+    // Legacy fields retained only so prompts saved before structured message templates deserialize.
     val userPrependItems: List<PromptTemplateItem> = emptyList(),
-    val userPostpendItems: List<PromptTemplateItem> = emptyList()
+    val userPostpendItems: List<PromptTemplateItem> = emptyList(),
 ) {
     val resolvedSystemItems: List<PromptTemplateItem>
         get() = if (systemItems.isNotEmpty()) systemItems
         else if (content.isNotBlank()) listOf(PromptTemplateItem(type = PromptItemType.CUSTOM, value = content))
         else emptyList()
+
+    val resolvedUserItems: List<PromptTemplateItem>
+        get() = PredefinedVariables.normalizeMessageTemplate(
+            if (userItems.isNotEmpty()) {
+                userItems
+            } else {
+                userPrependItems + PredefinedVariables.promptItem() + userPostpendItems
+            },
+        )
+
+    val resolvedAssistantItems: List<PromptTemplateItem>
+        get() = PredefinedVariables.normalizeMessageTemplate(assistantItems)
 }
 
 internal val WEB_SEARCH_PROVIDERS = setOf(

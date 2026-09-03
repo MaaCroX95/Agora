@@ -21,6 +21,7 @@ class Phase32DirectDotSourceContractTest {
             "rememberInlineActivityDotOverlayState",
             "dotOverlayState",
         ).forEach { symbol -> assertFalse("MessageList retains $symbol", list.contains(symbol)) }
+        assertFalse(list.contains("StreamingTailIndicator("))
 
         val assistantActivity = assistant
             .substringAfter("private fun AssistantInlineActivity(")
@@ -29,18 +30,20 @@ class Phase32DirectDotSourceContractTest {
         assertTrue(assistantActivity.contains("GenerationActivityDot()"))
         assertTrue(assistantActivity.contains("visibilityTransition.targetState ||"))
         assertTrue(assistantActivity.contains(
-            "retainExitLayout && visibilityTransition.currentState"
+            "visibilityTransition.targetState || retainExitLayout"
         ))
-        assertTrue(assistant.contains("retainExitLayout = !hasAnswerContent"))
-        assertTrue(assistantActivity.contains("alpha = activityOpacity"))
-        assertTrue(assistant.contains("AssistantInlineActivityHeight * activityLayoutProgress"))
+        assertTrue(assistant.contains("retainExitLayout = inlineActivityPresentation.retainLayout"))
+        assertTrue(assistantActivity.contains(
+            "alpha = if (terminalText == null) activityOpacity else 1f"
+        ))
+        assertTrue(assistant.contains(".heightIn(min = AssistantInlineActivityHeight)"))
         assertTrue(assistant.contains("import androidx.compose.ui.graphics.CompositingStrategy"))
         assertTrue(assistantActivity.contains(
             "compositingStrategy = CompositingStrategy.ModulateAlpha"
         ))
         assertFalse(assistantActivity.contains("CompositingStrategy.Offscreen"))
         assertTrue(assistantActivity.contains("clip = false"))
-                assertFalse(assistant.contains("InlineActivityDotMarker"))
+        assertFalse(assistant.contains("InlineActivityDotMarker"))
         assertFalse(assistant.contains("InlineActivityDotSource"))
 
         assertTrue(retry.contains("GenerationActivityDot("))

@@ -4,9 +4,12 @@ object OpenAiServiceTiers {
     const val AUTO = "auto"
     const val DEFAULT = "default"
     const val FLEX = "flex"
+    const val SCALE = "scale"
+    const val PRIORITY = "priority"
     const val FAST = "fast"
+    const val ULTRAFAST = "ultrafast"
 
-    val values = listOf(AUTO, DEFAULT, FLEX, FAST)
+    val values = listOf(AUTO, DEFAULT, FLEX, SCALE, PRIORITY, FAST, ULTRAFAST)
 
     fun normalize(value: String?): String =
         value?.trim()?.lowercase()?.takeIf { it in values } ?: AUTO

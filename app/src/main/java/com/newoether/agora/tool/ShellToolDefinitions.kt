@@ -41,13 +41,13 @@ internal object ShellToolDefinitions {
             )))
             add(ToolDefinition(function = ToolFunction(
                 name = "execute_shell_command",
-                description = "Execute a shell command. Set background=true for a durable Conch job that survives client disconnects.",
+                description = "Execute a shell command with a 64KB UTF-8 command limit, a 32KB UTF-8 workdir limit, and at most 1MB of retained foreground output. Set background=true for a durable Conch job that survives client disconnects.",
                 parameters = ToolParameters(
                     properties = mapOf(
-                        "command" to ToolProperty("string", "The shell command to execute."),
+                        "command" to ToolProperty("string", "The shell command to execute (64KB UTF-8 maximum)."),
                         "server" to ToolProperty("string", serverPropDesc),
                         "timeout_ms" to ToolProperty("integer", "Required. Foreground wait budget in milliseconds (hard ceiling 295000ms inside the tool call). On Conch, a command still running at that point continues as the same durable job and returns its job_id; it is never killed or restarted. With background=true this instead bounds the durable job's runtime (up to Conch policy)."),
-                        "workdir" to ToolProperty("string", "Working directory (optional)."),
+                        "workdir" to ToolProperty("string", "Working directory (optional, 32KB UTF-8 maximum)."),
                         "background" to ToolProperty("boolean", "Start a durable background job on Conch and return its job_id immediately (optional, default false)."),
                     ),
                     required = shellRequiredParams
@@ -121,24 +121,24 @@ internal object ShellToolDefinitions {
         val fileTools = listOf(
             ToolDefinition(function = ToolFunction(
                 name = "file_read",
-                description = "Read a file from a shell server or local sandbox.",
+                description = "Read a bounded file slice from a shell server or local sandbox. Returns valid JSON with content, line and byte counts, offset, limit, and an explicit truncated flag.",
                 parameters = ToolParameters(
                     properties = mapOf(
                         "path" to ToolProperty("string", "Absolute path to the file."),
                         "server" to fileServerProperty,
                         "offset" to ToolProperty("integer", "Byte offset (optional)."),
-                        "limit" to ToolProperty("integer", "Max bytes to read (optional, default 1MB).")
+                        "limit" to ToolProperty("integer", "Max bytes to read (optional, default and maximum 1MB).")
                     ),
                     required = listOf("path") + fileRequired
                 )
             )),
             ToolDefinition(function = ToolFunction(
                 name = "file_write",
-                description = "Write content to a file on a shell server or local sandbox.",
+                description = "Write up to 1MB of UTF-8 content to a file on a shell server or local sandbox.",
                 parameters = ToolParameters(
                     properties = mapOf(
                         "path" to ToolProperty("string", "Absolute path to the file."),
-                        "content" to ToolProperty("string", "Content to write."),
+                        "content" to ToolProperty("string", "Content to write (1MB UTF-8 maximum)."),
                         "server" to fileServerProperty
                     ),
                     required = listOf("path", "content") + fileRequired
@@ -150,8 +150,8 @@ internal object ShellToolDefinitions {
                 parameters = ToolParameters(
                     properties = mapOf(
                         "path" to ToolProperty("string", "Absolute path to the file."),
-                        "old_string" to ToolProperty("string", "The exact text to find and replace."),
-                        "new_string" to ToolProperty("string", "The replacement text."),
+                        "old_string" to ToolProperty("string", "The exact text to find and replace. LF and CRLF line endings are treated as equivalent."),
+                        "new_string" to ToolProperty("string", "The replacement text. Line endings follow the matched text or target file."),
                         "server" to fileServerProperty,
                         "replace_all" to ToolProperty("boolean", "Replace all occurrences (optional, default false).")
                     ),
@@ -160,7 +160,7 @@ internal object ShellToolDefinitions {
             )),
             ToolDefinition(function = ToolFunction(
                 name = "file_glob",
-                description = "List files on a shell server or local sandbox matching a glob pattern.",
+                description = "List up to 1000 files on a shell server or local sandbox matching a glob pattern. Returns an explicit truncated flag.",
                 parameters = ToolParameters(
                     properties = mapOf(
                         "pattern" to ToolProperty("string", "Glob pattern matched against file names (e.g. '*.go', '*.md')."),
@@ -173,7 +173,7 @@ internal object ShellToolDefinitions {
             )),
             ToolDefinition(function = ToolFunction(
                 name = "file_grep",
-                description = "Search for a regex pattern in files on a shell server or local sandbox.",
+                description = "Search for up to 500 regex matches in files on a shell server or local sandbox. Returns an explicit truncated flag.",
                 parameters = ToolParameters(
                     properties = mapOf(
                         "pattern" to ToolProperty("string", "Regular expression pattern to search for."),

@@ -41,9 +41,6 @@ class ConversationRegenerationServiceTest {
         assertFalse(result)
         assertEquals(null, fixture.transitions.request.value)
         assertFalse(state.generating.value)
-        coVerify(exactly = 0) {
-            fixture.conversations.getMessagesForConversationSnapshot(any())
-        }
         state.dispose()
         Unit
     }

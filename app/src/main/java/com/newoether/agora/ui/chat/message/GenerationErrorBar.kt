@@ -2,6 +2,7 @@ package com.newoether.agora.ui.chat.message
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -11,6 +12,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
+import com.newoether.agora.ui.chat.StreamingTailAnchorHeight
 import com.newoether.agora.ui.theme.ChatType
 import com.newoether.agora.util.NoAutoScrollSelectionContainer
 import com.newoether.agora.viewmodel.normalizePersistedGenerationErrorText
@@ -38,9 +40,10 @@ internal fun GenerationTerminalText(
         )
     }
     Box(
-        modifier = modifier.then(
-            if (fillWidth) Modifier.fillMaxWidth() else Modifier,
-        ),
+        modifier = Modifier
+            .heightIn(min = StreamingTailAnchorHeight)
+            .then(modifier)
+            .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier),
     ) {
         if (selectable) {
             NoAutoScrollSelectionContainer {
@@ -62,7 +65,7 @@ internal fun GenerationErrorBar(
     GenerationTerminalText(
         text = errorText,
         modifier = modifier.padding(
-            top = if (precededByCard) 12.dp else 4.dp,
+            top = if (precededByCard) 12.dp else 8.dp,
             bottom = 4.dp,
         ),
         selectable = true,
@@ -73,13 +76,12 @@ internal fun GenerationErrorBar(
 
 @Composable
 internal fun StoppedGenerationBar(
-    hasBodyContent: Boolean,
     precededByCard: Boolean = false,
 ) {
     GenerationTerminalText(
         text = stringResource(R.string.generation_stopped),
         modifier = Modifier.padding(
-            top = if (precededByCard) 12.dp else if (hasBodyContent) 8.dp else 0.dp,
+            top = if (precededByCard) 12.dp else 8.dp,
         ),
     )
 }

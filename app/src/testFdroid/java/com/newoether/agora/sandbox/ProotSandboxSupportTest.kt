@@ -1,13 +1,27 @@
 package com.newoether.agora.sandbox
 
+import android.content.Context
+import android.system.Os
+import com.newoether.agora.data.repository.SettingsRepository
+import io.mockk.Runs
+import io.mockk.every
+import io.mockk.just
+import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
+import io.mockk.verify
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import kotlinx.coroutines.runBlocking
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -96,6 +110,168 @@ class ProotSandboxSupportTest {
 
         assertEquals("safe", File(destination, "safe.txt").readText())
         assertFalse(File(destination.parentFile, "escape.txt").exists())
+    }
+
+    @Test
+    fun localSandboxFileSearchMatchesConchBaseline() = runBlocking {
+        val filesDir = Files.createTempDirectory("agora-shell-search").toFile()
+        val context = mockk<Context>()
+        every { context.filesDir } returns filesDir
+        val manager = ProotSandboxManager(
+            context,
+            mockk<SettingsRepository>(relaxed = true),
+        )
+        try {
+            val home = File(filesDir, "sandbox-home").apply { mkdirs() }
+            val rootfs = File(filesDir, "alpine-rootfs").apply { mkdirs() }
+            File(rootfs, "outside.txt").writeText("outside", Charsets.UTF_8)
+            repeat(1_001) { index ->
+                File(home, "file-$index.txt").writeText("home", Charsets.UTF_8)
+            }
+
+            val (files, globTruncated) = manager.fileGlob("*.txt", "", null)
+            assertEquals(1_000, files.size)
+            assertTrue(globTruncated)
+            assertTrue(files.all { it.startsWith("/home/agora/") })
+            assertTrue(manager.fileGrep("[", "", "").isFailure)
+
+            File(home, "matches.log").writeText(
+                buildString {
+                    repeat(501) {
+                        append("needle")
+                        append("x".repeat(600))
+                        append('\n')
+                    }
+                },
+                Charsets.UTF_8,
+            )
+            val (matches, grepTruncated) =
+                manager.fileGrep("needle", "", "matches.log").getOrThrow()
+            assertEquals(500, matches.size)
+            assertTrue(grepTruncated)
+            assertEquals(500, matches.first().content.length)
+
+            File(home, "oversized.log").writeText(
+                "needle" + "x".repeat(512_000),
+                Charsets.UTF_8,
+            )
+            val (oversizedMatches, oversizedTruncated) =
+                manager.fileGrep("needle", "", "oversized.log").getOrThrow()
+            assertTrue(oversizedMatches.isEmpty())
+            assertFalse(oversizedTruncated)
+        } finally {
+            manager.close()
+            filesDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun localSandboxFileWritePublishesCompleteContentByAtomicRename() = runBlocking {
+        val filesDir = Files.createTempDirectory("agora-shell-write").toFile()
+        val context = mockk<Context>()
+        every { context.filesDir } returns filesDir
+        val manager = ProotSandboxManager(
+            context,
+            mockk<SettingsRepository>(relaxed = true),
+        )
+        mockkStatic(Os::class)
+        every { Os.chmod(any(), any()) } just Runs
+        every { Os.rename(any(), any()) } answers {
+            val source = File(args[0] as String)
+            val target = File(args[1] as String)
+            assertEquals(
+                requireNotNull(source.parentFile).canonicalPath,
+                requireNotNull(target.parentFile).canonicalPath,
+            )
+            assertEquals("complete content", source.readText(Charsets.UTF_8))
+            Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+            Unit
+        }
+        try {
+            val target = File(filesDir, "sandbox-home/nested/file.txt")
+            val error = manager.fileWrite(
+                "/home/agora/nested/file.txt",
+                "complete content",
+            )
+
+            assertNull(error)
+            assertEquals("complete content", target.readText(Charsets.UTF_8))
+            verify(exactly = 1) { Os.chmod(any(), 0x1A4) }
+            verify(exactly = 1) {
+                Os.rename(any(), match { File(it).canonicalPath == target.canonicalPath })
+            }
+        } finally {
+            unmockkStatic(Os::class)
+            manager.close()
+            filesDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun localSandboxFileWritePreservesExistingMode() = runBlocking {
+        val filesDir = Files.createTempDirectory("agora-shell-write-mode").toFile()
+        val context = mockk<Context>()
+        every { context.filesDir } returns filesDir
+        val manager = ProotSandboxManager(
+            context,
+            mockk<SettingsRepository>(relaxed = true),
+        )
+        val target = File(filesDir, "sandbox-home/existing.txt").apply {
+            parentFile?.mkdirs()
+            writeText("old content", Charsets.UTF_8)
+        }
+        val existingStat = android.system.StructStat(
+            0L,
+            0L,
+            0x81A0,
+            1L,
+            0,
+            0,
+            0L,
+            target.length(),
+            0L,
+            0L,
+            0L,
+            4_096L,
+            0L,
+        ).also { stat ->
+            android.system.StructStat::class.java.getDeclaredField("st_mode").apply {
+                isAccessible = true
+                setInt(stat, 0x81A0)
+            }
+        }
+        mockkStatic(Os::class)
+        every { Os.stat(any()) } answers {
+            assertEquals(target.canonicalPath, File(args[0] as String).canonicalPath)
+            existingStat
+        }
+        every { Os.chmod(any(), any()) } just Runs
+        every { Os.rename(any(), any()) } answers {
+            Files.move(
+                File(args[0] as String).toPath(),
+                File(args[1] as String).toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+            Unit
+        }
+        try {
+            val error = manager.fileWrite(
+                "/home/agora/existing.txt",
+                "updated content",
+            )
+
+            assertNull(error)
+            assertEquals("updated content", target.readText(Charsets.UTF_8))
+            verify(exactly = 1) { Os.chmod(any(), 0x1A0) }
+        } finally {
+            unmockkStatic(Os::class)
+            manager.close()
+            filesDir.deleteRecursively()
+        }
     }
 
     private fun writeEntry(

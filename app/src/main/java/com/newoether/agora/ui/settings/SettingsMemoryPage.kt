@@ -38,6 +38,8 @@ import kotlinx.coroutines.withContext
 fun SettingsMemoryPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     val accessSavedMemories by viewModel.settings.accessSavedMemories.collectAsState()
     val accessActiveMemory by viewModel.settings.accessActiveMemory.collectAsState()
+    val catalogRevision by viewModel.memoryManager.catalogRevision.collectAsState()
+    val activeMemoryRevision by viewModel.memoryManager.activeMemoryRevision.collectAsState()
     val scope = rememberCoroutineScope()
     val unknownError = stringResource(R.string.unknown_error)
     var activeMemoryContent by remember { mutableStateOf("") }
@@ -58,7 +60,7 @@ fun SettingsMemoryPage(viewModel: ChatViewModel, onBack: () -> Unit) {
         viewModel.emitSnackbar(error.localizedMessage ?: unknownError)
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(catalogRevision, activeMemoryRevision) {
         val loaded = withContext(Dispatchers.IO) {
             runCatching {
                 viewModel.memoryManager.getActiveMemory() to viewModel.memoryManager.listFiles()

@@ -2,7 +2,7 @@
 """Agora anonymous crash-report receiver.
 
 Dependency-free (Python standard library only). Listens on a loopback port and is
-reverse-proxied by nginx at https://newoether.space/crash. Accepts a single JSON
+reverse-proxied by nginx at https://newoether.com/crash. Accepts a single JSON
 POST per crash and appends a sanitized record to a JSONL log.
 
 Privacy: only the fields the client sends (stack trace + coarse, non-identifying

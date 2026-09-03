@@ -5,8 +5,7 @@ import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.RunEffectIdentity
-import com.newoether.agora.model.RunEndReason
-import com.newoether.agora.model.RunStatus
+import com.newoether.agora.util.Constants
 import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -19,6 +18,8 @@ internal class GenerationTerminalSettlementController(
     private val failureText: () -> String,
     private val toUiMessage: (MessageEntity) -> ChatMessage,
     private val onSnackbar: (String) -> Unit,
+    private val isConversationVisible: ((String) -> Boolean)? = null,
+    private val onTerminalNotification: (String, String, MessageStatus) -> Unit = { _, _, _ -> },
 ) {
     /** Execute the exact Stop effect emitted when Room wins the commit race after Stop. */
     suspend fun settleLateBoundStop(
@@ -80,6 +81,9 @@ internal class GenerationTerminalSettlementController(
             "Failed to start Run $runId errorType=${error.javaClass.simpleName}",
         )
         val errorText = failureText()
+        val errorDetail = error.localizedMessage?.takeIf { it.isNotBlank() }
+            ?: error.javaClass.simpleName
+        val notificationText = "Error: $errorDetail"
         val failedMessage = modelMessageId?.let { id ->
             runCatching {
                 conversations.getMessage(id)?.let(toUiMessage)
@@ -95,19 +99,43 @@ internal class GenerationTerminalSettlementController(
                 state = state,
                 failedMessage = failedMessage,
                 effectId = "setup-finalize-$runId",
+                notificationText = notificationText,
             )
         } else if (failedMessage != null && !state.generating.value) {
             // Runtime disposal is the only no-writer edge. Repair message + Run atomically without
             // accepting a stale result into a newer process state.
+            val conversationVisible = isConversationVisible?.invoke(conversationId)
+            val terminalDisposition = generationTerminalDisposition(
+                messageStatus = MessageStatus.ERROR,
+                hasPendingGuidance = false,
+                conversationVisible = conversationVisible,
+            )
             runCatching {
                 conversations.finishGeneration(
                     message = failedMessage,
                     conversationId = conversationId,
                     runId = runId,
-                    status = RunStatus.FAILED,
-                    reason = RunEndReason.PROVIDER_ERROR,
-                    markConversationUnread = false,
+                    status = terminalDisposition.runStatus,
+                    reason = terminalDisposition.endReason,
+                    markConversationUnread = terminalDisposition.markConversationUnread,
                 )
+            }.onSuccess { terminalPersisted ->
+                if (
+                    terminalPersisted &&
+                    shouldPostGenerationTerminalNotification(
+                        messageStatus = MessageStatus.ERROR,
+                        hasPendingGuidance = false,
+                        isContextCompact = failedMessage.id.startsWith(Constants.COMPACT_MSG_PREFIX),
+                        appInForeground = false,
+                        conversationVisible = conversationVisible,
+                    )
+                ) {
+                    onTerminalNotification(
+                        notificationText,
+                        conversationId,
+                        MessageStatus.ERROR,
+                    )
+                }
             }
         } else if (failedMessage == null) {
             // No Run graph was committed. The installed Job's coroutine barrier releases the
@@ -125,7 +153,14 @@ internal class GenerationTerminalSettlementController(
         state: ConversationGenerationState,
         failedMessage: ChatMessage,
         effectId: String,
+        notificationText: String = failedMessage.text,
     ): Boolean {
+        val conversationVisible = isConversationVisible?.invoke(conversationId)
+        val terminalDisposition = generationTerminalDisposition(
+            messageStatus = MessageStatus.ERROR,
+            hasPendingGuidance = false,
+            conversationVisible = conversationVisible,
+        )
         val requested = state.commands.requestRunFinalization(
             identity = RunEffectIdentity(
                 conversationId = conversationId,
@@ -134,9 +169,9 @@ internal class GenerationTerminalSettlementController(
                 pass = pass,
                 effectId = effectId,
             ),
-            status = RunStatus.FAILED,
-            reason = RunEndReason.PROVIDER_ERROR,
-            markConversationUnread = false,
+            status = terminalDisposition.runStatus,
+            reason = terminalDisposition.endReason,
+            markConversationUnread = terminalDisposition.markConversationUnread,
         ) ?: return false
         val result = runFinalizationEffects.execute(requested) { effect ->
             conversations.finishGeneration(
@@ -154,6 +189,17 @@ internal class GenerationTerminalSettlementController(
             state.streamUpdate(uiToken, failedMessage)
             state.streamClear(uiToken)
             state.loadingChange(uiToken, false)
+            if (
+                shouldPostGenerationTerminalNotification(
+                    messageStatus = MessageStatus.ERROR,
+                    hasPendingGuidance = false,
+                    isContextCompact = failedMessage.id.startsWith(Constants.COMPACT_MSG_PREFIX),
+                    appInForeground = false,
+                    conversationVisible = conversationVisible,
+                )
+            ) {
+                onTerminalNotification(notificationText, conversationId, MessageStatus.ERROR)
+            }
         }
         return success
     }

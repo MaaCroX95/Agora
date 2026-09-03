@@ -49,6 +49,31 @@ class ContextCompactGraphAnchorTest {
     }
 
     @Test
+    fun compactOutputNormalizationStripsCompleteApiWrapper() {
+        assertEquals(
+            "summary",
+            normalizeContextCompactOutput(
+                "\n<context_summary>\r\nsummary\r\n</context_summary>\n",
+            ),
+        )
+    }
+
+    @Test
+    fun compactOutputNormalizationSuppressesPartialWrapperMarkers() {
+        assertEquals("", normalizeContextCompactOutput("<context_sum"))
+        assertEquals(
+            "summary",
+            normalizeContextCompactOutput("<context_summary>\nsummary\n</context_"),
+        )
+    }
+
+    @Test
+    fun compactOutputNormalizationLeavesPlainSummaryUnchanged() {
+        val summary = "  plain summary\nwith <xml> content  "
+        assertEquals(summary, normalizeContextCompactOutput(summary))
+    }
+
+    @Test
     fun automaticSplitExcludesCurrentEmptyPlaceholderButKeepsDurableUserBoundary() {
         val oldUser = entity("old-user", null, Participant.USER, 1).copy(text = "old")
         val oldModel = entity("old-model", "old-user", Participant.MODEL, 2).copy(text = "answer")

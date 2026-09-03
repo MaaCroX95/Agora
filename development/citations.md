@@ -77,15 +77,20 @@ search, or exposed as a fallback title or URL.
   while preserving first-source order. Repeated deltas or final metadata must not duplicate a
   source or anchor.
 - Provider metadata may arrive after the cited answer text and remains eligible for streaming
-  checkpoint persistence and live presentation. As soon as a source and anchor validate, its inline
-  source capsule is projected in both streaming and terminal answer states; inline presentation is
-  not gated by the bottom action controls. The summary capsule alone follows the action-control
-  lifecycle and remains hidden while those controls are hidden.
+  checkpoint persistence. Active generation keeps inline citation presentation hidden. The terminal
+  answer projects validated inline source capsules. The Sources summary follows the bottom
+  action-control lifecycle and remains hidden while those controls are hidden.
 - A trailing streaming suffix that is still a possible parenthesized Markdown-link citation wrapper
   is withheld until it resolves to a structured citation, becomes provably ordinary answer text, or
-  the answer terminalizes. A validated wrapper becomes the native capsule immediately. If the answer
-  terminalizes without matching structured metadata, the original ordinary Markdown is restored.
-  Streaming must not expose a raw wrapper and then replace it with a placeholder glyph at completion.
+  the answer terminalizes. A validated wrapper becomes a native capsule only in terminal
+  presentation. If the answer terminalizes without matching structured metadata, the original
+  ordinary Markdown is restored. Streaming must not expose the raw wrapper before that decision.
+- When a streaming projection differs from the terminal projection, the final streaming Markdown
+  remains mounted until the message-list mutation anchor is armed. The terminal projection commits
+  on the following frame through the same Markdown subtree, and the host interpolates its measured
+  size over 320 ms. Late terminal citation metadata repeats this same handoff. Crossfading duplicate
+  Markdown trees, exposing terminal click targets before commit, and animating ordinary streaming
+  growth are prohibited.
 - The same projection applies after normal completion, user Stop, or a persisted partial failure.
   Valid citations already received remain available in all three terminal states.
 - Malformed, unsafe, unsupported, or late citation metadata cannot turn an otherwise valid answer

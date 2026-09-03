@@ -2,6 +2,7 @@ package com.newoether.agora.viewmodel
 
 import com.newoether.agora.data.local.ConversationDraftAttachmentReference
 import com.newoether.agora.data.local.MessageAttachmentReference
+import com.newoether.agora.data.local.NewChatDraftAttachmentReference
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.model.AttachmentItem
 import com.newoether.agora.model.AttachmentMeta
@@ -32,6 +33,9 @@ class AttachmentOrphanSweeperTest {
             val draftLocal = oldFile(File(root, "run-inputs"), "draft_local")
             val draftFrame = oldFile(File(root, "fork-attachments"), "draft_frame")
             val draftRendered = oldFile(root, "pdf_draft")
+            val newChatLocal = oldFile(File(root, "run-inputs"), "new_chat_local")
+            val newChatFrame = oldFile(File(root, "fork-attachments"), "new_chat_frame")
+            val newChatRendered = oldFile(root, "pdf_new_chat")
 
             val orphanRoot = oldFile(root, "img_orphan")
             val orphanCamera = oldFile(File(root, "images"), "camera_orphan")
@@ -87,6 +91,21 @@ class AttachmentOrphanSweeperTest {
                     draftAttachments = "not-json",
                 ),
             )
+            coEvery {
+                conversations.getNewChatDraftAttachmentReference()
+            } returns NewChatDraftAttachmentReference(
+                draftAttachments = Json.encodeToString(
+                    listOf(
+                        SelectedAttachment(
+                            uri = "content://new-chat",
+                            type = "file",
+                            localPath = newChatLocal.absolutePath,
+                            processedFrames = listOf(newChatFrame.absolutePath),
+                            preRenderedPaths = listOf(newChatRendered.absolutePath),
+                        )
+                    )
+                ),
+            )
 
             AttachmentOrphanSweeper(
                 conversations = conversations,
@@ -100,6 +119,9 @@ class AttachmentOrphanSweeperTest {
                 draftLocal,
                 draftFrame,
                 draftRendered,
+                newChatLocal,
+                newChatFrame,
+                newChatRendered,
                 freshEligible,
                 unrelatedRoot,
                 unrelatedImage,
@@ -112,6 +134,9 @@ class AttachmentOrphanSweeperTest {
             }
             coVerify(exactly = 1) {
                 conversations.getConversationDraftAttachmentReferencesPage(null, 64)
+            }
+            coVerify(exactly = 1) {
+                conversations.getNewChatDraftAttachmentReference()
             }
         }
 

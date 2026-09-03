@@ -9,9 +9,15 @@ object AppForegroundTracker {
     private val listeners = CopyOnWriteArraySet<(Boolean) -> Unit>()
     private val _foreground = MutableStateFlow(false)
     val foreground: StateFlow<Boolean> = _foreground.asStateFlow()
+    private val _chatPresented = MutableStateFlow(false)
+    val chatPresented: StateFlow<Boolean> = _chatPresented.asStateFlow()
 
     @Volatile
     var isInForeground: Boolean = false
+        private set
+
+    @Volatile
+    var isChatPresented: Boolean = false
         private set
 
     fun setInForeground(inForeground: Boolean) {
@@ -19,6 +25,12 @@ object AppForegroundTracker {
         isInForeground = inForeground
         _foreground.value = inForeground
         listeners.forEach { it(inForeground) }
+    }
+
+    fun setChatPresented(presented: Boolean) {
+        if (isChatPresented == presented) return
+        isChatPresented = presented
+        _chatPresented.value = presented
     }
 
     fun addListener(listener: (Boolean) -> Unit) {

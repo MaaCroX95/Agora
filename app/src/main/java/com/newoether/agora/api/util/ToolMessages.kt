@@ -11,42 +11,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import java.security.MessageDigest
 
-/**
- * Full fail-closed message preparation pipeline shared by every provider.
- *
- * The result is a canonical history:
- *  - duplicate persisted rows are removed by id;
- *  - status rows are projected into model-visible user events;
- *  - tool calls/results are complete atomic rounds with globally unique call ids;
- *  - context truncation never splits a tool round;
- *  - the history starts with a normal user turn and has no empty normal turns.
- */
-
-/**
- * Non-destructive compact projection. The nearest compact entity is the logical start of context.
- * Its position is the only boundary metadata: deleting it naturally reveals the previous compact.
- */
-fun applyNearestContextCompact(messages: List<ChatMessage>): List<ChatMessage> {
-    // A failed, stopped, or in-flight Compact is durable UI history, but it never summarizes
-    // anything and therefore has no Provider-context meaning. Keeping it in the wire history can
-    // also leave a generation request ending in an assistant row after automatic fallback.
-    val hasNonSuccessfulCompact = messages.any {
-        it.isContextCompact() && !it.isSuccessfulContextCompact()
-    }
-    val providerVisible = if (hasNonSuccessfulCompact) {
-        messages.filterNot { it.isContextCompact() && !it.isSuccessfulContextCompact() }
-    } else {
-        messages
-    }
-    val index = providerVisible.indexOfLast(ChatMessage::isSuccessfulContextCompact)
-    if (index < 0) return providerVisible
-    val compact = providerVisible[index]
-    return buildList(providerVisible.size - index) {
-        add(compact.copy(id = "context_summary_${compact.id}", participant = Participant.USER))
-        addAll(providerVisible.drop(index + 1))
-    }
-}
-
 /** Expands protocol side chains with the same ordering/deduplication rule as ApiPathAssembler. */
 fun expandSelectedToolProtocolRows(
     selectedPath: List<ChatMessage>,
@@ -164,22 +128,6 @@ fun splitLogicalContext(messages: List<ChatMessage>, retainLogicalMessages: Int)
     return LogicalContextSplit(messages.take(cut), messages.drop(cut), count)
 }
 
-/**
- * Canonical provider-visible context before applying the configured window. Compact eligibility,
- * the composer usage indicator, and provider rollout all use this exact projection so their counts
- * cannot drift. Consecutive ordinary roles are merged and complete tool rounds remain protocol
- * rows with zero logical-message weight.
- */
-fun canonicalContextMessages(messages: List<ChatMessage>): List<ChatMessage> {
-    val compacted = applyNearestContextCompact(messages)
-    val canonical = validateToolMessages(
-        stripEmptyTurns(
-            projectGenerationStatusesForApi(compacted.distinctBy(ChatMessage::id))
-        )
-    )
-    return stripEmptyTurns(mergeConsecutiveSameRole(canonical))
-}
-
 data class ContextWindowUsage(
     val estimatedTokenCount: Int,
     val tokenBudget: Int,
@@ -239,19 +187,6 @@ fun contextWindowRetainedMessageIds(
     // The canonical anchor is the first row of any merged same-role group. Keeping the original
     // suffix from that anchor preserves every member and all complete tool rows represented by it.
     return compacted.drop(sourceIndex).mapTo(linkedSetOf(), ChatMessage::id)
-}
-
-fun prepareMessages(messages: List<ChatMessage>, contextTokenBudget: Int): List<ChatMessage> {
-    val previous = messages.getOrNull(messages.lastIndex - 1)
-    val prompt = messages.lastOrNull()?.takeIf {
-        it.id == "api_initial_user_${previous?.id.orEmpty()}" &&
-            it.parentId == previous?.id &&
-            it.participant == Participant.USER
-    }
-    val history = if (prompt == null) messages else messages.dropLast(1)
-    return stripEmptyTurns(
-        mergeConsecutiveSameRole(limitContext(canonicalContextMessages(history), contextTokenBudget))
-    ) + listOfNotNull(prompt)
 }
 
 internal fun protocolAtomicUnits(messages: List<ChatMessage>): List<List<ChatMessage>> {
@@ -573,7 +508,7 @@ fun mergeConsecutiveSameRole(messages: List<ChatMessage>): List<ChatMessage> {
         } else {
             // Merge messages[i..j-1] into one
             val merged = messages.subList(i, j)
-            val mergedText = merged.joinToString("\n") { it.text }
+            val mergedText = merged.joinToString("\n\n") { it.text }
             val mergedImages = merged.flatMap { it.images }
             result.add(current.copy(text = mergedText, images = mergedImages))
         }

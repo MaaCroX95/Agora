@@ -45,8 +45,51 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
     @Query("SELECT * FROM conversations WHERE id = :conversationId")
     fun observeConversation(conversationId: String): Flow<ChatEntity?>
 
-    @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY timestamp ASC")
-    fun getMessagesForConversation(conversationId: String): Flow<List<MessageEntity>>
+    @Query("SELECT * FROM new_chat_persist WHERE id = 0")
+    fun observeNewChatPersist(): Flow<NewChatPersistEntity?>
+
+    @Query("SELECT * FROM new_chat_persist WHERE id = 0")
+    suspend fun getNewChatPersist(): NewChatPersistEntity?
+
+    @Upsert
+    suspend fun upsertNewChatPersist(entity: NewChatPersistEntity)
+
+    @Query("DELETE FROM new_chat_persist WHERE id = 0")
+    suspend fun deleteNewChatPersist(): Int
+
+    @Query("SELECT * FROM conversation_settings_transfer WHERE conversationId = :conversationId")
+    suspend fun getConversationSettingsTransfer(
+        conversationId: String,
+    ): ConversationSettingsTransferEntity?
+
+    @Query("SELECT * FROM conversation_settings_transfer ORDER BY conversationId")
+    suspend fun getPendingConversationSettingsTransfers(): List<ConversationSettingsTransferEntity>
+
+    @Upsert
+    suspend fun upsertConversationSettingsTransfer(entity: ConversationSettingsTransferEntity)
+
+    @Query("DELETE FROM conversation_settings_transfer WHERE conversationId = :conversationId")
+    suspend fun deleteConversationSettingsTransfer(conversationId: String): Int
+
+    @Query("SELECT * FROM messages WHERE id = :messageId")
+    fun observeMessage(messageId: String): Flow<MessageEntity?>
+
+    @Query(
+        """
+        SELECT *
+        FROM messages
+        WHERE conversationId = :conversationId
+          AND (
+              text LIKE '%' || :escapedQuery || '%' ESCAPE '\'
+              OR toolCallJson LIKE '%' || :escapedQuery || '%' ESCAPE '\'
+          )
+        ORDER BY timestamp ASC, id ASC
+        """
+    )
+    fun observeConversationSearchMatches(
+        conversationId: String,
+        escapedQuery: String,
+    ): Flow<List<MessageEntity>>
 
     @Query(
         """
@@ -57,115 +100,6 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         """
     )
     suspend fun stopStuckMessagesForConversation(conversationId: String): Int
-
-    /**
-     * UI projection of the message graph. Synthetic protocol rows are required for parent-path
-     * traversal, but their text/segments can be very large and are never rendered. While an
-     * in-memory overlay owns [streamingMessageId], that row is also projected as a stable,
-     * lightweight SENDING placeholder. Room may re-run this table query after a checkpoint, but
-     * the equal result is suppressed before JSON projection/Compose and no large live payload
-     * crosses the Cursor boundary.
-     */
-    @Query(
-        """
-        SELECT
-            id,
-            conversationId,
-            parentId,
-            CASE
-                WHEN id = :streamingMessageId
-                    OR substr(id, 1, 5) = 'tool_'
-                    OR substr(id, 1, 7) = 'result_' THEN ''
-                ELSE text
-            END AS text,
-            CASE
-                WHEN id = :streamingMessageId
-                    OR substr(id, 1, 5) = 'tool_'
-                    OR substr(id, 1, 7) = 'result_' THEN '[]'
-                ELSE images
-            END AS images,
-            CASE
-                WHEN id = :streamingMessageId
-                    OR substr(id, 1, 5) = 'tool_'
-                    OR substr(id, 1, 7) = 'result_' THEN NULL
-                ELSE thoughts
-            END AS thoughts,
-            CASE
-                WHEN id = :streamingMessageId
-                    OR substr(id, 1, 5) = 'tool_'
-                    OR substr(id, 1, 7) = 'result_' THEN NULL
-                ELSE thoughtTitle
-            END AS thoughtTitle,
-            CASE
-                WHEN id = :streamingMessageId
-                    OR substr(id, 1, 5) = 'tool_'
-                    OR substr(id, 1, 7) = 'result_' THEN 0
-                ELSE tokenCount
-            END AS tokenCount,
-            CASE
-                WHEN id = :streamingMessageId
-                    OR substr(id, 1, 5) = 'tool_'
-                    OR substr(id, 1, 7) = 'result_' THEN NULL
-                ELSE inputTokenCount
-            END AS inputTokenCount,
-            CASE
-                WHEN id = :streamingMessageId
-                    OR substr(id, 1, 5) = 'tool_'
-                    OR substr(id, 1, 7) = 'result_' THEN NULL
-                ELSE cachedInputTokenCount
-            END AS cachedInputTokenCount,
-            CASE
-                WHEN id = :streamingMessageId
-                    OR substr(id, 1, 5) = 'tool_'
-                    OR substr(id, 1, 7) = 'result_' THEN NULL
-                ELSE uncachedInputTokenCount
-            END AS uncachedInputTokenCount,
-            CASE
-                WHEN id = :streamingMessageId
-                    OR substr(id, 1, 5) = 'tool_'
-                    OR substr(id, 1, 7) = 'result_' THEN NULL
-                ELSE outputTokenCount
-            END AS outputTokenCount,
-            CASE
-                WHEN id = :streamingMessageId
-                    OR substr(id, 1, 5) = 'tool_'
-                    OR substr(id, 1, 7) = 'result_' THEN NULL
-                ELSE reasoningTokenCount
-            END AS reasoningTokenCount,
-            CASE WHEN id = :streamingMessageId THEN 'SENDING' ELSE status END AS status,
-            participant,
-            timestamp,
-            CASE
-                WHEN id = :streamingMessageId
-                    OR substr(id, 1, 5) = 'tool_'
-                    OR substr(id, 1, 7) = 'result_' THEN NULL
-                ELSE thoughtTimeMs
-            END AS thoughtTimeMs,
-            modelName,
-            CASE
-                WHEN id = :streamingMessageId
-                    OR substr(id, 1, 5) = 'tool_'
-                    OR substr(id, 1, 7) = 'result_' THEN NULL
-                ELSE toolCallJson
-            END AS toolCallJson,
-            CASE
-                WHEN id = :streamingMessageId
-                    OR substr(id, 1, 5) = 'tool_'
-                    OR substr(id, 1, 7) = 'result_' THEN NULL
-                ELSE attachmentMeta
-            END AS attachmentMeta,
-            runId,
-            runSequence,
-            consumedAtPass
-        FROM messages
-        WHERE conversationId = :conversationId
-        ORDER BY timestamp ASC
-        """
-    )
-    fun getUiMessagesForConversation(
-        conversationId: String,
-        streamingMessageId: String?,
-    ): Flow<List<MessageEntity>>
 
     @Upsert
     suspend fun upsertConversation(conversation: ChatEntity)
@@ -187,6 +121,12 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
 
     @Query("UPDATE conversations SET modelId = :newModelId WHERE modelId = :oldModelId")
     suspend fun replaceConversationModelReferences(
+        oldModelId: String,
+        newModelId: String?,
+    ): Int
+
+    @Query("UPDATE new_chat_persist SET modelId = :newModelId WHERE id = 0 AND modelId = :oldModelId")
+    suspend fun replaceNewChatModelReference(
         oldModelId: String,
         newModelId: String?,
     ): Int
@@ -334,6 +274,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         messages: List<MessageEntity>,
         messageSelectionUpdates: Map<String?, String>,
         conversationModelId: String,
+        conversationSettingsJson: String?,
         at: Long,
     ): RunGraphCommit {
         require(conversation.id == run.conversationId)
@@ -341,7 +282,14 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
             "Conversation ${conversation.id} already exists"
         }
         require(conversationModelId.isNotBlank())
+        deleteNewChatPersist()
         upsertConversation(conversation.copy(modelId = conversationModelId))
+        upsertConversationSettingsTransfer(
+            ConversationSettingsTransferEntity(
+                conversationId = conversation.id,
+                settingsJson = conversationSettingsJson,
+            )
+        )
         return createRunWithMessages(
             run,
             messages,
@@ -574,6 +522,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
                             tokenCount = message.tokenCount,
                             inputTokenCount = message.inputTokenCount,
                             cachedInputTokenCount = message.cachedInputTokenCount,
+                            cacheWriteInputTokenCount = message.cacheWriteInputTokenCount,
                             uncachedInputTokenCount = message.uncachedInputTokenCount,
                             outputTokenCount = message.outputTokenCount,
                             reasoningTokenCount = message.reasoningTokenCount,
@@ -761,8 +710,37 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
     @Query("SELECT * FROM conversations WHERE id = :conversationId AND taskId IS NULL")
     suspend fun getSearchableConversation(conversationId: String): ChatEntity?
 
-    @Query("SELECT * FROM conversations WHERE taskId IS NULL ORDER BY lastUpdated ASC")
-    suspend fun getSearchableConversationsList(): List<ChatEntity>
+
+    @Query("SELECT COUNT(*) FROM conversations WHERE taskId IS NULL")
+    suspend fun getSearchableConversationCount(): Int
+
+    @Query(
+        """
+        SELECT *
+        FROM conversations
+        WHERE taskId IS NULL
+        ORDER BY lastUpdated ASC, id ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    suspend fun getSearchableConversationsPageAscending(
+        offset: Int,
+        limit: Int,
+    ): List<ChatEntity>
+
+    @Query(
+        """
+        SELECT *
+        FROM conversations
+        WHERE taskId IS NULL
+        ORDER BY lastUpdated DESC, id DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    suspend fun getSearchableConversationsPageDescending(
+        offset: Int,
+        limit: Int,
+    ): List<ChatEntity>
 
     @Query("UPDATE conversations SET draftText = :text, draftAttachments = :attachments WHERE id = :id")
     suspend fun updateDraft(id: String, text: String, attachments: String?)
@@ -822,6 +800,26 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
 
     @Query(
         """
+        SELECT id, images, attachmentMeta
+        FROM messages
+        WHERE conversationId = :conversationId
+          AND (:afterId IS NULL OR id > :afterId)
+          AND (
+              (images != '' AND images != '[]')
+              OR (attachmentMeta IS NOT NULL AND attachmentMeta != '')
+          )
+        ORDER BY id
+        LIMIT :limit
+        """
+    )
+    suspend fun getConversationMessageAttachmentReferencesPage(
+        conversationId: String,
+        afterId: String?,
+        limit: Int,
+    ): List<MessageAttachmentReference>
+
+    @Query(
+        """
         SELECT id, toolCallJson
         FROM messages
         WHERE (:afterId IS NULL OR id > :afterId)
@@ -852,6 +850,17 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         limit: Int,
     ): List<ConversationDraftAttachmentReference>
 
+    @Query(
+        """
+        SELECT draftAttachments
+        FROM new_chat_persist
+        WHERE id = 0
+          AND draftAttachments IS NOT NULL
+          AND draftAttachments != ''
+        """
+    )
+    suspend fun getNewChatDraftAttachmentReference(): NewChatDraftAttachmentReference?
+
     @Query("DELETE FROM conversations")
     suspend fun deleteAllConversations()
 
@@ -865,6 +874,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         newModelId: String?,
     ) {
         replaceConversationModelReferences(oldModelId, newModelId)
+        replaceNewChatModelReference(oldModelId, newModelId)
         replaceTaskModelReferences(oldModelId, newModelId)
     }
 
@@ -876,6 +886,19 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         """
     )
     suspend fun renameConversationProviderModelReferences(
+        oldProvider: String,
+        newProvider: String,
+    ): Int
+
+    @Query(
+        """
+        UPDATE new_chat_persist
+        SET modelId = :newProvider || substr(modelId, length(:oldProvider) + 1)
+        WHERE id = 0
+          AND substr(modelId, 1, length(:oldProvider) + 1) = :oldProvider || ':'
+        """
+    )
+    suspend fun renameNewChatProviderModelReference(
         oldProvider: String,
         newProvider: String,
     ): Int
@@ -895,6 +918,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
     @Transaction
     suspend fun renameConfiguredProviderModelReferences(oldProvider: String, newProvider: String) {
         renameConversationProviderModelReferences(oldProvider, newProvider)
+        renameNewChatProviderModelReference(oldProvider, newProvider)
         renameTaskProviderModelReferences(oldProvider, newProvider)
         renameMessageProviderModelReferences(oldProvider, newProvider)
     }

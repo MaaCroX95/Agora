@@ -6,6 +6,24 @@ This document owns durable application-level UI behavior that is not part of mes
 citations, semantic search, or Web Search. Current explicit user requirements override older
 presentation code and translations.
 
+## Global English UI title capitalization
+English title-like UI copy must use conventional Title Case. This is a hard UI constraint, not a
+page-specific preference. It applies to page and sheet titles, section and group headings, setting
+row headlines, dialog titles, menu commands, action labels, and other standalone labels that name a
+surface or command. Major words are capitalized; articles, coordinating conjunctions, and short
+prepositions remain lowercase unless they are the first or last word. Approved examples include
+`Service Tier`, `Developer Options`, `Stick to Bottom`, and `Import from Claude`.
+
+Technical acronyms remain uppercase, including MCP, API, URL, HTTP, SSE, SSH, PDF, and GGUF.
+Product names and deliberately mixed-case technical names retain their official casing. Descriptions,
+helper text, placeholders, body copy, and status sentences use sentence case instead. Non-English
+locales follow their native casing and punctuation conventions.
+
+Call sites must consume correctly authored resources. They must not apply a generic runtime title-case
+transformation, because that would corrupt acronyms, product names, user-authored names, and locale
+rules. Focused resource or source-contract tests must pin English title values for audited surfaces
+and preserve locale key parity.
+
 ## 1. Motion ownership and accessibility
 
 Application UI motion consumes the shared Agora motion policy. Spatial press, size, and scale motion
@@ -205,6 +223,40 @@ Conversation search exposes a separate in-flight state from the moment a nonblan
 
 The drawer's first-list state is not a second conversation authority or a new search architecture; Room remains the durable source and the existing search methods remain authoritative.
 
+## 17. Model alias display fallback
+
+A model alias is presentation text, never a model identity. An explicit nonblank alias stored under
+the complete model ID remains authoritative. When none exists, the shared model-display resolver
+derives a human-readable fallback from the API model name without persisting it. Provider requests,
+routing, capabilities, pricing, history, import/export, grouping, deduplication, and settings keys
+continue to use the complete original model ID.
+
+Inference removes a provider path for display and recognizes only bounded family-specific suffixes:
+the exact `:batch` and `:free` variants, a terminal Claude `fast` serving marker, valid Claude snapshot
+dates and version grammar, Amazon Nova's terminal API revision, and an exact terminal Gemini
+`preview` marker. A nonterminal Gemini `preview` token and every generic-family `preview` token remain.
+Core family, tier, size, speed, capability, version, and every DeepSeek numeric token remain. Unknown
+or malformed names receive separator/case humanization without deleting ambiguous tokens such as a
+date, number, `vN`, `latest`, `fast`, or colon suffix. The resolver is deterministic, case-insensitive
+for recognized grammar, and idempotent for its formatted output.
+
+Qwen tokens with an immediately adjacent numeric version insert one display space between the brand
+and version, so `qwen3.8` becomes `Qwen 3.8`. This brand-specific spacing does not change the raw ID
+or silently alter the formatting of other brand-number tokens.
+
+Exact standalone tokens use their approved product casing: `glm` becomes `GLM`, `mimo` becomes
+`MiMo`, `minimax` becomes `MiniMax`, and `a3b`, `e4b`, `a70b`, `oss`, and `tts` become `A3B`, `E4B`,
+`A70B`, `OSS`, and `TTS`. Matching is case-insensitive but does not rewrite substrings or establish a
+generic rule for unknown abbreviations or letter-number-letter tokens.
+
+Settings Models renders the resolved alias as every model row's headline and the raw API model name
+as supporting text, so distinct IDs remain distinguishable even when serving variants share one
+fallback. Search matches provider/raw ID, explicit alias, and inferred fallback without coalescing
+results. Existing-model alias editors are seeded with the resolved fallback when no explicit alias
+exists. Saving that seed unchanged does not materialize it in DataStore; editing it creates an
+explicit alias, while clearing an explicit alias restores fallback behavior. The new-custom-model
+form remains blank until the user enters an alias.
+
 ## 15. Verification
 
 Focused verification must cover the onboarding action's fixed 32 dp inset and 48 dp height, absence
@@ -227,5 +279,8 @@ close waiting, immediate non-video handoff, and absence of a duplicate pager clo
 verification also covers Dialog-over-sheet ordering, viewer-owned action-sheet ordering, unscaled
 full-screen backdrop, and no scale-below-one corner exposure. Composer verification covers single and
 multiple image URI paste, mixed image/text pass-through, unsupported content pass-through, immediate
-private-copy routing, and failure cleanup. The project-defined full build gate remains required after
+private-copy routing, and failure cleanup. Model-alias verification covers explicit precedence, all
+approved family-specific suffixes, generic preservation of ambiguous tokens, casing/separator
+normalization, idempotence, inferred search, duplicate-display preservation, raw-ID supporting text,
+and unchanged-fallback non-persistence. The project-defined full build gate remains required after
 final code or resource changes.

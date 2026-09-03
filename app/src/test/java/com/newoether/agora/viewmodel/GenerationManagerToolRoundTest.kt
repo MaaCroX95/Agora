@@ -23,15 +23,22 @@ class GenerationManagerToolRoundTest {
     }
 
     @Test
-    fun ordinarySuccessfulExitMarksTheConversationUnread() {
-        val disposition = generationTerminalDisposition(
-            messageStatus = MessageStatus.SUCCESS,
+    fun terminalUnreadPolicyRetainsHeadlessAndUsesConversationVisibility() {
+        fun unread(status: MessageStatus, visible: Boolean?) = generationTerminalDisposition(
+            messageStatus = status,
             hasPendingGuidance = false,
-        )
+            conversationVisible = visible,
+        ).markConversationUnread
 
-        assertEquals(RunStatus.COMPLETED, disposition.runStatus)
-        assertEquals(RunEndReason.MODEL_COMPLETED, disposition.endReason)
-        assertTrue(disposition.markConversationUnread)
+        val headlessSuccess = generationTerminalDisposition(MessageStatus.SUCCESS, false)
+        assertEquals(RunStatus.COMPLETED, headlessSuccess.runStatus)
+        assertEquals(RunEndReason.MODEL_COMPLETED, headlessSuccess.endReason)
+        assertTrue(unread(MessageStatus.SUCCESS, null))
+        assertFalse(unread(MessageStatus.ERROR, null))
+        assertFalse(unread(MessageStatus.SUCCESS, true))
+        assertTrue(unread(MessageStatus.SUCCESS, false))
+        assertFalse(unread(MessageStatus.ERROR, true))
+        assertTrue(unread(MessageStatus.ERROR, false))
     }
 
     @Test

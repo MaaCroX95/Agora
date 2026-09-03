@@ -198,6 +198,35 @@ internal class GenerationToolOverlay(
         )
     }
 
+    fun failUnpersistedStart(call: StreamEvent.ToolCallRequest) {
+        val index = checkNotNull(streamIndices[call.streamKey]) {
+            "Missing live segment for tool call ${call.streamKey}"
+        }
+        segments[index] = segments[index].copy(
+            toolState = ToolExecutionStates.FAILED,
+            responseOutputItems = emptyList(),
+            responseOutputItemProvider = null,
+        )
+    }
+
+    fun releaseCommittedResponseState(toolCallIds: Set<String>) {
+        if (toolCallIds.isEmpty()) return
+        segments.indices.forEach { index ->
+            val segment = segments[index]
+            if (
+                segment.type == "tool" &&
+                segment.toolCallId in toolCallIds &&
+                (segment.responseOutputItems.isNotEmpty() ||
+                    segment.responseOutputItemProvider != null)
+            ) {
+                segments[index] = segment.copy(
+                    responseOutputItems = emptyList(),
+                    responseOutputItemProvider = null,
+                )
+            }
+        }
+    }
+
     fun applyProgress(callId: String, event: ToolExecutionEvent) {
         val index = segments.indexOfLast { it.toolCallId == callId }
         if (index < 0) return
@@ -343,8 +372,13 @@ internal class GenerationToolBatchEffectExecutor(
 
         request.calls.forEach { call ->
             overlay.start(call)
-            callbacks.publish(true)
-            callbacks.onPublishedAt(nowMs())
+            try {
+                callbacks.publish(true)
+                callbacks.onPublishedAt(nowMs())
+            } catch (e: Exception) {
+                overlay.failUnpersistedStart(call)
+                throw e
+            }
 
             var lastToolUiEmitMs = 0L
             val executed = tools.execute(

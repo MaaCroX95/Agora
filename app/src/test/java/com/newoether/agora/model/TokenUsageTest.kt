@@ -42,9 +42,28 @@ class TokenUsageTest {
         assertNull(total?.outputTokenCount)
     }
 
-    private fun usage(total: Int, input: Int, output: Int) = TokenUsage(
+    @Test
+    fun cacheWriteTokensAddAcrossCompletedRequests() {
+        val accumulator = RequestTokenUsageAccumulator()
+
+        accumulator.beginRequest()
+        accumulator.observeRequestSnapshot(
+            usage(total = 20, input = 15, output = 5, cacheWrite = 7),
+        )
+        accumulator.finishRequest()
+        accumulator.beginRequest()
+        accumulator.observeRequestSnapshot(
+            usage(total = 12, input = 9, output = 3, cacheWrite = 4),
+        )
+        accumulator.finishRequest()
+
+        assertEquals(11, accumulator.snapshot()?.cacheWriteInputTokenCount)
+    }
+
+    private fun usage(total: Int, input: Int, output: Int, cacheWrite: Int? = null) = TokenUsage(
         totalTokenCount = total,
         inputTokenCount = input,
+        cacheWriteInputTokenCount = cacheWrite,
         outputTokenCount = output,
     )
 }

@@ -36,9 +36,9 @@ class ConversationBranchMutationServiceTest {
             events += "remove"
             true
         }
-        coEvery { conversations.getMessagesForConversationSnapshot("conversation") } coAnswers {
+        coEvery { conversations.getMessageTopologySnapshot("conversation") } coAnswers {
             events += "snapshot"
-            listOf(remaining, offPathTail)
+            listOf(remaining, offPathTail).map(::topology)
         }
         coEvery { conversations.restoreBranchSelections("conversation") } coAnswers {
             events += "selections"
@@ -87,8 +87,9 @@ class ConversationBranchMutationServiceTest {
         coEvery { conversations.getLiveRun("conversation") } returns null
         coEvery { conversations.getRunsForConversationSnapshot("conversation") } returns
             listOf(run())
-        coEvery { conversations.getMessagesForConversationSnapshot("conversation") } returns
-            listOf(user, model)
+        coEvery { conversations.getMessageTopologySnapshot("conversation") } returns
+            listOf(user, model).map(::topology)
+        coEvery { conversations.getMessagesByIds(listOf("model")) } returns listOf(model)
         coEvery { conversations.restoreBranchSelections("conversation") } returns
             mapOf("user" to "model")
         coEvery { conversations.restoreRunBranchSelections("conversation") } returns emptyMap()
@@ -194,6 +195,20 @@ class ConversationBranchMutationServiceTest {
         participant = participant,
         runId = "run",
     )
+
+    private fun topology(message: MessageEntity) =
+        com.newoether.agora.data.local.MessageContextTopology(
+            id = message.id,
+            conversationId = message.conversationId,
+            parentId = message.parentId,
+            status = message.status,
+            participant = message.participant,
+            timestamp = message.timestamp,
+            modelName = message.modelName,
+            runId = message.runId,
+            runSequence = message.runSequence,
+            consumedAtPass = message.consumedAtPass,
+        )
 
     private fun run() = RunEntity(
         id = "run",

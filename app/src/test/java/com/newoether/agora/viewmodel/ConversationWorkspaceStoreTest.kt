@@ -1,0 +1,253 @@
+package com.newoether.agora.viewmodel
+
+import com.newoether.agora.data.ConversationSettings
+import com.newoether.agora.data.local.ChatEntity
+import com.newoether.agora.data.local.NewChatPersistEntity
+import com.newoether.agora.data.repository.ConversationRepository
+import com.newoether.agora.data.repository.ConversationSettingsTransferCoordinator
+import com.newoether.agora.data.repository.SettingsRepository
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class ConversationWorkspaceStoreTest {
+    @Test
+    fun absentRowLoadsBlankDraftAndInheritedOverrides() = runTest {
+        val fixture = Fixture(backgroundScope, StandardTestDispatcher(testScheduler))
+        runCurrent()
+
+        val draft = fixture.store.loadDraft(NEW_CHAT_WORKSPACE_ID)
+        runCurrent()
+
+        assertEquals(ConversationWorkspaceDraft("", null), draft)
+        assertNull(fixture.store.newChatPersist.value)
+        assertNull(fixture.store.newChatModelId.value)
+        assertNull(fixture.store.newChatSystemPromptId.value)
+        assertNull(fixture.store.newChatConversationSettings.value)
+        coVerify(exactly = 0) { fixture.conversations.upsertNewChatPersist(any()) }
+    }
+
+    @Test
+    fun defaultValuedMutationStillCreatesSingletonRow() = runTest {
+        val fixture = Fixture(backgroundScope, StandardTestDispatcher(testScheduler))
+        runCurrent()
+
+        fixture.store.setConversationSettings(NEW_CHAT_WORKSPACE_ID, null)
+        fixture.store.awaitNewChatWrites()
+
+        assertEquals(NewChatPersistEntity(), fixture.persisted.value)
+        coVerify(exactly = 1) {
+            fixture.conversations.upsertNewChatPersist(NewChatPersistEntity())
+        }
+    }
+
+    @Test
+    fun queuedBarrierReturnsOneAuthoritativeAdmissionSnapshot() = runTest {
+        val fixture = Fixture(backgroundScope, StandardTestDispatcher(testScheduler))
+        val capturedSettings = ConversationSettings(temperature = 0.35f, maxTokens = 768)
+        runCurrent()
+
+        fixture.store.setModel(NEW_CHAT_WORKSPACE_ID, "provider:model")
+        fixture.store.setSystemPrompt(NEW_CHAT_WORKSPACE_ID, "prompt")
+        fixture.store.setConversationSettings(NEW_CHAT_WORKSPACE_ID, capturedSettings)
+
+        val snapshot = fixture.store.awaitNewChatWrites()
+        assertEquals(true, snapshot.rowExists)
+        assertEquals("provider:model", snapshot.modelId)
+        assertEquals("prompt", snapshot.systemPromptId)
+        assertEquals(capturedSettings, snapshot.conversationSettings)
+        assertEquals(
+            NewChatSendAdmission("provider:model", "prompt", capturedSettings),
+            snapshot.toSendAdmission("global:model"),
+        )
+        assertEquals(
+            "global:model",
+            snapshot.copy(modelId = null).toSendAdmission("global:model").modelId,
+        )
+    }
+
+    @Test
+    fun queuedCrossFieldMutationsPreserveCompleteRow() = runTest {
+        val fixture = Fixture(backgroundScope, StandardTestDispatcher(testScheduler))
+        val capturedSettings = ConversationSettings(temperature = 0.4f, maxTokens = 512)
+        runCurrent()
+
+        fixture.store.setModel(NEW_CHAT_WORKSPACE_ID, "provider:model")
+        fixture.store.setSystemPrompt(NEW_CHAT_WORKSPACE_ID, "prompt")
+        fixture.store.setConversationSettings(NEW_CHAT_WORKSPACE_ID, capturedSettings)
+        fixture.store.updateDraft(NEW_CHAT_WORKSPACE_ID, "draft", "attachments-json")
+        runCurrent()
+
+        val persisted = checkNotNull(fixture.persisted.value)
+        assertEquals("provider:model", persisted.modelId)
+        assertEquals("prompt", persisted.systemPromptId)
+        assertEquals("draft", persisted.draftText)
+        assertEquals("attachments-json", persisted.draftAttachments)
+        assertEquals(
+            capturedSettings,
+            Json.decodeFromString<ConversationSettings>(
+                checkNotNull(persisted.conversationSettingsJson),
+            ),
+        )
+    }
+
+    @Test
+    fun ordinaryConversationMetadataMutationsUseTheSharedWorkspace() = runTest {
+        val fixture = Fixture(backgroundScope, StandardTestDispatcher(testScheduler))
+        var conversation = ChatEntity("conversation", "Title")
+        coEvery { fixture.conversations.getConversation("conversation") } answers { conversation }
+        coEvery { fixture.conversations.upsertConversation(any()) } coAnswers {
+            conversation = firstArg()
+        }
+        runCurrent()
+
+        fixture.store.setModel("conversation", "provider:model")
+        fixture.store.setSystemPrompt("conversation", "prompt")
+        runCurrent()
+
+        assertEquals("provider:model", conversation.modelId)
+        assertEquals("prompt", conversation.systemPromptId)
+        coVerify(exactly = 2) { fixture.conversations.upsertConversation(any()) }
+    }
+
+    @Test
+    fun acceptedClearWaitsBehindEarlierWriteAndLeavesNoRow() = runTest {
+        val fixture = Fixture(backgroundScope, StandardTestDispatcher(testScheduler))
+        val writeStarted = CompletableDeferred<Unit>()
+        val releaseWrite = CompletableDeferred<Unit>()
+        coEvery { fixture.conversations.upsertNewChatPersist(any()) } coAnswers {
+            writeStarted.complete(Unit)
+            releaseWrite.await()
+            fixture.persisted.value = firstArg()
+        }
+        runCurrent()
+
+        fixture.store.setModel(NEW_CHAT_WORKSPACE_ID, "provider:model")
+        writeStarted.await()
+        val clear = async {
+            fixture.store.clearAcceptedDraft(NEW_CHAT_WORKSPACE_ID)
+        }
+        runCurrent()
+
+        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist() }
+        releaseWrite.complete(Unit)
+        clear.await()
+
+        assertNull(fixture.persisted.value)
+        assertNull(fixture.store.newChatPersist.value)
+        coVerify(exactly = 1) { fixture.conversations.deleteNewChatPersist() }
+    }
+
+    @Test
+    fun transactionalRoomDeletionDoesNotResetVisibleWorkspaceBeforeExplicitHandoff() = runTest {
+        val initial = NewChatPersistEntity(
+            modelId = "provider:model",
+            systemPromptId = "prompt",
+            conversationSettingsJson = "{\"temperature\":0.2}",
+        )
+        val fixture = Fixture(
+            scope = backgroundScope,
+            dispatcher = StandardTestDispatcher(testScheduler),
+            initial = initial,
+        )
+        runCurrent()
+        fixture.persisted.value = null
+        runCurrent()
+        assertEquals(initial, fixture.store.newChatPersist.value)
+        assertEquals("provider:model", fixture.store.newChatModelId.value)
+        assertEquals("prompt", fixture.store.newChatSystemPromptId.value)
+        fixture.store.clearCommittedNewChatWorkspace()
+        assertNull(fixture.store.newChatPersist.value)
+    }
+
+    @Test
+    fun committedConversationAwaitsOutboxCompletionThenClearsOnlyWhenExplicitlyFinished() = runTest {
+        val initial = NewChatPersistEntity(
+            modelId = "provider:model",
+            conversationSettingsJson = "{}",
+        )
+        val fixture = Fixture(
+            scope = backgroundScope,
+            dispatcher = StandardTestDispatcher(testScheduler),
+            initial = initial,
+        )
+        val transferStarted = CompletableDeferred<Unit>()
+        val releaseTransfer = CompletableDeferred<Unit>()
+        coEvery { fixture.transfers.complete("conversation") } coAnswers {
+            fixture.events += "transfer-start"
+            transferStarted.complete(Unit)
+            releaseTransfer.await()
+            fixture.events += "transfer-complete"
+            true
+        }
+        runCurrent()
+
+        val apply = async {
+            fixture.store.applyCommittedNewConversationState("conversation")
+        }
+        transferStarted.await()
+        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist() }
+
+        releaseTransfer.complete(Unit)
+        apply.await()
+
+        assertEquals(listOf("transfer-start", "transfer-complete"), fixture.events)
+        coVerify(exactly = 1) { fixture.transfers.complete("conversation") }
+        assertEquals(initial, fixture.persisted.value)
+        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist() }
+        fixture.store.clearCommittedNewChatWorkspace()
+        assertEquals(listOf("transfer-start", "transfer-complete", "delete"), fixture.events)
+        assertNull(fixture.persisted.value)
+        coVerify(exactly = 1) { fixture.conversations.deleteNewChatPersist() }
+    }
+
+    private class Fixture(
+        scope: CoroutineScope,
+        dispatcher: CoroutineDispatcher,
+        initial: NewChatPersistEntity? = null,
+    ) {
+        val persisted = MutableStateFlow(initial)
+        val conversations = mockk<ConversationRepository>()
+        val settings = mockk<SettingsRepository>(relaxed = true)
+        val transfers = mockk<ConversationSettingsTransferCoordinator>(relaxed = true)
+        val events = mutableListOf<String>()
+        val store: ConversationWorkspaceStore
+
+        init {
+            coEvery { conversations.getNewChatPersist() } answers { persisted.value }
+            every { conversations.observeNewChatPersist() } returns persisted
+            coEvery { conversations.upsertNewChatPersist(any()) } coAnswers {
+                persisted.value = firstArg()
+            }
+            coEvery { conversations.deleteNewChatPersist() } coAnswers {
+                events += "delete"
+                val existed = persisted.value != null
+                persisted.value = null
+                existed
+            }
+            store = ConversationWorkspaceStore(
+                conversations = conversations,
+                settings = settings,
+                transfers = transfers,
+                scope = scope,
+                ioDispatcher = dispatcher,
+            )
+        }
+    }
+}

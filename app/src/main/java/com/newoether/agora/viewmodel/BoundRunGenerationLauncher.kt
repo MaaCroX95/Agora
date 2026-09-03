@@ -52,6 +52,7 @@ internal class BoundRunGenerationLauncher(
     ) -> Boolean,
     private val terminalSettlement: GenerationTerminalSettlementController,
     private val toUiMessage: (MessageEntity) -> ChatMessage,
+    private val isConversationVisible: ((String) -> Boolean)? = null,
     private val onAutomaticCompactContinuation: (
         request: AutomaticCompactContinuationRequest,
         state: ConversationGenerationState,
@@ -82,7 +83,7 @@ internal class BoundRunGenerationLauncher(
         try {
             requestTrace.mark("request_config_ready")
             val generationManager = generationManagerProvider()
-            val fixedTokenCost = generationManager.fixedContextTokenCost(
+            val fixedTokenCost = generationManager.resolvedFixedContextTokenCost(
                 request.snapshot.config,
                 request.snapshot.context,
             )
@@ -102,6 +103,9 @@ internal class BoundRunGenerationLauncher(
                 providerInstances = request.snapshot.providerInstances,
                 generationJob = currentCoroutineContext()[Job],
                 callbacks = state.callbacksFor(request.uiToken, request.persistId).copy(
+                    isConversationVisible = isConversationVisible?.let { visible ->
+                        { visible(request.conversationId) }
+                    },
                     transformFinalText = request.transformFinalText,
                     onToolRoundPersisted = {
                         if (

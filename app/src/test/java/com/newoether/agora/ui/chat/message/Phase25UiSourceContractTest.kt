@@ -21,6 +21,7 @@ class Phase25UiSourceContractTest {
         assertFalse(follower.exists())
         assertFalse(list.contains("InlineActivityDotFollower"))
         assertFalse(list.contains("dotOverlayState"))
+        assertFalse(list.contains("StreamingTailIndicator("))
         val assistantActivity = assistant
             .substringAfter("private fun AssistantInlineActivity(")
             .substringBefore("/**")
@@ -29,14 +30,26 @@ class Phase25UiSourceContractTest {
             "visibilityTransition.targetState ||"
         ))
         assertTrue(assistantActivity.contains(
-            "retainExitLayout && visibilityTransition.currentState"
+            "visibilityTransition.targetState || retainExitLayout"
         ))
-        assertTrue(assistant.contains("retainExitLayout = !hasAnswerContent"))
-        assertTrue(assistantActivity.contains("alpha = activityOpacity"))
-        assertTrue(assistant.contains("AssistantInlineActivityHeight * activityLayoutProgress"))
+        assertTrue(assistant.contains("retainExitLayout = inlineActivityPresentation.retainLayout"))
+        assertTrue(assistantActivity.contains(
+            "alpha = if (terminalText == null) activityOpacity else 1f"
+        ))
+        assertTrue(assistant.contains(".heightIn(min = AssistantInlineActivityHeight)"))
         assertTrue(assistantActivity.contains("clip = false"))
         assertTrue(assistantActivity.contains("GenerationActivityDot()"))
-                assertTrue(retry.contains("GenerationActivityDot("))
+        assertTrue(assistantActivity.contains("Crossfade("))
+        assertTrue(assistantActivity.contains("targetState = terminalText"))
+        assertTrue(assistantActivity.contains(
+            "animationSpec = tween(durationMillis = 180, easing = LinearEasing)"
+        ))
+        assertFalse(assistantActivity.contains("terminalText?.let"))
+        assertTrue(assistant.contains(
+            "targetState = inlineActivityMode != AssistantInlineActivityMode.NONE ||"
+        ))
+        assertTrue(assistant.contains("inlineActivityPresentation.retainLayout,"))
+        assertTrue(retry.contains("GenerationActivityDot("))
         assertTrue(retry.contains("clip = false"))
         val tailIndicator = tail
             .substringAfter("internal fun StreamingTailIndicator(")
@@ -66,13 +79,20 @@ class Phase25UiSourceContractTest {
     }
 
     @Test
-    fun `Timeline clicks request direct detail independent of stored display preference`() {
+    fun `Timeline clicks request stable detail host independent of item lifetime`() {
         val item = source("MessageItem.kt")
         val assistant = source("AssistantMessageContent.kt")
+        val list = chatSource("MessageList.kt")
+        val detail = source("SegmentDetailSheet.kt")
 
         assertFalse(item.contains("usesExplicitDetailBackHandler("))
-        assertTrue(item.contains("onSegmentSelected = { indices, showListFirst ->"))
-        assertTrue(item.contains("detailUsesExplicitBackHandler = showListFirst"))
+        assertFalse(item.contains("var showSegmentDetail"))
+        assertFalse(item.contains("if (showSegmentDetail"))
+        assertTrue(item.contains("onSegmentDetailRequest(message.id, indices, showListFirst)"))
+        assertTrue(list.contains("MessageSegmentDetailHost("))
+        assertTrue(list.contains("authoritativeMessages = authoritativeMessages.list"))
+        assertTrue(detail.contains("observeMessage(messageId)"))
+        assertTrue(detail.contains("streamingMessage = streamingMessage"))
         assertTrue(assistant.contains("onSegmentSelected: (List<Int>, Boolean) -> Unit"))
         assertTrue(assistant.contains("onSegmentSelected(indices, false)"))
         assertTrue(assistant.contains(

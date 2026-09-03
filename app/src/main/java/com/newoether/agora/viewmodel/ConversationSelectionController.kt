@@ -32,8 +32,7 @@ internal class ConversationSelectionController(
     private val scrollRequests: ScrollRequestCoordinator,
     private val renderStore: () -> ConversationRenderStore,
     private val clearConversationGraph: () -> Unit,
-    private val clearPendingSystemPrompt: () -> Unit,
-    private val clearPendingConversationSettings: () -> Unit,
+    private val workspaces: ConversationWorkspaceStore,
     private val abortRegeneration: () -> Unit,
     private val onTreeMutationCommitted: (String) -> Unit = {},
     private val fadeDelay: suspend () -> Unit = { delay(SWITCH_OVERLAY_FADE_MS) },
@@ -44,16 +43,18 @@ internal class ConversationSelectionController(
     private val _currentConversationId = MutableStateFlow<String?>(null)
     val currentConversationId: StateFlow<String?> = _currentConversationId.asStateFlow()
 
-    private val _activeModelOverride = MutableStateFlow<String?>(null)
-    val currentActiveModel: StateFlow<String> = combine(
-        _activeModelOverride,
-        defaultModel,
-    ) { active, fallback ->
-        active ?: fallback
-    }.stateIn(scope, SharingStarted.Eagerly, Constants.EXAMPLE_MODEL_ID)
-
     private val _isNewChatMode = MutableStateFlow(true)
     val isNewChatMode: StateFlow<Boolean> = _isNewChatMode.asStateFlow()
+    private val _activeModelOverride = MutableStateFlow<String?>(null)
+    private val newChatModelId: StateFlow<String?> = workspaces.newChatModelId
+    val currentActiveModel: StateFlow<String> = combine(
+        _activeModelOverride,
+        newChatModelId,
+        _isNewChatMode,
+        defaultModel,
+    ) { active, newChatModel, isNewChat, fallback ->
+        if (isNewChat) active ?: newChatModel ?: fallback else active ?: fallback
+    }.stateIn(scope, SharingStarted.Eagerly, Constants.EXAMPLE_MODEL_ID)
 
     private val _newChatEntryId = MutableStateFlow(1L)
     val newChatEntryId: StateFlow<Long> = _newChatEntryId.asStateFlow()
@@ -66,8 +67,10 @@ internal class ConversationSelectionController(
     val switchingScrollRequest: StateFlow<SwitchingScrollRequest?> = switching.request
 
     /** Publish a first Send only after its conversation/Run/message graph is durable. */
-    fun publishAcceptedConversation(conversationId: String) {
+    fun publishAcceptedConversation(conversationId: String, modelId: String) {
         require(conversationId.isNotBlank())
+        require(modelId.isNotBlank())
+        _activeModelOverride.value = modelId
         _currentConversationId.value = conversationId
         _isNewChatMode.value = false
     }
@@ -80,12 +83,11 @@ internal class ConversationSelectionController(
 
     fun setActiveModel(model: String) {
         _activeModelOverride.value = model
-        _currentConversationId.value?.let { conversationId ->
-            scope.launch {
-                conversations.getConversation(conversationId)?.let { current ->
-                    conversations.upsertConversation(current.copy(modelId = model))
-                }
-            }
+        val conversationId = _currentConversationId.value
+        if (_isNewChatMode.value || conversationId == null) {
+            workspaces.setModel(NEW_CHAT_WORKSPACE_ID, model)
+        } else {
+            workspaces.setModel(conversationId, model)
         }
     }
 
@@ -96,7 +98,6 @@ internal class ConversationSelectionController(
         val previousJob = switchingJob
         val request = switching.beginNewChat()
         previousJob?.cancel()
-        clearPendingSystemPrompt()
         _newChatEntryId.value += 1L
         _isNewChatMode.value = true
         _isTransitioningToNewChat.value = true
@@ -107,7 +108,6 @@ internal class ConversationSelectionController(
                 if (!switching.isCurrent(request.id)) return@launch
                 _currentConversationId.value = null
                 _activeModelOverride.value = null
-                clearPendingConversationSettings()
                 clearConversationGraph()
             } finally {
                 if (switching.complete(request.id)) {

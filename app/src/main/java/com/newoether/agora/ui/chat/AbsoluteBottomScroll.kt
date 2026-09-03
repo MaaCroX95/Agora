@@ -213,6 +213,18 @@ internal fun isWithinAbsoluteBottomAttachThreshold(
     return remainingDistancePx != null && remainingDistancePx <= thresholdPx
 }
 
+internal fun shouldHonorAttachedBottomRequest(
+    attachedOnly: Boolean,
+    attachedAtRequest: Boolean,
+    userDragRevisionAtRequest: Long,
+    currentUserDragRevision: Long,
+): Boolean =
+    !attachedOnly ||
+        (
+            attachedAtRequest &&
+                userDragRevisionAtRequest == currentUserDragRevision
+        )
+
 internal fun estimateAbsoluteBottomDistancePx(
     lastVisibleIndex: Int,
     lastVisibleEndOffsetPx: Int,

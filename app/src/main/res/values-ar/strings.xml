@@ -271,11 +271,11 @@
     <string name="prompts_delete_text">هل أنت متأكد أنك تريد حذف \'%1$s\'؟ لا يمكن التراجع عن هذا الإجراء.</string>
     <string name="template_title_required">العنوان مطلوب</string>
     <string name="template_tab_system">النظام</string>
-    <string name="template_tab_prepend">بادئة</string>
-    <string name="template_tab_postpend">لاحقة</string>
-    <string name="template_tab_system_desc">تُرسل كتعليمة للنظام.</string>
-    <string name="template_tab_prepend_desc">تُدرج قبل كل رسالة مستخدم.</string>
-    <string name="template_tab_postpend_desc">تُدرج بعد كل رسالة مستخدم.</string>
+    <string name="template_tab_user">المستخدم</string>
+    <string name="template_tab_assistant">المساعد</string>
+    <string name="template_tab_system_desc">تحدد رسالة النظام المرسلة إلى النموذج.</string>
+    <string name="template_tab_user_desc">تحدد البنية المحيطة بكل رسالة مستخدم عادية.</string>
+    <string name="template_tab_assistant_desc">تحدد البنية المحيطة بكل رسالة مساعد عادية.</string>
     <string name="template_empty_hint">لا توجد عناصر. أضف نصًا أو متغيرات أدناه.</string>
     <string name="template_add_text">إضافة نص</string>
     <string name="template_add_variable">إضافة متغير</string>
@@ -370,6 +370,9 @@
     <string name="advanced_generation_title">الإعدادات المتقدمة</string>
     <string name="advanced_per_conversation">تجاوزات لكل محادثة</string>
     <string name="appearance_interface">الواجهة</string>
+    <string name="appearance_theme_color">المظهر والألوان</string>
+    <string name="appearance_motion_feedback">الحركة وردود الفعل</string>
+    <string name="appearance_chat_display">عرض المحادثة</string>
     <string name="message_display">عرض الرسائل</string>
     <string name="tool_call_display_mode">كتل التفكير والأدوات</string>
     <string name="tool_call_display_mode_timeline">المخطط الزمني</string>
@@ -731,6 +734,10 @@
     <!-- Local Chat Provider -->
     <string name="local_chat_models">نماذج الدردشة المحلية</string>
     <string name="local_models_title">النماذج المحلية</string>
+    <string name="local_model_idle_retention">الاحتفاظ بالنموذج أثناء الخمول</string>
+    <string name="local_model_idle_retention_desc">مدة إبقاء النموذج المحلي الخامل في الذاكرة قبل إلغاء تحميله</string>
+    <string name="local_model_idle_retention_immediate">فورًا</string>
+    <string name="local_model_idle_retention_minutes">%1$d د</string>
     <string name="local_chat_models_count">تم استيراد %1$d نموذج</string>
     <string name="local_title">محلي</string>
     <string name="not_configured">غير مهيأ</string>
@@ -800,7 +807,7 @@
     <string name="rating_submitting">جارٍ الإرسال…</string>
     <string name="rating_success">شكرًا على ملاحظاتك!</string>
     <string name="rating_failed">فشل الإرسال. يرجى المحاولة مرة أخرى.</string>
-    <string name="rating_privacy">سيتم رفع تقييمك بشكل مجهول إلى newoether.space. تُرسَل الحقول التي تملؤها فقط. لا يتم جمع أي بيانات أخرى.</string>
+    <string name="rating_privacy">سيتم رفع تقييمك بشكل مجهول إلى newoether.com. تُرسَل الحقول التي تملؤها فقط. لا يتم جمع أي بيانات أخرى.</string>
 
     <!-- Data Control -->
     <string name="settings_data_control">التحكم في البيانات</string>
@@ -882,7 +889,8 @@
     <string name="file_unsupported_title">الملف غير مدعوم</string>
     <string name="file_unknown_type">نوع ملف غير معروف</string>
     <string name="file_unsupported_type">نوع ملف غير مدعوم: %1$s</string>
-    <string name="file_too_large">الملف كبير جدًا (بحد أقصى 20 ميجابايت)</string>
+    <string name="file_too_large">الملف كبير جدًا (بحد أقصى 100 MiB)</string>
+    <string name="file_sandbox_required">ثبّت Local Sandbox وفعّله لإرفاق هذا الملف.</string>
     <string name="attachment_copy_failed_image">فشل تحميل الصورة</string>
     <string name="attachment_copy_failed_file">فشل تحميل الملف</string>
     <string name="pdf_render_failed">فشل عرض ملف PDF</string>
@@ -999,7 +1007,7 @@
     <string name="crash_message">نعتذر عن ذلك. يمكنك المساعدة في إصلاح هذا بإرسال تقرير تعطّل مجهول.</string>
     <string name="crash_submit">إرسال التقرير</string>
     <string name="crash_dismiss">عدم الإرسال</string>
-    <string name="crash_privacy_note">يُرسَل سجل التعطّل فقط إلى newoether.space. لا يتم جمع أي معلومات أخرى.</string>
+    <string name="crash_privacy_note">يُرسَل سجل التعطّل فقط إلى newoether.com. لا يتم جمع أي معلومات أخرى.</string>
     <string name="crash_submitted">تم إرسال تقرير التعطّل. شكرًا لك!</string>
     <string name="settings_group_network">الشبكة</string>
     <string name="settings_proxy">الوكيل</string>
@@ -1077,7 +1085,10 @@
     <string name="openai_service_tier_auto">تلقائي</string>
     <string name="openai_service_tier_default">افتراضي</string>
     <string name="openai_service_tier_flex">مرن</string>
+    <string name="openai_service_tier_scale">التوسّع</string>
+    <string name="openai_service_tier_priority">الأولوية</string>
     <string name="openai_service_tier_fast">سريع</string>
+    <string name="openai_service_tier_ultrafast">فائق السرعة</string>
     <string name="context_title">السياق</string>
     <string name="context_desc">إدارة السياق</string>
     <string name="context_compact">ضغط السياق</string>
@@ -1207,4 +1218,5 @@
     <string name="tool_create_skill">إنشاء مهارة</string>
     <string name="tool_edit_skill">تعديل المهارة</string>
     <string name="tool_delete_skill">حذف المهارة</string>
+    <string name="tool_read_file_truncated">تم عرض محتوى جزئي · تابع من البايت %1$d</string>
 </resources>

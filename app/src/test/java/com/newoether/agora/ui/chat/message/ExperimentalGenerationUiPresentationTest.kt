@@ -52,6 +52,39 @@ class ExperimentalGenerationUiPresentationTest {
     }
 
     @Test
+    fun `stopping hides the inline dot while retaining only its status slot`() {
+        val active = assistantInlineActivityPresentation(
+            generationActive = true,
+            isStopping = false,
+            hasAnswer = false,
+            hasVisibleInfoSegment = false,
+            retryText = null,
+        )
+        val stopping = assistantInlineActivityPresentation(
+            generationActive = true,
+            isStopping = true,
+            hasAnswer = false,
+            hasVisibleInfoSegment = false,
+            retryText = null,
+        )
+        val stopped = assistantInlineActivityPresentation(
+            generationActive = false,
+            isStopping = false,
+            hasAnswer = false,
+            hasVisibleInfoSegment = false,
+            retryText = null,
+        )
+
+        assertEquals(AssistantInlineActivityMode.EMPTY, active.mode)
+        assertFalse(active.retainLayout)
+        assertEquals(AssistantInlineActivityMode.NONE, stopping.mode)
+        assertTrue(stopping.retainLayout)
+        assertTrue(stopping.retainLayout && stopping.mode == AssistantInlineActivityMode.NONE)
+        assertEquals(AssistantInlineActivityMode.NONE, stopped.mode)
+        assertFalse(stopped.retainLayout)
+    }
+
+    @Test
     fun `retry reveal respects graphemes bounded timing and directional caret motion`() {
         assertEquals(
             listOf(0, 2, 3),

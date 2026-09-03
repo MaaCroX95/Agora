@@ -9,6 +9,7 @@ import com.newoether.agora.util.DebugLog
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.verify
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
@@ -50,18 +51,47 @@ class ConversationSelectionControllerTest {
     }
 
     @Test
+    fun activeModelWritesAlwaysUseTheWorkspaceBoundary() = runTest {
+        val fixture = Fixture(backgroundScope)
+
+        fixture.controller.setActiveModel("new-chat-model")
+        verify(exactly = 1) {
+            fixture.workspaces.setModel(NEW_CHAT_WORKSPACE_ID, "new-chat-model")
+        }
+
+        fixture.controller.publishAcceptedConversation("conversation", "provider:model")
+        fixture.controller.setActiveModel("conversation-model")
+        verify(exactly = 1) {
+            fixture.workspaces.setModel("conversation", "conversation-model")
+        }
+        coVerify(exactly = 0) { fixture.conversations.upsertConversation(any()) }
+    }
+
+    @Test
+    fun acceptedConversationKeepsTheCapturedModelAfterNewChatStateClears() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.newChatModelId.value = "restored-model"
+        runCurrent()
+        assertEquals("restored-model", fixture.controller.currentActiveModel.value)
+        fixture.controller.publishAcceptedConversation("conversation", "restored-model")
+        fixture.newChatModelId.value = null
+        runCurrent()
+        assertFalse(fixture.controller.isNewChatMode.value)
+        assertEquals("conversation", fixture.controller.currentConversationId.value)
+        assertEquals("restored-model", fixture.controller.currentActiveModel.value)
+    }
+
+    @Test
     fun newChatKeepsOldConversationUntilFadeThenClearsProjection() = runTest {
         val fadeGate = CompletableDeferred<Unit>()
         val fixture = Fixture(backgroundScope, fadeDelay = { fadeGate.await() })
-        fixture.controller.publishAcceptedConversation("conversation")
+        fixture.controller.publishAcceptedConversation("conversation", "provider:model")
 
         fixture.controller.createNewChat()
 
         assertTrue(fixture.controller.isNewChatMode.value)
         assertTrue(fixture.controller.isTransitioningToNewChat.value)
         assertEquals("conversation", fixture.controller.currentConversationId.value)
-        assertEquals(1, fixture.clearPromptCount)
-        assertEquals(0, fixture.clearSettingsCount)
         assertEquals(2L, fixture.controller.newChatEntryId.value)
 
         fadeGate.complete(Unit)
@@ -69,7 +99,6 @@ class ConversationSelectionControllerTest {
 
         assertNull(fixture.controller.currentConversationId.value)
         assertFalse(fixture.controller.isTransitioningToNewChat.value)
-        assertEquals(1, fixture.clearSettingsCount)
         assertEquals(1, fixture.clearGraphCount)
         assertEquals(1, fixture.abortRegenerationCount)
     }
@@ -78,7 +107,7 @@ class ConversationSelectionControllerTest {
     fun newerConversationSelectionSupersedesPendingNewChat() = runTest {
         val fadeGate = CompletableDeferred<Unit>()
         val fixture = Fixture(backgroundScope, fadeDelay = { fadeGate.await() })
-        fixture.controller.publishAcceptedConversation("old")
+        fixture.controller.publishAcceptedConversation("old", "old-model")
         coEvery { fixture.conversations.getConversation("new") } returns
             ChatEntity("new", "New", modelId = "new-model")
 
@@ -91,7 +120,6 @@ class ConversationSelectionControllerTest {
         assertEquals("new-model", fixture.controller.currentActiveModel.value)
         assertFalse(fixture.controller.isNewChatMode.value)
         assertFalse(fixture.controller.isTransitioningToNewChat.value)
-        assertEquals(0, fixture.clearSettingsCount)
         assertEquals(0, fixture.clearGraphCount)
         assertEquals(SwitchingRequestKind.CONVERSATION, fixture.controller
             .switchingScrollRequest.value?.kind)
@@ -103,7 +131,7 @@ class ConversationSelectionControllerTest {
         every { DebugLog.e(any(), any()) } returns Unit
         try {
             val fixture = Fixture(backgroundScope)
-            fixture.controller.publishAcceptedConversation("current")
+            fixture.controller.publishAcceptedConversation("current", "current-model")
             coEvery { fixture.conversations.getConversation("missing") } returns null
 
             fixture.controller.selectConversation("missing")
@@ -146,7 +174,7 @@ class ConversationSelectionControllerTest {
     @Test
     fun branchSelectionCommitsRoomBeforePublishingReadyTarget() = runTest {
         val fixture = Fixture(backgroundScope)
-        fixture.controller.publishAcceptedConversation("conversation")
+        fixture.controller.publishAcceptedConversation("conversation", "provider:model")
         fixture.renderStore.replaceGraph(
             allMessages = listOf(PARENT, FIRST_BRANCH, SECOND_BRANCH),
             selectedChildren = mapOf("parent" to "first"),
@@ -187,7 +215,7 @@ class ConversationSelectionControllerTest {
     @Test
     fun deleteMutationCompletionInvalidatesContextBeforePublishingReady() = runTest {
         val fixture = Fixture(backgroundScope)
-        fixture.controller.publishAcceptedConversation("conversation")
+        fixture.controller.publishAcceptedConversation("conversation", "provider:model")
 
         val requestId = fixture.controller.beginTreeMutation(scrollToTarget = false)
 
@@ -204,7 +232,7 @@ class ConversationSelectionControllerTest {
     @Test
     fun activeRunRejectsBranchMutationBeforeRoom() = runTest {
         val fixture = Fixture(backgroundScope)
-        fixture.controller.publishAcceptedConversation("conversation")
+        fixture.controller.publishAcceptedConversation("conversation", "provider:model")
         fixture.renderStore.replaceGraph(
             allMessages = listOf(PARENT, FIRST_BRANCH, SECOND_BRANCH),
             selectedChildren = mapOf("parent" to "first"),
@@ -230,9 +258,11 @@ class ConversationSelectionControllerTest {
         val conversations = mockk<ConversationRepository>()
         val registry = ConversationStateRegistry()
         val renderStore = ConversationRenderStore()
+        val newChatModelId = MutableStateFlow<String?>(null)
+        val workspaces = mockk<ConversationWorkspaceStore>(relaxed = true).also {
+            every { it.newChatModelId } returns newChatModelId
+        }
         var clearGraphCount = 0
-        var clearPromptCount = 0
-        var clearSettingsCount = 0
         var abortRegenerationCount = 0
         val contextInvalidations = mutableListOf<String>()
         val controller = ConversationSelectionController(
@@ -243,8 +273,7 @@ class ConversationSelectionControllerTest {
             scrollRequests = ScrollRequestCoordinator(),
             renderStore = { renderStore },
             clearConversationGraph = { clearGraphCount += 1 },
-            clearPendingSystemPrompt = { clearPromptCount += 1 },
-            clearPendingConversationSettings = { clearSettingsCount += 1 },
+            workspaces = workspaces,
             abortRegeneration = { abortRegenerationCount += 1 },
             onTreeMutationCommitted = contextInvalidations::add,
             fadeDelay = fadeDelay,

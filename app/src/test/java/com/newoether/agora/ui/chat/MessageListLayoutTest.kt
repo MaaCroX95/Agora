@@ -632,8 +632,11 @@ class MessageListLayoutTest {
         ))
 
         assertEquals(1, lock.activeMutationCount)
+        assertTrue(lock.isActive("thinking-card"))
+        assertFalse(lock.isActive("other-card"))
         assertEquals(original, lock.anchor)
         assertEquals(original, lock.finish("thinking-card"))
+        assertFalse(lock.isActive("thinking-card"))
         assertNull(lock.anchor)
     }
 

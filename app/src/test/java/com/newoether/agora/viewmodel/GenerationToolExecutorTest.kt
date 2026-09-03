@@ -1,16 +1,34 @@
 package com.newoether.agora.viewmodel
 
 import com.newoether.agora.api.ToolDefinition
+import com.newoether.agora.model.ConversationCommand
 import com.newoether.agora.model.RunEffectIdentity
+import com.newoether.agora.model.ToolExecutionStates
 import com.newoether.agora.tool.ToolExecutionEvent
 import com.newoether.agora.tool.ToolProvider
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GenerationToolExecutorTest {
+    @Test
+    fun `durable wait timeout remains background running at the completion boundary`() {
+        val result =
+            """{"type":"wait_for_job","job_id":"same-job","state":"running","timed_out":true}"""
+
+        assertEquals(ToolExecutionStates.BACKGROUND_RUNNING, finalToolState(result))
+    }
+
     @Test
     fun `completed result retains the authorized batch and call identities`() = runTest {
         val provider = FakeToolProvider()
@@ -83,6 +101,16 @@ class GenerationToolExecutorTest {
     }
 
     @Test
+    fun `active tool stop releases when durable write settles first`() = runBlocking {
+        assertActiveToolStopRelease(persistenceFirst = true)
+    }
+
+    @Test
+    fun `active tool stop releases when generation coroutine settles first`() = runBlocking {
+        assertActiveToolStopRelease(persistenceFirst = false)
+    }
+
+    @Test
     fun `tool timeout is a recoverable identified result`() = runTest {
         val provider = object : ToolProvider {
             override fun definitions(ctx: GenerationContext): List<ToolDefinition> = emptyList()
@@ -113,6 +141,81 @@ class GenerationToolExecutorTest {
         assertEquals("call-timeout", executed.callId)
         assertTrue(executed.result.isError)
         assertTrue(executed.result.text.contains("timed out after 25ms"))
+    }
+
+    private suspend fun assertActiveToolStopRelease(persistenceFirst: Boolean) {
+        val started = CompletableDeferred<Unit>()
+        val provider = object : ToolProvider {
+            override fun definitions(ctx: GenerationContext): List<ToolDefinition> = emptyList()
+
+            override suspend fun execute(
+                name: String,
+                arguments: String,
+                ctx: GenerationContext,
+            ): String {
+                started.complete(Unit)
+                return awaitCancellation()
+            }
+
+            override fun handles(name: String): Boolean = name == "blocking_tool"
+        }
+        val executor = GenerationToolExecutor.forTest(listOf(provider))
+        val state = ConversationGenerationState("conversation")
+        val token = state.acquireForSend()!!
+        state.bindRun(token, "run")
+        val unwind = CompletableDeferred<Unit>()
+        val job = checkNotNull(
+            state.launchGenerationJob(token) {
+                try {
+                    executor.execute(
+                        call = AuthorizedToolCall(
+                            batchIdentity = BATCH_IDENTITY,
+                            callId = "active-call",
+                            name = "blocking_tool",
+                            arguments = "{}",
+                            context = GenerationContext(toolTimeoutMs = 60_000L),
+                            authorizedToolNames = setOf("blocking_tool"),
+                        ),
+                        onEvent = {},
+                    )
+                } finally {
+                    withContext(NonCancellable) { unwind.await() }
+                }
+            },
+        )
+        started.await()
+
+        val stopped = state.stop()
+        val completion = ConversationCommand.PersistenceSettled(
+            identity = requireNotNull(stopped.finalizationEffect).identity,
+            success = true,
+        )
+        if (persistenceFirst) {
+            assertEquals(
+                ConversationGenerationState.StopFinalizationOutcome.RECORDED,
+                state.finishStopFinalization(completion),
+            )
+            assertTrue(state.stopping.value)
+            unwind.complete(Unit)
+            job.join()
+        } else {
+            unwind.complete(Unit)
+            job.join()
+            withTimeout(5_000L) {
+                while (state.runtimeTraceSnapshot().none { it.commandType == "CoroutineSettled" }) {
+                    yield()
+                }
+            }
+            assertTrue(state.stopping.value)
+            assertEquals(
+                ConversationGenerationState.StopFinalizationOutcome.SETTLED,
+                state.finishStopFinalization(completion),
+            )
+        }
+
+        withTimeout(5_000L) { state.stopping.first { stopping -> !stopping } }
+        assertFalse(state.generating.value)
+        assertFalse(state.stopping.value)
     }
 
     private class FakeToolProvider : ToolProvider {

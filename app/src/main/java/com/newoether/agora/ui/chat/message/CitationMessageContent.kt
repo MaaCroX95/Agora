@@ -426,14 +426,15 @@ internal fun citationMarkdownProjection(
     isStreaming: Boolean,
 ): CitationMarkdownProjection? {
     if (answerText.isEmpty()) return null
-    val projection = projectCitationMarkdown(answerText, citations)
     return if (isStreaming) {
-        val markdown = withholdTrailingCitationWrapper(projection.markdown)
+        val markdown = withholdTrailingCitationWrapper(answerText)
         val partialStart = TrailingPlainCitationArtifact.find(markdown)?.range?.first
-        projection.copy(
-            markdown = partialStart?.let { markdown.substring(0, it) } ?: markdown,
+        CitationMarkdownProjection(
+            markdown = CitationPolicy.stripPrivateMarkers(partialStart?.let { markdown.substring(0, it) } ?: markdown),
+            markers = emptyList(),
         )
     } else {
+        val projection = projectCitationMarkdown(answerText, citations)
         projection.copy(markdown = CitationPolicy.stripPrivateMarkers(projection.markdown))
     }
 }
@@ -542,20 +543,16 @@ internal fun CitationInlineContentHost(
     val inlineFadeStateByPrimarySource = remember {
         mutableMapOf<String, Animatable<Float, AnimationVector1D>>()
     }
-    val activeFadeKeys = projection?.markers
-        ?.map(::citationInlineAppearanceKey)
-        ?.toSet()
-        .orEmpty()
+    val markers = projection?.markers.orEmpty()
+    val activeFadeKeys = markers
+        .map(::citationInlineAppearanceKey)
+        .toSet()
     LaunchedEffect(activeFadeKeys) {
         inlineFadeStateByPrimarySource.keys.retainAll(activeFadeKeys)
     }
-    if (projection == null || projection.markers.isEmpty()) {
-        content()
-        return
-    }
     val currentOnActivate by rememberUpdatedState(onActivate)
     val existingInlineContent = LocalMarkdownInlineContent.current
-    val tokenMap = projection.markers.associate { marker ->
+    val tokenMap = markers.associate { marker ->
         marker.token to CitationInlineToken(
             inlineId = marker.inlineId,
             alternateText = "[${marker.displayLabel}]",
@@ -580,7 +577,7 @@ internal fun CitationInlineContentHost(
     val outerSpacingEachSidePx = with(density) {
         CITATION_INLINE_OUTER_SPACER_DP.dp.roundToPx()
     }
-    val inlineContent = projection.markers.associate { marker ->
+    val inlineContent = markers.associate { marker ->
         val suffixText = marker.additionalCount
             .takeIf { it > 0 }
             ?.let { "+$it" }

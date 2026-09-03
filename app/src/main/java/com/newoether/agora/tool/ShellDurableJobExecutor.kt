@@ -358,6 +358,7 @@ internal class ShellDurableJobExecutor {
                 return buildJsonObject {
                     put("type", "wait_for_job")
                     put("job_id", jobId)
+                    put("state", "running")
                     put("waited_ms", elapsed)
                     put("timed_out", true)
                     latestSnapshot?.let { snapshot ->

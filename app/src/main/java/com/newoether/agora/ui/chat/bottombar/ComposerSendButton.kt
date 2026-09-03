@@ -75,9 +75,10 @@ internal fun ComposerSendButton(
         val submittedAttachmentIds = submittedAttachments.map { it.localId }
         isSubmitting = true
         try {
+            val transferredAttachments = composer.transferAttachmentsForSend(submittedAttachments)
             onSendMessage(
                 submittedText,
-                submittedAttachments,
+                transferredAttachments,
             ) {
                 // Confirm the durable handoff, not the initial tap. Attachment-backed sends can
                 // spend noticeable time processing before this point.
@@ -99,12 +100,14 @@ internal fun ComposerSendButton(
         }
     }
 
-    LaunchedEffect(composer.pendingSend, anyProcessing) {
-        if (composer.pendingSend && !anyProcessing) {
+    LaunchedEffect(composer.pendingSend, anyProcessing, isSwitching) {
+        if (composer.pendingSend && !anyProcessing && !isSwitching) {
             val submittedText = textFieldState.text.toString()
             val submittedAttachments = composer.selectedAttachments.toList()
-            submit(submittedText, submittedAttachments)
             composer.pendingSend = false
+            if (submittedText.isNotBlank() || submittedAttachments.isNotEmpty()) {
+                submit(submittedText, submittedAttachments)
+            }
         }
     }
     val textIsEmpty = textFieldState.text.isBlank()
@@ -114,7 +117,10 @@ internal fun ComposerSendButton(
     val showStop = isLoading && !isStopping && textIsEmpty && attachmentsIsEmpty
 
     val canSend = (textFieldState.text.isNotBlank() || composer.selectedAttachments.isNotEmpty()) && isModelValid && !isSwitching && !isStopping && !isSubmitting
-            && composer.selectedAttachments.none { it.localPath == null && (it.type == "image" || it.type == "file") }
+            && composer.selectedAttachments.none {
+                it.localPath == null && (it.type == "image" || it.type == "file") &&
+                    it.localId !in composer.processingStates
+            }
     val isBusy = isStopping || isSubmitting || composer.pendingSend
     val isActionable = (isLoading || canSend) && !isSwitching && !isBusy
     val containerColor by animateColorAsState(

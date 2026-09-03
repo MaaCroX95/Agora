@@ -6,16 +6,12 @@ import org.junit.Test
 
 class GenerationCompletionEffectsExecutorTest {
     @Test
-    fun `successful terminal effects preserve cleanup and notification order`() {
+    fun `headless success preserves cleanup and background notification order`() {
         val events = mutableListOf<String>()
-        val executor = GenerationCompletionEffectsExecutor(
-            isAppInForeground = { events += "foreground"; false },
-            releaseForegroundLease = { events += "release:$it" },
-            notify = { text, conversationId -> events += "notify:$conversationId:$text" },
-        )
+        val executor = executor(events, appInForeground = false)
 
         executor.execute(
-            request(terminalPersisted = true, foregroundLeaseAcquired = true),
+            request(foregroundLeaseAcquired = true),
             callbacks(events, hasQueuedSends = { events += "queue"; false }),
         )
 
@@ -27,50 +23,51 @@ class GenerationCompletionEffectsExecutorTest {
                 "release:model",
                 "queue",
                 "foreground",
-                "notify:conversation:answer",
+                "notify:conversation:SUCCESS:answer",
             ),
             events,
         )
     }
 
     @Test
-    fun `pending standard continuation suppresses only interim notification`() {
+    fun `foreground policy covers visibility errors compact and pending guidance`() {
         val events = mutableListOf<String>()
-        val executor = GenerationCompletionEffectsExecutor(
-            isAppInForeground = { events += "foreground"; false },
-            releaseForegroundLease = { events += "release:$it" },
-            notify = { _, _ -> events += "notify" },
-        )
-
-        executor.execute(
+        val executor = executor(events, appInForeground = true)
+        val callbacks = callbacks(events)
+        listOf(
+            request(conversationVisible = true),
+            request(MessageStatus.ERROR, "Error: visible", conversationVisible = true),
+            request(conversationVisible = false),
+            request(MessageStatus.ERROR, "Error: provider detail", conversationVisible = false),
+            request(isContextCompact = true, conversationVisible = false),
             request(
-                terminalPersisted = true,
-                foregroundLeaseAcquired = true,
-                hasPendingContinuation = true,
+                MessageStatus.ERROR,
+                "Error: compact detail",
+                isContextCompact = true,
+                conversationVisible = false,
             ),
-            callbacks(events, hasQueuedSends = { events += "queue"; false }),
+            request(conversationVisible = false, hasPendingContinuation = true),
+        ).forEach { executor.execute(it, callbacks) }
+        executor.execute(
+            request(conversationVisible = false),
+            callbacks(events, hasQueuedSends = { true }),
         )
 
         assertEquals(
             listOf(
-                "index:model:answer",
-                "clear",
-                "loading:false",
-                "release:model",
-                "foreground",
+                "notify:conversation:SUCCESS:answer",
+                "notify:conversation:ERROR:Error: provider detail",
+                "notify:conversation:ERROR:Error: compact detail",
             ),
-            events,
+            events.filter { it.startsWith("notify:") },
         )
+        assertEquals(0, events.count { it == "foreground" })
     }
 
     @Test
-    fun `index failure cannot prevent terminal cleanup and queued work suppresses notification`() {
+    fun `index failure cannot prevent terminal cleanup`() {
         val events = mutableListOf<String>()
-        val executor = GenerationCompletionEffectsExecutor(
-            isAppInForeground = { events += "foreground"; false },
-            releaseForegroundLease = { events += "release" },
-            notify = { _, _ -> events += "notify" },
-        )
+        val executor = executor(events, appInForeground = false)
         val callbacks = GenerationCompletionEffectsCallbacks(
             onMessagePersisted = { _, _ ->
                 events += "index"
@@ -82,33 +79,47 @@ class GenerationCompletionEffectsExecutorTest {
         )
 
         executor.execute(
-            request(terminalPersisted = true, foregroundLeaseAcquired = true),
+            request(foregroundLeaseAcquired = true, conversationVisible = false),
             callbacks,
         )
 
-        assertEquals(
-            listOf("index", "clear", "loading:false", "release", "queue", "foreground"),
-            events,
-        )
+        assertEquals(listOf("index", "clear", "loading:false", "release:model", "queue"), events)
     }
 
+    private fun executor(
+        events: MutableList<String>,
+        appInForeground: Boolean,
+    ) = GenerationCompletionEffectsExecutor(
+        isAppInForeground = { events += "foreground"; appInForeground },
+        releaseForegroundLease = { events += "release:$it" },
+        notify = { text, conversationId, status ->
+            events += "notify:$conversationId:$status:$text"
+        },
+    )
+
     private fun request(
-        terminalPersisted: Boolean,
-        foregroundLeaseAcquired: Boolean,
+        status: MessageStatus = MessageStatus.SUCCESS,
+        notificationText: String = "answer",
+        foregroundLeaseAcquired: Boolean = false,
+        isContextCompact: Boolean = false,
+        conversationVisible: Boolean? = null,
         hasPendingContinuation: Boolean = false,
     ) = GenerationCompletionEffectsRequest(
-        terminalPersisted = terminalPersisted,
-        status = MessageStatus.SUCCESS,
+        terminalPersisted = true,
+        status = status,
         text = "answer",
+        notificationText = notificationText,
         conversationId = "conversation",
         modelMessageId = "model",
         foregroundLeaseAcquired = foregroundLeaseAcquired,
+        isContextCompact = isContextCompact,
+        conversationVisible = conversationVisible,
         hasPendingContinuation = hasPendingContinuation,
     )
 
     private fun callbacks(
         events: MutableList<String>,
-        hasQueuedSends: () -> Boolean,
+        hasQueuedSends: () -> Boolean = { false },
     ) = GenerationCompletionEffectsCallbacks(
         onMessagePersisted = { id, text -> events += "index:$id:$text" },
         onStreamClear = { events += "clear" },

@@ -59,7 +59,6 @@ class ConversationContextProjectorTest {
                 "prompt-selected-for-new-chat",
             )
         }
-        coVerify(exactly = 0) { conversations.getMessagesForConversationSnapshot(any()) }
         coVerify(exactly = 0) { conversations.restoreBranchSelections(any()) }
     }
 

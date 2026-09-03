@@ -6,7 +6,6 @@ import com.newoether.agora.util.DebugLog
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.ThinkingLevels
-import com.newoether.agora.api.util.prepareMessages
 import com.newoether.agora.api.util.adaptToolRoundsForProvider
 import com.newoether.agora.api.util.RequestFormatException
 import com.newoether.agora.api.util.requireValidSerializedRequest
@@ -411,23 +410,23 @@ class GeminiProvider(
         val baseUrl = config.baseUrl?.trimEnd('/')?.ifBlank { null } ?: defaultBaseUrl
         val cleanModelName = config.modelId.removePrefix("models/")
         
-        // Context windowing
-        val canonicalPath = prepareMessages(messages, config.maxContextWindow)
         val requiresFunctionCallSignature =
             cleanModelName.contains("gemini-3", ignoreCase = true) ||
                 cleanModelName.contains("gemini-3.5", ignoreCase = true)
-        val validatedPath = adaptToolRoundsForProvider(
-            messages = canonicalPath,
-            providerName = name,
-        ) { toolMessage ->
-            toolMessage.isGeminiToolRoundCompatible(
-                targetModel = cleanModelName,
-                targetProviderName = name,
-                signatureRequired = requiresFunctionCallSignature,
-            )
-        }
 
-        val apiContents = coalesceGeminiContents(validatedPath.flatMap { msg ->
+        fun buildApiContents(resolvedMessages: List<ChatMessage>): List<ApiRequestContent> {
+            val validatedPath = adaptToolRoundsForProvider(
+                messages = resolvedMessages,
+                providerName = name,
+            ) { toolMessage ->
+                toolMessage.isGeminiToolRoundCompatible(
+                    targetModel = cleanModelName,
+                    targetProviderName = name,
+                    signatureRequired = requiresFunctionCallSignature,
+                )
+            }
+
+            return coalesceGeminiContents(validatedPath.flatMap { msg ->
             val entries = mutableListOf<ApiRequestContent>()
 
             // tool_ messages: model turn with functionCall(s)
@@ -526,11 +525,8 @@ class GeminiProvider(
             ))
 
             entries
-        })
-
-        val systemInstruction = if (!config.systemPrompt.isNullOrBlank()) {
-            ApiRequestContent(parts = listOf(ApiRequestPart(text = config.systemPrompt)))
-        } else null
+            })
+        }
 
         val tools = mutableListOf<ApiTool>()
         if (config.codeExecutionEnabled) tools.add(ApiTool(codeExecution = JsonObject(emptyMap())))
@@ -606,16 +602,17 @@ class GeminiProvider(
             presencePenalty = config.presencePenalty
         ) else null
 
-        val requestBody = ApiGenerateContentRequest(
-            contents = apiContents,
-            systemInstruction = systemInstruction,
+        fun buildRequestBody(resolvedRequest: ProviderRequestInput) = ApiGenerateContentRequest(
+            contents = buildApiContents(resolvedRequest.messages),
+            systemInstruction = resolvedRequest.systemPrompt
+                ?.takeIf(String::isNotBlank)
+                ?.let { ApiRequestContent(parts = listOf(ApiRequestPart(text = it))) },
             tools = if (tools.isNotEmpty()) tools else null,
             toolConfig = toolConfig,
-            generationConfig = genConfig
+            generationConfig = genConfig,
         )
 
         try {
-            requestBody.requireValidWireFormat(cleanModelName)
             // Determine if baseUrl already includes versioning
             val finalUrlString = if (baseUrl.contains("/v1") || baseUrl.contains("/v1beta")) {
                 "$baseUrl/models/$cleanModelName:streamGenerateContent?alt=sse"
@@ -627,17 +624,6 @@ class GeminiProvider(
                 "Content-Type" to "application/json",
                 "x-goog-api-key" to config.apiKey
             )
-            val requestJson = json.encodeToString(ApiGenerateContentRequest.serializer(), requestBody)
-            requireValidSerializedRequest(
-                provider = name,
-                body = requestJson,
-                requiredArrayFields = setOf("contents"),
-            )
-            DebugLog.d(
-                "AgoraAPI",
-                "[$name] request model=$cleanModelName messages=${apiContents.size} " +
-                    "thinking=${config.thinkingEnabled} tools=${tools.size}",
-            )
             val maxAttempts = ProviderRetryPolicy.MAX_ATTEMPTS
             val retryableCodes = setOf(429, 500, 502, 503, 504)
             var attempt = 0
@@ -645,6 +631,19 @@ class GeminiProvider(
 
             while (attempt < maxAttempts && !done) {
                 attempt++
+                val requestBody = buildRequestBody(config.resolveRequest(messages))
+                requestBody.requireValidWireFormat(cleanModelName)
+                val requestJson = json.encodeToString(ApiGenerateContentRequest.serializer(), requestBody)
+                requireValidSerializedRequest(
+                    provider = name,
+                    body = requestJson,
+                    requiredArrayFields = setOf("contents"),
+                )
+                DebugLog.d(
+                    "AgoraAPI",
+                    "[$name] request model=$cleanModelName messages=${requestBody.contents.size} " +
+                        "thinking=${config.thinkingEnabled} tools=${tools.size}",
+                )
                 val handle = try {
                     HttpClient.streamPost(finalUrlString, requestJson, headers)
                 } catch (e: kotlinx.coroutines.CancellationException) {

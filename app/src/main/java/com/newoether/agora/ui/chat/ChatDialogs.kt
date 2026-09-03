@@ -184,7 +184,12 @@ internal fun ChatSystemPromptDialog(
 
     val currentConversation = conversations.orEmpty().find { it.id == currentConversationId }
     val pendingPrompt by viewModel.pendingSystemPromptId.collectAsState()
-    var selectedPromptId by remember(currentConversationId, pendingPrompt, currentConversation?.systemPromptId) {
+    var selectedPromptId by remember(
+        isNewChatMode,
+        currentConversationId,
+        pendingPrompt,
+        currentConversation?.systemPromptId,
+    ) {
         mutableStateOf(if (isNewChatMode) pendingPrompt else currentConversation?.systemPromptId)
     }
 
@@ -255,7 +260,9 @@ internal fun ChatAdvancedSettingsDialog(
     onDismiss: () -> Unit
 ) {
     val currentConversationId by viewModel.currentConversationId.collectAsState()
+    val isNewChatMode by viewModel.isNewChatMode.collectAsState()
     val conversationSettings by viewModel.settings.conversationSettings.collectAsState()
+    val pendingConversationSettings by viewModel.pendingConversationSettings.collectAsState()
     val maxContextWindow by viewModel.settings.maxContextWindow.collectAsState()
     val defaultTemperature by viewModel.settings.defaultTemperature.collectAsState()
     val defaultMaxTokens by viewModel.settings.defaultMaxTokens.collectAsState()
@@ -263,9 +270,12 @@ internal fun ChatAdvancedSettingsDialog(
     val defaultFrequencyPenalty by viewModel.settings.defaultFrequencyPenalty.collectAsState()
     val defaultPresencePenalty by viewModel.settings.defaultPresencePenalty.collectAsState()
 
-    val currentId = currentConversationId
-    val overrides = if (currentId != null) conversationSettings[currentId] ?: ConversationSettings()
-        else ConversationSettings()
+    val currentId = conversationSettingsOwnerId(isNewChatMode, currentConversationId)
+    val overrides = if (isNewChatMode) {
+        pendingConversationSettings ?: ConversationSettings()
+    } else {
+        currentId?.let(conversationSettings::get) ?: ConversationSettings()
+    }
     val defaults = ConversationSettings(
         contextWindow = maxContextWindow,
         temperature = defaultTemperature,
@@ -278,19 +288,11 @@ internal fun ChatAdvancedSettingsDialog(
         overrides = overrides,
         globalDefaults = defaults,
         onSave = { settings ->
-            if (currentId != null) {
-                viewModel.settings.setConversationSettings(currentId, settings)
-            } else {
-                viewModel.setPendingConversationSettings(settings)
-            }
+            viewModel.setConversationSettings(currentId, settings)
             onDismiss()
         },
         onResetToDefaults = {
-            if (currentId != null) {
-                viewModel.settings.setConversationSettings(currentId, null)
-            } else {
-                viewModel.setPendingConversationSettings(null)
-            }
+            viewModel.setConversationSettings(currentId, null)
         },
         onDismiss = onDismiss
     )

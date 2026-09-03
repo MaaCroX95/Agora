@@ -232,6 +232,8 @@ internal class AnthropicStreamEventRouter {
                             inputTokenCount = totalInput,
                             cachedInputTokenCount =
                                 cacheReadInputTokens.takeIf { totalInput != null },
+                            cacheWriteInputTokenCount =
+                                cacheCreationInputTokens.takeIf { totalInput != null },
                             uncachedInputTokenCount = uncachedInput,
                             outputTokenCount = output,
                         )

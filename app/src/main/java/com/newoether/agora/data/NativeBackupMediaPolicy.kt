@@ -2,10 +2,16 @@ package com.newoether.agora.data
 
 import com.newoether.agora.model.AttachmentMeta
 import com.newoether.agora.model.MessageSegment
+import com.newoether.agora.model.SelectedAttachment
 import kotlinx.serialization.json.Json
 
 internal object NativeBackupMediaPolicy {
     private val json = Json { ignoreUnknownKeys = true }
+
+    /** Sandbox payloads belong to the live runtime and are never copied into native backups. */
+    fun exportableDraftAttachments(
+        attachments: List<SelectedAttachment>,
+    ): List<SelectedAttachment> = attachments.filterNot { it.storage.isLocalSandbox }
 
     fun toolImagePaths(raw: String?): List<String> {
         if (raw.isNullOrBlank()) return emptyList()

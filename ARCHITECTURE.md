@@ -87,7 +87,7 @@ The pure reducer is the single authority for in-process Run state. The controlle
 manager, Stop finalizer, task engine, and Room transactions execute identified effect bodies but
 cannot release or retarget a Run without returning the exact result command. A few graph-building
 and guidance-storage adapters remain outside the pure core; their bounded ownership is recorded in
-`development-docs/conversation-runtime-refactor-baseline.md`.
+`development/baselines/conversation-runtime-refactor-baseline.md`.
 
 Room remains the durable source of truth. The live message is an overlay for the
 currently selected branch; it does not become a second durable message graph.
@@ -472,7 +472,7 @@ Every handwritten Kotlin source in main, test, flavor, and build-logic source se
 999 physical lines by `verifyKotlinFileSize`. The task is wired into Gradle `check`, Android
 `preBuild`, `build.ps1`, and CI. Generated/build output, caches, and the vendored `thirdparty` tree
 are excluded; the temporary migration baseline is empty. The exact counting and baseline rules are
-documented in `development-docs/kotlin-source-size-policy.md`.
+documented in `development/kotlin-source-size-policy.md`.
 
 High-risk changes require focused tests in addition to the full gate:
 

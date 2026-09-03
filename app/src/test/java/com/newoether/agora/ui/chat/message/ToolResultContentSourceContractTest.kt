@@ -66,6 +66,20 @@ class ToolResultContentSourceContractTest {
         assertTrue(urlPosition > snippetPosition)
     }
 
+    @Test
+    fun `Completed wait for job uses the shell exit summary`() {
+        val source = source(locateMainSourceRoot(), "MessageItemToolLabels.kt")
+        val completedSummary = source
+            .substringAfter("private fun completedSummary(")
+
+        assertTrue(
+            completedSummary.contains(
+                "ToolKind.SHELL_JOB_WAIT -> shellToolSummary(presentation)",
+            ),
+        )
+        assertFalse(completedSummary.contains("tool_waited_shell_job"))
+    }
+
     private fun source(root: File, name: String): String =
         File(root, "com/newoether/agora/ui/chat/message/$name").readText()
 

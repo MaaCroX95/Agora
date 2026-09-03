@@ -18,6 +18,7 @@ data class TokenUsage(
     val totalTokenCount: Int,
     val inputTokenCount: Int? = null,
     val cachedInputTokenCount: Int? = null,
+    val cacheWriteInputTokenCount: Int? = null,
     val uncachedInputTokenCount: Int? = null,
     val outputTokenCount: Int? = null,
     val reasoningTokenCount: Int? = null,
@@ -27,6 +28,8 @@ data class TokenUsage(
         inputTokenCount = addReported(inputTokenCount, other.inputTokenCount),
         cachedInputTokenCount =
             addReported(cachedInputTokenCount, other.cachedInputTokenCount),
+        cacheWriteInputTokenCount =
+            addReported(cacheWriteInputTokenCount, other.cacheWriteInputTokenCount),
         uncachedInputTokenCount =
             addReported(uncachedInputTokenCount, other.uncachedInputTokenCount),
         outputTokenCount = addReported(outputTokenCount, other.outputTokenCount),
@@ -39,6 +42,7 @@ data class TokenUsage(
             totalTokenCount: Int,
             inputTokenCount: Int?,
             cachedInputTokenCount: Int?,
+            cacheWriteInputTokenCount: Int?,
             uncachedInputTokenCount: Int?,
             outputTokenCount: Int?,
             reasoningTokenCount: Int?,
@@ -47,6 +51,7 @@ data class TokenUsage(
                 totalTokenCount <= 0 &&
                 inputTokenCount == null &&
                 cachedInputTokenCount == null &&
+                cacheWriteInputTokenCount == null &&
                 uncachedInputTokenCount == null &&
                 outputTokenCount == null &&
                 reasoningTokenCount == null
@@ -57,6 +62,7 @@ data class TokenUsage(
                 totalTokenCount = totalTokenCount.coerceAtLeast(0),
                 inputTokenCount = inputTokenCount.nonNegativeOrNull(),
                 cachedInputTokenCount = cachedInputTokenCount.nonNegativeOrNull(),
+                cacheWriteInputTokenCount = cacheWriteInputTokenCount.nonNegativeOrNull(),
                 uncachedInputTokenCount = uncachedInputTokenCount.nonNegativeOrNull(),
                 outputTokenCount = outputTokenCount.nonNegativeOrNull(),
                 reasoningTokenCount = reasoningTokenCount.nonNegativeOrNull(),

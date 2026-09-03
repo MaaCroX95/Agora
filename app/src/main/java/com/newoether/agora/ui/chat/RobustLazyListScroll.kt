@@ -64,6 +64,35 @@ internal fun applyFeedbackScrollStartup(
     return adaptiveStepPx * startup.easing.transform(progress).coerceIn(0f, 1f)
 }
 
+internal suspend fun LazyListState.animateToAbsoluteTop(
+    estimatedItemSizePx: Float,
+    minimumStepPx: Float,
+    feedbackSpec: FeedbackScrollSpec = DefaultFeedbackScrollSpec,
+): Boolean {
+    require(estimatedItemSizePx > 0f)
+    return smoothSeekToItem(
+        targetIndex = { 0 },
+        targetErrorPx = { firstItem ->
+            val layout = layoutInfo
+            val contentStart = layout.viewportStartOffset + layout.beforeContentPadding
+            (firstItem.offset - contentStart).toFloat()
+        },
+        estimatedErrorPx = {
+            val layout = layoutInfo
+            val firstVisible = layout.visibleItemsInfo.minByOrNull { item -> item.index }
+                ?: return@smoothSeekToItem null
+            val contentStart = layout.viewportStartOffset + layout.beforeContentPadding
+            firstVisible.index * estimatedItemSizePx +
+                (contentStart - firstVisible.offset).coerceAtLeast(0)
+        },
+        exactTargetReady = {
+            layoutInfo.visibleItemsInfo.any { item -> item.index == 0 }
+        },
+        minimumStepPx = minimumStepPx,
+        feedbackSpec = feedbackSpec,
+    )
+}
+
 /**
  * Progressively seeks a LazyColumn item without `animateScrollToItem`.
  *

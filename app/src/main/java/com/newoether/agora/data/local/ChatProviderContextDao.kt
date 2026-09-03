@@ -2,6 +2,7 @@ package com.newoether.agora.data.local
 
 import androidx.room.Query
 import androidx.room.Transaction
+import kotlinx.coroutines.flow.Flow
 
 /**
  * Payload-free context queries inherited by [ChatDao]. Full message rows are fetched separately
@@ -22,18 +23,42 @@ interface ChatProviderContextDao {
             status,
             participant,
             timestamp,
+            tokenCount,
             modelName,
             runId,
             runSequence,
             consumedAtPass
         FROM messages
         WHERE conversationId = :conversationId
-        ORDER BY timestamp ASC
+        ORDER BY timestamp ASC, id ASC
         """
     )
     suspend fun getMessageContextTopology(
         conversationId: String,
     ): List<MessageContextTopology>
+
+    @Query(
+        """
+        SELECT
+            id,
+            conversationId,
+            parentId,
+            status,
+            participant,
+            timestamp,
+            tokenCount,
+            modelName,
+            runId,
+            runSequence,
+            consumedAtPass
+        FROM messages
+        WHERE conversationId = :conversationId
+        ORDER BY timestamp ASC, id ASC
+        """
+    )
+    fun observeMessageContextTopology(
+        conversationId: String,
+    ): Flow<List<MessageContextTopology>>
 
     @Transaction
     suspend fun getProviderContextTopologySnapshot(

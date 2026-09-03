@@ -29,6 +29,30 @@ private data class PersistedComposerDraft(
     val revision: Long,
 )
 
+private class RepositoryComposerDraftPersistence(
+    private val conversations: ConversationRepository,
+) : ComposerDraftPersistence {
+    override suspend fun loadDraft(ownerId: String): ConversationWorkspaceDraft {
+        val entity = conversations.getConversation(ownerId)
+        return ConversationWorkspaceDraft(
+            text = entity?.draftText.orEmpty(),
+            attachmentsJson = entity?.draftAttachments,
+        )
+    }
+
+    override suspend fun updateDraft(
+        ownerId: String,
+        text: String,
+        attachmentsJson: String?,
+    ) {
+        conversations.updateDraft(ownerId, text, attachmentsJson)
+    }
+
+    override suspend fun clearAcceptedDraft(ownerId: String) {
+        conversations.updateDraft(ownerId, "", null)
+    }
+}
+
 /**
  * Owns the serialized, revision-checked composer-draft cache and its durable projection.
  *
@@ -37,8 +61,13 @@ private data class PersistedComposerDraft(
  * accepted input has another owner before asking the repository to reclaim them.
  */
 internal class ComposerDraftController(
+    private val persistence: ComposerDraftPersistence,
     private val conversations: ConversationRepository,
 ) {
+    constructor(conversations: ConversationRepository) : this(
+        persistence = RepositoryComposerDraftPersistence(conversations),
+        conversations = conversations,
+    )
     private val persistenceMutex = Mutex()
     private val persistedDrafts = mutableMapOf<String, PersistedComposerDraft>()
 
@@ -87,7 +116,7 @@ internal class ComposerDraftController(
 
             try {
                 val json = if (attachments.isEmpty()) null else Json.encodeToString(attachments)
-                conversations.updateDraft(conversationId, text, json)
+                persistence.updateDraft(conversationId, text, json)
                 val next = PersistedComposerDraft(
                     text = text,
                     attachments = attachments,
@@ -120,7 +149,7 @@ internal class ComposerDraftController(
             persistenceMutex.withLock {
                 try {
                     val current = persistedDrafts[conversationId] ?: read(conversationId)
-                    conversations.updateDraft(conversationId, "", null)
+                    persistence.clearAcceptedDraft(conversationId)
                     persistedDrafts[conversationId] = PersistedComposerDraft(
                         text = "",
                         attachments = emptyList(),
@@ -153,9 +182,9 @@ internal class ComposerDraftController(
 
     private suspend fun read(conversationId: String): PersistedComposerDraft {
         val priorRevision = persistedDrafts[conversationId]?.revision ?: 0L
-        val entity = conversations.getConversation(conversationId)
+        val draft = persistence.loadDraft(conversationId)
         val attachments: List<SelectedAttachment> = try {
-            entity?.draftAttachments
+            draft.attachmentsJson
                 ?.let { Json.decodeFromString<List<SelectedAttachment>>(it) }
                 ?: emptyList()
         } catch (e: Exception) {
@@ -167,7 +196,7 @@ internal class ComposerDraftController(
             emptyList()
         }
         return PersistedComposerDraft(
-            text = entity?.draftText.orEmpty(),
+            text = draft.text,
             attachments = attachments,
             revision = priorRevision,
         )

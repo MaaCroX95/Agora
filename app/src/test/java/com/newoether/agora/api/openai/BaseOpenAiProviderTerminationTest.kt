@@ -357,13 +357,23 @@ class BaseOpenAiProviderTerminationTest {
             config.copy(
                 thinkingEnabled = true,
                 thinkingLevel = "low",
-                openAiServiceTier = "fast",
+                openAiServiceTier = "ultrafast",
                 openAiWebSearchEnabled = true,
+                temperature = 0.7f,
+                maxTokens = 777,
+                topP = 0.8f,
+                frequencyPenalty = 0.2f,
+                presencePenalty = -0.1f,
             ),
         )
 
         val body = WIRE_JSON.parseToJsonElement(server.requests.single().body).jsonObject
-        assertEquals("fast", body["service_tier"]?.jsonPrimitive?.content)
+        assertEquals("ultrafast", body["service_tier"]?.jsonPrimitive?.content)
+        assertEquals("0.7", body["temperature"]?.jsonPrimitive?.content)
+        assertEquals("777", body["max_output_tokens"]?.jsonPrimitive?.content)
+        assertEquals("0.8", body["top_p"]?.jsonPrimitive?.content)
+        assertFalse(body.containsKey("frequency_penalty"))
+        assertFalse(body.containsKey("presence_penalty"))
         assertEquals("auto", body["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
         val hosted = events.filterIsInstance<StreamEvent.HostedToolCallUpdate>()
         assertEquals(2, hosted.size)

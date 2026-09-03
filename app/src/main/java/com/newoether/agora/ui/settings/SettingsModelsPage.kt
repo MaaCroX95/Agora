@@ -38,10 +38,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
 import com.newoether.agora.data.CustomProviderConfig
+import com.newoether.agora.data.inferModelAlias
 import com.newoether.agora.data.modelAliasDisplayName
 import com.newoether.agora.data.modelApiDisplayName
 import com.newoether.agora.data.providerDisplayName
-import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
 import com.newoether.agora.model.ModelId
 import com.newoether.agora.model.apiModelName
 import com.newoether.agora.ui.components.clearFocusOnTap
@@ -114,19 +114,29 @@ internal fun fetchedModelGroups(
             .filterNot { it in customModels }
             .distinct()
             .filter { model ->
+                val apiModelName = ModelId.parse(model).apiModelName
                 normalizedQuery.isEmpty() ||
                     providerMatches ||
-                    ModelId.parse(model).apiModelName.contains(
-                        normalizedQuery,
-                        ignoreCase = true,
-                    ) ||
-                    modelAliases[model]?.contains(normalizedQuery, ignoreCase = true) == true
+                    model.contains(normalizedQuery, ignoreCase = true) ||
+                    apiModelName.contains(normalizedQuery, ignoreCase = true) ||
+                    modelAliases[model]?.contains(normalizedQuery, ignoreCase = true) == true ||
+                    inferModelAlias(apiModelName).contains(normalizedQuery, ignoreCase = true)
             }
             .toList()
         filteredModels.takeIf { it.isNotEmpty() }?.let {
             ModelProviderGroup(providerName = providerName, models = it)
         }
     }
+}
+
+internal fun modelAliasToPersist(
+    rawAlias: String,
+    initialDisplayAlias: String,
+    editedAlias: String,
+): String = if (editedAlias.trim() == initialDisplayAlias.trim()) {
+    rawAlias.trim()
+} else {
+    editedAlias.trim()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -260,7 +270,15 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                             )
                         },
                         supportingContent = if (hasEnabledModels) {
-                            { Text(providerName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)) }
+                            {
+                                Text(
+                                    providerName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                        alpha = 0.6f,
+                                    ),
+                                )
+                            }
                         } else null,
                         leadingContent = {
                             val tint = if (hasEnabledModels) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
@@ -328,8 +346,9 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                         )
                         customModelId = parsed.modelName
                         customModelRawAlias = modelAliases[model].orEmpty()
-                        customModelAlias = replaceCustomProviderIdsForDisplay(
-                            customModelRawAlias,
+                        customModelAlias = modelAliasDisplayName(
+                            model,
+                            modelAliases,
                             customProviders,
                         )
                         showCustomModelDialog = true
@@ -495,7 +514,10 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                 Text(displayName, fontWeight = if (model == selectedModel) FontWeight.Bold else FontWeight.Normal)
                             },
                             supportingContent = {
-                                Text(providerName, style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    providerName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
                             },
                             leadingContent = {
                                 RadioButton(
@@ -524,14 +546,15 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
         val normalizedProvider = customModelProvider.trim()
         val normalizedModelId = customModelId.trim()
         val normalizedAlias = customModelAlias.trim()
-        val unchangedDisplayAlias = replaceCustomProviderIdsForDisplay(
-            customModelRawAlias,
-            customProviders,
-        ).trim()
-        val aliasToPersist = if (
-            originalModelId != null && normalizedAlias == unchangedDisplayAlias
-        ) {
-            customModelRawAlias.trim()
+        val unchangedDisplayAlias = originalModelId?.let { model ->
+            modelAliasDisplayName(model, modelAliases, customProviders)
+        }.orEmpty()
+        val aliasToPersist = if (originalModelId != null) {
+            modelAliasToPersist(
+                rawAlias = customModelRawAlias,
+                initialDisplayAlias = unchangedDisplayAlias,
+                editedAlias = customModelAlias,
+            )
         } else {
             normalizedAlias
         }
@@ -781,7 +804,7 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     // ── Model Alias Dialog ──
     showModelAliasDialog?.let { model ->
         val rawAlias = modelAliases[model].orEmpty()
-        val displayAlias = replaceCustomProviderIdsForDisplay(rawAlias, customProviders)
+        val displayAlias = modelAliasDisplayName(model, modelAliases, customProviders)
         val aliasState = rememberTextFieldState(displayAlias)
 
         AlertDialog(
@@ -810,7 +833,11 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                     val editedAlias = aliasState.text.toString()
                     viewModel.settings.updateModelAlias(
                         model,
-                        if (editedAlias == displayAlias) rawAlias else editedAlias,
+                        modelAliasToPersist(
+                            rawAlias = rawAlias,
+                            initialDisplayAlias = displayAlias,
+                            editedAlias = editedAlias,
+                        ),
                     )
                     showModelAliasDialog = null
                 }) { Text(stringResource(R.string.provider_save)) }

@@ -81,13 +81,10 @@ internal fun <T> resolveSelectedPath(
 
         val selectedId = selectedChildren[cursor]
         val visibleSiblings = siblings.filterNot(isSynthetic)
-        var selected = if (visibleSiblings.isNotEmpty()) {
+        val selected = if (visibleSiblings.isNotEmpty()) {
             visibleSiblings.find { idOf(it) == selectedId } ?: visibleSiblings.last()
         } else {
             siblings.find { idOf(it) == selectedId } ?: siblings.last()
-        }
-        if (streamingMessage != null && idOf(selected) == idOf(streamingMessage)) {
-            selected = streamingMessage
         }
         val selectedMessageId = idOf(selected)
         check(visited.add(selectedMessageId)) { "Selected message path contains a cycle" }
@@ -99,20 +96,86 @@ internal fun <T> resolveSelectedPath(
         cursor = selectedMessageId
     }
 
-    if (
-        streamingMessage != null &&
-        path.none { idOf(it) == idOf(streamingMessage) }
-    ) {
-        val lastId = path.lastOrNull()?.let(idOf)
-        if (
-            parentIdOf(streamingMessage) == lastId ||
-            (parentIdOf(streamingMessage) == null && path.isEmpty())
-        ) {
-            path += streamingMessage
+    return applyStreamingItemToResolvedPath(
+        resolvedPath = path,
+        streamingItem = streamingMessage,
+        idOf = idOf,
+        parentIdOf = parentIdOf,
+    )
+}
+
+private fun <T> applyStreamingItemToResolvedPath(
+    resolvedPath: List<T>,
+    streamingItem: T?,
+    idOf: (T) -> String,
+    parentIdOf: (T) -> String?,
+): List<T> {
+    if (streamingItem == null) return resolvedPath
+    val streamingId = idOf(streamingItem)
+    val existingIndex = resolvedPath.indexOfFirst { item -> idOf(item) == streamingId }
+    if (existingIndex >= 0) {
+        if (resolvedPath[existingIndex] == streamingItem) return resolvedPath
+        return resolvedPath.toMutableList().also { path ->
+            path[existingIndex] = streamingItem
         }
     }
-    return path
+
+    val lastId = resolvedPath.lastOrNull()?.let(idOf)
+    return if (
+        parentIdOf(streamingItem) == lastId ||
+        (parentIdOf(streamingItem) == null && resolvedPath.isEmpty())
+    ) {
+        resolvedPath + streamingItem
+    } else {
+        resolvedPath
+    }
 }
+
+internal fun applyRenderSnapshotToResolvedPath(
+    resolvedPath: List<ChatMessage>,
+    snapshot: ConversationRenderSnapshot,
+    latestMessagesById: Map<String, ChatMessage> = snapshot.allMessages.associateBy(ChatMessage::id),
+): List<ChatMessage> {
+    val reboundPath = resolvedPath.map { message ->
+        latestMessagesById[message.id] ?: message
+    }
+    return applyStreamingMessageToResolvedPath(reboundPath, snapshot.streamingMessage)
+}
+
+internal fun applyStreamingMessageToResolvedPath(
+    resolvedPath: List<ChatMessage>,
+    streamingMessage: ChatMessage?,
+): List<ChatMessage> {
+    if (streamingMessage == null) return resolvedPath
+    val pendingIndex = resolvedPath.indexOfFirst { message ->
+        isPendingVisibleIntervention(
+            message = message,
+            streamingRunId = streamingMessage.runId,
+        )
+    }
+    val eligiblePath = if (pendingIndex >= 0) resolvedPath.take(pendingIndex) else resolvedPath
+    return applyStreamingItemToResolvedPath(
+        resolvedPath = eligiblePath,
+        streamingItem = streamingMessage,
+        idOf = ChatMessage::id,
+        parentIdOf = ChatMessage::parentId,
+    )
+}
+
+/**
+ * Only a real user intervention can be queue-only while a Pass is streaming. Tool-result rows
+ * also use Participant.USER and consumedAtPass=null, but they remain durable protocol edges.
+ */
+internal fun isPendingVisibleIntervention(
+    message: ChatMessage,
+    streamingRunId: String?,
+): Boolean =
+    message.participant == Participant.USER &&
+        !message.id.startsWith(Constants.TOOL_MSG_PREFIX) &&
+        !message.id.startsWith(Constants.RESULT_MSG_PREFIX) &&
+        !streamingRunId.isNullOrBlank() &&
+        message.runId == streamingRunId &&
+        message.consumedAtPass == null
 
 data class ConversationUiState(
     val path: List<ChatMessage> = emptyList(),
@@ -142,23 +205,6 @@ data class ConversationUiState(
                 )
             },
         )
-
-        /**
-         * Only a real user intervention can be queue-only while a Pass is streaming. Tool-result
-         * rows also use Participant.USER and consumedAtPass=null, but they are durable protocol
-         * edges: filtering one severs every visible descendant after that tool round. Pending
-         * inputs from an older terminal Run must remain visible while a newer Run streams; hiding
-         * them would sever the newer Run's complete parent path.
-         */
-        private fun isPendingVisibleIntervention(
-            message: ChatMessage,
-            streamingRunId: String?,
-        ): Boolean =
-            message.participant == Participant.USER &&
-                !isSynthetic(message) &&
-                !streamingRunId.isNullOrBlank() &&
-                message.runId == streamingRunId &&
-                message.consumedAtPass == null
 
         private fun isSynthetic(message: ChatMessage): Boolean =
             message.id.startsWith(Constants.TOOL_MSG_PREFIX) ||

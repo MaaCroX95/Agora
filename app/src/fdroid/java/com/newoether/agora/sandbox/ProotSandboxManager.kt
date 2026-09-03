@@ -3,16 +3,34 @@ package com.newoether.agora.sandbox
 import android.content.Context
 import android.os.Build
 import android.os.Environment
+import android.system.Os
 import android.util.Log
 import com.newoether.agora.R
 import com.newoether.agora.data.repository.SettingsRepository
+import com.newoether.agora.util.SHELL_FILE_EDIT_MAX_BYTES
+import com.newoether.agora.util.SHELL_FILE_GLOB_MAX_MATCHES
+import com.newoether.agora.util.SHELL_FILE_GREP_MAX_CONTENT_CHARS
+import com.newoether.agora.util.SHELL_FILE_GREP_MAX_FILE_BYTES
+import com.newoether.agora.util.SHELL_FILE_GREP_MAX_MATCHES
+import com.newoether.agora.util.SHELL_FILE_READ_MAX_BYTES
+import com.newoether.agora.util.SHELL_FILE_WRITE_MAX_BYTES
+import com.newoether.agora.util.SHELL_COMMAND_OUTPUT_MAX_BYTES
+import com.newoether.agora.util.ShellFileEditResult
+import com.newoether.agora.util.ShellFileReadResult
+import com.newoether.agora.util.editShellFileContent
+import com.newoether.agora.util.readBoundedShellOutput
+import com.newoether.agora.util.shellFileLineCount
+import com.newoether.agora.util.shellFileSha256
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,6 +40,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 class ProotSandboxManager(
@@ -377,102 +396,286 @@ class ProotSandboxManager(
             val p = pb.start()
             coroutineScope {
                 val output = async(Dispatchers.IO) {
-                    p.inputStream.bufferedReader().use { it.readText() }
+                    p.inputStream.use { it.readBoundedShellOutput() }
                 }
-                val exitCode = withTimeoutOrNull(timeoutMs.toLong().coerceAtLeast(1L)) {
-                    var code: Int? = null
-                    while (code == null) {
-                        code = runCatching { p.exitValue() }.getOrNull()
-                        if (code == null) delay(PROCESS_POLL_INTERVAL_MS)
+                try {
+                    val exitCode = withTimeoutOrNull(timeoutMs.toLong().coerceAtLeast(1L)) {
+                        var code: Int? = null
+                        while (code == null) {
+                            code = runCatching { p.exitValue() }.getOrNull()
+                            if (code == null) delay(PROCESS_POLL_INTERVAL_MS)
+                        }
+                        code
                     }
-                    code
-                }
-                if (exitCode == null) {
+                    if (exitCode == null) {
+                        p.destroy()
+                        runCatching { p.inputStream.close() }
+                        val partial = try {
+                            withTimeoutOrNull(PROCESS_OUTPUT_CLOSE_GRACE_MS) { output.await() }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            null
+                        }
+                        output.cancel()
+                        SandboxManager.SandboxResult(
+                            stdout = partial?.first.orEmpty(),
+                            stderr = "Timed out",
+                            exitCode = -1,
+                            warning = partial?.second?.takeIf { it }?.let {
+                                "Local Sandbox output was truncated at $SHELL_COMMAND_OUTPUT_MAX_BYTES UTF-8 bytes."
+                            },
+                        )
+                    } else {
+                        val (stdout, truncated) = output.await()
+                        SandboxManager.SandboxResult(
+                            stdout = stdout,
+                            stderr = "",
+                            exitCode = exitCode,
+                            warning = truncated.takeIf { it }?.let {
+                                "Local Sandbox output was truncated at $SHELL_COMMAND_OUTPUT_MAX_BYTES UTF-8 bytes."
+                            },
+                        )
+                    }
+                } catch (error: Throwable) {
                     p.destroy()
                     runCatching { p.inputStream.close() }
-                    val partial = runCatching {
-                        withTimeoutOrNull(PROCESS_OUTPUT_CLOSE_GRACE_MS) { output.await() }
-                    }.getOrNull().orEmpty()
                     output.cancel()
-                    SandboxManager.SandboxResult(partial, "Timed out", -1)
-                } else {
-                    SandboxManager.SandboxResult(output.await(), "", exitCode)
+                    throw error
                 }
             }
-        } catch (e: Throwable) { SandboxManager.SandboxResult("", e.message ?: "proot failed", -1) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Throwable) {
+            SandboxManager.SandboxResult("", e.message ?: "proot failed", -1)
+        }
     }
 
-    override suspend fun executeCommand(cmd: String, wd: String, to: Int): SandboxManager.SandboxResult {
+    override suspend fun executeCommand(
+        command: String,
+        workdir: String,
+        timeoutMs: Int,
+    ): SandboxManager.SandboxResult {
         if (!isAvailable()) return SandboxManager.SandboxResult("", "Sandbox not installed", -1)
-        return executeRaw(cmd, wd.ifBlank { homeMountPath }, to)
+        return executeRaw(command, workdir.ifBlank { homeMountPath }, timeoutMs)
     }
 
     // ── File Operations ────────────────────────────────
 
-    override suspend fun fileRead(path: String, offset: Long, limit: Long): String = withContext(Dispatchers.IO) {
-        val f = resolvePath(path); if (!f.exists()) throw IllegalStateException("File not found: $path")
-        val fileSize = f.length().toInt()
-        val s = offset.coerceIn(0, fileSize.toLong()).toInt()
-        val max = com.newoether.agora.util.Constants.MAX_TOOL_RESULT_LENGTH
-        val e = if (limit > 0) minOf((s + limit).toInt(), fileSize)
-                else minOf(s + max, fileSize)
-        val len = e - s
-        val buf = ByteArray(len)
-        f.inputStream().use { it.skip(s.toLong()); it.read(buf) }
-        String(buf, Charsets.UTF_8)
+    override suspend fun fileRead(
+        path: String,
+        offset: Long,
+        limit: Long,
+    ): ShellFileReadResult = withContext(Dispatchers.IO) {
+        val file = resolvePath(path)
+        if (!file.exists()) throw IllegalStateException("File not found: $path")
+        val totalBytes = file.length()
+        val normalizedOffset = offset.coerceAtLeast(0)
+        val start = normalizedOffset.coerceAtMost(totalBytes)
+        val effectiveLimit = if (limit in 1..SHELL_FILE_READ_MAX_BYTES) {
+            limit
+        } else {
+            SHELL_FILE_READ_MAX_BYTES
+        }
+        val requestedBytes = minOf(effectiveLimit, totalBytes - start).toInt()
+        val buffer = ByteArray(requestedBytes)
+        val bytesRead = java.io.RandomAccessFile(file, "r").use { input ->
+            input.seek(start)
+            var totalRead = 0
+            while (totalRead < buffer.size) {
+                val count = input.read(buffer, totalRead, buffer.size - totalRead)
+                if (count <= 0) break
+                totalRead += count
+            }
+            totalRead
+        }
+        val content = String(buffer, 0, bytesRead, Charsets.UTF_8)
+        ShellFileReadResult(
+            content = content,
+            lines = shellFileLineCount(content),
+            totalLines = if (totalBytes <= SHELL_FILE_READ_MAX_BYTES) {
+                shellFileLineCount(file.readText(Charsets.UTF_8))
+            } else {
+                0
+            },
+            totalBytes = totalBytes,
+            returnedBytes = content.toByteArray(Charsets.UTF_8).size.toLong(),
+            offset = start,
+            limit = effectiveLimit,
+            truncated = start + bytesRead < totalBytes,
+        )
+    }
+
+    private fun writeSandboxFileAtomically(
+        file: File,
+        content: ByteArray,
+        beforeReplace: () -> String? = { null },
+    ): String? {
+        if (file.exists() && !file.isFile) return "path is not a regular file"
+        val parent = file.parentFile ?: return "file has no parent directory"
+        if (!parent.exists() && !parent.mkdirs()) return "failed to create parent directory"
+        val mode = if (file.exists()) {
+            Os.stat(file.absolutePath).st_mode and 0x1FF
+        } else {
+            0x1A4
+        }
+        val tempFile = File.createTempFile(".${file.name}.", ".tmp", parent)
+        try {
+            FileOutputStream(tempFile).use { output ->
+                output.write(content)
+                output.fd.sync()
+            }
+            Os.chmod(tempFile.absolutePath, mode)
+            beforeReplace()?.let { return it }
+            Os.rename(tempFile.absolutePath, file.absolutePath)
+        } finally {
+            tempFile.delete()
+        }
+        return null
     }
 
     override suspend fun fileWrite(path: String, content: String): String? = withContext(Dispatchers.IO) {
-        try { val f = resolvePath(path); f.parentFile?.mkdirs(); f.writeText(content, Charsets.UTF_8); null }
-        catch (e: Throwable) { "Sandbox file write failed: ${e.message}" }
+        mutationMutex.withLock {
+            try {
+                val contentBytes = content.toByteArray(Charsets.UTF_8)
+                if (contentBytes.size > SHELL_FILE_WRITE_MAX_BYTES) {
+                    return@withLock "content exceeds 1MB limit"
+                }
+                val file = resolvePath(path)
+                writeSandboxFileAtomically(file, contentBytes)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                "Sandbox file write failed: ${e.message}"
+            }
+        }
     }
 
-    override suspend fun fileGlob(pattern: String, basePath: String, depth: Int?): List<String> = withContext(Dispatchers.IO) {
-        val base = resolveSandboxPath(if (basePath.isBlank()) "/" else basePath)
+    override suspend fun fileGlob(
+        pattern: String,
+        basePath: String,
+        depth: Int?,
+    ): Pair<List<String>, Boolean> = withContext(Dispatchers.IO) {
+        currentCoroutineContext().ensureActive()
+        val base = resolveSandboxPath(basePath.ifBlank { homeMountPath })
         val files = mutableListOf<String>()
         // null = legacy full recursion; <=0 = explicit unlimited; >=1 = max levels.
         val remaining = if (depth == null || depth <= 0) -1 else depth
         pathResolver.walkVirtualFiles(base.file, files, base.physicalRoot.canonicalPath, base.virtualRoot, remaining)
-        globMatch(files, pattern)
+        currentCoroutineContext().ensureActive()
+        val matches = globMatch(files, pattern)
+        matches.take(SHELL_FILE_GLOB_MAX_MATCHES) to
+            (matches.size >= SHELL_FILE_GLOB_MAX_MATCHES)
     }
 
-    override suspend fun fileGrep(pattern: String, basePath: String, fileGlob: String): Result<List<SandboxManager.GrepMatch>> = withContext(Dispatchers.IO) {
+    override suspend fun fileGrep(
+        pattern: String,
+        basePath: String,
+        fileGlob: String,
+    ): Result<Pair<List<SandboxManager.GrepMatch>, Boolean>> = withContext(Dispatchers.IO) {
         try {
-            val regex = try { Regex(pattern) } catch (e: Throwable) { Regex(java.util.regex.Pattern.quote(pattern)) }
-            val files = if (fileGlob.isNotBlank()) fileGlob(fileGlob, basePath)
-            else {
-                val b = resolveSandboxPath(if (basePath.isBlank()) "/" else basePath)
-                val a = mutableListOf<String>()
-                pathResolver.walkVirtualFiles(b.file, a, b.physicalRoot.canonicalPath, b.virtualRoot)
-                a
-            }
+            val regex = Regex(pattern)
+            val base = resolveSandboxPath(basePath.ifBlank { homeMountPath })
+            val allFiles = mutableListOf<String>()
+            pathResolver.walkVirtualFiles(
+                base.file,
+                allFiles,
+                base.physicalRoot.canonicalPath,
+                base.virtualRoot,
+            )
+            currentCoroutineContext().ensureActive()
+            val files = if (fileGlob.isBlank()) allFiles else globMatch(allFiles, fileGlob)
             val matches = mutableListOf<SandboxManager.GrepMatch>()
-            for (file in files) {
+            fileLoop@ for (file in files) {
+                currentCoroutineContext().ensureActive()
                 try {
                     val resolved = if (file.startsWith("/")) resolvePath(file) else resolvePath("/$file")
-                    if (!resolved.exists() || resolved.length() > 500_000L) continue
+                    if (!resolved.exists() || resolved.length() > SHELL_FILE_GREP_MAX_FILE_BYTES) continue
                     val text = resolved.readText(Charsets.UTF_8)
                     // Skip binary files: a NUL byte in the content is the standard
                     // heuristic grep itself uses to avoid emitting garbage matches.
                     if (text.contains('\u0000')) continue
-                    text.lines().forEachIndexed { i, line ->
-                        if (regex.containsMatchIn(line)) matches.add(SandboxManager.GrepMatch(path = file, line = i + 1, content = line.take(500)))
+                    val lines = text.lineSequence().iterator()
+                    var lineNumber = 0
+                    while (lines.hasNext()) {
+                        currentCoroutineContext().ensureActive()
+                        lineNumber += 1
+                        val line = lines.next()
+                        if (regex.containsMatchIn(line)) {
+                            matches.add(
+                                SandboxManager.GrepMatch(
+                                    path = file,
+                                    line = lineNumber,
+                                    content = line.take(SHELL_FILE_GREP_MAX_CONTENT_CHARS),
+                                ),
+                            )
+                            if (matches.size >= SHELL_FILE_GREP_MAX_MATCHES) break@fileLoop
+                        }
                     }
-                } catch (_: Throwable) {}
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {}
             }
-            Result.success(matches)
-        } catch (e: Throwable) { Result.failure(e) }
+            Result.success(matches to (matches.size >= SHELL_FILE_GREP_MAX_MATCHES))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
-    override suspend fun fileEdit(path: String, oldString: String, newString: String, replaceAll: Boolean): SandboxManager.FileEditResult = withContext(Dispatchers.IO) {
-        try {
-            val f = resolvePath(path); if (!f.exists()) return@withContext SandboxManager.FileEditResult(0, "File not found: $path")
-            if (f.length() > com.newoether.agora.util.Constants.MAX_FILE_CONTENT_READ_LENGTH) return@withContext SandboxManager.FileEditResult(0, "File too large to edit (>${com.newoether.agora.util.Constants.MAX_FILE_CONTENT_READ_LENGTH / 1000}KB)")
-            val content = f.readText(Charsets.UTF_8); val count = content.split(oldString).size - 1
-            if (count == 0) SandboxManager.FileEditResult(0, "old_string not found in file")
-            else if (count > 1 && !replaceAll) SandboxManager.FileEditResult(0, "Found $count matches. Use replace_all=true.")
-            else { f.writeText(content.replace(oldString, newString), Charsets.UTF_8); SandboxManager.FileEditResult(if (replaceAll) count else 1) }
-        } catch (e: Throwable) { SandboxManager.FileEditResult(0, "Sandbox file edit failed: ${e.message}") }
+    override suspend fun fileEdit(
+        path: String,
+        oldString: String,
+        newString: String,
+        replaceAll: Boolean,
+    ): ShellFileEditResult = withContext(Dispatchers.IO) {
+        mutationMutex.withLock {
+            try {
+                val file = resolvePath(path)
+                if (!file.exists()) {
+                    return@withLock ShellFileEditResult(0, error = "File not found: $path")
+                }
+                if (!file.isFile) {
+                    return@withLock ShellFileEditResult(0, error = "path is not a regular file")
+                }
+                if (file.length() > SHELL_FILE_EDIT_MAX_BYTES) {
+                    return@withLock ShellFileEditResult(0, error = "file exceeds 16MB edit limit")
+                }
+
+                val originalBytes = file.readBytes()
+                if (originalBytes.size > SHELL_FILE_EDIT_MAX_BYTES) {
+                    return@withLock ShellFileEditResult(0, error = "file exceeds 16MB edit limit")
+                }
+                val (editedContent, editResult) = editShellFileContent(
+                    content = originalBytes.toString(Charsets.UTF_8),
+                    oldString = oldString,
+                    newString = newString,
+                    replaceAll = replaceAll,
+                )
+                if (editedContent == null) return@withLock editResult
+
+                val editedBytes = editedContent.toByteArray(Charsets.UTF_8)
+                if (editedBytes.size > SHELL_FILE_EDIT_MAX_BYTES) {
+                    return@withLock ShellFileEditResult(0, error = "edited file exceeds 16MB limit")
+                }
+                val writeError = writeSandboxFileAtomically(file, editedBytes) {
+                    if (!file.readBytes().contentEquals(originalBytes)) {
+                        "file changed concurrently before edit could be applied"
+                    } else {
+                        null
+                    }
+                }
+                if (writeError != null) {
+                    return@withLock ShellFileEditResult(0, error = writeError)
+                }
+                editResult.copy(sha256 = shellFileSha256(editedBytes))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                ShellFileEditResult(0, error = "Sandbox file edit failed: ${e.message}")
+            }
+        }
     }
 
     // ── Package Management ──────────────────────────────

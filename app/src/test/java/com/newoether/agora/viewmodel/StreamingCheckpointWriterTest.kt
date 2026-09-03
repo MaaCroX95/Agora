@@ -6,6 +6,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -43,6 +44,59 @@ class StreamingCheckpointWriterTest {
         assertEquals("one", persisted.first())
         assertEquals("four", persisted.last())
         assertTrue(persisted.size <= 3)
+    }
+
+    @Test
+    fun ordinaryPersistenceFailureDoesNotKillTheWriter() = runBlocking {
+        val expected = IllegalStateException("ordinary checkpoint failed")
+        val firstAttempted = CompletableDeferred<Unit>()
+        val failures = mutableListOf<Exception>()
+        val persisted = mutableListOf<String>()
+        val writer = StreamingCheckpointWriter(
+            scope = this,
+            persist = { message ->
+                if (message.text == "bad") {
+                    firstAttempted.complete(Unit)
+                    throw expected
+                }
+                persisted += message.text
+                true
+            },
+            onFailure = failures::add,
+        )
+
+        writer.enqueue(message("bad"))
+        firstAttempted.await()
+        assertTrue(writer.flush(message("recovered")))
+        writer.cancelAndJoin()
+
+        assertEquals(listOf("recovered"), persisted)
+        assertEquals(listOf(expected), failures)
+    }
+
+    @Test
+    fun forcedPersistenceFailurePropagatesAndALaterFlushRecovers() = runBlocking {
+        val expected = IllegalStateException("forced checkpoint failed")
+        val failures = mutableListOf<Exception>()
+        var failNext = true
+        val writer = StreamingCheckpointWriter(
+            scope = this,
+            persist = {
+                if (failNext) {
+                    failNext = false
+                    throw expected
+                }
+                true
+            },
+            onFailure = failures::add,
+        )
+
+        val failure = runCatching { writer.flush(message("fails")) }.exceptionOrNull()
+        assertSame(expected, failure)
+        assertTrue(writer.flush(message("recovers")))
+        writer.cancelAndJoin()
+
+        assertEquals(listOf(expected), failures)
     }
 
     @Test

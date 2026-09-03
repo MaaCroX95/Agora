@@ -71,6 +71,38 @@ class ConversationSwitchSafetySourceContractTest {
     }
 
     @Test
+    fun `pending attachment send waits for switching and uses the new chat draft owner`() {
+        val root = locateMainSourceRoot()
+        val sendButton = File(
+            root,
+            "com/newoether/agora/ui/chat/bottombar/ComposerSendButton.kt",
+        ).readText()
+        val viewModel = File(
+            root,
+            "com/newoether/agora/viewmodel/ChatViewModel.kt",
+        ).readText()
+
+        assertTrue(
+            "the pending-send effect must restart when switching settles",
+            sendButton.contains(
+                "LaunchedEffect(composer.pendingSend, anyProcessing, isSwitching)",
+            ),
+        )
+        assertTrue(
+            "attachment auto-submit must stay pending while a conversation switch is covered",
+            sendButton.contains(
+                "composer.pendingSend && !anyProcessing && !isSwitching",
+            ),
+        )
+        assertTrue(
+            "new-chat mode must select the singleton draft owner before the old id is cleared",
+            Regex(
+                """if \(isNewChatMode\.value\) NEW_CHAT_WORKSPACE_ID\s*else currentConversationId\.value \?: NEW_CHAT_WORKSPACE_ID""",
+            ).containsMatchIn(viewModel),
+        )
+    }
+
+    @Test
     fun `context rollout dims only classified rows through legacy message subtree alpha`() {
         val root = locateMainSourceRoot()
         val chatApp = File(root, "com/newoether/agora/ui/chat/ChatApp.kt").readText()

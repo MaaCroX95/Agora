@@ -51,9 +51,9 @@ internal class ConversationBranchMutationService(
                         if (conversations.getLiveRun(conversationId) != null) return@lock
                         if (compactOnly) {
                             check(conversations.removeContextCompact(messageId))
-                            val remaining =
-                                conversations.getMessagesForConversationSnapshot(conversationId)
-                            val remainingChatMessages = remaining.map(toUiMessage)
+                            val remainingChatMessages = conversations
+                                .getMessageTopologySnapshot(conversationId)
+                                .map { message -> message.toUiChatMessageStub() }
                             val selections = conversations.restoreBranchSelections(conversationId)
                             onMutationSettling(switchingRequestId, null)
                             if (isConversationOpen(conversationId)) {
@@ -64,23 +64,27 @@ internal class ConversationBranchMutationService(
                         }
 
                         val runs = conversations.getRunsForConversationSnapshot(conversationId)
-                        val allMessages =
-                            conversations.getMessagesForConversationSnapshot(conversationId)
-                        val allChatMessages = allMessages.map(toUiMessage)
+                        val topology = conversations.getMessageTopologySnapshot(conversationId)
+                        val allChatMessages = topology.map { message ->
+                            message.toUiChatMessageStub()
+                        }
                         val previousSelected =
                             conversations.restoreBranchSelections(conversationId)
                         val previousRunSelections =
                             conversations.restoreRunBranchSelections(conversationId)
-                        val plan = BranchDeletionPlanner.plan(
+                        val plan = BranchDeletionPlanner.planTopology(
                             rootMessageId = messageId,
-                            messages = allMessages,
+                            messages = topology,
                             runs = runs,
                             messageSelections = previousSelected,
                             runSelections = previousRunSelections,
                         )
-                        val staleList = allMessages.filter { it.id in plan.deletedMessageIds }
-                        val remainingMessages =
-                            allMessages.filter { it.id !in plan.deletedMessageIds }
+                        val staleList = conversations.getMessagesByIds(
+                            plan.deletedMessageIds.toList(),
+                        )
+                        val remainingMessages = topology
+                            .filter { it.id !in plan.deletedMessageIds }
+                            .map { message -> message.toUiChatMessageStub() }
                         check(
                             conversations.deleteMessageSubtree(
                                 conversationId = conversationId,
@@ -94,9 +98,8 @@ internal class ConversationBranchMutationService(
 
                         // Files are external to Room, so remove them only after graph commit.
                         conversations.deleteMessageFiles(staleList)
-                        val remainingChatMessages = remainingMessages.map(toUiMessage)
                         val remainingPath = ConversationUiState.resolvePath(
-                            allMessages = remainingChatMessages,
+                            allMessages = remainingMessages,
                             streamingMsg = null,
                             selectedChildren = plan.messageSelections,
                         )
@@ -107,7 +110,7 @@ internal class ConversationBranchMutationService(
                         )
                         onMutationSettling(switchingRequestId, targetAfterDelete)
                         if (isConversationOpen(conversationId)) {
-                            projectGraph(remainingChatMessages, plan.messageSelections)
+                            projectGraph(remainingMessages, plan.messageSelections)
                         }
                         committed = true
                     }

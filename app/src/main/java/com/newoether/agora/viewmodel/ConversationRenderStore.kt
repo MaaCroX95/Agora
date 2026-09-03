@@ -117,11 +117,23 @@ internal class ConversationRenderStore {
                 retiredStreamingMessageId = null
                 _snapshot.update { it.copy(allMessages = messages) }
             }
-            // Room has caught up to a terminal checkpoint. Keep the monotonic fence until a
-            // new stream starts (or the row is deleted), because an older projection may
-            // already have completed its off-main mapping and still be queued for delivery.
+            // Room has caught up to a terminal checkpoint. Keep the exact in-memory handoff
+            // payload: replacing it with a separately decoded/bounded projection creates a second
+            // visible terminal transition and can invalidate an open segment-detail selection.
+            // The fence remains until a new stream starts or the row is deleted because an older
+            // streaming projection may already be queued for delivery.
             !incoming.status.isStreamingStatus() -> {
-                _snapshot.update { it.copy(allMessages = messages) }
+                _snapshot.update { snapshot ->
+                    snapshot.copy(
+                        allMessages = if (currentTerminal == null) {
+                            messages
+                        } else {
+                            messages.map { message ->
+                                if (message.id == retiredId) currentTerminal else message
+                            }
+                        },
+                    )
+                }
             }
             // A projection that started before the terminal transaction must not regress the
             // visible row from SUCCESS/ERROR/STOPPED back to Answering.

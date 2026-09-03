@@ -221,6 +221,12 @@ internal class ConversationCompactController(
         config = config.copy(
             effectiveSystemPrompt = request.prompt,
             initialUserPrompt = BuiltInPrompts.CONTEXT_COMPACT_USER,
+            userPrepend = null,
+            userPostpend = null,
+            assistantPrepend = null,
+            assistantPostpend = null,
+            promptTemplate = null,
+            requestResolver = null,
             codeExecutionEnabled = false,
             googleSearchEnabled = false,
             openAiWebSearchEnabled = false,
@@ -257,10 +263,11 @@ internal class ConversationCompactController(
             retainLogicalMessages,
         ).retained
         return { generatedText, status ->
-            if (status == MessageStatus.SUCCESS && generatedText.isNotBlank()) {
-                buildPersistedCompactText(generatedText, retained)
+            val normalizedText = normalizeContextCompactOutput(generatedText)
+            if (status == MessageStatus.SUCCESS && normalizedText.isNotBlank()) {
+                buildPersistedCompactText(normalizedText, retained)
             } else {
-                generatedText
+                normalizedText
             }
         }
     }

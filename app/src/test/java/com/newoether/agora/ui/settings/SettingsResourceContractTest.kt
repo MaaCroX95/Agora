@@ -29,6 +29,170 @@ class SettingsResourceContractTest {
     }
 
     @Test
+    fun englishSettingsDestinationTitlesFollowTheGlobalTitleCaseContract() {
+        val values = readStringValues(File(locateResourceDirectory(), "values"))
+        val expected = linkedMapOf(
+            "settings_title" to "Settings",
+            "settings_provider" to "Providers",
+            "models_title" to "Models",
+            "generation_title" to "Generation",
+            "context_title" to "Context",
+            "settings_title_gen" to "Title Generation",
+            "prompts_title" to "System Prompts",
+            "prompts_edit_title" to "Edit System Prompt",
+            "prompts_add_title" to "Add System Prompt",
+            "settings_transcription" to "Image Transcription",
+            "settings_image_gen" to "Image Generation",
+            "search_title" to "Conversation Search",
+            "web_search_title" to "Web Search",
+            "mcp_title" to "MCP",
+            "mcp_add_server" to "Add MCP Server",
+            "mcp_edit_server" to "Edit MCP Server",
+            "shell_title" to "Shell",
+            "sandbox_mgmt_title" to "Sandbox Management",
+            "settings_automation" to "Automation",
+            "tasks" to "Tasks",
+            "task_new" to "New Task",
+            "task_edit" to "Edit Task",
+            "memory_title" to "Memory",
+            "skills_title" to "Skills",
+            "appearance_title" to "Appearance",
+            "language_title" to "Language",
+            "settings_data_control" to "Data Control",
+            "settings_proxy" to "Proxy",
+            "developer_options_title" to "Developer Options",
+            "about_title" to "About",
+            "claude_import_title" to "Import from Claude",
+            "local_title" to "Local",
+            "openai_service_tier_title" to "Service Tier",
+        )
+        expected.forEach { (key, title) ->
+            assertEquals("English title resource $key", title, values[key])
+        }
+    }
+
+    @Test
+    fun englishSettingsSurfaceTitlesFollowTheGlobalTitleCaseContract() {
+        val values = readStringValues(File(locateResourceDirectory(), "values"))
+        val expected = linkedMapOf(
+            "mcp_delete_header" to "Delete Header",
+            "mcp_show_header_value" to "Show Header Value",
+            "mcp_hide_header_value" to "Hide Header Value",
+            "task_model_default" to "App Default",
+            "task_run_now" to "Run Now",
+            "task_delete" to "Delete Task",
+            "task_enabled" to "Run on Schedule",
+            "task_schedule_not_set" to "Not Set",
+            "task_new_task" to "New Task",
+            "task_schedule_manual" to "Manual Only",
+            "task_select_month_day" to "Select Month and Day",
+            "task_switch_to_date_input" to "Switch to Date Input",
+            "task_switch_to_calendar" to "Switch to Calendar",
+            "task_days_of_week" to "Days of Week",
+            "task_day_of_month" to "Day of Month",
+            "image_gen_show_all" to "Show All Models",
+            "prompts_template_title" to "Choose a Template",
+            "prompts_empty_title" to "No System Prompts",
+            "template_move_up" to "Move Up",
+            "template_move_down" to "Move Down",
+            "models_clear_search" to "Clear Model Search",
+            "local_model_idle_retention" to "Model Idle Retention",
+            "shell_ssh_verify_host_key" to "Verify & Pin Host Key",
+            "context_compact" to "Context Compact",
+            "context_compact_auto" to "Automatic Compact",
+            "context_compact_model" to "Compact Model",
+            "context_compact_prompt" to "Compact Prompt",
+            "context_compact_select_model" to "Select Compact Model",
+            "context_compact_retain" to "Recent Messages to Keep",
+            "context_compact_threshold" to "Automatic Compact Threshold",
+            "settings_developer" to "Developer Options",
+            "developer_options_capture" to "Diagnostic Capture",
+            "developer_options_disable_title" to "Turn Off Developer Options?",
+            "developer_options_clear_diagnostics" to "Clear Diagnostic Session",
+            "developer_options_timeline_group" to "Metadata Timeline",
+            "developer_options_payload_capture" to "Protocol Payload Capture",
+            "developer_options_sensitive_capture" to "Sensitive Content",
+            "developer_options_sensitive_capture_title" to "Capture Sensitive Content?",
+            "developer_options_export" to "Export Diagnostic Bundle",
+            "developer_options_export_share_title" to "Share Agora Diagnostic Bundle",
+            "skills_empty" to "No Skills Yet",
+        )
+        expected.forEach { (key, title) ->
+            assertEquals("English settings surface resource $key", title, values[key])
+        }
+    }
+
+    @Test
+    fun englishAppearanceTitlesFollowTheGlobalTitleCaseContract() {
+        val values = readStringValues(File(locateResourceDirectory(), "values"))
+        val expected = linkedMapOf(
+            "appearance_theme_color" to "Theme & Color",
+            "appearance_motion_feedback" to "Motion & Feedback",
+            "appearance_chat_display" to "Chat Display",
+            "theme_mode" to "Theme Mode",
+            "theme_mode_light" to "Light",
+            "theme_mode_dark" to "Dark",
+            "theme_mode_follow_device" to "Follow Device",
+            "dynamic_color" to "Dynamic Color",
+            "color_scheme" to "Color Scheme",
+            "scheme_style" to "Scheme Style",
+            "blur_effects" to "Blur Effects",
+            "reduce_motion" to "Reduce Motion",
+            "haptic_feedback" to "Haptic Feedback",
+            "stick_to_bottom" to "Stick to Bottom",
+            "parse_inline_dollar_math" to "Parse $…$ as Inline Math",
+            "tool_call_display_mode" to "Thinking & Tool Blocks",
+            "tool_call_display_mode_timeline" to "Timeline",
+            "tool_call_display_mode_grouped_timeline" to "Grouped",
+            "tool_call_display_mode_compact" to "Compact",
+            "thinking_segment_display_mode" to "Thinking Segments",
+            "thinking_segment_display_card" to "Card",
+            "thinking_segment_display_bottom_sheet" to "Bottom Sheet",
+            "auto_expand_active_group" to "Auto-Expand Active Group",
+            "font_title" to "Font",
+            "font_app_default" to "App Default",
+            "font_system_default" to "System Default",
+            "font_custom" to "Custom Font",
+        )
+        expected.forEach { (key, title) ->
+            assertEquals("English Appearance title resource $key", title, values[key])
+        }
+    }
+
+    @Test
+    fun localModelIdleRetentionCopyIsLocalizedWithMatchingPlaceholder() {
+        val resourceDirectory = locateResourceDirectory()
+        val defaultValues = readStringValues(File(resourceDirectory, "values"))
+        val keys = setOf(
+            "local_model_idle_retention",
+            "local_model_idle_retention_desc",
+            "local_model_idle_retention_immediate",
+            "local_model_idle_retention_minutes",
+        )
+        val localeDirectoryPattern = Regex("""values-[a-z]{2,3}(?:-r[A-Z]{2})?""")
+
+        resourceDirectory.listFiles().orEmpty()
+            .filter { it.isDirectory && localeDirectoryPattern.matches(it.name) }
+            .forEach { localeDirectory ->
+                val localized = readStringValues(localeDirectory)
+                assertTrue(keys.all(localized::containsKey))
+                assertTrue(
+                    "${localeDirectory.name} must localize retention copy",
+                    keys.minus("local_model_idle_retention_minutes").all {
+                        localized.getValue(it) != defaultValues.getValue(it)
+                    },
+                )
+                val placeholder = Regex("""%\d+\$[a-z]""")
+                assertEquals(
+                    placeholder.findAll(defaultValues.getValue("local_model_idle_retention_minutes"))
+                        .map { it.value }.toSet(),
+                    placeholder.findAll(localized.getValue("local_model_idle_retention_minutes"))
+                        .map { it.value }.toSet(),
+                )
+            }
+    }
+
+    @Test
     fun complexVectorTopologyIsPreserved() {
         val resourceDirectory = locateResourceDirectory()
         val drawableDirectory = File(resourceDirectory, "drawable")
@@ -101,6 +265,22 @@ class SettingsResourceContractTest {
                     }
             }
             .toSet()
+
+    private fun readStringValues(directory: File): Map<String, String> =
+        directory.listFiles { file -> file.isFile && file.extension == "xml" }
+            .orEmpty()
+            .flatMap { file ->
+                parse(file).getElementsByTagName("string").let { nodes ->
+                    (0 until nodes.length).mapNotNull { index ->
+                        (nodes.item(index) as? Element)?.let { element ->
+                            element.getAttribute("name")
+                                .takeIf(String::isNotBlank)
+                                ?.let { it to element.textContent.orEmpty() }
+                        }
+                    }
+                }
+            }
+            .toMap()
 
     private fun readSvgPathData(file: File): String {
         assertTrue("Missing SVG source: ${file.path}", file.isFile)

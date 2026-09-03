@@ -103,9 +103,6 @@ class QueuedGuidanceDrainExecutorTest {
         assertEquals("model-message", createdMessages.captured[1].id)
         assertEquals(listOf("indexed:guidance-1:one\n\ntwo", "scroll:guidance-1"), fixture.events)
         assertFalse(state.settleGuidanceClaim(lease.id, durable = false))
-        coVerify(exactly = 0) {
-            fixture.conversations.getMessagesForConversationSnapshot(any())
-        }
         state.dispose()
         Unit
     }

@@ -104,10 +104,11 @@ class ConversationCompactControllerTest {
         assertFalse(launchRequest.captured.snapshot.context.webSearchEnabled)
         assertFalse(launchRequest.captured.snapshot.context.shellEnabled)
         val finalText = launchRequest.captured.transformFinalText(
-            "summary",
+            "<context_summary>\nsummary\n</context_summary>",
             MessageStatus.SUCCESS,
         )
         assertTrue(finalText.contains("summary"))
+        assertFalse(finalText.contains("context_summary"))
         assertTrue(finalText.contains("[User]"))
         state.dispose()
         Unit

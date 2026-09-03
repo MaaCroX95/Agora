@@ -1,11 +1,11 @@
 # Context Compact requirements
 
-Status: authoritative product baseline, updated 2026-08-13.
+Status: historical, non-authoritative product baseline, updated 2026-08-13.
 
 The global message-generation, fresh-Run, UI-boundary, and Provider context-boundary contracts are
-owned by `development/message-generation.md`. This document defines Compact product behavior and
-must be read consistently with that global contract; it cannot create a Compact-specific lifecycle
-or boundary definition.
+now owned by [`../message-generation.md`](../message-generation.md). This document preserves the
+Compact requirements used by an earlier implementation baseline. It cannot override or create an
+exception to the current global contract.
 
 ## 1. Context settings and estimation
 

@@ -1,5 +1,6 @@
 package com.newoether.agora.ui.chat
 
+import androidx.compose.foundation.lazy.LazyListState
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageGenerationBoundaryResolver
 import com.newoether.agora.model.Participant
@@ -237,6 +238,29 @@ internal data class MessageListViewportAnchor(
     val scrollOffsetPx: Int,
 )
 
+internal fun LazyListState.captureMessageListViewportAnchor(
+    turns: List<MessageListTurn>,
+): MessageListViewportAnchor? = turns
+    .getOrNull(firstVisibleItemIndex)
+    ?.messages
+    ?.firstOrNull()
+    ?.let { message ->
+        MessageListViewportAnchor(
+            messageId = message.id,
+            scrollOffsetPx = firstVisibleItemScrollOffset,
+        )
+    }
+
+internal fun LazyListState.restoreMessageListViewportAnchor(
+    turns: List<MessageListTurn>,
+    anchor: MessageListViewportAnchor,
+): Boolean {
+    val turnIndex = messageListTurnIndex(turns, anchor.messageId)
+    if (turnIndex < 0) return false
+    requestScrollToItem(turnIndex, anchor.scrollOffsetPx)
+    return true
+}
+
 internal class MessageListMutationAnchorLock {
     private val activeMutationKeys = mutableSetOf<String>()
 
@@ -260,6 +284,8 @@ internal class MessageListMutationAnchorLock {
         if (!activeMutationKeys.remove(key) || activeMutationKeys.isNotEmpty()) return null
         return anchor.also { anchor = null }
     }
+
+    fun isActive(key: String): Boolean = key in activeMutationKeys
 
     fun cancel() {
         activeMutationKeys.clear()

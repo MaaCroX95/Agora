@@ -72,10 +72,16 @@ internal fun AttachmentPreviewRow(
             val isVideo = attachment.type == "video"
             val isPdf = attachment.type == "pdf"
             val isFile = attachment.type == "file"
-            val isProcessing = uriStr in composer.processingStates
-            val progress = composer.processingStates[uriStr] ?: 0f
-            // Video extraction shows determinate progress; image/file copy is indeterminate
-            val showIndeterminate = isProcessing && !isVideo
+            val attachmentProgress = composer.processingStates[attachment.localId]
+            val legacyProgress = composer.processingStates[uriStr]
+            val isProcessing = attachmentProgress != null || legacyProgress != null
+            val progress = attachmentProgress ?: legacyProgress ?: 0f
+            // Sandbox copy progress is keyed by stable attachment identity. Known byte sizes are
+            // determinate; unknown sizes and legacy non-video processing remain indeterminate.
+            val showIndeterminate = isProcessing && (
+                attachmentProgress?.isNaN() == true ||
+                    (attachmentProgress == null && !isVideo)
+            )
 
             var videoThumb by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
             LaunchedEffect(uriStr, isVideo) {
@@ -97,7 +103,9 @@ internal fun AttachmentPreviewRow(
                 Box {
                     val clickableMod = when {
                         isFile -> {
-                            if (onFileContentClick != null) Modifier.clickable {
+                            if (!attachment.storage.canPreview) {
+                                Modifier
+                            } else if (onFileContentClick != null) Modifier.clickable {
                                 scope.launch {
                                     val content = readFileContent(
                                         context,

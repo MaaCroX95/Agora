@@ -1,5 +1,7 @@
 # Kotlin source size policy
 
+Status: authoritative repository build policy.
+
 Agora limits every handwritten Kotlin source file to at most 999 physical lines. The internal
 decomposition target is 700-800 lines; 999 is a regression gate, not a design target.
 

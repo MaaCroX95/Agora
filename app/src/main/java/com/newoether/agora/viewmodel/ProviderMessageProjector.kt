@@ -2,12 +2,24 @@ package com.newoether.agora.viewmodel
 
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.model.AttachmentMeta
+import com.newoether.agora.model.AttachmentItem
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.TokenUsage
 import com.newoether.agora.model.ToolCallData
 import com.newoether.agora.util.Constants
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+
+/** Removes duplicate aggregate tool segments after their durable protocol rows are expanded. */
+internal fun stripAggregatedToolSegments(toolCallJson: String?): String? {
+    val raw = toolCallJson ?: return null
+    val segments = runCatching {
+        Json.decodeFromString<List<MessageSegment>>(raw)
+    }.getOrNull() ?: return null
+    val retained = segments.filterNot { it.type == "tool" }
+    return retained.takeIf { it.isNotEmpty() }?.let { Json.encodeToString(it) }
+}
 
 /**
  * Lossless Room-to-provider projection shared by generation and Compact.
@@ -59,6 +71,8 @@ internal fun projectProviderMessages(
         }
         val attachmentText = attachmentMeta?.items?.mapNotNull { item ->
             when {
+                item.storage.isLocalSandbox && !item.sandboxPath.isNullOrBlank() ->
+                    sandboxAttachmentInstruction(item)
                 item.textContent != null -> {
                     val label = item.fileName ?: "file"
                     "\n\n--- File: $label ---\n${item.textContent}"
@@ -84,6 +98,7 @@ internal fun projectProviderMessages(
                 totalTokenCount = entity.tokenCount,
                 inputTokenCount = entity.inputTokenCount,
                 cachedInputTokenCount = entity.cachedInputTokenCount,
+                cacheWriteInputTokenCount = entity.cacheWriteInputTokenCount,
                 uncachedInputTokenCount = entity.uncachedInputTokenCount,
                 outputTokenCount = entity.outputTokenCount,
                 reasoningTokenCount = entity.reasoningTokenCount,
@@ -101,4 +116,13 @@ internal fun projectProviderMessages(
             consumedAtPass = entity.consumedAtPass,
         )
     }
+}
+
+internal fun sandboxAttachmentInstruction(item: AttachmentItem): String {
+    val label = item.fileName ?: "file"
+    val mimeType = item.mimeType ?: "unknown"
+    val size = item.fileSize?.let { "$it bytes" } ?: "unknown"
+    return "\n\nAttached file $label is available in Local Sandbox at " +
+        "${item.sandboxPath}. MIME type: $mimeType. Size: $size. " +
+        "Use the Local Sandbox file tools (for example file_read) to inspect it before answering."
 }

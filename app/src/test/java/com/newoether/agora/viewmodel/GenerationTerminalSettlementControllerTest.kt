@@ -23,7 +23,7 @@ import org.junit.Test
 
 class GenerationTerminalSettlementControllerTest {
     @Test
-    fun boundFailureUsesAuthorizedIdentityAndCommitsOverlayBeforeClear() = runBlocking {
+    fun boundFailureMarksInvisibleConversationUnreadAndNotifiesAfterCommit() = runBlocking {
         val conversations = mockk<ConversationRepository>()
         coEvery {
             conversations.finishGeneration(
@@ -32,7 +32,7 @@ class GenerationTerminalSettlementControllerTest {
                 "run",
                 RunStatus.FAILED,
                 RunEndReason.PROVIDER_ERROR,
-                false,
+                true,
                 any(),
             )
         } returns true
@@ -40,9 +40,14 @@ class GenerationTerminalSettlementControllerTest {
         val token = requireNotNull(state.acquireForSend())
         state.bindRun(token, "run", pass = 2)
         val committed = mutableListOf<ChatMessage>()
+        val notifications = mutableListOf<String>()
         state.onStreamCommit = { _, message -> committed += message }
 
-        val success = controller(conversations).finalizeBoundFailure(
+        val success = controller(
+            conversations = conversations,
+            isConversationVisible = { false },
+            onTerminalNotification = { text, _, _ -> notifications += text },
+        ).finalizeBoundFailure(
             conversationId = "conversation",
             runId = "run",
             pass = 2,
@@ -50,11 +55,13 @@ class GenerationTerminalSettlementControllerTest {
             state = state,
             failedMessage = FAILED_MESSAGE,
             effectId = "failure-effect",
+            notificationText = "Error: bound detail",
         )
 
         assertTrue(success)
         assertEquals(listOf(FAILED_MESSAGE), committed)
         assertEquals(null, state.streamingMessage.value)
+        assertEquals(listOf("Error: bound detail"), notifications)
         assertEquals(
             "failure-effect",
             state.runtimeTraceSnapshot().first { it.commandType == "FinalizationRequested" }
@@ -91,7 +98,7 @@ class GenerationTerminalSettlementControllerTest {
     }
 
     @Test
-    fun noWriterRepairBypassesRuntimeButStillUsesAtomicTerminalTransaction() = runBlocking {
+    fun noWriterRepairNotifiesOnlyAfterAcceptedTerminalWrite() = runBlocking {
         val conversations = mockk<ConversationRepository>()
         coEvery { conversations.getMessage("model") } returns MESSAGE_ENTITY
         val persisted = slot<ChatMessage>()
@@ -102,16 +109,23 @@ class GenerationTerminalSettlementControllerTest {
                 "run",
                 RunStatus.FAILED,
                 RunEndReason.PROVIDER_ERROR,
-                false,
+                true,
                 any(),
             )
         } returns true
         val snackbars = mutableListOf<String>()
+        val notifications = mutableListOf<String>()
         val state = ConversationGenerationState("conversation")
         mockkObject(DebugLog)
         every { DebugLog.e(any(), any()) } returns Unit
         try {
-            controller(conversations, snackbars::add).failGenerationSetup(
+            val controller = controller(
+                conversations = conversations,
+                onSnackbar = snackbars::add,
+                isConversationVisible = { false },
+                onTerminalNotification = { text, _, _ -> notifications += text },
+            )
+            controller.failGenerationSetup(
                 conversationId = "conversation",
                 runId = "run",
                 modelMessageId = "model",
@@ -119,13 +133,30 @@ class GenerationTerminalSettlementControllerTest {
                 state = state,
                 error = IllegalStateException("private detail"),
             )
+            assertEquals(listOf("Error: private detail"), notifications)
+
+            coEvery {
+                conversations.finishGeneration(any(), any(), any(), any(), any(), any(), any())
+            } returns false
+            notifications.clear()
+            val rejectedState = ConversationGenerationState("conversation")
+            controller.failGenerationSetup(
+                conversationId = "conversation",
+                runId = "run",
+                modelMessageId = "model",
+                uiToken = 2L,
+                state = rejectedState,
+                error = IllegalStateException("private detail"),
+            )
+            assertTrue(notifications.isEmpty())
+            rejectedState.dispose()
         } finally {
             unmockkObject(DebugLog)
         }
 
         assertEquals(MessageStatus.ERROR, persisted.captured.status)
         assertEquals("Failed to generate", persisted.captured.text)
-        assertEquals(listOf("Failed to generate"), snackbars)
+        assertEquals(listOf("Failed to generate", "Failed to generate"), snackbars)
         assertTrue(state.runtimeTraceSnapshot().isEmpty())
         state.dispose()
         Unit
@@ -134,6 +165,8 @@ class GenerationTerminalSettlementControllerTest {
     private fun controller(
         conversations: ConversationRepository,
         onSnackbar: (String) -> Unit = {},
+        isConversationVisible: ((String) -> Boolean)? = null,
+        onTerminalNotification: (String, String, MessageStatus) -> Unit = { _, _, _ -> },
     ) = GenerationTerminalSettlementController(
         conversations = conversations,
         stopFinalizer = GenerationFinalizer(conversations) { _, _ -> },
@@ -151,6 +184,8 @@ class GenerationTerminalSettlementControllerTest {
             )
         },
         onSnackbar = onSnackbar,
+        isConversationVisible = isConversationVisible,
+        onTerminalNotification = onTerminalNotification,
     )
 
     private companion object {

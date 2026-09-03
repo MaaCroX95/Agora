@@ -36,4 +36,23 @@ class OpenAiUsageTokenUsageTest {
         assertEquals(60, usage.cachedInputTokenCount)
         assertEquals(40, usage.uncachedInputTokenCount)
     }
+
+    @Test
+    fun chatAndResponsesUsageMapCacheWriteTokens() {
+        val chat = OpenAiUsage(
+            promptTokens = 100,
+            completionTokens = 20,
+            totalTokens = 120,
+            cacheWriteTokens = 35,
+        ).toTokenUsage()
+        val responses = OpenAiResponseUsage(
+            inputTokens = 90,
+            outputTokens = 10,
+            totalTokens = 100,
+            cacheWriteTokens = 24,
+        ).toTokenUsage()
+
+        assertEquals(35, chat.cacheWriteInputTokenCount)
+        assertEquals(24, responses.cacheWriteInputTokenCount)
+    }
 }

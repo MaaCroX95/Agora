@@ -27,6 +27,7 @@ import com.newoether.agora.data.ShellDeviceConfig
 
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.repository.ConversationRepository
+import com.newoether.agora.data.repository.ConversationSettingsTransferCoordinator
 import com.newoether.agora.data.repository.SettingsRepository
 import com.newoether.agora.model.AttachmentItem
 import com.newoether.agora.model.ChatConversation
@@ -38,6 +39,7 @@ import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.sandbox.SandboxManager
 import com.newoether.agora.sandbox.SandboxManagerFactory
 import com.newoether.agora.service.AgoraForegroundService
+import com.newoether.agora.service.AppForegroundTracker
 import com.newoether.agora.util.DebugLog
 import com.newoether.agora.util.PdfPageRenderer
 import com.newoether.agora.util.SnackbarEvent
@@ -69,6 +71,7 @@ class ChatViewModel(
     autoBackupManager: AutoBackupManager,
     conversationRepository: ConversationRepository,
     settingsRepository: SettingsRepository,
+    conversationSettingsTransfers: ConversationSettingsTransferCoordinator,
     // Process-scoped generation singletons, shared with background task execution.
     private val localProvider: LocalProvider,
     private val providerRegistry: ProviderRegistry,
@@ -93,7 +96,18 @@ class ChatViewModel(
      * receive the repository (not raw DAO) for a uniform boundary.
      */
     private val convRepo: ConversationRepository = conversationRepository
-    private val composerDrafts = ComposerDraftController(conversationRepository)
+    private val conversationWorkspaces = ConversationWorkspaceStore(
+        conversations = conversationRepository,
+        settings = settingsRepository,
+        transfers = conversationSettingsTransfers,
+        scope = viewModelScope,
+    )
+    internal val messagePayloadHydration =
+        ConversationMessagePayloadHydration(convRepo, appContext)
+    private val composerDrafts = ComposerDraftController(
+        persistence = conversationWorkspaces,
+        conversations = conversationRepository,
+    )
     val dataControl = DataControlController(
         conversations = conversationRepository,
         memory = memoryManager,
@@ -144,7 +158,6 @@ class ChatViewModel(
     val ragManager = RagManager(
         conversations = convRepo,
         settings = settings,
-        localProvider = localProvider,
         appContext = appContext,
         scope = viewModelScope,
     ) { _snackbarMessage.emit(it) }
@@ -294,8 +307,6 @@ class ChatViewModel(
      *  provider is deleted and must render gracefully instead of crashing. */
     fun getProviderInstanceOrNull(name: String): LlmProvider? = providerRegistry.getInstanceOrNull(name)
 
-
-
     private val scrollRequests = ScrollRequestCoordinator()
     private val selectionController: ConversationSelectionController by lazy {
         ConversationSelectionController(
@@ -306,8 +317,7 @@ class ChatViewModel(
             scrollRequests = scrollRequests,
             renderStore = { renderStore },
             clearConversationGraph = { conversationUi.clearConversationGraph() },
-            clearPendingSystemPrompt = { _pendingSystemPromptId.value = null },
-            clearPendingConversationSettings = { _pendingConversationSettings.value = null },
+            workspaces = conversationWorkspaces,
             abortRegeneration = { regenerationTransitions.abortCurrent() },
             onTreeMutationCommitted = { conversationId ->
                 contextProjector.invalidate(conversationId)
@@ -355,9 +365,7 @@ class ChatViewModel(
     val currentActiveModel: StateFlow<String> get() = selectionController.currentActiveModel
 
     fun getProviderForModel(modelId: String): String = providerRegistry.providerForModel(modelId)
-    
 
-        
     // ── Remote shell command confirmation gate ───────────────────────────
     /** Shell-command confirmation policy + pending-prompt handshake (see [ShellConfirmationController]). */
     val pendingShellCommand: StateFlow<ShellConfirmationController.PendingShellCommand?>
@@ -399,8 +407,13 @@ class ChatViewModel(
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     private val unreadGenerationAcknowledger = UnreadGenerationAcknowledger(
         currentConversation = currentConversation,
+        appForeground = AppForegroundTracker.foreground,
+        chatPresented = AppForegroundTracker.chatPresented,
         conversations = convRepo,
         scope = viewModelScope,
+        onConversationRead = { conversationId ->
+            AgoraForegroundService.cancelTerminalNotification(appContext, conversationId)
+        },
     )
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val currentLoop: StateFlow<com.newoether.agora.data.local.LoopEntity?> = currentConversationId
@@ -436,7 +449,6 @@ class ChatViewModel(
         registry = generationRegistry,
         executionCoordinator = conversationExecutionCoordinator,
         currentConversationId = currentConversationId,
-        appContext = appContext,
         scope = viewModelScope,
         onConversationLoadFailed = selectionController::failConversationLoad,
     )
@@ -612,14 +624,15 @@ class ChatViewModel(
     val isTransitioningToNewChat: StateFlow<Boolean>
         get() = selectionController.isTransitioningToNewChat
 
-    private val _pendingSystemPromptId = MutableStateFlow<String?>(null)
-    val pendingSystemPromptId: StateFlow<String?> = _pendingSystemPromptId.asStateFlow()
+    val pendingSystemPromptId: StateFlow<String?> =
+        conversationWorkspaces.newChatSystemPromptId
 
     fun setPendingSystemPrompt(promptId: String?) {
-        _pendingSystemPromptId.value = promptId
+        conversationWorkspaces.setSystemPrompt(NEW_CHAT_WORKSPACE_ID, promptId)
     }
 
-    private val _pendingConversationSettings = MutableStateFlow<ConversationSettings?>(null)
+    val pendingConversationSettings: StateFlow<ConversationSettings?> =
+        conversationWorkspaces.newChatConversationSettings
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val isCompacting: StateFlow<Boolean> = currentConversationId
         .flatMapLatest { conversationId ->
@@ -637,12 +650,10 @@ class ChatViewModel(
                 }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, "")
-    val pendingConversationSettings: StateFlow<ConversationSettings?> = _pendingConversationSettings.asStateFlow()
-
-    fun setPendingConversationSettings(settings: ConversationSettings?) {
-        _pendingConversationSettings.value = settings
-    }
-
+    fun setPendingConversationSettings(value: ConversationSettings?) =
+        setConversationSettings(null, value)
+    fun setConversationSettings(convId: String?, value: ConversationSettings?) =
+        conversationWorkspaces.setConversationSettings(convId ?: NEW_CHAT_WORKSPACE_ID, value)
     private val payloadBuilder by lazy {
         MessagePayloadBuilder(
             generationManager = generationManager,
@@ -658,7 +669,7 @@ class ChatViewModel(
         providerRegistry = providerRegistry,
         ragManager = ragManager,
         appContext = appContext,
-        pendingConversationSettings = _pendingConversationSettings,
+        pendingConversationSettings = pendingConversationSettings,
         onSnackbar = { msg -> emitSnackbar(msg) },
     )
     private val contextProjector by lazy {
@@ -666,7 +677,7 @@ class ChatViewModel(
             conversations = convRepo,
             requestBuilder = requestBuilder,
             generationManager = { generationManager },
-            newChatSystemPromptId = { _pendingSystemPromptId.value },
+            newChatSystemPromptId = { pendingSystemPromptId.value },
         )
     }
 
@@ -706,13 +717,10 @@ class ChatViewModel(
             renderStore = renderStore,
             currentConversationId = currentConversationId,
             isNewChatMode = isNewChatMode,
-            applyPendingConversationSettings = { conversationId ->
-                _pendingConversationSettings.value?.let { pending ->
-                    settings.setConversationSettings(conversationId, pending)
-                    _pendingConversationSettings.value = null
-                }
-            },
-            pendingSystemPromptId = _pendingSystemPromptId,
+            awaitNewChatWorkspace = conversationWorkspaces::awaitNewChatWrites,
+            applyCommittedNewConversationState = conversationWorkspaces::applyCommittedNewConversationState,
+            clearCommittedNewChatWorkspace = conversationWorkspaces::clearCommittedNewChatWorkspace,
+            globalDefaultModel = settings.selectedModel,
             currentActiveModel = currentActiveModel,
             messages = messages,
             onScrollToMessage = { id -> triggerScrollToMessage(id) },
@@ -754,14 +762,10 @@ class ChatViewModel(
         )
     }
 
-    fun updateConversationSetting(convId: String?, update: (ConversationSettings) -> ConversationSettings) {
-        if (convId != null) {
-            settings.updateConversationSettings(convId, update)
-        } else {
-            val current = _pendingConversationSettings.value ?: ConversationSettings()
-            _pendingConversationSettings.value = update(current)
-        }
-    }
+    fun updateConversationSetting(
+        convId: String?,
+        update: (ConversationSettings) -> ConversationSettings,
+    ) = conversationWorkspaces.updateConversationSettings(convId ?: NEW_CHAT_WORKSPACE_ID, update)
 
     val switchingScrollRequest: StateFlow<SwitchingScrollRequest?> =
         selectionController.switchingScrollRequest
@@ -872,9 +876,8 @@ class ChatViewModel(
 
     fun generateTitle(conversationId: String) = generationController.generateTitle(conversationId)
 
-    fun setConversationSystemPrompt(id: String, promptId: String?) {
-        conversationLifecycleController.setSystemPrompt(id, promptId)
-    }
+    fun setConversationSystemPrompt(id: String, promptId: String?) =
+        conversationWorkspaces.setSystemPrompt(id, promptId)
 
     fun setActiveModel(model: String) = selectionController.setActiveModel(model)
 
@@ -957,18 +960,20 @@ class ChatViewModel(
     fun switchBranch(parentId: String?, currentMessageId: String, direction: Int) =
         selectionController.switchBranch(parentId, currentMessageId, direction)
 
-    suspend fun editMessage(messageId: String, newText: String): Boolean =
-        generationController.editMessage(messageId, newText)
+    suspend fun editMessage(messageId: String, newText: String): Boolean = generationController.editMessage(messageId, newText)
 
     suspend fun sendMessage(
         text: String,
         images: List<String> = emptyList(),
         attachments: List<SelectedAttachment> = emptyList(),
         onAccepted: suspend () -> Unit = {},
-    ): SendAcceptance? = composerSendAdapter.sendMessage(text, images, attachments, onAccepted)
+    ): SendAcceptance? = composerSendAdapter.sendMessage(
+        text, images, attachments, onAccepted,
+        if (isNewChatMode.value) NEW_CHAT_WORKSPACE_ID
+        else currentConversationId.value ?: NEW_CHAT_WORKSPACE_ID,
+    )
 
-    suspend fun fetchModelsForProvider(name: String): List<String> =
-        providerModelSyncUi.fetchModelsForProvider(name)
+    suspend fun fetchModelsForProvider(name: String): List<String> = providerModelSyncUi.fetchModelsForProvider(name)
 
     fun computeProviderFingerprint(): String = providerModelSyncUi.computeFingerprint()
 
@@ -990,7 +995,5 @@ class ChatViewModel(
         explicitlyRemovedAttachments = explicitlyRemovedAttachments,
     )
 
-    suspend fun loadDraft(
-        conversationId: String,
-    ): LoadedComposerDraft = composerDrafts.load(conversationId)
+    suspend fun loadDraft(conversationId: String): LoadedComposerDraft = composerDrafts.load(conversationId)
 }

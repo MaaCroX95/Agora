@@ -8,7 +8,7 @@ import com.newoether.agora.util.Constants
 internal data class ApiPathAssemblyRow<T>(
     val row: T,
     val inheritedModelName: String? = null,
-    val clearToolCallJson: Boolean = false,
+    val stripAggregateToolSegments: Boolean = false,
 )
 
 /**
@@ -37,7 +37,11 @@ internal object ApiPathAssembler {
         val entity = planned.row
         entity.copy(
             modelName = entity.modelName ?: planned.inheritedModelName,
-            toolCallJson = if (planned.clearToolCallJson) null else entity.toolCallJson,
+            toolCallJson = if (planned.stripAggregateToolSegments) {
+                stripAggregatedToolSegments(entity.toolCallJson)
+            } else {
+                entity.toolCallJson
+            },
         )
     }
 
@@ -128,7 +132,7 @@ internal object ApiPathAssembler {
                 if (!omitAggregate) {
                     result += ApiPathAssemblyRow(
                         row = row,
-                        clearToolCallJson = toolRoots.isNotEmpty(),
+                        stripAggregateToolSegments = toolRoots.isNotEmpty(),
                     )
                 }
             }

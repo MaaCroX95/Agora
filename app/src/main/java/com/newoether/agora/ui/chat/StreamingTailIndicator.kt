@@ -5,6 +5,7 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
@@ -206,6 +207,7 @@ internal fun coalescedScrollStep(
 @Composable
 internal fun StreamingTailIndicator(
     visible: Boolean,
+    retainLayout: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val allowSpatialTransitions = LocalAgoraMotionPolicy.current.allowSpatialTransitions
@@ -217,10 +219,11 @@ internal fun StreamingTailIndicator(
     )
     val opacity by visibilityTransition.animateFloat(
         transitionSpec = {
-            tween(
-                durationMillis = if (targetState) 400 else 320,
-                easing = FastOutSlowInEasing,
-            )
+            if (targetState) {
+                tween(durationMillis = 400, easing = FastOutSlowInEasing)
+            } else {
+                snap()
+            }
         },
         label = "StreamingTailDotOpacity",
     ) { shown ->
@@ -240,7 +243,7 @@ internal fun StreamingTailIndicator(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(StreamingTailAnchorHeight)
+            .height(if (visible || retainLayout) StreamingTailAnchorHeight else 0.dp)
             .padding(start = AssistantMessageHorizontalInset),
         contentAlignment = Alignment.CenterStart,
     ) {

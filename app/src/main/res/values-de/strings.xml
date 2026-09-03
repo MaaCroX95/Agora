@@ -271,11 +271,11 @@
     <string name="prompts_delete_text">Möchtest du \'%1$s\' wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.</string>
     <string name="template_title_required">Titel ist erforderlich</string>
     <string name="template_tab_system">System</string>
-    <string name="template_tab_prepend">Präfix</string>
-    <string name="template_tab_postpend">Suffix</string>
-    <string name="template_tab_system_desc">Wird als Systemanweisung gesendet.</string>
-    <string name="template_tab_prepend_desc">Wird vor jeder Nutzernachricht eingefügt.</string>
-    <string name="template_tab_postpend_desc">Wird nach jeder Nutzernachricht eingefügt.</string>
+    <string name="template_tab_user">Benutzer</string>
+    <string name="template_tab_assistant">Assistent</string>
+    <string name="template_tab_system_desc">Definiert die an das Modell gesendete Systemnachricht.</string>
+    <string name="template_tab_user_desc">Definiert die Struktur um jede normale Benutzernachricht.</string>
+    <string name="template_tab_assistant_desc">Definiert die Struktur um jede normale Assistentennachricht.</string>
     <string name="template_empty_hint">Keine Elemente. Füge unten Text oder Variablen hinzu.</string>
     <string name="template_add_text">Text hinzufügen</string>
     <string name="template_add_variable">Variable hinzufügen</string>
@@ -370,6 +370,9 @@
     <string name="advanced_generation_title">Erweiterte Einstellungen</string>
     <string name="advanced_per_conversation">Überschreibungen pro Unterhaltung</string>
     <string name="appearance_interface">Oberfläche</string>
+    <string name="appearance_theme_color">Design und Farben</string>
+    <string name="appearance_motion_feedback">Bewegung und Feedback</string>
+    <string name="appearance_chat_display">Chat-Anzeige</string>
     <string name="message_display">Nachrichtenanzeige</string>
     <string name="tool_call_display_mode">Nachdenk- und Werkzeugblöcke</string>
     <string name="tool_call_display_mode_timeline">Zeitverlauf</string>
@@ -731,6 +734,10 @@
     <!-- Local Chat Provider -->
     <string name="local_chat_models">Lokale Chat-Modelle</string>
     <string name="local_models_title">Lokale Modelle</string>
+    <string name="local_model_idle_retention">Leerlaufzeit des Modells</string>
+    <string name="local_model_idle_retention_desc">Wie lange ein inaktives lokales Modell vor dem Entladen im Speicher bleibt</string>
+    <string name="local_model_idle_retention_immediate">Sofort</string>
+    <string name="local_model_idle_retention_minutes">%1$d Min.</string>
     <string name="local_chat_models_count">%1$d Modell(e) importiert</string>
     <string name="local_title">Lokal</string>
     <string name="not_configured">Nicht konfiguriert</string>
@@ -800,7 +807,7 @@
     <string name="rating_submitting">Wird gesendet…</string>
     <string name="rating_success">Danke für dein Feedback!</string>
     <string name="rating_failed">Senden fehlgeschlagen. Bitte versuche es erneut.</string>
-    <string name="rating_privacy">Deine Bewertung wird anonym an newoether.space hochgeladen. Es werden nur die von dir ausgefüllten Felder übertragen. Es werden keine weiteren Daten erfasst.</string>
+    <string name="rating_privacy">Deine Bewertung wird anonym an newoether.com hochgeladen. Es werden nur die von dir ausgefüllten Felder übertragen. Es werden keine weiteren Daten erfasst.</string>
 
     <!-- Data Control -->
     <string name="settings_data_control">Datenkontrolle</string>
@@ -882,7 +889,8 @@
     <string name="file_unsupported_title">Datei nicht unterstützt</string>
     <string name="file_unknown_type">Unbekannter Dateityp</string>
     <string name="file_unsupported_type">Nicht unterstützter Dateityp: %1$s</string>
-    <string name="file_too_large">Datei zu groß (max. 20 MB)</string>
+    <string name="file_too_large">Datei zu groß (max. 100 MiB)</string>
+    <string name="file_sandbox_required">Installiere und aktiviere Local Sandbox, um diese Datei anzuhängen.</string>
     <string name="attachment_copy_failed_image">Bild konnte nicht geladen werden</string>
     <string name="attachment_copy_failed_file">Datei konnte nicht geladen werden</string>
     <string name="pdf_render_failed">PDF konnte nicht gerendert werden</string>
@@ -999,7 +1007,7 @@
     <string name="crash_message">Das tut uns leid. Du kannst bei der Behebung helfen, indem du einen anonymen Absturzbericht sendest.</string>
     <string name="crash_submit">Bericht senden</string>
     <string name="crash_dismiss">Nicht senden</string>
-    <string name="crash_privacy_note">Es wird nur das Absturzprotokoll an newoether.space gesendet. Es werden keine weiteren Informationen erfasst.</string>
+    <string name="crash_privacy_note">Es wird nur das Absturzprotokoll an newoether.com gesendet. Es werden keine weiteren Informationen erfasst.</string>
     <string name="crash_submitted">Absturzbericht gesendet. Danke!</string>
     <string name="settings_group_network">Netzwerk</string>
     <string name="settings_proxy">Proxy</string>
@@ -1077,7 +1085,10 @@
     <string name="openai_service_tier_auto">Automatisch</string>
     <string name="openai_service_tier_default">Standard</string>
     <string name="openai_service_tier_flex">Flex</string>
+    <string name="openai_service_tier_scale">Skalierung</string>
+    <string name="openai_service_tier_priority">Priorität</string>
     <string name="openai_service_tier_fast">Schnell</string>
+    <string name="openai_service_tier_ultrafast">Ultraschnell</string>
     <string name="context_title">Kontext</string>
     <string name="context_desc">Kontextverwaltung</string>
     <string name="context_compact">Kontextkomprimierung</string>
@@ -1207,4 +1218,5 @@
     <string name="tool_create_skill">Skill erstellen</string>
     <string name="tool_edit_skill">Skill bearbeiten</string>
     <string name="tool_delete_skill">Skill löschen</string>
+    <string name="tool_read_file_truncated">Teilinhalt angezeigt · bei Byte %1$d fortfahren</string>
 </resources>

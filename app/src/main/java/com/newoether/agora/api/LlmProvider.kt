@@ -4,6 +4,7 @@ import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.CitationRecord
 import com.newoether.agora.model.ContextBudget
 import com.newoether.agora.model.TokenUsage
+import com.newoether.agora.api.util.prepareMessages
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -77,6 +78,25 @@ sealed class StreamEvent {
     data class Retrying(val attempt: Int, val maxAttempts: Int) : StreamEvent()
 }
 
+data class ProviderRequestInput(
+    val messages: List<ChatMessage>,
+    val systemPrompt: String?,
+)
+
+fun interface ProviderRequestResolver {
+    suspend fun resolve(
+        messages: List<ChatMessage>,
+        config: ProviderConfig,
+    ): ProviderRequestInput
+}
+
+suspend fun ProviderConfig.resolveRequest(messages: List<ChatMessage>): ProviderRequestInput =
+    requestResolver?.resolve(messages, this)
+        ?: ProviderRequestInput(
+            messages = prepareMessages(messages, maxContextWindow),
+            systemPrompt = systemPrompt,
+        )
+
 data class ProviderConfig(
     val apiKey: String,
     val modelId: String,
@@ -101,7 +121,11 @@ data class ProviderConfig(
     val maxTokens: Int? = null,
     val topP: Float? = null,
     val frequencyPenalty: Float? = null,
-    val presencePenalty: Float? = null
+    val presencePenalty: Float? = null,
+    /** Stable cache partition key. Set only for the official OpenAI provider. */
+    val promptCacheKey: String? = null,
+    /** Resolves ordinary-generation prompt variables and rollout immediately before dispatch. */
+    val requestResolver: ProviderRequestResolver? = null,
 )
 
 @Serializable
@@ -139,6 +163,8 @@ data class OpenAiChatRequest(
     @SerialName("stream_options") val streamOptions: OpenAiStreamOptions? = null,
     val tools: List<ToolDefinition>? = null,
     @SerialName("reasoning_effort") val reasoningEffort: String? = null,
+    @SerialName("enable_thinking") val enableThinking: Boolean? = null,
+    @SerialName("thinking_budget") val thinkingBudget: Int? = null,
     val reasoning: OpenAiReasoning? = null,
     val plugins: List<OpenAiPlugin>? = null,
     @SerialName("service_tier") val serviceTier: String? = null,
@@ -146,7 +172,8 @@ data class OpenAiChatRequest(
     @SerialName("max_tokens") val maxTokens: Int? = null,
     @SerialName("top_p") val topP: Float? = null,
     @SerialName("frequency_penalty") val frequencyPenalty: Float? = null,
-    @SerialName("presence_penalty") val presencePenalty: Float? = null
+    @SerialName("presence_penalty") val presencePenalty: Float? = null,
+    @SerialName("prompt_cache_key") val promptCacheKey: String? = null,
 )
 
 @Serializable
@@ -178,6 +205,7 @@ data class OpenAiResponsesRequest(
     val temperature: Float? = null,
     @SerialName("max_output_tokens") val maxOutputTokens: Int? = null,
     @SerialName("top_p") val topP: Float? = null,
+    @SerialName("prompt_cache_key") val promptCacheKey: String? = null,
 )
 
 @Serializable
@@ -267,6 +295,7 @@ data class OpenAiResponseUsage(
     @SerialName("input_tokens") val inputTokens: Int? = null,
     @SerialName("output_tokens") val outputTokens: Int? = null,
     @SerialName("total_tokens") val totalTokens: Int? = null,
+    @SerialName("cache_write_tokens") val cacheWriteTokens: Int? = null,
     @SerialName("input_tokens_details") val inputTokensDetails: OpenAiResponseInputTokenDetails? = null,
     @SerialName("output_tokens_details") val outputTokensDetails: OpenAiResponseOutputTokenDetails? = null,
 )
@@ -289,6 +318,7 @@ internal fun OpenAiResponseUsage.toTokenUsage(): TokenUsage {
         totalTokenCount = (totalTokens ?: listOfNotNull(input, output).sum()).coerceAtLeast(0),
         inputTokenCount = input,
         cachedInputTokenCount = cached,
+        cacheWriteInputTokenCount = cacheWriteTokens?.coerceAtLeast(0),
         uncachedInputTokenCount = if (input != null && cached != null) {
             (input - cached).coerceAtLeast(0)
         } else null,
@@ -410,6 +440,7 @@ data class OpenAiUsage(
     @SerialName("prompt_tokens_details") val promptTokensDetails: OpenAiPromptTokensDetails? = null,
     @SerialName("prompt_cache_hit_tokens") val promptCacheHitTokens: Int? = null,
     @SerialName("prompt_cache_miss_tokens") val promptCacheMissTokens: Int? = null,
+    @SerialName("cache_write_tokens") val cacheWriteTokens: Int? = null,
     @SerialName("completion_tokens_details") val completionTokensDetails: OpenAiCompletionTokensDetails? = null
 )
 
@@ -448,6 +479,7 @@ internal fun OpenAiUsage.toTokenUsage(): TokenUsage {
             null
         },
         cachedInputTokenCount = cached,
+        cacheWriteInputTokenCount = cacheWriteTokens?.coerceAtLeast(0),
         uncachedInputTokenCount = uncached,
         outputTokenCount = output,
         reasoningTokenCount = reasoning,
@@ -483,6 +515,8 @@ class PendingToolCall(
 interface LlmProvider {
     val name: String
     val defaultBaseUrl: String
+    val baseUrlPlaceholder: String
+        get() = defaultBaseUrl
 
     fun generateResponse(
         messages: List<ChatMessage>,

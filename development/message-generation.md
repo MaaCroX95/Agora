@@ -76,8 +76,16 @@ For every ordinary Provider request:
 5. Failed, stopped, in-flight, missing, or off-branch Compact rows are not context boundaries.
 6. If no successful Compact exists on the selected ancestor chain, context continues to the oldest
    reachable ancestor.
-7. Provider projection may convert the successful Compact capsule into the established summary
-   input role, but it must preserve the boundary position and following message order.
+7. Provider projection converts the successful Compact capsule into a transient USER summary whose
+   text is exactly `<context_summary>\nSUMMARY\n</context_summary>`. The marker exists only in the
+   prepared API request; Room, UI projection, context usage, and retained-message projection keep
+   the durable raw summary. If no real USER message follows that Compact and no existing API-only
+   initial USER prompt terminates the request, shared request preparation appends `Please continue.`
+   as API-only USER input. Consecutive USER input is canonicalized with one blank line while
+   preserving the boundary position and following message order.
+   A Compact generation may echo the request-only wrapper. Every streaming UI snapshot, Room
+   checkpoint, and terminal message must normalize complete or partial wrapper markers before
+   publication or persistence, including both `ChatMessage.text` and answer segment content.
 
 `GenerationApiPathBuilder` and the ordinary Provider message projection own this contract.
 Manual/automatic Compact and Recompact use this same ordinary path from their requested graph
@@ -106,6 +114,28 @@ The queue claim/check and loop admission must remain linearized so guidance is n
 nor lost. A non-successful or anomalous Compact is a hard automatic-handoff boundary: it starts
 neither queued generation nor loop generation.
 
+Foreground-service ownership is best-effort process-priority assistance for in-process generation,
+not a Run or Provider admission prerequisite. `GenerationManager` attempts to acquire Agora's
+foreground-service lease when execution is not externally managed. An unavailable or rejected
+start records that no lease was acquired and generation continues through the same canonical path;
+it must not create a terminal error, retry, delay, alternate execution path, or shadow lifecycle.
+Completion releases the lease only when acquisition actually succeeded. Task and Loop Workers keep
+using their externally managed WorkManager foreground execution. Process death still uses the
+ordinary orphaned-Run recovery contract and does not recreate the coroutine or Provider stream.
+
+Foreground Chat terminal attention is conversation-aware. A conversation is visible only while the
+app is foreground, Chat owns top-level presentation, and that exact conversation is selected;
+Settings, Tasks, media/PDF preview, and text preview therefore hide it, while the drawer does not.
+After durable settlement, ordinary SUCCESS or ERROR marks an invisible source conversation unread
+and posts its stable per-conversation notification. A visible source conversation keeps neither.
+Queued/continuation SUCCESS remains an interim boundary and does not notify. Compact SUCCESS may
+mark unread but never notifies; Compact ERROR marks unread and notifies; STOPPED stays silent. Error
+notifications use the complete formatted generation error rather than replacing available detail
+with a generic failure body. The durable read boundary runs only for a foreground, presented Chat
+conversation; after its unread write succeeds, it cancels that conversation's stable notification
+without affecting any other conversation. Headless Task/Loop execution retains its independent
+foreground/background notification policy.
+
 ## 6. Review blockers
 
 A change is invalid if it:
@@ -119,7 +149,10 @@ A change is invalid if it:
   genuine stable consumers and without removing an existing responsibility or duplication;
 - mutates suffix/neighbor messages during same-position replacement;
 - merges actions or status across different Run IDs;
-- treats a non-successful Compact as a context boundary.
+- treats a non-successful Compact as a context boundary;
+- omits, summarizes, redacts, caps, truncates, drops, or replaces any information from the complete
+  formatted generation error in a later Provider request whose selected context includes the failed
+  MODEL row.
 
 Focused tests must cover each rule, including legacy blank IDs, protocol rows, failed/stopped
 Compact rows, nearest-successful-ancestor selection, fresh-Run Recompact, suffix isolation, and
@@ -218,9 +251,10 @@ failure; only a later explicit user action may resume ordinary queue admission.
 
 Compact may own a capsule renderer, message label/menu, haptic exclusion, and stable presentation.
 Its outer row height/padding and internal icon/text/action slots must remain stable across
-SENDING/THINKING/terminal/error transitions. The capsule Row uses a 14 dp start inset and a tighter
-7 dp end inset so the 32 dp overflow-action touch target remains visually balanced; its 18 dp icon,
-leading spacing, minimum height, menu behavior, and action enablement remain unchanged. UI
+SENDING/THINKING/terminal/error transitions. The capsule Row uses a 7 dp horizontal inset and 7 dp
+spacing between each slot so its 32 dp leading icon slot and 32 dp overflow-action touch target are
+visually balanced around the text. Both slots render an 18 dp glyph; minimum height, menu behavior,
+and action enablement remain unchanged. UI
 specialization cannot redefine generation or context contracts.
 
 When the Compact detail Bottom Sheet is open and the ordinary durable message is
@@ -234,10 +268,11 @@ A terminal Compact error remains visible in both locations:
 
 - the detail Bottom Sheet places the shared neutral-gray generation error bar beside the Markdown
   body;
-- the capsule retains its existing theme-derived error palette independently of the neutral terminal
-  bar, without changing its bounds, and shows an error icon plus the localized equivalent of
-  `Compact error`. Its container uses `errorContainer`, its icon uses `error`, and its text uses alpha-adjusted
-  `error`; saturated hard-coded red or a different error token is forbidden.
+- the capsule uses a theme-derived neutral-gray palette independently of the neutral terminal bar,
+  without changing its bounds, and shows an error icon plus the localized equivalent of
+  `Compact error`. Its container uses alpha-adjusted `surfaceVariant`, its icon uses
+  `onSurfaceVariant`, and its text uses alpha-adjusted `onSurfaceVariant`; a semantic error color or
+  hard-coded gray is forbidden.
 
 A stopped Compact is a non-error terminal presentation. Its capsule keeps the same stable bounds,
 shows a stopped icon plus the localized equivalent of `Compact stopped`, and emits no Snackbar. A
@@ -264,32 +299,54 @@ cadence, and stream-to-terminal renderer continuity. A caller must not keep a se
 Markdown algorithm or switch to a different terminal renderer merely because streaming ended.
 
 The implementation is only a parameterized UI variant. Its allowed inputs include Markdown
-content, streaming state, render context, font/size/color, and a generic animated empty-stream
-presentation. Every append-growing live text surface uses one age-based active trailing-glyph
-fade with no fixed character-count cap: ordinary/timeline answer Markdown and plain/code leaves, Thinking previews/summaries in
-Compact/Timeline/detail-sheet modes, Tool summaries derived from streaming arguments or live state,
-and equivalent live detail text. Static titles, terminal labels, Retry, error text, and citation
-metadata do not replay this stream animation merely because they share typography.
+content, streaming state, render context, font/size/color, a publication birth-time glyph timeline, and a
+generic animated empty-stream presentation. Every append-growing live text surface uses one
+of two rules: a time-only fade with no character-count cap for ordinary/timeline answer
+Markdown and plain/code leaves, Thinking previews/summaries in Compact/Timeline/detail-sheet modes,
+and equivalent live detail text; active Tool summaries instead fade their last 42 code points in six bands to alpha 0.38.
+Static titles, terminal labels, Retry, error text, and citation metadata do not replay this stream
+animation merely because they share typography.
+
+`ToolSummaryText` uses the canonical `ToolPresentationState` as its only whole-summary Crossfade
+identity. Argument, subject, progress, output, and other incremental summary changes inside one state
+render directly through the shared muted-tail streaming text; they must not restart a whole-row
+Crossfade. A Crossfade is allowed only when the resolved Tool lifecycle state changes. Compact/grouped
+and individual Timeline rows use this same owner and contract.
 
 The fade is draw-only. One unchanged full AnnotatedString/Text layout owns shaping, kerning, wrapping,
 alignment, semantics, links, citations, selection mapping, search highlights, and code controls while
 only glyph paint alpha changes. Terminal settlement must not remove temporary foreground spans,
 replace the Text/Markdown implementation, reset the paint origin, or otherwise create a left jump.
-New appended code points receive their birth time only when their snapshot is first published; input
-offer time, conflated parses, stale parses, and interaction-held snapshots cannot age them before their
-first rendered frame. Existing glyphs keep their age and do not replay when another delta arrives.
-Only the not-yet-solid suffix remains tracked, and solid prefixes are pruned without a count cap. The
-finite Welcome/Onboarding typewriter may share the same
-low-level stable glyph-paint primitive, but it is not the scope boundary. A caller must not disable
-the streaming fade merely to hide a surrounding answering-tail dot. The ordinary message list may
-own that separate dot, while Thinking and Compact Bottom Sheets omit it without changing text
-rendering. Typography or placeholder differences remain parameterized.
+
+Every newly published Unicode code point receives a birth timestamp only on its first visible render
+snapshot. Code points published together have the same initial alpha regardless of Provider delta,
+ordinal, or position. Input offers, conflated/stale parses, and interaction-held snapshots cannot age
+glyphs before their first visible frame. Every new glyph starts
+at output alpha zero. Existing glyphs retain their metadata and never replay when another delta
+arrives, Markdown is reparsed or promoted, Compose recomposes, LazyColumn evicts or rehydrates a row,
+the row scrolls off-screen and back, or generation becomes terminal.
+
+The approved constant is `k = 2.0 s^-1`: `rawAlpha(t) = k * elapsed(t)` and
+`alpha(t) = clamp(rawAlpha(t), 0, 1)`. Alpha is zero at birth, 0.2 at 100 ms, 0.5 at 250 ms, and one
+at 500 ms. Delta identity and all position encoding, delay fields, spatial bands, positive starting
+alpha, count caps, and large/long-document bypasses are forbidden.
+
+Delta metadata may only select the persistent incremental path at renderer entry; it must not reach
+the parser worker, tracker, fade samples/specs, or paint. Active generation publishes each answer-delta
+list as a point-in-time copy, never an alias of the mutating Provider accumulator.
+
+Only glyphs that have reached output alpha one may be pruned from the tracker, without a count cap and
+without changing later output. The finite Welcome/Onboarding typewriter may share the same low-level
+stable glyph-paint primitive, but it is not the scope boundary. A caller must not disable the streaming
+fade merely to hide a surrounding answering-tail dot. The ordinary message list may own that separate
+dot, while Thinking and Compact Bottom Sheets omit it without changing text rendering. Typography or
+placeholder differences remain parameterized.
 
 Finalized Thinking Bottom Sheet Markdown is selectable in every rendering branch, including the
 virtualized single-segment long-document path. Selection uses the shared no-auto-scroll selection
 host so dragging handles never repositions the conversation. Active streaming content remains
-non-selectable; once that same renderer reaches terminal state, selection is enabled without
-switching Markdown implementations or disabling virtualization.
+non-selectable; terminal selection moves the same composition through movable content instead of
+recreating its Markdown subtree, resetting state, or emitting a zero-height frame.
 
 Generation terminal presentation is not Markdown syntax or renderer state. One stateless shared text
 component renders the ordinary answer and detail-sheet error beside the shared Markdown
@@ -313,11 +370,18 @@ those supported string fields remains verbatim. This display extraction never ch
 Provider-facing text.
 
 A normal durable MODEL row ending in ERROR or STOPPED remains that exact assistant turn in every
-later Provider request. API-only canonicalization preserves its nonblank partial answer first and
-appends one terminal annotation to the same assistant text. ERROR then appends the exact last
-nonblank persisted `error` segment, without localization, JSON extraction, sentence casing,
-truncation, or other rewriting; only legacy error-only rows without an error segment may use their
-stored text as the detail. STOPPED appends its stopped annotation even when no partial answer exists.
+later Provider request whose selected context contains that row. API-only canonicalization
+preserves its nonblank partial answer first and appends one terminal annotation to the same assistant
+text.
+For ERROR, the complete formatted generation error is mandatory Provider-visible request content.
+API-only canonicalization sends the last nonblank persisted `error` through the established
+generation-error formatting and normalization path, then appends that complete formatted result.
+Formatting may normalize structure and presentation, but it must retain all error information. No
+request-building, context, projection, or Provider-adapter layer may omit, summarize, redact, cap,
+truncate, drop, or replace any part of the formatted result. If the failed MODEL row is in the
+selected context, dispatching an API request without that complete formatted error is
+contract-invalid. Only legacy error-only rows without an error segment may use their stored text as
+the formatter input. STOPPED appends its stopped annotation even when no partial answer exists.
 The API projection normalizes only its transient status to prevent duplicate projection; it never
 changes Room. It must not change either terminal row to USER, prepend it to a later user message, or
 drop the concrete error. Synthetic tool/result rows and Compact rows retain their dedicated
@@ -336,38 +400,36 @@ localized content-width label. Their existing contextual outer vertical separati
 their durable ERROR versus STOPPED semantics stay distinct. When the immediately preceding visible
 Assistant content is a Thinking/Tool/Transcription card, either terminal label receives exactly 12 dp
 of top separation. When answer Markdown is the immediately preceding visible content, the established
-text-to-terminal spacing remains unchanged. Timeline mode derives adjacency from its final visible
+text-to-terminal separation is exactly 8 dp. Timeline mode derives adjacency from its final visible
 segment; the mere existence of an earlier card does not add spacing. Compact capsule error/stopped
 chrome and detail-sheet defaults are independent and unchanged.
 
-Generation activity uses one direct, layout-owned white dot at the currently active slot.
-No transparent source marker, visual clone, source registry, coordinate follower, match-parent overlay,
-or dot-specific z layer participates. The pre-output and Retry slot remains after visible
-Thought/Tool/Transcription presentation and before answer Markdown; the answer-tail slot remains
-after answer content. Their existing visibility predicates are mutually exclusive, so only the
-active slot draws the shared dot.
+Generation activity and terminal presentation are resolved from one current assistant-message
+snapshot. Body content, Thought/Tool/Transcription visibility, pre-output activity, answer-tail
+activity, stopping, stopped, and error state must never be computed from separately collected or
+remembered snapshots. Exactly one white-dot owner may draw in a frame: an active ordinary assistant
+with no Answer and no visible information card uses the inline slot; an active ordinary assistant
+whose last visible output is Answer uses the answer-tail slot; a visible information card, stopping
+state, or terminal state uses no white dot. Retry remains part of the inline slot. These predicates
+are mutually exclusive by construction rather than coordinated after rendering.
 
-Pre-output keeps the exact 11 dp dot. A no-Answer transition to visible
-Thought/Tool/Transcription content or terminal disappearance retains the last non-hidden inline mode
-through its unchanged 320 ms exit. In ordinary motion, the inline host's layout height collapses over
-the same 320 ms as its opacity; Reduced Motion snaps only that spatial height while preserving the
-320 ms opacity feedback. Visible Answer activation is instead an immediate direct-source
-handoff: the pre-output/Retry host releases layout and stops drawing in that frame, and the answer-tail
-dot is the only source from its first frame at the final anchor. The outgoing inline Row must never
-temporarily inflate message height beneath a newly visible Answer. Retry keeps the localized label,
-8 dp gap, measured caret placement, and direct render-layer translation of that same dot. The answer
-tail keeps its fixed
-anchor height and lift and directly owns its established 400 ms entrance and 320 ms exit fade/scale.
-Each direct source owns its own opacity, breathing, size, and lifecycle. Direct activity and tail
-exit paths retain their content through zero alpha with explicit transition state; they do not use
-`AnimatedVisibility`. Their two alpha-bearing graphics layers use
-`CompositingStrategy.ModulateAlpha`, never default `Auto` or `Offscreen`, so exit opacity cannot
-rasterize the 1.30x breathing circle into tight rectangular layout bounds. Every graphics layer on
-the direct-dot path sets `clip = false`. The dot never uses `animateContentSize`, expand/shrink
-layout animation, a halo, inflated bounds, coordinate conversion, Euler integration, or retained
-follower velocity. Reduced Motion removes only spatial
-scale movement while preserving direct placement and the continuous-motion policy still owns
-breathing.
+The inline activity and terminal text share one stable final-geometry slot after visible
+Thought/Tool/Transcription content and before answer Markdown. On a transition to STOPPED or ERROR,
+the terminal label occupies its final coordinate in the first terminal frame. Any outgoing inline dot
+may remain only as a draw-only overlay at that coordinate while fading; it contributes no height,
+padding, baseline, or sibling position. `Generation Stopped` and error text therefore never begin
+below an exiting dot and never move upward as an animation completes. Reduced Motion changes only
+draw-time motion or opacity and cannot expose a different layout path.
+
+Pre-output keeps the exact 11 dp dot. Visible Answer activation immediately releases the inline slot,
+and the answer-tail dot is the sole source from its first frame at the final anchor. Retry keeps the
+localized label, 8 dp gap, measured caret placement, and direct render-layer translation of the same
+dot. The answer-tail dot and terminal controls share the reserved 44 dp bottom action slot without a separate LazyColumn child; direct exit paths retain draw content through zero alpha
+without `AnimatedVisibility`, expand/shrink layout animation, `animateContentSize`, coordinate
+followers, or retained layout height. Their alpha-bearing graphics layers use
+`CompositingStrategy.ModulateAlpha`, set `clip = false`, and never rasterize a breathing circle into
+tight rectangular bounds. Continuous-motion policy may own breathing; it never owns placement or
+layout geometry.
 
 Retry still fades its label in by Unicode grapheme at 27 ms per grapheme, bounded to
 225-600 ms, with the fast-start, slow-finish `LinearOutSlowInEasing` curve. The entrance plays only
@@ -562,6 +624,22 @@ fabricate a tool-result continuation round. Whether a durable hosted segment is 
 independent UI policy. Provider semantic termination still owns whether the request succeeded; Stop
 and errors use the shared generation settlement.
 
+Tool visibility begins at the canonical creation event, not at execution start. A Provider emits a
+`ToolCallUpdate` as soon as a structured Tool block is observable. `GenerationManager` immediately
+publishes every newly created segment. For a `ToolCallsRequest`, it upserts every call first and then
+publishes one snapshot containing the complete batch before any Tool execution begins. A terminal-only
+text-recovery batch follows the same publication rule even though no earlier structured block existed.
+The batch executor's later per-call running updates do not own creation visibility. UI placeholders,
+delays, retries, or shadow Tool state must not substitute for this overlay publication boundary.
+
+Local Sandbox and Conch share one shell-tool baseline: foreground command/workdir validation,
+bounded retained output and cancellation propagation; bounded typed `file_read`; 1MB UTF-8
+`file_write`; backend-native `file_edit`; and home-default glob/grep with the documented caps,
+truncation metadata, regex failures, and line-content bounds. Conch durable background jobs,
+foreground continuation after the client wait budget, and `view_image` are explicit extensions rather
+than baseline behavior that Local must imitate. SSH may implement the transport-neutral interfaces,
+but it is not the authority for the Local/Conch baseline.
+
 Structured Provider citations follow [citations.md](citations.md). Protocol routers emit structured
 citation events rather than answer `TextChunk` or tool events. The existing streaming segment
 overlay and bounded checkpoint/terminal persistence retain accepted citation segments for the
@@ -575,7 +653,9 @@ terminal display and copy/export cleanup. Stored answer text, citation identity,
 safety remain unchanged.
 
 A message card with visible tool segments but no real `thought` segment displays only
-`Called x tools`. Message-level thought duration is a fallback only when at least one thought segment
+`Called x tools`. Terminal failed or stopped visible tool segments contribute to that count even
+without a result payload; an active group continues to display the current tool name. Message-level
+thought duration is a fallback only when at least one thought segment
 exists; it must not turn a tool-only card into `Thought for xs, called x tools`.
 Gemini keeps its hosted output protocol-local. Candidate `groundingMetadata` becomes a completed,
 durable `google_search` hosted block with normalized `results` and full grounding metadata. The shared
@@ -700,13 +780,67 @@ summary text content, and expands the same run-matched tool/result side chains i
 Only full payload rows outside that canonical path may be omitted. There is no pre-rollout,
 overscan, payload-size product limit, topology-retry approximation, or alternate Compact boundary.
 
+Conversation UI payload residency is a separate projection optimization. Payload-free topology owns
+durable ordering and structural fields. The one active generation row is overlaid and rendered
+directly from one atomic current render snapshot; it must not be observed through a remembered
+single-value Flow, historical row hydration, or a payload cache. Composed historical rows may observe
+and hydrate their full payload by stable message identity. JSON decoding and display projection occur
+off the main thread. A bounded LRU may retain completed display projections, but it is never
+authoritative state, never bridges a terminal transition, and never changes topology, edit identity,
+or Provider-visible materialization. Search and semantic-search reads use bounded payload projections
+instead of unbounded full-row materialization. LazyColumn eviction or rehydration may change object
+lifetime only; it must not change content, generation state, or glyph-birth metadata.
+
+An open Thinking-segment Bottom Sheet is owned above the LazyColumn and stores only durable message
+identity plus segment-selection mode. It never stores a copied row payload, observes the payload LRU,
+or depends on the source item remaining composed. Its authoritative payload order is the current
+generation snapshot, the atomic render-store payload retained for streaming-to-terminal handoff, then
+a direct Room observation by message ID. Scrolling, item disposal, payload eviction, or future chunk
+offload therefore cannot close, freeze, clear, or delay an already-open sheet. Group/list-first mode
+recomputes its complete current Thought/Tool/Transcription index set from every authoritative snapshot,
+so segments created after opening appear immediately without resetting the sheet's list/detail page.
+A direct single-segment sheet keeps its selected stable detail index and dismisses only when the
+message or selected authoritative segment is actually removed.
+
 After Room projection, Provider preparation remains the only rollout authority. No DAO, loader,
 Compact controller, UI projector, transcription stage, or automation caller may remove an older
 eligible row because of a token estimate before that shared boundary. This optimization therefore
 changes database materialization and object lifetime only; it does not change Provider-visible
 ordering, attachment projection, protocol validation, context selection, or failure semantics.
 
-### 9.2 Canonical history and soft token window
+### 9.2 Ordinary-generation system prompt ownership
+For ordinary conversation generation, the complete Provider-visible system prompt is owned by the
+user-selected structured System Prompt template. The request builder may compile that template and
+resolve only the predefined variables that the user explicitly placed in it. It must not append,
+prepend, wrap, or otherwise inject Active Memory, the Skill catalog, runtime metadata, tool guidance,
+application instructions, or any other hidden text outside the template.
+Access settings grant capabilities; they do not grant prompt-injection authority. Enabling Active
+Memory or Skill access may make the corresponding predefined variable resolvable and may expose the
+authorized tools, but content enters the ordinary system prompt only where the user placed that
+variable. Removing a variable from the template must remove that content from the dispatched system
+prompt without a construction-layer fallback.
+Every predefined variable in the structured System Prompt is late-bound for each actual outbound
+Provider API request. The stored template contains only ordered text and variable identities. Editing,
+saving, conversation creation, context preview, queue admission, Run/message graph admission, and
+construction of an immutable generation snapshot must not persist or freeze a resolved value for a
+later request.
+Immediately before each initial request, tool-continuation request, and transport retry is serialized,
+the request path must read the variable's current authorized value and compile the complete system
+prompt for that request. A later request in the same Run may therefore resolve different values.
+`{current_model_id}` resolves once per dispatch from the model selected for that request. The legacy
+`{model_id}` name remains a read-only compatibility alias for the same value. `{message_model_id}` is
+message-scoped: ordinary User and Assistant wrappers resolve it independently from each durable
+message's model identity, using an empty value when none exists. It is not a request-wide substitute.
+Editor previews may use explicit example values only for presentation and must never persist them as
+resolved prompt content.
+Context rollout and token accounting for a dispatched request must consume the exact late-bound system
+prompt instance that the transport serializes. They must not estimate from an earlier resolution and
+then dispatch a newly resolved prompt. Provider adapters receive the compiled prompt and must not
+resolve variables, restore omitted content, or append their own system text.
+This contract applies only to ordinary conversation generation. Dedicated internal generations,
+including Context Compact and title generation, continue to use their own explicitly configured
+special-purpose prompts and are outside this subsection.
+### 9.3 Canonical history and soft token window
 
 The shared Provider preparation order is deterministic:
 
@@ -729,7 +863,7 @@ history rollout. The initial prompt is excluded from retained-history selection 
 exactly once afterward as the final USER request item. It is never merged into Room history,
 persisted, rendered, or treated as a durable retention anchor.
 
-### 9.3 Complete conservative token accounting
+### 9.4 Complete conservative token accounting
 
 Token accounting runs only after the same Provider-visible projection used by dispatch. It includes
 all projected ordinary text, attachment file text, stored image transcription, user templates,
@@ -802,7 +936,13 @@ retained-message calculation.
     commit boundary, the owner must re-read the exact proposed Run before treating the transaction
     as uncommitted or allowing the process slot to release.
 11. **Bounded persistence.** Final transforms may change only declared presentation text and the
-    shared persistence guard is reapplied afterward.
+    shared persistence guard is reapplied afterward. For an aggregate whose trimmable JSON-string
+    payload already proves it exceeds the byte budget, that guard measures escaped UTF-8 payload
+    bytes, derives fixed metadata/JSON overhead from a placeholder projection, performs all
+    largest-field-first reductions in memory, and encodes the bounded aggregate once. It must not
+    repeatedly serialize an unbounded checkpoint aggregate. The exact encoded UTF-8 bound remains
+    authoritative, and protected Provider continuation state fails explicitly rather than becoming
+    SQL NULL.
 12. **Fail closed.** Missing/cyclic parents, shared legacy Runs that cannot be substituted safely,
     selection drift, stale identity, and partial transaction results reject the operation rather
     than guessing or broadening mutation scope.
@@ -841,6 +981,6 @@ retained-message calculation.
 | Delete isolation | Target-only delete, direct-child reparent, unchanged surviving rows, independent Run presentation. |
 | Priority | Only Compact SUCCESS permits handoff; then pending and already-claimed queue guidance beat loop and the no-guidance path admits loop once. ERROR/STOPPED/cancellation/anomaly starts neither. |
 | Request terminal role | Compact dispatch appends one non-durable initial USER invocation after an Assistant or tool-result parent; provider-visible input ends USER and fixed token accounting includes it. |
-| Provider-hosted output | OpenAI-compatible Responses requests serialize enabled `web_search`, selected `service_tier`, and reasoning summaries; summary indices preserve part boundaries and headings supply titles; OpenAI Search and Gemini Google Search/Code Execution settle display-only tool blocks without local execution; Gemini Code Execution replays typed parts and fails closed when a result is missing. |
+| Provider-hosted output | OpenAI-compatible Chat requests serialize applicable numeric and model-specific thinking controls; Responses requests preserve all seven recognized `service_tier` values and serialize enabled `web_search` plus reasoning summaries; impossible thinking-off requests fail before HTTP; summary indices preserve part boundaries and headings supply titles; OpenAI Search and Gemini Google Search/Code Execution settle display-only tool blocks without local execution; Gemini Code Execution replays typed parts and fails closed when a result is missing. |
 | Races and failures | Stop before/after bind, consecutive origin/Compact release suppressions in both settlement orders, selection drift, missing target/status, transaction rollback, stale callbacks, checkpoint-versus-terminal ordering, and queue claim failure. |
 | UI stability | Compact row/pill vertical bounds do not change across progress and terminal content; entrance is draw-only and does not alter apparent vertical spacing; message and Thinking Tool terminal text reuse the shared neutral body-text tokens and alpha without Segment error cards. |

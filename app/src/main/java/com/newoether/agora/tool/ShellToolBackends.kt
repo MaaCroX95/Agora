@@ -3,8 +3,12 @@ package com.newoether.agora.tool
 import com.newoether.agora.api.HttpClient
 import com.newoether.agora.data.ShellDeviceConfig
 import com.newoether.agora.sandbox.SandboxManager
+import com.newoether.agora.util.SHELL_FILE_READ_MAX_BYTES
 import com.newoether.agora.util.ShellClient
+import com.newoether.agora.util.ShellFileEditResult
+import com.newoether.agora.util.ShellFileReadResult
 import com.newoether.agora.util.SshClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -26,10 +30,24 @@ internal sealed interface Backend {
     ): Flow<ToolExecutionEvent> = flow {
         emit(ToolExecutionEvent.Completed(executeCommand(cmd, workdir, timeoutMs)))
     }
-    suspend fun fileRead(path: String, offset: Long, limit: Long): String
+    suspend fun fileRead(path: String, offset: Long, limit: Long): ShellFileReadResult
     suspend fun fileWrite(path: String, content: String): String?
-    suspend fun fileGlob(pattern: String, basePath: String, depth: Int?): Result<List<String>>
-    suspend fun fileGrep(pattern: String, basePath: String, fileGlob: String): Result<List<ShellClient.GrepMatch>>
+    suspend fun fileEdit(
+        path: String,
+        oldString: String,
+        newString: String,
+        replaceAll: Boolean,
+    ): ShellFileEditResult
+    suspend fun fileGlob(
+        pattern: String,
+        basePath: String,
+        depth: Int?,
+    ): Result<Pair<List<String>, Boolean>>
+    suspend fun fileGrep(
+        pattern: String,
+        basePath: String,
+        fileGlob: String,
+    ): Result<Pair<List<ShellClient.GrepMatch>, Boolean>>
     fun close()
 }
 
@@ -76,6 +94,8 @@ internal class ConchBackend(override val device: ShellDeviceConfig) : Backend {
                 prepared.body,
                 prepared.headers,
             )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             return jsonError(
                 "execute_shell_command",
@@ -120,27 +140,38 @@ internal class ConchBackend(override val device: ShellDeviceConfig) : Backend {
                 result.warningMessage?.let { put("warning", it) }
                 put("output", result.output)
             }.toString()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             jsonError("execute_shell_command", e.message ?: "Unknown error", server = deviceName, command = cmd)
         } finally { handle.close() }
     }
 
-    override suspend fun fileRead(path: String, offset: Long, limit: Long): String {
-        val result = client.fileRead(path, offset, limit)
-        if (result.error != null) return jsonError("file_read", result.error, server = deviceName)
-        return buildJsonObject {
-            put("type", "file_read"); put("server", deviceName); put("path", path)
-            put("content", result.content); put("lines", result.lines)
-        }.toString()
-    }
+    override suspend fun fileRead(path: String, offset: Long, limit: Long): ShellFileReadResult =
+        client.fileRead(path, offset, limit)
 
     override suspend fun fileWrite(path: String, content: String): String? =
         client.fileWrite(path, content)?.let { jsonError("file_write", it, server = deviceName) }
 
-    override suspend fun fileGlob(pattern: String, basePath: String, depth: Int?): Result<List<String>> =
+    override suspend fun fileEdit(
+        path: String,
+        oldString: String,
+        newString: String,
+        replaceAll: Boolean,
+    ): ShellFileEditResult = client.fileEdit(path, oldString, newString, replaceAll)
+
+    override suspend fun fileGlob(
+        pattern: String,
+        basePath: String,
+        depth: Int?,
+    ): Result<Pair<List<String>, Boolean>> =
         client.fileGlob(pattern, basePath, depth)
 
-    override suspend fun fileGrep(pattern: String, basePath: String, fileGlob: String): Result<List<ShellClient.GrepMatch>> =
+    override suspend fun fileGrep(
+        pattern: String,
+        basePath: String,
+        fileGlob: String,
+    ): Result<Pair<List<ShellClient.GrepMatch>, Boolean>> =
         client.fileGrep(pattern, basePath, fileGlob)
 
     override fun close() {}
@@ -189,32 +220,45 @@ internal class SshBackend(override val device: ShellDeviceConfig) : Backend {
                 put("exit_code", result.exitCode)
                 put("output", (result.stdout + if (result.stderr.isNotBlank()) "\n${result.stderr}" else "").trimEnd())
             }.toString()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             jsonError("execute_shell_command", e.message ?: "Unknown error", server = deviceName, command = cmd)
         }
     }
 
-    override suspend fun fileRead(path: String, offset: Long, limit: Long): String {
-        return try {
-            val content = client.fileRead(path, offset, limit)
-            buildJsonObject {
-                put("type", "file_read"); put("server", deviceName); put("path", path)
-                put("content", content); put("lines", content.lines().size)
-            }.toString()
+    override suspend fun fileRead(path: String, offset: Long, limit: Long): ShellFileReadResult =
+        try {
+            client.fileRead(path, offset, limit)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
-            jsonError("file_read", "SFTP read failed: ${e.message}", server = deviceName)
+            failedFileRead(offset, limit, "SFTP read failed: ${e.message}")
         }
-    }
 
     override suspend fun fileWrite(path: String, content: String): String? =
         client.fileWrite(path, content)?.let { jsonError("file_write", it, server = deviceName) }
 
-    override suspend fun fileGlob(pattern: String, basePath: String, depth: Int?): Result<List<String>> =
-        Result.success(client.fileGlob(pattern, basePath, depth))
+    override suspend fun fileEdit(
+        path: String,
+        oldString: String,
+        newString: String,
+        replaceAll: Boolean,
+    ): ShellFileEditResult = client.fileEdit(path, oldString, newString, replaceAll)
 
-    override suspend fun fileGrep(pattern: String, basePath: String, fileGlob: String): Result<List<ShellClient.GrepMatch>> =
-        client.fileGrep(pattern, basePath, fileGlob).map { matches ->
-            matches.map { ShellClient.GrepMatch(it.path, it.line, it.content) }
+    override suspend fun fileGlob(
+        pattern: String,
+        basePath: String,
+        depth: Int?,
+    ): Result<Pair<List<String>, Boolean>> = Result.success(client.fileGlob(pattern, basePath, depth))
+
+    override suspend fun fileGrep(
+        pattern: String,
+        basePath: String,
+        fileGlob: String,
+    ): Result<Pair<List<ShellClient.GrepMatch>, Boolean>> =
+        client.fileGrep(pattern, basePath, fileGlob).map { (matches, truncated) ->
+            matches.map { ShellClient.GrepMatch(it.path, it.line, it.content) } to truncated
         }
 
     override fun close() { client.close() }
@@ -231,35 +275,71 @@ internal class SandboxBackend(sandbox: SandboxManager?) : Backend {
             buildJsonObject {
                 put("type", "execute_shell_command"); put("server", "Local Sandbox"); put("command", cmd)
                 put("exit_code", result.exitCode)
+                result.warning?.let { put("warning", it) }
                 put("output", (result.stdout + if (result.stderr.isNotBlank()) "\n${result.stderr}" else "").trimEnd())
             }.toString()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             jsonError("execute_shell_command", e.message ?: "Unknown error", server = "Local Sandbox", command = cmd)
         }
     }
 
-    override suspend fun fileRead(path: String, offset: Long, limit: Long): String {
-        return try {
-            val content = mgr.fileRead(path, offset, limit)
-            buildJsonObject {
-                put("type", "file_read"); put("server", "Local Sandbox"); put("path", path)
-                put("content", content); put("lines", content.lines().size)
-            }.toString()
+    override suspend fun fileRead(path: String, offset: Long, limit: Long): ShellFileReadResult =
+        try {
+            mgr.fileRead(path, offset, limit)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
-            jsonError("file_read", e.message ?: "Read failed", server = "Local Sandbox")
+            failedFileRead(offset, limit, e.message ?: "Read failed")
         }
-    }
 
     override suspend fun fileWrite(path: String, content: String): String? =
         mgr.fileWrite(path, content)?.let { jsonError("file_write", it, server = "Local Sandbox") }
 
-    override suspend fun fileGlob(pattern: String, basePath: String, depth: Int?): Result<List<String>> =
-        Result.success(mgr.fileGlob(pattern, basePath, depth))
+    override suspend fun fileEdit(
+        path: String,
+        oldString: String,
+        newString: String,
+        replaceAll: Boolean,
+    ): ShellFileEditResult = mgr.fileEdit(path, oldString, newString, replaceAll)
 
-    override suspend fun fileGrep(pattern: String, basePath: String, fileGlob: String): Result<List<ShellClient.GrepMatch>> =
-        mgr.fileGrep(pattern, basePath, fileGlob).map { matches ->
-            matches.map { ShellClient.GrepMatch(it.path, it.line, it.content) }
+    override suspend fun fileGlob(
+        pattern: String,
+        basePath: String,
+        depth: Int?,
+    ): Result<Pair<List<String>, Boolean>> = try {
+        Result.success(mgr.fileGlob(pattern, basePath, depth))
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    override suspend fun fileGrep(
+        pattern: String,
+        basePath: String,
+        fileGlob: String,
+    ): Result<Pair<List<ShellClient.GrepMatch>, Boolean>> =
+        mgr.fileGrep(pattern, basePath, fileGlob).map { (matches, truncated) ->
+            matches.map { ShellClient.GrepMatch(it.path, it.line, it.content) } to truncated
         }
 
     override fun close() {}
 }
+
+private fun failedFileRead(
+    offset: Long,
+    limit: Long,
+    error: String,
+): ShellFileReadResult = ShellFileReadResult(
+    content = "",
+    lines = 0,
+    totalLines = 0,
+    totalBytes = 0,
+    returnedBytes = 0,
+    offset = offset.coerceAtLeast(0),
+    limit = if (limit in 1..SHELL_FILE_READ_MAX_BYTES) limit else SHELL_FILE_READ_MAX_BYTES,
+    truncated = false,
+    error = error,
+)

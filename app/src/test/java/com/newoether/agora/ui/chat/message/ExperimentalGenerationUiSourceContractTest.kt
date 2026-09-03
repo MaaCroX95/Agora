@@ -31,16 +31,18 @@ class ExperimentalGenerationUiSourceContractTest {
         assertTrue(assistant.contains("precededByCard = terminalImmediatelyFollowsCard"))
         assertTrue(assistant.contains("lastVisibleTerminalPredecessor"))
         assertTrue(terminalBar.contains("precededByCard: Boolean = false"))
-        assertTrue(terminalBar.contains("if (precededByCard) 12.dp else 4.dp"))
+        assertTrue(terminalBar.contains("if (precededByCard) 12.dp else 8.dp"))
         assertTrue(terminalBar.contains("if (precededByCard) 12.dp"))
         assertFalse(assistant.contains("if (mode == AssistantInlineActivityMode.NONE) return"))
         assertTrue(assistant.contains("var retainedMode by remember"))
         assertTrue(assistant.contains("visibilityTransition.targetState ||"))
         assertTrue(assistant.contains(
-            "retainExitLayout && visibilityTransition.currentState"
+            "visibilityTransition.targetState || retainExitLayout"
         ))
-        assertTrue(assistant.contains("alpha = activityOpacity"))
-        assertTrue(assistant.contains("retainExitLayout = !hasAnswerContent"))
+        assertTrue(assistant.contains(
+            "alpha = if (terminalText == null) activityOpacity else 1f"
+        ))
+        assertTrue(assistant.contains("retainExitLayout = inlineActivityPresentation.retainLayout"))
         assertTrue(assistant.contains("clip = false"))
         assertTrue(assistant.contains("GenerationActivityDot()"))
         val messageContent = assistant.substringAfter("internal fun AssistantMessageContent(")
@@ -53,7 +55,7 @@ class ExperimentalGenerationUiSourceContractTest {
         assertTrue(fixedSpacerIndex >= 0)
         assertTrue(compactIndex > fixedSpacerIndex)
         assertTrue(activityIndex > compactIndex)
-        assertTrue(answerIndex > activityIndex)
+        assertTrue(activityIndex > answerIndex)
 
         assertTrue(terminalBar.contains("internal fun GenerationTerminalText("))
         assertTrue(terminalBar.contains("style = ChatType.body"))
@@ -101,6 +103,7 @@ class ExperimentalGenerationUiSourceContractTest {
         val timeline = source(root, "message/MessageItemTimeline.kt")
         val assistant = source(root, "message/AssistantMessageContent.kt")
         val presentation = source(root, "message/ThinkingSegmentPresentation.kt")
+        val mutedText = source(root, "message/StreamingMutedText.kt")
 
         assertTrue(timeline.contains("CompactSegmentIcon.LOADING"))
         assertTrue(timeline.contains("compactSegmentHasActiveContent("))
@@ -159,6 +162,12 @@ class ExperimentalGenerationUiSourceContractTest {
         assertFalse(timeline.contains("Icons.Default.KeyboardArrowUp"))
         assertTrue(timeline.contains("rotationZ = disclosureRotation"))
         assertTrue(presentation.contains("thinking_for_seconds_ellipsis"))
+        assertTrue(mutedText.contains("MUTED_STREAM_TAIL_CODE_POINTS = 42"))
+        assertTrue(mutedText.contains("MUTED_STREAM_TAIL_ALPHA_BANDS = 6"))
+        assertTrue(mutedText.contains("MUTED_STREAM_TAIL_NEWEST_ALPHA = 0.38f"))
+        val thoughtPreview = mutedText.substringAfter("internal fun StreamingThoughtPreviewText(")
+        assertTrue(thoughtPreview.contains("StreamingMutedText("))
+        assertEquals(2, Regex("StreamingThoughtPreviewText\\(").findAll(timeline).count())
     }
 
     @Test
@@ -244,8 +253,13 @@ class ExperimentalGenerationUiSourceContractTest {
     @Test
     fun `Sources summary opens without haptics and uses the reduced external left margin`() {
         val assistant = source(locateMainSourceRoot(), "message/AssistantMessageContent.kt")
+        val summaryGate = assistant
+            .substringBefore("CitationSourcesSummaryCapsule(")
+            .takeLast(200)
         val summary = assistant.substringAfter("CitationSourcesSummaryCapsule(")
         val summaryClick = summary.substringBefore("modifier = Modifier")
+        assertTrue(summaryGate.contains("if (sourcesSummaryVisible)"))
+        assertFalse(summaryGate.contains("if (citations.isNotEmpty())"))
         assertTrue(summaryClick.contains("showCitationSources = true"))
         assertFalse(summaryClick.contains("haptics."))
         assertTrue(summary.contains(".offset(x = (-AUXILIARY_CARD_START_EXTENSION_DP).dp)"))
@@ -313,11 +327,14 @@ class ExperimentalGenerationUiSourceContractTest {
     }
 
     @Test
-    fun `answer and thought Markdown use the same one point one line height multiplier`() {
+    fun `answer and thought Markdown use centered one point one line height`() {
         val assets = source(locateMainSourceRoot(), "message/MessageBubbleAssets.kt")
 
         assertTrue(assets.contains("MARKDOWN_LINE_HEIGHT_MULTIPLIER = 1.1f"))
         assertTrue(assets.contains("scaledMarkdownTextStyle("))
+        assertTrue(assets.contains("lineHeightStyle = LineHeightStyle("))
+        assertTrue(assets.contains("alignment = LineHeightStyle.Alignment.Center"))
+        assertTrue(assets.contains("trim = LineHeightStyle.Trim.Both"))
         assertTrue(assets.contains("val markdownBodyStyle = scaledMarkdownTextStyle(ChatType.body)"))
         assertTrue(assets.contains("val thoughtMarkdownBodyStyle = scaledMarkdownTextStyle(ChatType.thoughtBody)"))
         assertTrue(assets.contains("h1 = scaledMarkdownTextStyle(ChatType.mdH1)"))

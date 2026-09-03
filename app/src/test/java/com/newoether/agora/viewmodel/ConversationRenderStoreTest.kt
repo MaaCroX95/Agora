@@ -1,6 +1,7 @@
 package com.newoether.agora.viewmodel
 
 import com.newoether.agora.model.ChatMessage
+import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import org.junit.Assert.assertEquals
@@ -111,6 +112,13 @@ class ConversationRenderStoreTest {
         val success = sending.copy(
             status = MessageStatus.SUCCESS,
             text = "complete answer",
+            segments = listOf(
+                MessageSegment(
+                    type = "tool",
+                    toolName = "shell",
+                    toolProgress = "complete live payload",
+                ),
+            ),
         )
         val store = ConversationRenderStore()
         store.replaceConversation(
@@ -127,8 +135,12 @@ class ConversationRenderStoreTest {
         assertSame(success, fenced.allMessages.single { it.id == success.id })
         assertEquals(MessageStatus.SUCCESS, fenced.allMessages.last().status)
 
-        // The terminal Room invalidation is accepted normally.
-        store.setAllMessages(listOf(user, success))
+        // Room confirms durability but cannot replace the exact terminal handoff payload.
+        val persistedProjection = success.copy(
+            text = "bounded persisted answer",
+            segments = null,
+        )
+        store.setAllMessages(listOf(user, persistedProjection))
         assertSame(success, store.snapshot.value.allMessages.last())
 
         // Even a mapped checkpoint queued before that invalidation remains monotonic.

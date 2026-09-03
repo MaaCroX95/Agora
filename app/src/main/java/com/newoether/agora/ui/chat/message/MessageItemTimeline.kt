@@ -16,6 +16,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 
 import androidx.compose.animation.core.*
 import androidx.compose.animation.expandVertically
@@ -231,6 +233,7 @@ internal fun CompactSegmentBlock(
 ) {
     if (segs.isEmpty()) return
     val allowSpatialTransitions = LocalAgoraMotionPolicy.current.allowSpatialTransitions
+    val containsToolSummary = segs.any { it.type == "tool" }
     val animateCardAppearance = rememberSegmentAppearance(
         registry = segmentAppearanceRegistry,
         animationKey = cardAppearanceKey,
@@ -241,6 +244,7 @@ internal fun CompactSegmentBlock(
         animate = animateCardAppearance,
         durationMillis = SEGMENT_ENTER_DURATION_MS,
         initialScale = SEGMENT_ENTER_INITIAL_SCALE,
+        forceOpaque = containsToolSummary,
     )
     val isExpanded by remember(expansionKey) {
         derivedStateOf { expandedStates[expansionKey] ?: false }
@@ -276,7 +280,7 @@ internal fun CompactSegmentBlock(
         message.status == MessageStatus.THINKING &&
         segs.any { it.type == "thought" }
     val isTranscribing = useLiveStatus && message.status == MessageStatus.TRANSCRIBING
-    val toolCount = segs.count { it.type == "tool" && it.toolResult != null }
+    val toolCount = segs.count { it.type == "tool" }
     val thoughtMs = thoughtDurationMs(segs, fallbackMs = message.thoughtTimeMs)
     val hasThought = thoughtMs != null && thoughtMs > 0
     val cardHasActiveContent = compactSegmentHasActiveContent(
@@ -499,15 +503,17 @@ internal fun CompactSegmentBlock(
             Box(modifier = Modifier.fillMaxWidth()) {
             expansionTransition.AnimatedVisibility(
                 visible = { it },
-                enter = if (allowSpatialTransitions) {
-                    fadeIn(tween(400)) + expandVertically(tween(400))
-                } else {
-                    fadeIn(tween(400))
+                enter = when {
+                    containsToolSummary && allowSpatialTransitions -> expandVertically(tween(400))
+                    containsToolSummary -> EnterTransition.None
+                    allowSpatialTransitions -> fadeIn(tween(400)) + expandVertically(tween(400))
+                    else -> fadeIn(tween(400))
                 },
-                exit = if (allowSpatialTransitions) {
-                    fadeOut(tween(400)) + shrinkVertically(tween(400))
-                } else {
-                    fadeOut(tween(400))
+                exit = when {
+                    containsToolSummary && allowSpatialTransitions -> shrinkVertically(tween(400))
+                    containsToolSummary -> ExitTransition.None
+                    allowSpatialTransitions -> fadeOut(tween(400)) + shrinkVertically(tween(400))
+                    else -> fadeOut(tween(400))
                 },
             ) {
                 Column {
@@ -522,6 +528,7 @@ internal fun CompactSegmentBlock(
                         ),
                         appearanceRegistry = segmentAppearanceRegistry,
                         isStreaming = isStreaming,
+                        forceOpaque = seg.type == "tool",
                       ) {
                        Column {
                         if ((seg.type == "thought" && seg.content.isNotBlank()) || seg.type == "transcription") {
@@ -550,12 +557,12 @@ internal fun CompactSegmentBlock(
                                                     idx == segs.lastIndex,
                                         )
                                     } else {
-                                        Text(
+                                        StreamingMutedText(
                                             text = seg.content.replace('\n', ' '),
-                                            style = ChatType.metaNormal,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
+                                            streaming =
+                                                isStreaming &&
+                                                    useLiveStatus &&
+                                                    idx == segs.lastIndex,
                                         )
                                     }
                                 } else {
@@ -582,16 +589,13 @@ internal fun CompactSegmentBlock(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontWeight = FontWeight.SemiBold
                                 )
-                                StableStreamingText(
-                                    text = toolSummary(seg),
+                                val presentation = ToolPresentationResolver.resolve(seg)
+                                ToolSummaryText(
+                                    presentation = presentation,
                                     streaming =
                                         isStreaming &&
                                             useLiveStatus &&
                                             idx == segs.lastIndex,
-                                    style = ChatType.metaNormal,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
@@ -699,9 +703,10 @@ internal fun TimelineSegmentsContent(
                             ),
                             isStreaming = answerIsStreaming,
                         )
-                        val answerContent = citationProjection?.markdown ?: seg.content
                         val answerAppearanceKey =
                             "${segmentAppearanceKey(message.id, index, seg)}:timeline"
+                        val answerFadeTracker =
+                            segmentAppearanceRegistry.streamingFadeTracker("$answerAppearanceKey:fade")
                         AnimatedTimelineBlockAppearance(
                             animationKey = answerAppearanceKey,
                             appearanceRegistry = segmentAppearanceRegistry,
@@ -712,19 +717,32 @@ internal fun TimelineSegmentsContent(
                                     .fillMaxWidth()
                                     .padding(top = if (index == 0) 0.dp else 6.dp)
                             ) {
-                                CitationInlineContentHost(
+                                CitationTerminalProjectionHost(
+                                    animationKey = answerAppearanceKey,
                                     projection = citationProjection,
-                                    onActivate = onCitationActivate,
-                                ) {
-                                    StreamingMarkdownMessage(
-                                        content = answerContent,
-                                        isStreaming = answerIsStreaming,
-                                        renderContext = renderContext,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .noOpBringIntoView(),
-                                        selectionEnabled = !answerIsStreaming,
-                                    )
+                                    isStreaming = answerIsStreaming,
+                                    onLayoutMutationStarted = onLayoutMutationStarted,
+                                    onLayoutMutationSettled = onLayoutMutationSettled,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { presentedProjection, presentedIsStreaming ->
+                                    val presentedContent =
+                                        presentedProjection?.markdown ?: seg.content
+                                    CitationInlineContentHost(
+                                        projection = presentedProjection,
+                                        onActivate = onCitationActivate,
+                                    ) {
+                                        StreamingMarkdownMessage(
+                                            content = presentedContent,
+                                            isStreaming = presentedIsStreaming,
+                                            renderContext = renderContext,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .noOpBringIntoView(),
+                                            selectionEnabled = !presentedIsStreaming,
+                                            textDeltas = seg.streamingTextDeltas,
+                                            fadeTracker = answerFadeTracker,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -836,12 +854,6 @@ internal fun TimelineInfoSegmentCard(
         animationKey = cardAnimationKey,
         isStreaming = animateAppearance,
     )
-    val cardAppearanceModifier = generationLifecycleAppearanceModifier(
-        animationKey = cardAnimationKey,
-        animate = animateCardAppearance,
-        durationMillis = SEGMENT_ENTER_DURATION_MS,
-        initialScale = SEGMENT_ENTER_INITIAL_SCALE,
-    )
     val groupShape = rememberAnimatedSegmentGroupShape(groupPosition)
     val cardColor = if (neutralPalette) {
         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
@@ -851,6 +863,13 @@ internal fun TimelineInfoSegmentCard(
     val iconTint = if (neutralPalette) MaterialTheme.colorScheme.primary
     else MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val cardAppearanceModifier = generationLifecycleAppearanceModifier(
+            animationKey = cardAnimationKey,
+            animate = animateCardAppearance,
+            durationMillis = SEGMENT_ENTER_DURATION_MS,
+            initialScale = SEGMENT_ENTER_INITIAL_SCALE,
+            forceOpaque = seg.type == "tool",
+        )
         val requestedCardWidth = if (extendIntoMessageInsets) {
             maxWidth + (AUXILIARY_CARD_START_EXTENSION_DP * 2).dp
         } else {
@@ -917,14 +936,17 @@ internal fun TimelineInfoSegmentCard(
                         else -> ""
                     }
                     if (summary.isNotBlank()) {
-                        StableStreamingText(
-                            text = summary,
-                            streaming = isStreamingContent,
-                            style = ChatType.metaNormal,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        if (isTool) {
+                            ToolSummaryText(
+                                presentation = ToolPresentationResolver.resolve(seg),
+                                streaming = isStreamingContent,
+                            )
+                        } else {
+                            StreamingMutedText(
+                                text = summary,
+                                streaming = isStreamingContent,
+                            )
+                        }
                     }
                 }
             }
@@ -938,42 +960,4 @@ internal fun TimelineInfoSegmentCard(
         }
         }
     }
-}
-
-private const val STREAMING_THOUGHT_PREVIEW_CODE_POINTS = 60
-
-private fun thoughtPreviewTail(
-    content: AnnotatedString,
-    maximumCodePoints: Int = STREAMING_THOUGHT_PREVIEW_CODE_POINTS,
-): AnnotatedString {
-    if (content.isEmpty() || maximumCodePoints <= 0) return content
-    val raw = content.text
-    val codePointCount = raw.codePointCount(0, raw.length)
-    if (codePointCount <= maximumCodePoints) return content
-    val start = raw.offsetByCodePoints(0, codePointCount - maximumCodePoints)
-    return AnnotatedString.Builder().apply {
-        append("…")
-        append(content.subSequence(start, content.length))
-    }.toAnnotatedString()
-}
-
-@Composable
-private fun StreamingThoughtPreviewText(
-    content: String,
-    streaming: Boolean,
-) {
-    val color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-    val flat = remember(content) { content.replace('\n', ' ') }
-    val annotated = remember(flat) { AnnotatedString(flat) }
-    val preview = remember(annotated, streaming) {
-        if (streaming) thoughtPreviewTail(annotated) else annotated
-    }
-    StableStreamingText(
-        text = preview.text,
-        streaming = streaming,
-        style = ChatType.metaNormal,
-        color = color,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
 }

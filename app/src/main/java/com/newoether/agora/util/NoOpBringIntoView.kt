@@ -3,6 +3,9 @@ package com.newoether.agora.util
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.movableContentOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -45,11 +48,13 @@ fun NoAutoScrollSelectionContainer(
     enabled: Boolean = true,
     content: @Composable () -> Unit,
 ) {
+    val latestContent = rememberUpdatedState(content)
+    val movableContent = remember { movableContentOf { latestContent.value() } }
     SelectionContainer(modifier = modifier.noOpBringIntoView()) {
         if (enabled) {
-            content()
+            movableContent()
         } else {
-            DisableSelection(content = content)
+            DisableSelection(content = movableContent)
         }
     }
 }

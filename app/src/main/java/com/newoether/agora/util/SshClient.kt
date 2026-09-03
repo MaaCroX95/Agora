@@ -9,6 +9,9 @@ import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import com.jcraft.jsch.UserInfo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 
@@ -115,29 +118,33 @@ class SshClient(
         val stderrStream = ByteArrayOutputStream()
         channel.setOutputStream(stdoutStream)
         channel.setErrStream(stderrStream)
-        channel.connect(timeoutMs)
-        // Wait for completion (channel closes when the remote command exits), bounded by a
-        // wall-clock deadline so a non-terminating remote command (`sleep infinity`, an
-        // interactive prompt) cannot pin this IO thread and the generation forever.
-        val deadline = System.currentTimeMillis() + execTimeoutMs.coerceAtLeast(1_000)
-        var timedOut = false
-        while (!channel.isClosed) {
-            if (System.currentTimeMillis() >= deadline) {
-                timedOut = true
-                break
+        try {
+            channel.connect(timeoutMs)
+            // Wait for completion (channel closes when the remote command exits), bounded by a
+            // wall-clock deadline so a non-terminating remote command (`sleep infinity`, an
+            // interactive prompt) cannot pin this IO thread and the generation forever.
+            val deadline = System.currentTimeMillis() + execTimeoutMs.coerceAtLeast(1_000)
+            var timedOut = false
+            while (!channel.isClosed) {
+                currentCoroutineContext().ensureActive()
+                if (System.currentTimeMillis() >= deadline) {
+                    timedOut = true
+                    break
+                }
+                delay(100)
             }
-            try { Thread.sleep(100) } catch (_: InterruptedException) { break }
+            val exitCode = if (channel.isClosed) channel.exitStatus else -1
+            if (timedOut) {
+                throw IllegalStateException("Command timed out after ${execTimeoutMs}ms")
+            }
+            CommandResult(
+                stdout = stdoutStream.toString("UTF-8"),
+                stderr = stderrStream.toString("UTF-8"),
+                exitCode = exitCode
+            )
+        } finally {
+            channel.disconnect()
         }
-        val exitCode = if (channel.isClosed) channel.exitStatus else -1
-        channel.disconnect()
-        if (timedOut) {
-            throw IllegalStateException("Command timed out after ${execTimeoutMs}ms")
-        }
-        CommandResult(
-            stdout = stdoutStream.toString("UTF-8"),
-            stderr = stderrStream.toString("UTF-8"),
-            exitCode = exitCode
-        )
     }
 
     // ── SFTP Helpers ───────────────────────────────────────
@@ -173,18 +180,66 @@ class SshClient(
         path: String,
         offset: Long = 0,
         limit: Long = 0
-    ): String = withSftp { sftp ->
+    ): ShellFileReadResult = withSftp { sftp ->
         try {
-            val inputStream = sftp.get(path)
-            val bytes = inputStream.readBytes()
-            inputStream.close()
-            val start = offset.coerceIn(0, bytes.size.toLong()).toInt()
-            val end = if (limit > 0) {
-                minOf(start + limit, bytes.size.toLong()).toInt()
-            } else {
-                bytes.size
+            fun readSlice(start: Long, length: Int): ByteArray {
+                if (length == 0) return ByteArray(0)
+                val buffer = ByteArray(length)
+                val bytesRead = sftp.get(path).use { input ->
+                    var remaining = start
+                    while (remaining > 0) {
+                        val skipped = input.skip(remaining)
+                        if (skipped > 0) {
+                            remaining -= skipped
+                        } else if (input.read() >= 0) {
+                            remaining -= 1
+                        } else {
+                            break
+                        }
+                    }
+                    var totalRead = 0
+                    while (totalRead < buffer.size) {
+                        val count = input.read(buffer, totalRead, buffer.size - totalRead)
+                        if (count <= 0) break
+                        totalRead += count
+                    }
+                    totalRead
+                }
+                return if (bytesRead == buffer.size) buffer else buffer.copyOf(bytesRead)
             }
-            String(bytes, start, end - start, Charsets.UTF_8)
+
+            val totalBytes = sftp.stat(path).size
+            val normalizedOffset = offset.coerceAtLeast(0)
+            val start = normalizedOffset.coerceAtMost(totalBytes)
+            val effectiveLimit = if (limit in 1..SHELL_FILE_READ_MAX_BYTES) {
+                limit
+            } else {
+                SHELL_FILE_READ_MAX_BYTES
+            }
+            val contentBytes = readSlice(
+                start = start,
+                length = minOf(effectiveLimit, totalBytes - start).toInt(),
+            )
+            val content = String(contentBytes, Charsets.UTF_8)
+            val completeContent = if (totalBytes <= SHELL_FILE_READ_MAX_BYTES) {
+                if (start == 0L && contentBytes.size.toLong() == totalBytes) {
+                    content
+                } else {
+                    String(readSlice(0, totalBytes.toInt()), Charsets.UTF_8)
+                }
+            } else {
+                null
+            }
+            ShellFileReadResult(
+                content = content,
+                lines = shellFileLineCount(content),
+                totalLines = completeContent?.let(::shellFileLineCount) ?: 0,
+                totalBytes = totalBytes,
+                returnedBytes = content.toByteArray(Charsets.UTF_8).size.toLong(),
+                offset = start,
+                limit = effectiveLimit,
+                truncated = start + contentBytes.size < totalBytes,
+            )
         } catch (e: Exception) {
             throw IllegalStateException("SFTP read failed: ${e.message}")
         }
@@ -208,9 +263,66 @@ class SshClient(
         }
     }
 
+    suspend fun fileEdit(
+        path: String,
+        oldString: String,
+        newString: String,
+        replaceAll: Boolean,
+    ): ShellFileEditResult = withSftp { sftp ->
+        try {
+            fun readEditableFile(): ByteArray {
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(8192)
+                sftp.get(path).use { input ->
+                    while (output.size() <= SHELL_FILE_EDIT_MAX_BYTES) {
+                        val count = input.read(buffer)
+                        if (count <= 0) break
+                        output.write(buffer, 0, count)
+                    }
+                }
+                return output.toByteArray()
+            }
+
+            val attrs = sftp.stat(path)
+            if (attrs.isDir) return@withSftp ShellFileEditResult(0, error = "path is not a regular file")
+            if (attrs.size > SHELL_FILE_EDIT_MAX_BYTES) {
+                return@withSftp ShellFileEditResult(0, error = "file exceeds 16MB edit limit")
+            }
+            val originalBytes = readEditableFile()
+            if (originalBytes.size > SHELL_FILE_EDIT_MAX_BYTES) {
+                return@withSftp ShellFileEditResult(0, error = "file exceeds 16MB edit limit")
+            }
+            val (editedContent, editResult) = editShellFileContent(
+                content = originalBytes.toString(Charsets.UTF_8),
+                oldString = oldString,
+                newString = newString,
+                replaceAll = replaceAll,
+            )
+            if (editedContent == null) return@withSftp editResult
+            val editedBytes = editedContent.toByteArray(Charsets.UTF_8)
+            if (editedBytes.size > SHELL_FILE_EDIT_MAX_BYTES) {
+                return@withSftp ShellFileEditResult(0, error = "edited file exceeds 16MB limit")
+            }
+            if (!readEditableFile().contentEquals(originalBytes)) {
+                return@withSftp ShellFileEditResult(
+                    0,
+                    error = "file changed concurrently before edit could be applied",
+                )
+            }
+            sftp.put(editedBytes.inputStream(), path, ChannelSftp.OVERWRITE)
+            editResult.copy(sha256 = shellFileSha256(editedBytes))
+        } catch (e: Exception) {
+            ShellFileEditResult(0, error = "SFTP edit failed: ${e.message}")
+        }
+    }
+
     // ── file_glob ──────────────────────────────────────────
 
-    suspend fun fileGlob(pattern: String, basePath: String = "", depth: Int? = null): List<String> =
+    suspend fun fileGlob(
+        pattern: String,
+        basePath: String = "",
+        depth: Int? = null,
+    ): Pair<List<String>, Boolean> =
         withSftp { sftp ->
             val base = basePath.ifBlank {
                 try { sftp.pwd() } catch (_: Exception) { "/" }
@@ -219,7 +331,9 @@ class SshClient(
             // null = legacy full recursion; <=0 = explicit unlimited; >=1 = max levels.
             val remaining = if (depth == null || depth <= 0) -1 else depth
             sftpListRecursive(sftp, base, allFiles, remaining)
-            globMatch(allFiles, base, pattern)
+            val matches = globMatch(allFiles, base, pattern)
+            matches.take(SHELL_FILE_GLOB_MAX_MATCHES) to
+                (matches.size >= SHELL_FILE_GLOB_MAX_MATCHES)
         }
 
     // remaining: levels still allowed including the current dir's files. -1 = unlimited;
@@ -267,7 +381,7 @@ class SshClient(
         pattern: String,
         basePath: String = "",
         fileGlob: String = ""
-    ): Result<List<GrepMatch>> {
+    ): Result<Pair<List<GrepMatch>, Boolean>> {
         val base = basePath.ifBlank { "." }
 
         // Try server-side grep via exec channel first
@@ -291,7 +405,10 @@ class SshClient(
                     val matches = result.stdout.lines()
                         .filter { it.isNotBlank() }
                         .mapNotNull { parseGrepLine(it) }
-                    Result.success(matches)
+                    Result.success(
+                        matches.take(SHELL_FILE_GREP_MAX_MATCHES) to
+                            (matches.size >= SHELL_FILE_GREP_MAX_MATCHES),
+                    )
                 }
                 else -> {
                     // exitCode >= 2: grep error (not installed, bad args, etc.) — fallback
@@ -307,36 +424,40 @@ class SshClient(
         regex: String,
         basePath: String,
         fileGlob: String
-    ): Result<List<GrepMatch>> {
+    ): Result<Pair<List<GrepMatch>, Boolean>> {
         return try {
             val globPattern = fileGlob.ifBlank { "*" }
-            val files = fileGlob(globPattern, basePath)
+            val files = fileGlob(globPattern, basePath).first
             val pattern = try {
                 Regex(regex)
             } catch (e: Exception) {
                 Regex(java.util.regex.Pattern.quote(regex))
             }
             val allMatches = mutableListOf<GrepMatch>()
-            val maxReadSize = 500_000L // MAX_FILE_CONTENT_READ_LENGTH equivalent
             for (file in files) {
                 try {
-                    val content = fileRead(file, 0, maxReadSize)
+                    val content = fileRead(file, 0, SHELL_FILE_GREP_MAX_FILE_BYTES).content
                     // Skip binary files (NUL-byte heuristic), as grep -I would.
                     if (content.contains('\u0000')) continue
                     content.lines().forEachIndexed { index, line ->
                         if (pattern.containsMatchIn(line)) {
-                            allMatches.add(GrepMatch(
-                                path = file,
-                                line = index + 1,
-                                content = line.take(500)
-                            ))
+                            allMatches.add(
+                                GrepMatch(
+                                    path = file,
+                                    line = index + 1,
+                                    content = line.take(SHELL_FILE_GREP_MAX_CONTENT_CHARS),
+                                ),
+                            )
+                            if (allMatches.size >= SHELL_FILE_GREP_MAX_MATCHES) {
+                                return Result.success(allMatches to true)
+                            }
                         }
                     }
                 } catch (_: Exception) {
                     // Skip unreadable files
                 }
             }
-            Result.success(allMatches)
+            Result.success(allMatches to false)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -351,7 +472,7 @@ class SshClient(
         val secondColon = afterPath.indexOf(':')
         if (secondColon < 0) return null
         val lineNumStr = afterPath.substring(0, secondColon)
-        val content = afterPath.substring(secondColon + 1).take(500)
+        val content = afterPath.substring(secondColon + 1).take(SHELL_FILE_GREP_MAX_CONTENT_CHARS)
         val lineNum = lineNumStr.toIntOrNull() ?: return null
         return GrepMatch(path = path, line = lineNum, content = content)
     }

@@ -8,7 +8,6 @@ import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.ThinkingLevels
 import com.newoether.agora.api.util.buildToolCallId
-import com.newoether.agora.api.util.prepareMessages
 import com.newoether.agora.api.util.adaptToolRoundsForProvider
 import com.newoether.agora.api.util.RequestFormatException
 import com.newoether.agora.api.util.requireValidSerializedRequest
@@ -45,8 +44,14 @@ internal data class AnthropicRequest(
     val thinking: AnthropicThinking? = null,
     @SerialName("output_config") val outputConfig: AnthropicOutputConfig? = null,
     val tools: List<AnthropicTool>? = null,
+    @SerialName("cache_control") val cacheControl: AnthropicCacheControl = AnthropicCacheControl(),
     val temperature: Float? = null,
     @SerialName("top_p") val topP: Float? = null
+)
+
+@Serializable
+internal data class AnthropicCacheControl(
+    val type: String = "ephemeral",
 )
 
 @Serializable
@@ -169,14 +174,26 @@ internal data class AnthropicUsage(
  * provider reported an in-band error. The transport layer cannot answer any of those from socket
  * state alone.
  */
-/** Request-shape generations of the Claude model line. Only the LEGACY sets are enumerated;
- *  anything unmatched (opus-5, sonnet-5, fable, mythos, every future family) is
- *  [CURRENT_ADAPTIVE] and must never receive `budget_tokens` or sampling params (400 on 4.7+). */
-internal enum class ClaudeFamily { NO_THINKING, BUDGET_THINKING, TRANSITIONAL_4_6, CURRENT_ADAPTIVE }
+/** Request-shape generations of the Claude model line. Unknown future families stay conservative:
+ * adaptive when enabled, omitted when disabled, and never receive legacy sampling parameters. */
+internal enum class ClaudeFamily {
+    NO_THINKING,
+    BUDGET_THINKING,
+    TRANSITIONAL_4_6,
+    CURRENT_ADAPTIVE,
+    CURRENT_DEFAULT_ON,
+    CURRENT_ALWAYS_THINKING,
+}
 
 internal fun classifyClaudeFamily(modelName: String): ClaudeFamily {
     val m = modelName.lowercase()
     if (!m.startsWith("claude")) return ClaudeFamily.CURRENT_ADAPTIVE
+    if (m in setOf("claude-fable-5", "claude-mythos-5", "claude-mythos-preview")) {
+        return ClaudeFamily.CURRENT_ALWAYS_THINKING
+    }
+    if (m in setOf("claude-opus-5", "claude-sonnet-5")) {
+        return ClaudeFamily.CURRENT_DEFAULT_ON
+    }
     // 3.0 / 3.5 predate extended thinking entirely.
     if (listOf("claude-3-opus", "claude-3-sonnet", "claude-3-haiku", "claude-3-5-")
             .any { m.startsWith(it) }
@@ -235,17 +252,27 @@ class AnthropicProvider(
         val modelName = config.modelId
 
         // ── Model-generation classification ─────────────────────────────────
-        // The legacy sets are CLOSED lists; every model NOT matched below — including
-        // claude-opus-5 / claude-sonnet-5 / fable / mythos and all FUTURE families — is
-        // treated as current-generation: adaptive thinking only, and no sampling params.
+        // The legacy and current default-on/always-on sets are CLOSED lists. Every model not
+        // matched below is treated conservatively: adaptive when enabled and no sampling params.
         // Rationale (API contract): `budget_tokens` and `temperature`/`top_p` are REMOVED
         // from Opus 4.7 onward (sending either returns a hard 400), so an unknown new
         // model must never fall back onto the legacy request shape.
         val family = classifyClaudeFamily(modelName)
+        val effort = ThinkingLevels.anthropicEffort(config.thinkingLevel)
+        val thinkingViolation = when {
+            config.thinkingEnabled -> null
+            family == ClaudeFamily.CURRENT_ALWAYS_THINKING ->
+                "model $modelName cannot disable thinking"
+            modelName.equals("claude-opus-5", ignoreCase = true) && effort in setOf("xhigh", "max") ->
+                "model $modelName cannot disable thinking at effort $effort"
+            else -> null
+        }
         val thinkingBudget = (
             if (config.thinkingBudgetEnabled) config.thinkingBudgetTokens else ThinkingLevels.DefaultBudgetTokens
         ).coerceIn(1024, 128000)
         val thinking = when {
+            !config.thinkingEnabled && family == ClaudeFamily.CURRENT_DEFAULT_ON ->
+                AnthropicThinking(type = "disabled")
             !config.thinkingEnabled -> null
             family == ClaudeFamily.NO_THINKING -> null
             family == ClaudeFamily.BUDGET_THINKING ->
@@ -256,58 +283,16 @@ class AnthropicProvider(
                 AnthropicThinking(type = "enabled", budgetTokens = thinkingBudget, display = "summarized")
             else -> AnthropicThinking(type = "adaptive", display = "summarized")
         }
-        val outputConfig = if (thinking?.type == "adaptive") {
-            AnthropicOutputConfig(effort = ThinkingLevels.anthropicEffort(config.thinkingLevel))
+        val outputConfig = if (thinking?.type in setOf("adaptive", "disabled")) {
+            AnthropicOutputConfig(effort = effort)
         } else null
         // temperature/top_p are rejected with a 400 on Opus 4.7+ / Sonnet 5 / Fable — only the
         // legacy and transitional families may carry user sampling overrides.
-        val allowsSamplingParams = family != ClaudeFamily.CURRENT_ADAPTIVE
-
-        val canonicalPath = prepareMessages(messages, config.maxContextWindow)
-        val validatedPath = adaptToolRoundsForProvider(
-            messages = canonicalPath,
-            providerName = name,
-        ) { toolMessage ->
-            toolMessage.isAnthropicToolRoundCompatible(
-                targetModel = modelName,
-                targetProviderName = name,
-                signedThinkingRequired = thinking != null,
-            )
-        }
-
-        // Convert ChatMessages to Anthropic API format.
-        // Consecutive result_ messages are batched into a single user message
-        // because Anthropic requires all tool_results for a batched assistant
-        // tool_use to be in the single immediately-following user message.
-        val apiMessages = coalesceAnthropicMessages(buildList {
-            var i = 0
-            while (i < validatedPath.size) {
-                val msg = validatedPath[i]
-                when {
-                    msg.id.startsWith(Constants.TOOL_MSG_PREFIX) -> {
-                        add(buildAssistantToolUse(msg, modelName))
-                        i++
-                        // Batch all immediately following result_ messages into one user message
-                        if (i < validatedPath.size && validatedPath[i].id.startsWith(Constants.RESULT_MSG_PREFIX)) {
-                            val resultBlocks = mutableListOf<AnthropicContentPart>()
-                            while (i < validatedPath.size && validatedPath[i].id.startsWith(Constants.RESULT_MSG_PREFIX)) {
-                                resultBlocks.addAll(buildToolResultBlocks(validatedPath[i]))
-                                i++
-                            }
-                            add(AnthropicMessage(role = "user", content = resultBlocks))
-                        }
-                    }
-                    msg.id.startsWith(Constants.RESULT_MSG_PREFIX) -> {
-                        // Orphan result_ — should not occur after validateToolMessages, but drop defensively
-                        i++
-                    }
-                    else -> {
-                        add(buildNormalMessage(if (config.includeImages) msg else msg.copy(images = emptyList())))
-                        i++
-                    }
-                }
-            }
-        })
+        val allowsLegacySamplingParams = family in setOf(
+            ClaudeFamily.NO_THINKING,
+            ClaudeFamily.BUDGET_THINKING,
+            ClaudeFamily.TRANSITIONAL_4_6,
+        )
 
         // Convert ToolDefinition to Anthropic format
         val anthropicTools = config.tools?.map { td ->
@@ -342,10 +327,57 @@ class AnthropicProvider(
             )
         }
 
-        val requestBody = AnthropicRequest(
+        fun buildRequestBody(resolvedRequest: ProviderRequestInput): AnthropicRequest {
+            val validatedPath = adaptToolRoundsForProvider(
+                messages = resolvedRequest.messages,
+                providerName = name,
+            ) { toolMessage ->
+                toolMessage.isAnthropicToolRoundCompatible(
+                    targetModel = modelName,
+                    targetProviderName = name,
+                    signedThinkingRequired = thinking?.type in setOf("enabled", "adaptive"),
+                )
+            }
+            val apiMessages = coalesceAnthropicMessages(buildList {
+                var index = 0
+                while (index < validatedPath.size) {
+                    val message = validatedPath[index]
+                    when {
+                        message.id.startsWith(Constants.TOOL_MSG_PREFIX) -> {
+                            add(buildAssistantToolUse(message, modelName))
+                            index++
+                            if (
+                                index < validatedPath.size &&
+                                validatedPath[index].id.startsWith(Constants.RESULT_MSG_PREFIX)
+                            ) {
+                                val resultBlocks = mutableListOf<AnthropicContentPart>()
+                                while (
+                                    index < validatedPath.size &&
+                                    validatedPath[index].id.startsWith(Constants.RESULT_MSG_PREFIX)
+                                ) {
+                                    resultBlocks.addAll(buildToolResultBlocks(validatedPath[index]))
+                                    index++
+                                }
+                                add(AnthropicMessage(role = "user", content = resultBlocks))
+                            }
+                        }
+                        message.id.startsWith(Constants.RESULT_MSG_PREFIX) -> index++
+                        else -> {
+                            add(
+                                buildNormalMessage(
+                                    if (config.includeImages) message
+                                    else message.copy(images = emptyList()),
+                                ),
+                            )
+                            index++
+                        }
+                    }
+                }
+            })
+            return AnthropicRequest(
             model = modelName,
             messages = apiMessages,
-            system = config.systemPrompt,
+            system = resolvedRequest.systemPrompt,
             thinking = thinking,
             outputConfig = outputConfig,
             // On always-on/adaptive-thinking models max_tokens caps thinking + answer TOGETHER,
@@ -362,28 +394,21 @@ class AnthropicProvider(
                 else -> 8192
             },
             tools = anthropicTools,
-            temperature = config.temperature.takeIf { allowsSamplingParams },
-            topP = config.topP.takeIf { allowsSamplingParams }
-        )
+            temperature = config.temperature.takeIf {
+                allowsLegacySamplingParams && thinking == null
+            },
+            topP = config.topP?.takeIf {
+                allowsLegacySamplingParams && (thinking == null || it in 0.95f..1f)
+            }
+            )
+        }
 
         try {
-            requestBody.requireValidWireFormat()
+            thinkingViolation?.let { throw RequestFormatException(name, listOf(it)) }
             val url = "$baseUrl/messages"
             val headers = mutableMapOf("Content-Type" to "application/json")
             headers["x-api-key"] = config.apiKey
             headers["anthropic-version"] = "2023-06-01"
-            val requestBodyJson = json.encodeToString(AnthropicRequest.serializer(), requestBody)
-            requireValidSerializedRequest(
-                provider = name,
-                body = requestBodyJson,
-                requiredStringFields = setOf("model"),
-                requiredArrayFields = setOf("messages"),
-            )
-            DebugLog.d(
-                "AgoraAPI",
-                "[$name] request model=$modelName messages=${apiMessages.size} " +
-                    "thinking=${thinking != null} tools=${anthropicTools?.size ?: 0}",
-            )
             val maxAttempts = ProviderRetryPolicy.MAX_ATTEMPTS
             val retryableCodes = setOf(429, 502, 503, 504)
             var attempt = 0
@@ -391,6 +416,20 @@ class AnthropicProvider(
 
             while (attempt < maxAttempts && !done) {
                 attempt++
+                val requestBody = buildRequestBody(config.resolveRequest(messages))
+                requestBody.requireValidWireFormat()
+                val requestBodyJson = json.encodeToString(AnthropicRequest.serializer(), requestBody)
+                requireValidSerializedRequest(
+                    provider = name,
+                    body = requestBodyJson,
+                    requiredStringFields = setOf("model"),
+                    requiredArrayFields = setOf("messages"),
+                )
+                DebugLog.d(
+                    "AgoraAPI",
+                    "[$name] request model=$modelName messages=${requestBody.messages.size} " +
+                        "thinking=${thinking?.type ?: "omitted"} tools=${anthropicTools?.size ?: 0}",
+                )
                 // Opening the request can fail before any response headers exist (connect
                 // timeout, TLS failure, reset). Those escaped the retry loop entirely before, so a
                 // single flaky connection became a hard failure. Nothing has streamed at this

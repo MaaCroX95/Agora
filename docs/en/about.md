@@ -8,7 +8,7 @@ When automatic update checks are enabled, Agora checks for a newer release when 
 
 ## Feedback
 
-The rating form sends only the fields you deliberately submit—rating, name, email, and comment—to `https://newoether.space/api/rating`.
+The rating form sends only the fields you deliberately submit—rating, name, email, and comment—to `https://newoether.com/api/rating`.
 
 After an unexpected crash, Agora stores one pending report locally and, on the next launch, asks whether you want to send it. Nothing is uploaded without that explicit action. The report contains the stack trace, app/Android version, device manufacturer/model, timestamp, and bounded diagnostic event tags; it does not include conversation text, credentials, or device identifiers.
 

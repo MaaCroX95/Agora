@@ -1,6 +1,8 @@
 package com.newoether.agora.viewmodel
 
 import com.newoether.agora.api.LlmProvider
+import com.newoether.agora.api.ProviderRequestResolver
+import com.newoether.agora.data.PromptTemplateItem
 import com.newoether.agora.model.ContextBudget
 import com.newoether.agora.model.ProviderPassResult
 import com.newoether.agora.model.RunEffect
@@ -8,6 +10,12 @@ import com.newoether.agora.model.RunEffectIdentity
 import com.newoether.agora.model.RunEndReason
 import com.newoether.agora.model.RunStatus
 import com.newoether.agora.util.Constants
+
+data class GenerationPromptTemplate(
+    val systemItems: List<PromptTemplateItem>,
+    val userItems: List<PromptTemplateItem>,
+    val assistantItems: List<PromptTemplateItem>,
+)
 
 data class GenerationConfig(
     val providerName: String,
@@ -29,6 +37,11 @@ data class GenerationConfig(
     val baseUrl: String?,
     val userPrepend: String? = null,
     val userPostpend: String? = null,
+    val assistantPrepend: String? = null,
+    val assistantPostpend: String? = null,
+    /** Frozen template structure with values resolved independently for every dispatch attempt. */
+    val promptTemplate: GenerationPromptTemplate? = null,
+    val requestResolver: ProviderRequestResolver? = null,
     val temperature: Float? = null,
     val maxTokens: Int? = null,
     val topP: Float? = null,
@@ -173,6 +186,8 @@ internal data class GenerationCallbacks(
      *  each round boundary and ends the generation there so the queue can flush immediately
      *  (steering) instead of waiting out the entire loop. Headless runs keep the default. */
     val hasQueuedSends: () -> Boolean = { false },
+    /** Null for headless automation, which retains its existing foreground/background policy. */
+    val isConversationVisible: (() -> Boolean)? = null,
     /** A validated Provider outcome is necessary but not sufficient: runtime identity must accept
      * the exact batch before any tool can execute. Defaults preserve the isolated headless test
      * adapter until Task ownership migrates fully in Phase 7. */
@@ -183,7 +198,7 @@ internal data class GenerationCallbacks(
     val onToolBatchCompleted: suspend (RunEffectIdentity) -> RunEffect.CommitToolRound? = {
         RunEffect.CommitToolRound(it.copy(effectId = "tool-round-${it.effectId}"))
     },
-    /** Generic final text projection applied before the shared terminal writer persists output. */
+    /** Generic output text projection applied before streaming UI, checkpoints, and terminal Room writes. */
     val transformFinalText: (String, com.newoether.agora.model.MessageStatus) -> String =
         { text, _ -> text },
     /** Only an accepted durable success result authorizes the next Provider pass. */

@@ -1,5 +1,7 @@
 package com.newoether.agora.sandbox
 
+import com.newoether.agora.util.ShellFileEditResult
+import com.newoether.agora.util.ShellFileReadResult
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,28 +51,31 @@ class PlaySandboxManager : SandboxManager {
         path: String,
         offset: Long,
         limit: Long
-    ): String = throw UnsupportedOperationException("Sandbox not available")
+    ): ShellFileReadResult = throw UnsupportedOperationException("Sandbox not available")
 
     override suspend fun fileWrite(path: String, content: String): String? =
         "Sandbox not available in this build"
 
-    override suspend fun fileGlob(pattern: String, basePath: String, depth: Int?): List<String> =
-        emptyList()
+    override suspend fun fileGlob(
+        pattern: String,
+        basePath: String,
+        depth: Int?,
+    ): Pair<List<String>, Boolean> = emptyList<String>() to false
 
     override suspend fun fileGrep(
         pattern: String,
         basePath: String,
         fileGlob: String
-    ): Result<List<SandboxManager.GrepMatch>> =
-        Result.success(emptyList())
+    ): Result<Pair<List<SandboxManager.GrepMatch>, Boolean>> =
+        Result.success(emptyList<SandboxManager.GrepMatch>() to false)
 
     override suspend fun fileEdit(
         path: String,
         oldString: String,
         newString: String,
         replaceAll: Boolean
-    ): SandboxManager.FileEditResult = SandboxManager.FileEditResult(
-        replaced = 0,
+    ): ShellFileEditResult = ShellFileEditResult(
+        replacements = 0,
         error = "Sandbox not available in this build"
     )
 

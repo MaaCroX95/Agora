@@ -5,7 +5,6 @@ import com.newoether.agora.R
 import com.newoether.agora.api.EmbeddingClient
 import com.newoether.agora.api.LlamaEngine
 import com.newoether.agora.api.ProviderDefaults
-import com.newoether.agora.api.local.LocalProvider
 import com.newoether.agora.data.EmbeddingCacheLocks
 import com.newoether.agora.data.EmbeddingIndexer
 import com.newoether.agora.data.EmbeddingModelConfig
@@ -53,7 +52,6 @@ internal fun isEmbeddingMessageIdEligible(messageId: String): Boolean =
 class RagManager(
     private val conversations: ConversationRepository,
     private val settings: SettingsRepository,
-    private val localProvider: LocalProvider,
     private val appContext: Context,
     private val scope: CoroutineScope,
     private val emitSnackbar: suspend (SnackbarEvent) -> Unit,
@@ -347,9 +345,7 @@ class RagManager(
 
                 val texts = batch.map { it.text.take(Constants.MAX_EMBEDDING_TEXT_LENGTH) }
                 val embeddings = if (model.type == EmbeddingModelType.LOCAL) {
-                    LlamaEngine.computeEmbeddings(texts, model.localFilePath) {
-                        localProvider.releaseEngineBlocking()
-                    }
+                    LlamaEngine.computeEmbeddings(texts, model.localFilePath)
                 } else {
                     val (apiKey, baseUrl) = requireNotNull(remoteConfig)
                     EmbeddingClient.computeEmbeddings(
@@ -434,9 +430,7 @@ class RagManager(
                 DebugLog.w("AgoraVM", "RAG index: local model not ready, skipping")
                 return
             }
-            LlamaEngine.computeEmbedding(toEmbed, model.localFilePath) {
-                localProvider.releaseEngineBlocking()
-            }
+            LlamaEngine.computeEmbedding(toEmbed, model.localFilePath)
         } else {
             val apiKey = model.remoteApiKey.ifBlank { resolveEmbeddingApiKey() ?: "" }
             if (apiKey.isBlank()) {

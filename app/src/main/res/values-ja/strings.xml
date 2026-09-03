@@ -271,11 +271,11 @@
     <string name="prompts_delete_text">\'%1$s\' を削除してもよろしいですか? この操作は取り消せません。</string>
     <string name="template_title_required">タイトルは必須です</string>
     <string name="template_tab_system">システム</string>
-    <string name="template_tab_prepend">前置</string>
-    <string name="template_tab_postpend">後置</string>
-    <string name="template_tab_system_desc">システム指示として送信されます。</string>
-    <string name="template_tab_prepend_desc">各ユーザーメッセージの前に挿入されます。</string>
-    <string name="template_tab_postpend_desc">各ユーザーメッセージの後に挿入されます。</string>
+    <string name="template_tab_user">ユーザー</string>
+    <string name="template_tab_assistant">アシスタント</string>
+    <string name="template_tab_system_desc">モデルに送信するシステムメッセージを定義します。</string>
+    <string name="template_tab_user_desc">通常の各ユーザーメッセージを囲む構造を定義します。</string>
+    <string name="template_tab_assistant_desc">通常の各アシスタントメッセージを囲む構造を定義します。</string>
     <string name="template_empty_hint">項目がありません。下にテキストまたは変数を追加してください。</string>
     <string name="template_add_text">テキストを追加</string>
     <string name="template_add_variable">変数を追加</string>
@@ -370,6 +370,9 @@
     <string name="advanced_generation_title">詳細設定</string>
     <string name="advanced_per_conversation">会話ごとの上書き</string>
     <string name="appearance_interface">インターフェース</string>
+    <string name="appearance_theme_color">テーマと色</string>
+    <string name="appearance_motion_feedback">モーションとフィードバック</string>
+    <string name="appearance_chat_display">チャット表示</string>
     <string name="message_display">メッセージ表示</string>
     <string name="tool_call_display_mode">思考とツールブロック</string>
     <string name="tool_call_display_mode_timeline">タイムライン</string>
@@ -731,6 +734,10 @@
     <!-- Local Chat Provider -->
     <string name="local_chat_models">ローカルチャットモデル</string>
     <string name="local_models_title">ローカルモデル</string>
+    <string name="local_model_idle_retention">モデルのアイドル保持時間</string>
+    <string name="local_model_idle_retention_desc">未使用のローカルモデルをアンロードするまでメモリに保持する時間</string>
+    <string name="local_model_idle_retention_immediate">即時</string>
+    <string name="local_model_idle_retention_minutes">%1$d 分</string>
     <string name="local_chat_models_count">%1$d 個のモデルをインポート済み</string>
     <string name="local_title">ローカル</string>
     <string name="not_configured">未設定</string>
@@ -800,7 +807,7 @@
     <string name="rating_submitting">送信中…</string>
     <string name="rating_success">フィードバックありがとうございます!</string>
     <string name="rating_failed">送信に失敗しました。もう一度お試しください。</string>
-    <string name="rating_privacy">評価は匿名で newoether.space にアップロードされます。入力した項目のみが送信されます。それ以外のデータは収集されません。</string>
+    <string name="rating_privacy">評価は匿名で newoether.com にアップロードされます。入力した項目のみが送信されます。それ以外のデータは収集されません。</string>
 
     <!-- Data Control -->
     <string name="settings_data_control">データ管理</string>
@@ -882,7 +889,8 @@
     <string name="file_unsupported_title">非対応のファイル</string>
     <string name="file_unknown_type">不明なファイル形式</string>
     <string name="file_unsupported_type">非対応のファイル形式: %1$s</string>
-    <string name="file_too_large">ファイルが大きすぎます（最大 20 MB）</string>
+    <string name="file_too_large">ファイルが大きすぎます（最大 100 MiB）</string>
+    <string name="file_sandbox_required">このファイルを添付するには Local Sandbox をインストールして有効にしてください。</string>
     <string name="attachment_copy_failed_image">画像の読み込みに失敗しました</string>
     <string name="attachment_copy_failed_file">ファイルの読み込みに失敗しました</string>
     <string name="pdf_render_failed">PDF のレンダリングに失敗しました</string>
@@ -999,7 +1007,7 @@
     <string name="crash_message">申し訳ありません。匿名のクラッシュレポートを送信して修正にご協力いただけます。</string>
     <string name="crash_submit">レポートを送信</string>
     <string name="crash_dismiss">送信しない</string>
-    <string name="crash_privacy_note">クラッシュログのみが newoether.space に送信されます。それ以外の情報は収集されません。</string>
+    <string name="crash_privacy_note">クラッシュログのみが newoether.com に送信されます。それ以外の情報は収集されません。</string>
     <string name="crash_submitted">クラッシュレポートを送信しました。ありがとうございます!</string>
     <string name="settings_group_network">ネットワーク</string>
     <string name="settings_proxy">プロキシ</string>
@@ -1077,7 +1085,10 @@
     <string name="openai_service_tier_auto">自動</string>
     <string name="openai_service_tier_default">デフォルト</string>
     <string name="openai_service_tier_flex">フレックス</string>
+    <string name="openai_service_tier_scale">スケール</string>
+    <string name="openai_service_tier_priority">優先</string>
     <string name="openai_service_tier_fast">高速</string>
+    <string name="openai_service_tier_ultrafast">超高速</string>
     <string name="context_title">コンテキスト</string>
     <string name="context_desc">コンテキスト管理</string>
     <string name="context_compact">コンテキスト圧縮</string>
@@ -1207,4 +1218,5 @@
     <string name="tool_create_skill">スキルを作成</string>
     <string name="tool_edit_skill">スキルを編集</string>
     <string name="tool_delete_skill">スキルを削除</string>
+    <string name="tool_read_file_truncated">一部の内容を表示 · バイト %1$d から続行</string>
 </resources>
