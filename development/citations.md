@@ -108,11 +108,17 @@ exact-`citedText` occurrence rule in section 2. Markdown syntax, links, code, HT
 transformations that prevent a deterministic source-to-display mapping cause a bottom-sheet-only
 fallback; they do not justify splitting the answer into independent Markdown blocks.
 
-When the entire cited range is a parenthesized Markdown link whose target is the same canonical safe
-URL as the structured citation source, that wrapper is Provider presentation syntax: streaming and
-terminal projection replace the full range with the native capsule. It must not preserve the
-parentheses, link label, or Markdown target and then append a second capsule. For ordinary claim-text
-anchors, the claim remains unchanged and the capsule is inserted after it.
+A parenthesized Markdown link whose target has the same canonical safe URL as a structured citation
+source is Provider presentation syntax when it maps deterministically through an overlapping anchor
+or, when no positional evidence identifies a wrapper, through one unique same-URL wrapper. The
+anchor may cover the complete wrapper, the Markdown link, the label, or another valid subrange; it
+does not need to cover the complete wrapper. Terminal projection replaces every positionally mapped
+wrapper, or the unique same-URL fallback wrapper, as one complete range with the native capsule. It
+must not preserve the parentheses, link label, or Markdown target and then append a second capsule.
+Repeated same-URL wrappers without positional evidence remain ambiguous and receive no inline
+capsule. A standard Markdown link without the additional outer parentheses remains ordinary answer
+content even when its URL matches a structured citation. For ordinary claim-text anchors, the claim
+remains unchanged and the capsule is inserted after it.
 
 Resolvable private-use markers map to their structured source and disappear from visible answer
 text. Unresolved OpenAI/ChatGPT `cite`, `filecite`, and equivalent bare `turn...` envelopes are

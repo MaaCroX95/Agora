@@ -156,19 +156,6 @@ internal fun citationInlineLabel(source: CitationRecord): String =
             ?.takeIf(String::isNotBlank)
     } ?: source.fileName?.takeIf(String::isNotBlank) ?: source.title
 
-private fun parenthesizedCitationLinkTargetsSource(
-    citedText: String,
-    sourceUrl: String?,
-): Boolean {
-    val safeSourceUrl = CitationPolicy.safeHttpUrl(sourceUrl) ?: return false
-    if (!citedText.startsWith("([") || !citedText.endsWith("))")) return false
-    val targetStart = citedText.indexOf("](", startIndex = 2)
-    if (targetStart <= 2) return false
-    val target = citedText.substring(targetStart + 2, citedText.length - 2)
-    if (target.isBlank() || target.any(Char::isWhitespace)) return false
-    return CitationPolicy.safeHttpUrl(target) == safeSourceUrl
-}
-
 internal fun citationSummaryVisible(
     showActions: Boolean,
     informationVisible: Boolean,
@@ -186,18 +173,38 @@ internal fun projectCitationMarkdown(
     val unsupported by lazy(LazyThreadSafetyMode.NONE) {
         unsupportedMarkdownRanges(answerText)
     }
+    val citationWrappers = parenthesizedCitationLinkWrappers(answerText)
     val candidates = normalized.flatMapIndexed { sourceIndex, source ->
+        val matchingWrappers = source.url?.let(CitationPolicy::safeHttpUrl)?.let { safeSourceUrl ->
+            citationWrappers.filter { wrapper -> wrapper.safeUrl == safeSourceUrl }
+        }.orEmpty()
+        val anchoredWrappers = matchingWrappers.filter { wrapper ->
+            source.anchors.any { anchor ->
+                anchor.startIndex < wrapper.endIndex && anchor.endIndex > wrapper.startIndex
+            }
+        }
+        val wrapperCandidates = anchoredWrappers.ifEmpty {
+            matchingWrappers.takeIf { it.size == 1 }.orEmpty()
+        }.map { wrapper ->
+            CitationProjectionCandidate(
+                sourceIndex = sourceIndex,
+                source = source,
+                startIndex = wrapper.startIndex,
+                endIndex = wrapper.endIndex,
+                replacesPresentation = true,
+            )
+        }
         val anchored = source.anchors.mapNotNull { anchor ->
             val exact = anchor.startIndex >= 0 &&
                 anchor.endIndex <= answerText.length &&
                 anchor.endIndex > anchor.startIndex &&
                 answerText.substring(anchor.startIndex, anchor.endIndex) == anchor.citedText
             if (!exact) return@mapNotNull null
-            val replacesPresentation = parenthesizedCitationLinkTargetsSource(
-                citedText = anchor.citedText,
-                sourceUrl = source.url,
-            )
-            val overlapsUnsupported = !replacesPresentation && unsupported.any { range ->
+            if (matchingWrappers.any { wrapper ->
+                    anchor.startIndex < wrapper.endIndex && anchor.endIndex > wrapper.startIndex
+                }
+            ) return@mapNotNull null
+            val overlapsUnsupported = unsupported.any { range ->
                 anchor.startIndex < range.endExclusive && anchor.endIndex > range.start
             }
             if (overlapsUnsupported) return@mapNotNull null
@@ -206,11 +213,12 @@ internal fun projectCitationMarkdown(
                 source = source,
                 startIndex = anchor.startIndex,
                 endIndex = anchor.endIndex,
-                replacesPresentation = replacesPresentation,
+                replacesPresentation = false,
             )
         }
-        val providerSourceId = source.providerSourceId ?: return@flatMapIndexed anchored
-        anchored + PlainCitationArtifact.findAll(answerText).mapNotNull { artifact ->
+        val structuredCandidates = wrapperCandidates + anchored
+        val providerSourceId = source.providerSourceId ?: return@flatMapIndexed structuredCandidates
+        structuredCandidates + PlainCitationArtifact.findAll(answerText).mapNotNull { artifact ->
             if (PlainCitationSourceId.findAll(artifact.value).none {
                 it.value.equals(providerSourceId, ignoreCase = true)
             }) return@mapNotNull null
