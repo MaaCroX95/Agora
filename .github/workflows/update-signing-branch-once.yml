@@ -1,0 +1,36 @@
+name: Update signing branch once
+
+on:
+  push:
+    branches:
+      - automation/update-signing-2026-09-03
+
+permissions:
+  contents: write
+
+jobs:
+  update-signing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout signing branch
+        uses: actions/checkout@v4
+        with:
+          ref: chore/permanent-apk-signing
+          fetch-depth: 0
+
+      - name: Merge current master while preserving signing changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin master
+          echo "Signing branch before: $(git rev-parse HEAD)"
+          echo "Current master:        $(git rev-parse origin/master)"
+          git merge --no-edit -X ours origin/master
+          echo "Signing branch after:  $(git rev-parse HEAD)"
+          git status --short
+
+      - name: Push updated signing branch
+        shell: bash
+        run: git push origin HEAD:chore/permanent-apk-signing
