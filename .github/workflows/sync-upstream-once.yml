@@ -1,0 +1,37 @@
+name: Sync upstream once
+
+on:
+  push:
+    branches:
+      - automation/upstream-sync-2026-09-03
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Merge latest upstream while preserving fork changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/newo-ether/Agora.git
+          git fetch upstream master
+          echo "Fork before sync: $(git rev-parse HEAD)"
+          echo "Upstream latest:  $(git rev-parse upstream/master)"
+          git merge --no-edit -X ours upstream/master
+          echo "Merged head:      $(git rev-parse HEAD)"
+          git status --short
+
+      - name: Push merged master
+        shell: bash
+        run: git push origin HEAD:master
