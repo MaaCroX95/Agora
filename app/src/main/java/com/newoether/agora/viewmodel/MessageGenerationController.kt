@@ -108,6 +108,7 @@ internal class MessageGenerationController(
     private val renderStore: ConversationRenderStore,
     private val currentConversationId: StateFlow<String?>,
     private val isNewChatMode: StateFlow<Boolean>,
+    private val newChatEntryId: StateFlow<Long>,
     private val awaitNewChatWorkspace: suspend () -> NewChatWorkspaceSnapshot,
     private val applyCommittedNewConversationState: suspend (String) -> Unit,
     private val clearCommittedNewChatWorkspace: suspend () -> Unit,
@@ -130,8 +131,9 @@ internal class MessageGenerationController(
     // conversation-open auto-scroll (the send's own physical-bottom scroll handles it) and
     // avoid a double scroll on the first message of a new chat.
     private val onConversationCreatedBySend: (String) -> Unit = {},
-    /** Publishes the first durable Send's conversation and captured model into selection state. */
-    private val onConversationAcceptedBySend: (String, String) -> Unit = { _, _ -> },
+    /** Selects a first durable Send only while its exact New Chat entry is still occupied. */
+    private val onConversationAcceptedBySend:
+        suspend (String, String, Long) -> Boolean = { _, _, _ -> false },
     // Called once when a hidden task/loop execution becomes searchable. The callback
     // only enqueues background work; embedding computation must not run under the send lock.
     // Called after a USER message row is persisted (send / edit), so incremental RAG
@@ -213,9 +215,10 @@ internal class MessageGenerationController(
         isConversationOpen = { currentConversationId.value == it },
         applyCommittedNewConversationState = applyCommittedNewConversationState,
         clearCommittedNewChatWorkspace = clearCommittedNewChatWorkspace,
-        publishNewConversation = { conversationId, modelId ->
-            onConversationAcceptedBySend(conversationId, modelId)
-            onConversationCreatedBySend(conversationId)
+        publishNewConversation = { conversationId, modelId, entryId ->
+            onConversationAcceptedBySend(conversationId, modelId, entryId).also { selected ->
+                if (selected) onConversationCreatedBySend(conversationId)
+            }
         },
         onUserMessagePersisted = onUserMessagePersisted,
         onGenerateTitle = ::generateTitle,
@@ -398,71 +401,94 @@ internal class MessageGenerationController(
     // sendMessage
     // ==================================
 
-    suspend fun sendMessage(
-        text: String,
-        images: List<String> = emptyList(),
-        attachments: List<SelectedAttachment> = emptyList(),
-        onAccepted: suspend (SendAcceptance) -> Unit = {},
-    ): SendAcceptance? = withContext(Dispatchers.Default) {
-        sendMessageOffMain(text, images, attachments, onAccepted)
+    internal fun captureForegroundSendTarget(ownerId: String): ForegroundSendTarget? {
+        val currentId = currentConversationId.value
+        val wasNewChat = ownerId == NEW_CHAT_WORKSPACE_ID
+        if (wasNewChat) {
+            if (!isNewChatMode.value || currentId != null) return null
+        } else if (isNewChatMode.value || currentId != ownerId) {
+            return null
+        }
+        return ForegroundSendTarget(
+            ownerId = ownerId,
+            conversationId = if (wasNewChat) UUID.randomUUID().toString() else ownerId,
+            runId = UUID.randomUUID().toString(),
+            wasNewChat = wasNewChat,
+            newChatEntryId = newChatEntryId.value.takeIf { wasNewChat },
+            modelId = currentActiveModel.value,
+        )
     }
 
-    private suspend fun sendMessageOffMain(
+    internal suspend fun prepareForegroundSend(
+        target: ForegroundSendTarget,
         text: String,
-        images: List<String>,
-        attachments: List<SelectedAttachment>,
-        onAccepted: suspend (SendAcceptance) -> Unit,
-    ): SendAcceptance? {
-
-        val wasNewChat = isNewChatMode.value || currentConversationId.value == null
-        val newChatWorkspace = if (wasNewChat) awaitNewChatWorkspace() else null
-        val selectedModelId = currentActiveModel.value
-        val capturedNewChatSystemPromptId = newChatWorkspace?.systemPromptId
-        val capturedNewConversationSettings = newChatWorkspace?.conversationSettings
-        // Pre-flight: a blank model fails fast BEFORE creating a new-chat row or enqueueing, so the
-        // Send button never swallows a message into a conversation that can't generate.
-        if (selectedModelId.isBlank()) {
+    ): ForegroundSendAdmission? {
+        settings.awaitInitialLoad()
+        if (target.modelId.isBlank()) {
             onSnackbar(application.getString(R.string.no_model_selected))
             return null
         }
-        val selectedProvider = requestBuilder.awaitProviderKey(selectedModelId) ?: return null
+        val selectedProvider = requestBuilder.awaitProviderKey(target.modelId) ?: return null
         if (selectedProvider.providerName == Constants.PROVIDER_LOCAL) {
-            val localModelId = selectedModelId.substringAfter("${Constants.PROVIDER_LOCAL}:")
+            val localModelId = target.modelId.substringAfter("${Constants.PROVIDER_LOCAL}:")
             val localConfig = settings.localChatModels.value.find { it.modelId == localModelId }
             if (localConfig == null || !java.io.File(localConfig.localFilePath).exists()) {
                 onSnackbar(application.getString(R.string.local_model_not_found))
                 return null
             }
         }
-        // Resolve a stable id before claiming the generation slot, but do not publish a new-chat
-        // transition yet. Its conversation + Run + message graph commit atomically below; only
-        // after the composer acknowledges that durable success may the screen switch and render.
-
-        val genId = if (wasNewChat) {
-            UUID.randomUUID().toString()
+        val workspace = if (target.wasNewChat) awaitNewChatWorkspace() else null
+        val conversationSnapshot = if (target.wasNewChat) {
+            ChatEntity(
+                id = target.conversationId,
+                title = initialConversationTitle(
+                    prompt = text,
+                    fallback = appContext.getString(R.string.new_chat),
+                ),
+                modelId = target.modelId,
+                systemPromptId = workspace?.systemPromptId,
+            )
         } else {
-            currentConversationId.value ?: return null
+            convRepo.getConversation(target.conversationId) ?: return null
         }
-        if (!wasNewChat) {
-            val state = registry.getOrCreate(genId)
+        val settingsOverride = if (target.wasNewChat) {
+            workspace?.conversationSettings
+        } else {
+            settings.conversationSettings.value[target.ownerId]
+        }
+        val generationSnapshot = requestBuilder.captureAdmissionSnapshot(
+            conversationId = target.conversationId,
+            runId = target.runId,
+            modelId = target.modelId,
+            conversationOverride = conversationSnapshot,
+            conversationSettingsOverride = settingsOverride,
+        )
+        return ForegroundSendAdmission(
+            target = target,
+            generationSnapshot = generationSnapshot,
+            newConversation = conversationSnapshot.takeIf { target.wasNewChat },
+            newConversationSettings = workspace?.conversationSettings,
+        )
+    }
+
+    internal suspend fun sendMessage(
+        admission: ForegroundSendAdmission,
+        text: String,
+        attachments: List<SelectedAttachment>,
+        onAccepted: suspend (SendAcceptance) -> Unit,
+    ): SendAcceptance? = withContext(Dispatchers.Default) {
+        val target = admission.target
+        if (!target.wasNewChat) {
+            val state = registry.getOrCreate(target.conversationId)
             if (!state.generating.value) {
-                settings.awaitInitialLoad()
-                val preflightRunId = "compact_preflight_${UUID.randomUUID()}"
-                val snapshot = requestBuilder.captureAdmissionSnapshot(
-                    conversationId = genId,
-                    runId = preflightRunId,
-                    modelId = selectedModelId,
-                )
+                val snapshot = admission.generationSnapshot
                 val fixedTokenCost = generationManagerProvider().resolvedFixedContextTokenCost(
                     snapshot.config,
                     snapshot.context,
                 )
-                // The Compact row is durable and visible before this returns. sendInto then sees
-                // the same occupied generation slot and accepts this input through the ordinary
-                // FIFO guidance queue instead of waiting in a Compact-specific preflight state.
                 when (
                     val compact = compactController.startAutomaticBeforeSend(
-                        conversationId = genId,
+                        conversationId = target.conversationId,
                         contextLimit = snapshot.config.maxContextWindow,
                         config = snapshot.automaticCompact.copy(fixedTokenCost = fixedTokenCost),
                         state = state,
@@ -470,38 +496,27 @@ internal class MessageGenerationController(
                 ) {
                     is CompactResult.Failed -> {
                         onSnackbar(compactFailureMessage(appContext, compact))
-                        return null
+                        return@withContext null
                     }
-                    is CompactResult.Stopped -> return null
+                    is CompactResult.Stopped -> return@withContext null
                     CompactResult.NotNeeded,
                     is CompactResult.Created -> Unit
                 }
             }
         }
-        val newConversation = if (wasNewChat) {
-            ChatEntity(
-                id = genId,
-                title = initialConversationTitle(
-                    prompt = text,
-                    fallback = appContext.getString(R.string.new_chat),
-                ),
-                modelId = selectedModelId,
-                systemPromptId = capturedNewChatSystemPromptId,
-            )
-        } else {
-            null
-        }
-        return sendInto(
-            genId = genId,
-            wasNewChat = wasNewChat,
-            newConversation = newConversation,
+        sendInto(
+            genId = target.conversationId,
+            wasNewChat = target.wasNewChat,
+            newConversation = admission.newConversation,
             text = text,
-            images = images,
             attachments = attachments,
-            modelId = selectedModelId,
-            newConversationSettings = capturedNewConversationSettings,
+            modelId = admission.generationSnapshot.selectedModelId,
             touchConversationOnAdmission = true,
             onAccepted = onAccepted,
+            newConversationSettings = admission.newConversationSettings,
+            proposedRunId = target.runId,
+            admissionSnapshot = admission.generationSnapshot,
+            originNewChatEntryId = target.newChatEntryId,
         )
     }
 
@@ -523,7 +538,6 @@ internal class MessageGenerationController(
         wasNewChat: Boolean,
         newConversation: ChatEntity?,
         text: String,
-        images: List<String>,
         attachments: List<SelectedAttachment>,
         modelId: String,
         requestKind: String = "chat",
@@ -533,29 +547,34 @@ internal class MessageGenerationController(
         scrollPolicy: SendScrollPolicy = SendScrollPolicy.FORCE,
         alreadyHoldsLock: Boolean = false,
         directOnly: Boolean = false,
+        proposedRunId: String = UUID.randomUUID().toString(),
+        admissionSnapshot: GenerationAdmissionSnapshot? = null,
+        originNewChatEntryId: Long? = null,
         /** Reports the model row this send created, so an automation caller never has to re-derive
          *  it by scanning the conversation tail (a concurrent branch would win that scan). */
         onModelMessageCreated: ((String) -> Unit)? = null,
         onGenerationJob: ((kotlinx.coroutines.Job?) -> Unit)? = null,
     ): SendAcceptance? {
         val state = registry.getOrCreate(genId)
-        val providerName = requestBuilder.awaitProviderKey(modelId)?.providerName ?: return null
-        if (providerName == Constants.PROVIDER_LOCAL) {
-            val localModelId = modelId.substringAfter("${Constants.PROVIDER_LOCAL}:")
-            val config = settings.localChatModels.value.find { it.modelId == localModelId }
-            if (config == null || !java.io.File(config.localFilePath).exists()) {
-                onSnackbar(application.getString(R.string.local_model_not_found))
-                return null
+        if (admissionSnapshot == null) {
+            val providerName = requestBuilder.awaitProviderKey(modelId)?.providerName ?: return null
+            if (providerName == Constants.PROVIDER_LOCAL) {
+                val localModelId = modelId.substringAfter("${Constants.PROVIDER_LOCAL}:")
+                val config = settings.localChatModels.value.find { it.modelId == localModelId }
+                if (config == null || !java.io.File(config.localFilePath).exists()) {
+                    onSnackbar(application.getString(R.string.local_model_not_found))
+                    return null
+                }
             }
+        } else {
+            require(admissionSnapshot.conversationId == genId)
+            require(admissionSnapshot.runId == proposedRunId)
+            require(admissionSnapshot.selectedModelId == modelId)
         }
 
-        // Expensive media work finishes before the atomic placement decision. The composer does
-        // not clear until this function returns, and the placement below does not report success
-        // until Room owns every input/file reference.
-        val payloadLease = PreparedMessagePayloadLease(
-            payloadBuilder.buildMessagePayload(application, images, attachments),
-        )
-        val payload = payloadLease.payload
+        // Attachment IO and transformation completed before submission freeze. This is a pure,
+        // ordered projection of the frozen READY artifacts.
+        val payload = payloadBuilder.buildComposerPayload(attachments)
 
         suspend fun enqueueAcceptedGuidance(runId: String): QueuedSend {
             val queued = QueuedSend(
@@ -564,16 +583,14 @@ internal class MessageGenerationController(
                 modelId = modelId,
                 attachments = attachments,
                 runId = runId,
-                images = images,
                 preparedImages = payload.allImages,
                 preparedAttachmentMetaJson = payload.attachmentMeta?.let(Json::encodeToString),
-                preparedOwnedPaths = payload.preparedOwnedPaths,
+                generationSnapshot = admissionSnapshot,
             )
             // Guidance acceptance is intentionally memory-only. The current provider pass
             // observes it through hasQueuedSends(), but Room, the selected tree, and LazyColumn
             // cannot expose a bubble before the next durable boundary.
             state.enqueueSend(queued)
-            payloadLease.transferOwnership()
             try {
                 acceptanceNotifier.notify(
                     acceptance = SendAcceptance.Queued(queued.id, genId),
@@ -581,17 +598,14 @@ internal class MessageGenerationController(
                 )
             } catch (error: Exception) {
                 state.removeQueuedSend(queued.id)
-                payloadLease.reclaimAfterRejectedTransfer()
                 throw error
             }
             return queued
         }
 
         var placement: SendPlacement? = null
-        val proposedRunId = UUID.randomUUID().toString()
         val sendEffectId = "send-$proposedRunId"
-        try {
-            while (placement == null) {
+        while (placement == null) {
                 val decision = state.queueMutationMutex.withLock {
                     val pendingQueue = state.queuedSends.value
                     val transition = state.commands.requestSend(
@@ -651,13 +665,8 @@ internal class MessageGenerationController(
                     placement = decision
                 }
             }
-        } catch (error: Exception) {
-            payloadLease.releaseIfUnowned()
-            throw error
-        }
 
         if (placement is SendPlacement.Rejected) {
-            payloadLease.releaseIfUnowned()
             return null
         }
         if (placement is SendPlacement.Queued) {
@@ -674,7 +683,7 @@ internal class MessageGenerationController(
                 wasNewChat = wasNewChat,
                 newConversation = newConversation,
                 userText = text,
-                payloadLease = payloadLease,
+                payload = payload,
                 modelId = modelId,
                 requestKind = requestKind,
                 touchConversationOnAdmission = touchConversationOnAdmission,
@@ -683,6 +692,8 @@ internal class MessageGenerationController(
                 requestScroll = resolveScrollCallback(scrollPolicy),
                 onAccepted = onAccepted,
                 onModelMessageCreated = onModelMessageCreated,
+                generationSnapshot = admissionSnapshot,
+                originNewChatEntryId = originNewChatEntryId,
             ),
             state,
         )
@@ -728,7 +739,6 @@ internal class MessageGenerationController(
             wasNewChat = false,
             newConversation = null,
             text = text,
-            images = emptyList(),
             attachments = emptyList(),
             modelId = modelId,
             requestKind = requestKind,

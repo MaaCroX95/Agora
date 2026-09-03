@@ -162,6 +162,9 @@ class ChatViewModel(
             stopVisibleGeneration = generationStopAdapter::stopVisibleConversation,
             settleDeletedSelectedConversation =
                 selectionController::settleDeletedSelectedConversation,
+            isDeleteLocked = { conversationId ->
+                conversationComposerSubmission.isFrozen(conversationId)
+            },
         )
     }
 
@@ -647,12 +650,7 @@ class ChatViewModel(
         setConversationSettings(null, value)
     fun setConversationSettings(convId: String?, value: ConversationSettings?) =
         conversationWorkspaces.setConversationSettings(convId ?: NEW_CHAT_WORKSPACE_ID, value)
-    private val payloadBuilder by lazy {
-        MessagePayloadBuilder(
-            generationManager = generationManager,
-            onSnackbar = { msg -> _snackbarMessage.emit(SnackbarEvent(msg)) },
-        )
-    }
+    private val payloadBuilder by lazy(::MessagePayloadBuilder)
 
     private val requestBuilder = GenerationRequestBuilder(
         settings = settings,
@@ -713,6 +711,7 @@ class ChatViewModel(
             renderStore = renderStore,
             currentConversationId = currentConversationId,
             isNewChatMode = isNewChatMode,
+            newChatEntryId = newChatEntryId,
             awaitNewChatWorkspace = conversationWorkspaces::awaitNewChatWrites,
             applyCommittedNewConversationState = conversationWorkspaces::applyCommittedNewConversationState,
             clearCommittedNewChatWorkspace = conversationWorkspaces::clearCommittedNewChatWorkspace,
@@ -738,7 +737,15 @@ class ChatViewModel(
                 suppressNextOpenScroll = true
                 _firstMessageCommitted.tryEmit(conversationId)
             },
-            onConversationAcceptedBySend = selectionController::publishAcceptedConversation,
+            onConversationAcceptedBySend = { conversationId, modelId, entryId ->
+                withContext(Dispatchers.Main.immediate) {
+                    selectionController.publishAcceptedConversationIfOriginStillOpen(
+                        conversationId,
+                        modelId,
+                        entryId,
+                    )
+                }
+            },
             onUserMessagePersisted = ragManager::indexMessageForRag,
             onTreeMutationStart = { scrollToTarget ->
                 selectionController.beginTreeMutation(scrollToTarget)
@@ -749,12 +756,16 @@ class ChatViewModel(
             pauseConversationTasks = { conversationId -> loopManager.stopLoop(conversationId) },
         )
     }
-    private val composerSendAdapter by lazy {
-        ComposerSendAdapter(
-            send = generationController::sendMessage,
+    internal val conversationComposerSubmission by lazy {
+        ConversationComposerSubmissionController(
+            scope = viewModelScope,
             composers = conversationComposer,
             drafts = composerDrafts,
-            scope = viewModelScope,
+            captureTarget = generationController::captureForegroundSendTarget,
+            prepare = generationController::prepareForegroundSend,
+            send = { admission, text, attachments, onAccepted ->
+                generationController.sendMessage(admission, text, attachments, onAccepted)
+            },
         )
     }
 
@@ -877,7 +888,10 @@ class ChatViewModel(
 
     fun setActiveModel(model: String) = selectionController.setActiveModel(model)
 
-    fun deleteConversation(id: String) = conversationLifecycleController.delete(id)
+    fun deleteConversation(id: String): Boolean = conversationLifecycleController.delete(id)
+
+    fun isConversationDeleteLocked(id: String): Boolean =
+        conversationComposerSubmission.isFrozen(id)
 
     suspend fun compactContextManual(
         model: String,
@@ -911,7 +925,7 @@ class ChatViewModel(
         registry = generationRegistry,
         scope = viewModelScope,
     )
-    val queuedSends: StateFlow<List<QueuedSend>> get() = currentRuntimeFacade.queuedSends
+    internal val queuedSends: StateFlow<List<QueuedSend>> get() = currentRuntimeFacade.queuedSends
     val isStopping: StateFlow<Boolean> get() = currentRuntimeFacade.isStopping
 
     fun removeQueuedSend(id: String) = currentRuntimeFacade.removeQueuedSend(id)
@@ -924,17 +938,6 @@ class ChatViewModel(
         selectionController.switchBranch(parentId, currentMessageId, direction)
 
     suspend fun editMessage(messageId: String, newText: String): Boolean = generationController.editMessage(messageId, newText)
-
-    suspend fun sendMessage(
-        text: String,
-        images: List<String> = emptyList(),
-        attachments: List<SelectedAttachment> = emptyList(),
-        onAccepted: suspend () -> Unit = {},
-    ): SendAcceptance? = composerSendAdapter.sendMessage(
-        text, images, attachments, onAccepted,
-        if (isNewChatMode.value) NEW_CHAT_WORKSPACE_ID
-        else currentConversationId.value ?: NEW_CHAT_WORKSPACE_ID,
-    )
 
     suspend fun fetchModelsForProvider(name: String): List<String> = providerModelSyncUi.fetchModelsForProvider(name)
 

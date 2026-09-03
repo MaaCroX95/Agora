@@ -89,14 +89,6 @@ class GenerationManager(
         notify = ::showTerminalNotification,
     )
 
-    // Image/video frame extraction lives in ImageProcessor (single source of truth).
-    private val imageProcessor = ImageProcessor(app)
-
-    suspend fun processImages(
-        uris: List<String>,
-        sliceConfigs: Map<String, VideoSliceConfig> = emptyMap()
-    ): List<String> = imageProcessor.processImagesAndVideos(uris, sliceConfigs)
-
     /** Semantic message search — delegates to the RAG tool provider, which owns the
      *  embedding-search logic. Kept here as the entry point used by ChatViewModel's
      *  in-app conversation search. */

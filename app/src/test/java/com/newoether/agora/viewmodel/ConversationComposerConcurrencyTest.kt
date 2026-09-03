@@ -12,6 +12,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
@@ -25,6 +26,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -267,6 +269,96 @@ class ConversationComposerConcurrencyTest {
         fixture.controller.release(OWNER_A)
     }
 
+    @Test
+    fun `frozen owner rejects mutations until the exact submission releases it`() = runTest {
+        val processor = mockk<AttachmentImportProcessor>()
+        val kept = processing("kept").ready()
+        val failed = processing("failed").copy(importState = AttachmentImportState.FAILED)
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(OWNER_A to draft(kept, failed)),
+        )
+
+        fixture.controller.load(OWNER_A)
+        val frozen = fixture.controller.freezeSubmission(
+            OWNER_A,
+            requestId = 42L,
+            text = "frozen text",
+            attachmentIds = listOf("kept", "failed"),
+        )
+
+        assertEquals("frozen text", frozen?.text)
+        assertEquals("frozen text", fixture.persistence.text(OWNER_A))
+        assertFalse(fixture.controller.importAttachment(OWNER_A, processing("late")))
+        fixture.controller.updateText(OWNER_A, "mutated")
+        assertFalse(fixture.controller.persistText(OWNER_A, "mutated"))
+        assertFalse(fixture.controller.remove(OWNER_A, "kept"))
+        assertFalse(fixture.controller.retry(OWNER_A, "failed"))
+        assertFalse(
+            fixture.controller.clearAccepted(
+                OWNER_A,
+                reclaimAttachments = false,
+                submissionId = 41L,
+            ).succeeded,
+        )
+        assertEquals("frozen text", fixture.controller.state(OWNER_A).value.text)
+        assertEquals(
+            listOf("kept", "failed"),
+            fixture.controller.state(OWNER_A).value.attachments.map { it.localId },
+        )
+
+        val acceptedClear = fixture.controller.clearAccepted(
+            OWNER_A,
+            reclaimAttachments = false,
+            submissionId = 42L,
+        )
+        assertTrue(acceptedClear.succeeded)
+        assertEquals(listOf("kept", "failed"), acceptedClear.attachments.map { it.localId })
+        assertTrue(fixture.controller.state(OWNER_A).value.attachments.isEmpty())
+        assertFalse(fixture.controller.importAttachment(OWNER_A, processing("still-frozen")))
+        fixture.controller.updateText(OWNER_A, "still frozen")
+        assertEquals("", fixture.controller.state(OWNER_A).value.text)
+
+        assertTrue(fixture.controller.releaseSubmission(OWNER_A, 42L))
+        fixture.controller.updateText(OWNER_A, "editable")
+        assertTrue(fixture.controller.persistText(OWNER_A, "editable"))
+        assertEquals("editable", fixture.persistence.text(OWNER_A))
+        fixture.controller.release(OWNER_A)
+    }
+
+    @Test
+    fun `freeze waits for an admitted mutation and rejects a stale tap membership`() = runTest {
+        val processor = mockk<AttachmentImportProcessor>()
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(OWNER_A to draft(processing("kept").ready())),
+        )
+        fixture.controller.load(OWNER_A)
+        val writeStarted = CompletableDeferred<Unit>()
+        val releaseWrite = CompletableDeferred<Unit>()
+        fixture.persistence.blockNextWrite(writeStarted, releaseWrite)
+
+        val removal = async { fixture.controller.remove(OWNER_A, "kept") }
+        writeStarted.await()
+        val freezing = async {
+            fixture.controller.freezeSubmission(
+                OWNER_A,
+                requestId = 7L,
+                text = "send",
+                attachmentIds = listOf("kept"),
+            )
+        }
+        runCurrent()
+        assertFalse(freezing.isCompleted)
+
+        releaseWrite.complete(Unit)
+        assertTrue(removal.await())
+        assertNull(freezing.await())
+        assertTrue(fixture.controller.state(OWNER_A).value.attachments.isEmpty())
+        assertFalse(fixture.controller.releaseSubmission(OWNER_A, 7L))
+        fixture.controller.release(OWNER_A)
+    }
+
     private fun TestScope.fixture(
         processor: AttachmentImportProcessor,
         initial: Map<String, ConversationWorkspaceDraft>,
@@ -310,6 +402,8 @@ class ConversationComposerConcurrencyTest {
     ) : ComposerDraftPersistence {
         private val drafts = ConcurrentHashMap(initial)
         private val loads = ConcurrentHashMap<String, AtomicInteger>()
+        @Volatile private var nextWriteStarted: CompletableDeferred<Unit>? = null
+        @Volatile private var nextWriteRelease: CompletableDeferred<Unit>? = null
 
         override suspend fun loadDraft(ownerId: String): ConversationWorkspaceDraft {
             loads.computeIfAbsent(ownerId) { AtomicInteger() }.incrementAndGet()
@@ -321,12 +415,30 @@ class ConversationComposerConcurrencyTest {
             text: String,
             attachmentsJson: String?,
         ) {
+            val started = nextWriteStarted
+            val release = nextWriteRelease
+            if (started != null && release != null) {
+                nextWriteStarted = null
+                nextWriteRelease = null
+                started.complete(Unit)
+                release.await()
+            }
             drafts[ownerId] = ConversationWorkspaceDraft(text, attachmentsJson)
         }
 
         override suspend fun clearAcceptedDraft(ownerId: String) {
             drafts[ownerId] = ConversationWorkspaceDraft("", null)
         }
+
+        fun blockNextWrite(
+            started: CompletableDeferred<Unit>,
+            release: CompletableDeferred<Unit>,
+        ) {
+            nextWriteStarted = started
+            nextWriteRelease = release
+        }
+
+        fun text(ownerId: String): String = drafts[ownerId]?.text.orEmpty()
 
         fun attachment(ownerId: String, attachmentId: String): SelectedAttachment =
             attachments(ownerId).single { it.localId == attachmentId }

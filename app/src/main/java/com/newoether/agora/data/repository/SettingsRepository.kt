@@ -363,15 +363,29 @@ class SettingsRepository(
         assistantItems: List<PromptTemplateItem>,
     ) {
         scope.launch {
-            val newList = systemPrompts.value + SystemPromptEntry(
-                title = title,
-                systemItems = systemItems,
-                userItems = PredefinedVariables.normalizeMessageTemplate(userItems),
-                assistantItems = PredefinedVariables.normalizeMessageTemplate(assistantItems),
-            )
-            settingsManager.saveSystemPrompts(newList)
-            if (activeSystemPromptId.value == null) settingsManager.setActiveSystemPromptId(newList.last().id)
+            addSystemPromptAndAwait(title, systemItems, userItems, assistantItems)
         }
+    }
+
+    suspend fun addSystemPromptAndAwait(
+        title: String,
+        systemItems: List<PromptTemplateItem>,
+        userItems: List<PromptTemplateItem>,
+        assistantItems: List<PromptTemplateItem>,
+        id: String? = null,
+    ): String {
+        val entry = SystemPromptEntry(
+            id = id ?: java.util.UUID.randomUUID().toString(),
+            title = title,
+            systemItems = systemItems,
+            userItems = PredefinedVariables.normalizeMessageTemplate(userItems),
+            assistantItems = PredefinedVariables.normalizeMessageTemplate(assistantItems),
+        )
+        val newList = systemPrompts.value + entry
+        settingsManager.saveSystemPrompts(newList)
+        systemPrompts.first { prompts -> prompts.any { it.id == entry.id } }
+        if (activeSystemPromptId.value == null) settingsManager.setActiveSystemPromptId(entry.id)
+        return entry.id
     }
 
     fun deleteSystemPrompt(id: String) {

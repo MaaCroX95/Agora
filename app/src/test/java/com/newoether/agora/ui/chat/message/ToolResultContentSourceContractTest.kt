@@ -173,6 +173,14 @@ class ToolResultContentSourceContractTest {
         assertTrue(timeline.contains("expansionKey = if (useInitialCompactIdentity)"))
         assertTrue(timeline.contains("compactSegmentBlockAppearanceKey(message.id)"))
         assertTrue(timeline.contains("collapseForImageBoundary = imageBoundary != null"))
+        assertTrue(timeline.contains("GENERATED_IMAGE_BOUNDARY_GAP_DP = 8"))
+        assertTrue(timeline.contains("if (collapseForImageBoundary) {"))
+        assertTrue(timeline.contains("GENERATED_IMAGE_BOUNDARY_GAP_DP.dp"))
+        assertTrue(
+            timeline.contains("endsAtGeneratedImageBoundary = seg.isImageGenerationSegment()"),
+        )
+        assertTrue(timeline.contains("if (endsAtGeneratedImageBoundary)"))
+        assertTrue(timeline.contains("else segmentGroupBottomPadding(groupPosition)"))
         assertTrue(timeline.contains("!collapseImageBoundaryOnAppearance &&"))
         assertTrue(timeline.contains("collapseImageBoundaryOnAppearance || !allowSpatialTransitions"))
         assertTrue(timeline.contains("allowSpatialTransitions && !collapseImageBoundaryOnAppearance"))

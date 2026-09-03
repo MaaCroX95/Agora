@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -86,6 +87,17 @@ class ConversationLifecycleControllerTest {
     }
 
     @Test
+    fun frozenSubmissionRejectsDeletionBeforeAnySideEffect() = runTest {
+        val fixture = Fixture(this, deleteLocked = true)
+
+        assertFalse(fixture.controller.delete("conversation"))
+        runCurrent()
+
+        assertTrue(fixture.events.isEmpty())
+        coVerify(exactly = 0) { fixture.conversations.deleteConversation(any()) }
+    }
+
+    @Test
     fun failedDurableDeletionDoesNotCleanupOrSettleSelection() = runTest {
         val failures = mutableListOf<Throwable>()
         val controllerScope = CoroutineScope(
@@ -110,6 +122,7 @@ class ConversationLifecycleControllerTest {
         testScope: kotlinx.coroutines.test.TestScope,
         currentConversationId: String? = "conversation",
         controllerScope: CoroutineScope = testScope,
+        deleteLocked: Boolean = false,
     ) {
         val conversations = mockk<ConversationRepository>()
         val currentConversationId = MutableStateFlow(currentConversationId)
@@ -134,6 +147,7 @@ class ConversationLifecycleControllerTest {
             settleDeletedSelectedConversation = { conversationId ->
                 events += "settle:$conversationId"
             },
+            isDeleteLocked = { deleteLocked },
             ioDispatcher = dispatcher,
             mainDispatcher = dispatcher,
         )

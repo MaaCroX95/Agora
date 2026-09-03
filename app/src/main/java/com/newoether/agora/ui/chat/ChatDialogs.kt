@@ -17,6 +17,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -174,6 +175,9 @@ internal fun ChatForkConfirmDialog(
 @Composable
 internal fun ChatSystemPromptDialog(
     viewModel: ChatViewModel,
+    createdPromptId: String?,
+    onCreatedPromptConsumed: () -> Unit,
+    onCreate: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val conversations by viewModel.conversations.collectAsState()
@@ -191,6 +195,13 @@ internal fun ChatSystemPromptDialog(
         currentConversation?.systemPromptId,
     ) {
         mutableStateOf(if (isNewChatMode) pendingPrompt else currentConversation?.systemPromptId)
+    }
+
+    LaunchedEffect(createdPromptId) {
+        createdPromptId?.let { id ->
+            selectedPromptId = id
+            onCreatedPromptConsumed()
+        }
     }
 
     AlertDialog(
@@ -229,24 +240,32 @@ internal fun ChatSystemPromptDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                if (isNewChatMode) {
-                    viewModel.setPendingSystemPrompt(selectedPromptId)
-                } else {
-                    currentConversationId?.let { id ->
-                        viewModel.setConversationSystemPrompt(id, selectedPromptId)
-                    }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onCreate) {
+                    Text(stringResource(R.string.memory_create))
                 }
-                onDismiss()
-            }) {
-                Text(stringResource(R.string.save))
+                Spacer(modifier = Modifier.weight(1f))
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.cancel))
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                TextButton(onClick = {
+                    if (isNewChatMode) {
+                        viewModel.setPendingSystemPrompt(selectedPromptId)
+                    } else {
+                        currentConversationId?.let { id ->
+                            viewModel.setConversationSystemPrompt(id, selectedPromptId)
+                        }
+                    }
+                    onDismiss()
+                }) {
+                    Text(stringResource(R.string.save))
+                }
             }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        }
     )
 }
 

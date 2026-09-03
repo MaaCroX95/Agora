@@ -185,20 +185,92 @@ class OpenAiNativeSearchWiringTest {
     }
 
     @Test
-    fun `top bar reserves fixed trailing actions without fixing title capsule`() {
+    fun `top bar keeps final title layout stable behind a rounded clip boundary`() {
         val root = locateMainSourceRoot()
         val topBar = File(root, "com/newoether/agora/ui/chat/ChatTopBar.kt")
             .readText()
             .replace("\r\n", "\n")
         val normalBar = topBar
-            .substringAfter("// Reserve the trailing capsule first")
+            .substringAfter("val resolvedTitle =")
             .substringBefore("@Composable\nprivate fun ChatTopBarCapsule")
 
         assertTrue("title host must own only the remaining width", ".weight(1f)" in normalBar)
         assertTrue(
-            "title capsule must remain adaptive with its existing maximum",
-            "Modifier.fillMaxHeight().widthIn(max = 260.dp)" in normalBar,
+            "visible title width must retain its existing adaptive maximum",
+            "val targetTitleCapsuleWidth = minOf(" in normalBar &&
+                "TITLE_CAPSULE_MAX_WIDTH_DP.dp" in normalBar,
         )
+        assertTrue("title capsule must remain start anchored", "Alignment.CenterStart" in normalBar)
+        assertTrue(
+            "target title width must be measured independently",
+            "rememberTextMeasurer()" in normalBar,
+        )
+        assertTrue(
+            "one owner must animate only the clip boundary",
+            "var titleClipWidth by remember { mutableStateOf(targetTitleCapsuleWidth) }" in normalBar &&
+                "var titleMotionRunning by remember { mutableStateOf(false) }" in normalBar,
+        )
+        assertTrue(
+            "clip changes must keep one approved deadline",
+            "TITLE_CLIP_DURATION_MILLIS = 400" in topBar &&
+                "val clipDeadlineNanos = clipStartNanos +" in normalBar &&
+                "TITLE_CLIP_DURATION_MILLIS * 1_000_000L" in normalBar,
+        )
+        assertTrue(
+            "identity motion must not be keyed by token-dependent target width",
+            "LaunchedEffect(titlePresentation, allowSpatialTransitions)" in normalBar,
+        )
+        assertTrue(
+            "active identity motion must continuously consume the latest token target",
+            "rememberUpdatedState(targetTitleCapsuleWidth)" in normalBar &&
+                "val latestTarget = latestTargetTitleCapsuleWidth" in normalBar &&
+                "if (latestTarget != segmentTargetWidth)" in normalBar &&
+                "segmentStartWidth = titleClipWidth" in normalBar &&
+                "segmentTargetWidth = latestTarget" in normalBar &&
+                "FastOutSlowInEasing.transform(segmentFraction)" in normalBar,
+        )
+        assertTrue(
+            "the first terminal frame must equal the stable latest boundary",
+            "if (frameNanos >= clipDeadlineNanos)" in normalBar &&
+                "titleClipWidth = latestTarget" in normalBar,
+        )
+        assertFalse(
+            "the clip owner must not finish at an obsolete target and snap afterward",
+            "titleClipWidth.animateTo(" in normalBar ||
+                "titleClipWidth.snapTo(" in normalBar,
+        )
+        assertTrue(
+            "the full title capsule must share one rounded drawing clip",
+            ".width(TITLE_CAPSULE_MAX_WIDTH_DP.dp)" in normalBar &&
+                ".graphicsLayer {" in normalBar &&
+                "shape = titleCapsuleClipShape" in normalBar &&
+                "clip = true" in normalBar &&
+                "shadowElevation = 4.dp.toPx()" in normalBar &&
+                "shadowElevation = 0.dp" in normalBar &&
+                "RoundRect(" in normalBar &&
+                "right = right" in normalBar,
+        )
+        assertFalse(
+            "animated clip width must never become a layout constraint",
+            ".width(titleClipWidth.value)" in normalBar ||
+                ".width(targetTitleCapsuleWidth)" in normalBar,
+        )
+        assertTrue("title content must use Crossfade", "Crossfade(" in normalBar)
+        assertTrue("title Crossfade must use the approved duration", "durationMillis = 200" in normalBar)
+        assertTrue(
+            "both title motions use the approved easing",
+            "easing = FastOutSlowInEasing" in normalBar,
+        )
+        assertTrue(
+            "Reduced Motion must snap the clip owner",
+            "if (!allowSpatialTransitions || !titleChanged)" in normalBar &&
+                "titleClipWidth = latestTargetTitleCapsuleWidth" in normalBar,
+        )
+        assertTrue(
+            "title identity must exclude token count",
+            "targetState = titlePresentation" in normalBar,
+        )
+        assertFalse("Crossfade must not own outer size animation", "animateContentSize" in normalBar)
         assertTrue(
             "actions capsule must have a fixed leading gap",
             "Spacer(modifier = Modifier.width(16.dp))" in normalBar,
@@ -211,7 +283,8 @@ class OpenAiNativeSearchWiringTest {
             "the old flexible sibling spacer allowed the title to compress the actions capsule",
             "Spacer(modifier = Modifier.weight(1f))" in normalBar,
         )
-        assertFalse("title capsule must not become fixed width", ".width(260.dp)" in normalBar)
+        assertTrue("title content maximum must remain unchanged", ".widthIn(max = 180.dp)" in normalBar)
+        assertTrue("title trailing padding must remain unchanged", ".padding(end = 20.dp)" in normalBar)
     }
 
     private fun locateMainSourceRoot(): File {

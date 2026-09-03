@@ -50,8 +50,8 @@ internal class ConversationComposerController(
         val transientAttachmentIds = mutableSetOf<String>()
         val generations = mutableMapOf<String, Long>()
         val jobs = mutableMapOf<String, Job>()
+        var frozenSubmissionId: Long? = null
     }
-
     private data class ProcessingKey(
         val ownerId: String,
         val attachmentId: String,
@@ -64,7 +64,6 @@ internal class ConversationComposerController(
     ) {
         val admitted = CompletableDeferred<Unit>()
     }
-
     private val sessionsMutex = Mutex()
     private val sessions = mutableMapOf<String, OwnerSession>()
     private var selectionOrder = 0L
@@ -134,6 +133,41 @@ internal class ConversationComposerController(
         checkNotNull(sessions[ownerId]) { "Composer owner is not admitted" }.state
     }
 
+    suspend fun freezeSubmission(
+        ownerId: String, requestId: Long, text: String, attachmentIds: List<String>,
+    ): ConversationComposerSnapshot? = withSession(ownerId) { session ->
+        ensureLoaded(ownerId, session)
+        withContext(NonCancellable) {
+            session.mutex.withLock {
+                if (session.frozenSubmissionId != null) return@withLock null
+                if (session.state.value.attachments.map { it.localId } != attachmentIds) {
+                    return@withLock null
+                }
+                val current = session.state.value.copy(text = text)
+                val result = drafts.persist(
+                    ownerId, session.durable.revision, text, session.durable.attachments,
+                )
+                if (!result.succeeded) return@withLock null
+                if (!result.matchesRequested) {
+                    reloadAndMergeLocked(ownerId, session)
+                    return@withLock null
+                }
+                session.durable = session.durable.copy(text = text, revision = result.revision)
+                session.state.value = current.copy(revision = result.revision)
+                session.frozenSubmissionId = requestId
+                session.state.value
+            }
+        }
+    }
+
+    suspend fun releaseSubmission(ownerId: String, requestId: Long): Boolean =
+        withSession(ownerId) { session ->
+            session.mutex.withLock {
+                if (session.frozenSubmissionId != requestId) return@withLock false
+                session.frozenSubmissionId = null
+                true
+            }
+        }
     private suspend fun <T> withSession(
         ownerId: String,
         block: suspend (OwnerSession) -> T,
@@ -151,7 +185,6 @@ internal class ConversationComposerController(
             }
         }
     }
-
     private suspend fun releaseRetain(
         ownerId: String,
         session: OwnerSession,
@@ -174,7 +207,6 @@ internal class ConversationComposerController(
         }
         if (priorityChanged) refreshProcessingPriority()
     }
-
     private suspend fun releaseCommand(ownerId: String, session: OwnerSession) {
         sessionsMutex.withLock {
             if (sessions[ownerId] !== session) return@withLock
@@ -183,14 +215,14 @@ internal class ConversationComposerController(
         }
         evictIfInactive(ownerId, session)
     }
-
     private suspend fun evictIfInactive(ownerId: String, session: OwnerSession) {
         sessionsMutex.withLock {
             if (
                 sessions[ownerId] !== session ||
                 session.retainCount != 0 ||
                 session.commandCount != 0 ||
-                session.jobCount.get() != 0
+                session.jobCount.get() != 0 ||
+                session.frozenSubmissionId != null
             ) {
                 return@withLock
             }
@@ -198,7 +230,6 @@ internal class ConversationComposerController(
             drafts.evictCached(ownerId)
         }
     }
-
     private suspend fun ensureLoaded(
         ownerId: String,
         session: OwnerSession,
@@ -221,10 +252,11 @@ internal class ConversationComposerController(
         session.state.value
     }
 
-    suspend fun importAttachment(ownerId: String, attachment: SelectedAttachment) =
+    suspend fun importAttachment(ownerId: String, attachment: SelectedAttachment): Boolean =
         withSession(ownerId) { session ->
             ensureLoaded(ownerId, session)
             session.mutex.withLock {
+                if (session.frozenSubmissionId != null) return@withLock false
                 check(session.state.value.attachments.none { it.localId == attachment.localId }) {
                     "Attachment identity already belongs to this composer"
                 }
@@ -240,12 +272,14 @@ internal class ConversationComposerController(
                     generation = generation,
                     job = stagingJob(ownerId, session, processing, generation),
                 )
+                true
             }
         }
 
     suspend fun updateText(ownerId: String, text: String) = withSession(ownerId) { session ->
         ensureLoaded(ownerId, session)
         session.mutex.withLock {
+            if (session.frozenSubmissionId != null) return@withLock
             session.state.value = session.state.value.copy(text = text)
         }
     }
@@ -255,6 +289,7 @@ internal class ConversationComposerController(
             ensureLoaded(ownerId, session)
             withContext(NonCancellable) {
                 session.mutex.withLock {
+                    if (session.frozenSubmissionId != null) return@withLock false
                     val current = session.state.value
                     if (current.text != text) return@withLock false
                     val result = drafts.persist(
@@ -295,11 +330,22 @@ internal class ConversationComposerController(
     suspend fun clearAccepted(
         ownerId: String,
         reclaimAttachments: Boolean = true,
+        submissionId: Long? = null,
     ): DraftClearResult =
         withSession(ownerId) { session ->
             ensureLoaded(ownerId, session)
             withContext(NonCancellable) {
                 session.mutex.withLock {
+                    if (
+                        session.frozenSubmissionId != null &&
+                        session.frozenSubmissionId != submissionId
+                    ) {
+                        return@withLock DraftClearResult(
+                            emptyList(),
+                            session.durable.revision,
+                            succeeded = false,
+                        )
+                    }
                     val result = drafts.clearAccepted(
                         conversationId = ownerId,
                         reclaimAttachments = reclaimAttachments,
@@ -325,6 +371,7 @@ internal class ConversationComposerController(
         withSession(ownerId) { session ->
             ensureLoaded(ownerId, session)
             session.mutex.withLock {
+                if (session.frozenSubmissionId != null) return@withLock false
                 val failed = session.state.value.attachments
                     .firstOrNull { it.localId == attachmentId }
                     ?.takeIf { it.importState == AttachmentImportState.FAILED }
@@ -348,6 +395,7 @@ internal class ConversationComposerController(
             ensureLoaded(ownerId, session)
             withContext(NonCancellable) {
                 session.mutex.withLock {
+                    if (session.frozenSubmissionId != null) return@withLock false
                     val removed = session.state.value.attachments
                         .firstOrNull { it.localId == attachmentId }
                         ?: return@withLock false
@@ -411,7 +459,6 @@ internal class ConversationComposerController(
                 if (jobs.isEmpty()) yield() else jobs.joinAll()
             }
         }
-
     private suspend fun configureAttachment(
         ownerId: String,
         attachmentId: String,
@@ -422,6 +469,7 @@ internal class ConversationComposerController(
         withContext(NonCancellable) {
             var configuredBeforeStagingCompleted = false
             val pending = session.mutex.withLock {
+                if (session.frozenSubmissionId != null) return@withLock null
                 val current = session.state.value.attachments
                     .firstOrNull { it.localId == attachmentId }
                     ?.takeIf {
@@ -464,7 +512,6 @@ internal class ConversationComposerController(
             true
         }
     }
-
     private suspend fun currentProcessingAttachment(
         session: OwnerSession,
         attachmentId: String,
@@ -476,7 +523,6 @@ internal class ConversationComposerController(
                 attachment.shouldStartProcessingJob()
         }
     }
-
     private fun stagingJob(
         ownerId: String,
         session: OwnerSession,
@@ -535,7 +581,6 @@ internal class ConversationComposerController(
             finishJob(ownerId, session, source.localId, currentCoroutineContext()[Job]!!)
         }
     }
-
     private fun processingJob(
         ownerId: String,
         session: OwnerSession,
@@ -555,7 +600,6 @@ internal class ConversationComposerController(
             )
         }
     }
-
     private suspend fun runProcessing(
         ownerId: String,
         session: OwnerSession,
@@ -580,7 +624,6 @@ internal class ConversationComposerController(
                 persistFailure(ownerId, session, attachment.localId, generation)
         }
     }
-
     private suspend fun runPdfPreview(
         ownerId: String,
         session: OwnerSession,
@@ -618,7 +661,6 @@ internal class ConversationComposerController(
                 persistFailure(ownerId, session, attachment.localId, generation)
         }
     }
-
     private suspend fun updatePdfPreviewProgress(
         session: OwnerSession,
         attachmentId: String,
@@ -638,7 +680,6 @@ internal class ConversationComposerController(
             )
         }
     }
-
     private suspend fun persistFailure(
         ownerId: String,
         session: OwnerSession,
@@ -656,7 +697,6 @@ internal class ConversationComposerController(
             replacement = current.copy(importState = AttachmentImportState.FAILED),
         )
     }
-
     private suspend fun persistReplacement(
         ownerId: String,
         session: OwnerSession,
@@ -726,7 +766,6 @@ internal class ConversationComposerController(
             if (!committed) deleteCreatedPaths(createdPaths)
         }
     }
-
     private fun durableProjectionLocked(
         session: OwnerSession,
         attachmentId: String,
@@ -748,7 +787,6 @@ internal class ConversationComposerController(
             addAll(remaining.values)
         }
     }
-
     private suspend fun reloadAndMergeLocked(ownerId: String, session: OwnerSession) {
         val current = session.state.value
         val loadedDraft = drafts.load(ownerId).toSnapshot()
@@ -769,7 +807,6 @@ internal class ConversationComposerController(
         session.durable = loaded
         session.state.value = loaded.copy(attachments = merged)
     }
-
     private suspend fun <T> withProcessingPermit(
         ownerId: String,
         attachmentId: String,
@@ -819,13 +856,11 @@ internal class ConversationComposerController(
             }
         }
     }
-
     private suspend fun refreshProcessingPriority() {
         processingMutex.withLock {
             dispatchProcessingLocked()
         }
     }
-
     private fun dispatchProcessingLocked() {
         while (activeProcessing.size < MAX_GLOBAL_ATTACHMENT_PROCESSING) {
             val eligible = queuedProcessing.values.filter { request ->
@@ -854,7 +889,6 @@ internal class ConversationComposerController(
             next.admitted.complete(Unit)
         }
     }
-
     private suspend fun finishJob(
         ownerId: String,
         session: OwnerSession,
@@ -869,13 +903,11 @@ internal class ConversationComposerController(
         check(session.jobCount.decrementAndGet() >= 0) { "Composer job count underflow" }
         evictIfInactive(ownerId, session)
     }
-
     private fun completeRemovalLocked(session: OwnerSession, attachmentId: String) {
         session.transientAttachmentIds -= attachmentId
         nextGeneration(session, attachmentId)
         session.jobs[attachmentId]?.cancel()
     }
-
     private fun registerJobLocked(
         session: OwnerSession,
         attachmentId: String,
@@ -894,13 +926,11 @@ internal class ConversationComposerController(
             check(session.jobCount.decrementAndGet() >= 0) { "Composer job count underflow" }
         }
     }
-
     private fun nextGeneration(session: OwnerSession, attachmentId: String): Long {
         val next = (session.generations[attachmentId] ?: 0L) + 1L
         session.generations[attachmentId] = next
         return next
     }
-
     private fun LoadedComposerDraft.toSnapshot() = ConversationComposerSnapshot(
         text = text,
         attachments = attachments,
@@ -929,7 +959,6 @@ internal class ConversationComposerController(
         "video" -> frameCount != null && sliceIntervalMs != null
         else -> true
     }
-
     private fun SelectedAttachment.shouldPreparePdfPreview(): Boolean =
         type == "pdf" &&
             importState == AttachmentImportState.PROCESSING &&
@@ -953,7 +982,6 @@ internal class ConversationComposerController(
             else -> this
         }
     }
-
     private fun deleteCreatedPaths(paths: List<String>) {
         paths.distinct().forEach { path ->
             runCatching {

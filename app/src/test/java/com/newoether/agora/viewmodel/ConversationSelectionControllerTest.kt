@@ -53,6 +53,46 @@ class ConversationSelectionControllerTest {
     }
 
     @Test
+    fun acceptedNewChatSelectsOnlyTheExactStillOccupiedEntry() = runTest {
+        val fixture = Fixture(backgroundScope)
+        val entryId = fixture.controller.newChatEntryId.value
+
+        assertTrue(
+            fixture.controller.publishAcceptedConversationIfOriginStillOpen(
+                "accepted",
+                "provider:model",
+                entryId,
+            ),
+        )
+        assertEquals("accepted", fixture.controller.currentConversationId.value)
+        assertFalse(fixture.controller.isNewChatMode.value)
+    }
+
+    @Test
+    fun pendingConversationSelectionRejectsBackgroundNewChatFocusSteal() = runTest {
+        val fadeGate = CompletableDeferred<Unit>()
+        val fixture = Fixture(backgroundScope, fadeDelay = { fadeGate.await() })
+        coEvery { fixture.conversations.getConversation("other") } returns
+            ChatEntity("other", "Other", modelId = "other-model")
+        val entryId = fixture.controller.newChatEntryId.value
+
+        fixture.controller.selectConversation("other")
+        assertFalse(
+            fixture.controller.publishAcceptedConversationIfOriginStillOpen(
+                "background",
+                "provider:model",
+                entryId,
+            ),
+        )
+        assertNull(fixture.controller.currentConversationId.value)
+        assertTrue(fixture.controller.isNewChatMode.value)
+
+        fadeGate.complete(Unit)
+        runCurrent()
+        assertEquals("other", fixture.controller.currentConversationId.value)
+    }
+
+    @Test
     fun activeModelWritesAlwaysUseTheWorkspaceBoundary() = runTest {
         val fixture = Fixture(backgroundScope)
 

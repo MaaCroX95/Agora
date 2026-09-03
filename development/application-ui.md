@@ -230,7 +230,11 @@ The drawer's first-list state is not a second conversation authority or a new se
 
 The conversation and search-result lists share one edge-fade state rule. The top edge is treated as reached while item `0` is first visible and its scroll offset is at most `2 dp`. The bottom edge is treated as reached for an empty list, or while the final visible item's end is no more than `2 dp` beyond the viewport end. The corresponding fade remains hidden inside that tolerance and appears only after content crosses it. This tolerance changes state judgment only; it does not add or modify list content padding, outer Drawer padding, list geometry, or programmatic scroll targets.
 
-Ordinary conversation rows animate ordering changes with a `600 ms` placement tween when the shared motion policy allows spatial transitions, and use a `300 ms` deletion-only fade-out. Reduced Motion disables placement travel. Stable conversation keys and the search-result branch's whole-list transition remain unchanged.
+Ordinary conversation rows animate ordering changes with a `400 ms` placement tween when the shared motion policy allows spatial transitions, and use a `180 ms` deletion-only fade-out. Reduced Motion disables placement travel. Stable conversation keys and the search-result branch's whole-list transition remain unchanged. Each ordinary row Crossfades only its resolved visible title over `200 ms` with `FastOutSlowInEasing`; the row identity, weighted title geometry, ellipsis, selection colors, trailing indicator, and menu values do not participate. Initial title composition is stable, rapid title updates retarget the latest value without queuing, and Reduced Motion retains this opacity-only transition.
+
+Every ordinary-list reorder preserves the numeric `firstVisibleItemIndex` and `firstVisibleItemScrollOffset` captured from the existing Drawer list state. Rows therefore exchange within fixed viewport slots instead of Compose retaining the previous first-visible conversation key at that screen offset. The correction runs only while ordinary conversations are shown, the emitted item count still matches the measured list, the measured anchor still exists, and another key now occupies its numeric index. Initial or empty loading, a count-changing insertion or deletion, and the search-result list retain their existing behavior. If an ordinary reorder arrives during drag, fling, or another programmatic scroll, the numeric request captures that moment's index and offset and cancels the in-progress scroll without delay, retry, resumption, or a second list-state owner.
+
+A New Chat first Send is the sole automatic-top exception. Only after the accepted conversation and first message graph are durable and that conversation is published, the bounded `firstMessageCommitted` event waits until the same still-selected conversation occupies item `0` in the measured ordinary list. It then uses the existing Drawer `LazyListState` and the canonical `animateToAbsoluteTop` feedback controller with `SendFeedbackScrollSpec`, matching Send's scroll-to-bottom startup envelope, adaptive long-distance motion, ease-out, and user-input cancellation. Reduced Motion directly calls `scrollToItem(0)`. A later explicit conversation selection rejects the stale event. No other reorder, title change, insertion, delay, retry, fallback, or second scroll owner may reveal item `0`.
 
 After durable deletion and runtime cleanup of the conversation that was selected when deletion was admitted, the canonical selection owner enters New Chat unless a newer explicit selection targets another conversation. A pending or completed newer conversation selection remains authoritative. Deleting a nonselected conversation or a deletion that fails before cleanup does not change the visible page.
 
@@ -406,6 +410,30 @@ is disabled and gray but retains the selected prompt for later restoration. The 
 default uses the standard whole-row `SettingsItem` toggle with the localized Low Context title and
 `Enable Low Context Mode by default` meaning; it is not a portable Settings import/export value.
 
+## 24. Chat top-bar title capsule motion
+
+The normal Chat top bar keeps its title capsule start-anchored after the trailing actions capsule has
+reserved its fixed width. Brand/conversation-title identity changes Crossfade the title presentation
+over `200 ms` with `FastOutSlowInEasing`. The title content is always measured and laid out against
+its latest stable final constraints inside a canvas capped at 260 dp; no animated value participates
+in the capsule, Crossfade, or Text layout width. An independently measured natural target controls
+only one left-anchored rounded drawing clip over `400 ms` with `FastOutSlowInEasing`, so the capsule
+background, shadow, and content reveal together while only the visible right edge moves.
+
+The title-motion identity includes the selected conversation and its visible title; the brand state
+has one stable identity. Token-subtitle appearance, disappearance, and value changes update the final
+layout directly without starting, cancelling, or restarting identity motion. During an active identity
+clip, the same owner continuously absorbs the latest measured token target by rebasing from the current
+visible boundary over the remaining portion of the original `400 ms` deadline. It does not queue a new
+motion, restart the clock, or finish at an obsolete target. The first terminal frame is exactly the
+stable latest boundary, with no post-animation spatial correction. Initial composition presents stable
+content without an entrance transition. A newer title interrupts in-flight clip and opacity motion and
+retargets the same owners from their current values without queuing. Reduced Motion snaps the clip
+boundary while retaining the component-owned `200 ms` opacity Crossfade.
+`animateContentSize` does not participate. The existing 180 dp internal title maximum, 20 dp trailing
+title padding, 16 dp actions gap, 98 dp actions width, ellipsis, icon geometry, search transition,
+title resolution, click behavior, and persistence remain unchanged.
+
 ## 15. Verification
 
 Focused verification must cover the onboarding action's fixed 32 dp inset and 48 dp height, absence
@@ -438,7 +466,16 @@ fingerprint after provider and global errors, no end-of-sync fingerprint recompu
 cancellation without fingerprint persistence or completion presentation. Drawer edge-fade
 verification covers the shared conversation/search owner, empty-list behavior, item `0` and final-item
 identity, and the exact `0 dp`, `2 dp`, and above-`2 dp` top/bottom boundaries without adding content
-padding or changing scroll targets. Tasks Once verification covers the fixed 568 dp Material modal
+padding or changing scroll targets. Drawer reorder verification covers the `400 ms` normal-motion
+placement tween, the `180 ms` deletion fade, Reduced Motion's absent placement travel, numeric
+first-index/offset retention across ordinary reorders, cancellation of an active ordinary reorder
+scroll, and unchanged initial-load, count-changing insertion or deletion, and search-list behavior.
+Drawer first-Send verification separately covers the durable published event, both current-conversation
+guards, readiness at item `0`, canonical `SendFeedbackScrollSpec`, Reduced Motion direct positioning,
+user-input cancellation, and absence of delay, retry, fallback, or another auto-top trigger. Drawer
+title verification covers one `200 ms` `FastOutSlowInEasing` Crossfade keyed only by the resolved
+visible title, stable initial composition, latest-value interruption, retained Reduced Motion opacity,
+and unchanged row geometry, ellipsis, colors, indicators, and menu values. Tasks Once verification covers the fixed 568 dp Material modal
 height, Material3 ownership of display mode and keyboard interaction, and absence of shadow mode,
 delay, retry, or window-size animation. Debug-model verification covers one canonical Chat-enabled
 model/alias set shared by ordinary Chat and manual Compact while every Provider Settings and other
@@ -452,4 +489,10 @@ absence of direct exemption permission, and localized resource parity. Local San
 verification covers emission before collection, ordered pending outcomes, one-time sequential display
 and consumption, absence of replay after collector recreation, every install/remove/upgrade/reset success and failure
 path, the empty Play stream, and the absence of persistence or retained UI state. The project-defined full build
-gate remains required after final code or resource changes.
+gate remains required after final code or resource changes. Chat top-bar verification covers the
+independently measured natural target, stable final-layout canvas, one interruptible `400 ms` rounded
+clip owner shared by background, shadow, and content, the `200 ms` title-only Crossfade, fixed start
+alignment, identity-only animation keys, token-only updates that continuously rebase the active clip
+toward the latest target within its original deadline, a first terminal frame equal to the stable
+boundary with no post-animation correction, initial stable presentation, Reduced Motion clip snap,
+absence of animated layout width and `animateContentSize`, and unchanged title/actions geometry.

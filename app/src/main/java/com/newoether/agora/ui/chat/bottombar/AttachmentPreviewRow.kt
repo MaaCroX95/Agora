@@ -39,6 +39,7 @@ private const val ATTACHMENT_STATUS_CROSSFADE_MS = 200
 @Composable
 internal fun AttachmentPreviewRow(
     attachments: List<SelectedAttachment>,
+    editable: Boolean,
     onRemove: (String) -> Unit,
     onRetry: (String) -> Unit,
     onAllMediaClick: ((urls: List<String>, index: Int) -> Unit)?,
@@ -191,7 +192,7 @@ internal fun AttachmentPreviewRow(
                                         .fillMaxSize()
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(Color.Black.copy(alpha = 0.25f))
-                                        .clickable {
+                                        .clickable(enabled = editable) {
                                             haptics.selection()
                                             onRetry(attachment.localId)
                                         },
@@ -215,7 +216,7 @@ internal fun AttachmentPreviewRow(
                             .size(18.dp)
                             .background(Color.Black.copy(alpha = 0.8f), CircleShape)
                             .clip(CircleShape)
-                            .clickable {
+                            .clickable(enabled = editable) {
                                 haptics.selection()
                                 onRemove(attachment.localId)
                             },

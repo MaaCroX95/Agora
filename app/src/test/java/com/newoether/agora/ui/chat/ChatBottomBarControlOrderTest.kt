@@ -94,6 +94,27 @@ class ChatBottomBarControlOrderTest {
         assertTrue(lowContextSetting.contains("R.string.low_context_mode_default_desc"))
         assertTrue(lowContextSetting.contains("checked = localLowContextModeEnabled"))
     }
+    @Test
+    fun `System Prompt create action stays left and uses the default template`() {
+        val dialogs = mainSource("com/newoether/agora/ui/chat/ChatDialogs.kt")
+        val host = mainSource("com/newoether/agora/ui/chat/ChatAppDialogHost.kt")
+        val actions = dialogs
+            .substringAfter("internal fun ChatSystemPromptDialog(")
+            .substringBefore("internal fun ChatAdvancedSettingsDialog(")
+            .substringAfter("confirmButton = {")
+        val create = actions.indexOf("TextButton(onClick = onCreate)")
+        val flexible = actions.indexOf("Spacer(modifier = Modifier.weight(1f))")
+        val cancel = actions.indexOf("Text(stringResource(R.string.cancel))")
+        val fixed = actions.indexOf("Spacer(modifier = Modifier.width(8.dp))")
+        val save = actions.indexOf("Text(stringResource(R.string.save))")
+        assertTrue(create >= 0 && create < flexible && flexible < cancel)
+        assertTrue(cancel < fixed && fixed < save)
+        assertTrue(host.contains(
+            "onCreate = { promptDraft = DefaultSystemPrompt.create() }",
+        ))
+        assertTrue(host.contains("isNew = true"))
+        assertTrue(host.contains("addSystemPromptAndAwait("))
+    }
 
     @Test
     fun `Top Bar and Bottom Bar share canonical context projection usage`() {

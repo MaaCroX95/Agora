@@ -34,6 +34,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Shape
 import com.newoether.agora.R
 import com.newoether.agora.util.noOpBringIntoView
+import com.newoether.agora.model.AttachmentItem
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.ui.chat.AttachmentThumbnailItem
 import com.newoether.agora.ui.chat.ThumbnailClickHandlers
@@ -52,6 +53,34 @@ internal fun userBubbleSizeAnimationEnabled(
     sizeAnimationReady: Boolean,
     allowSpatialTransitions: Boolean,
 ): Boolean = sizeAnimationReady && allowSpatialTransitions
+
+internal data class StoredMediaOccurrenceProjection(
+    val urls: List<String>,
+    val indexByDisplayItem: List<Int?>,
+)
+
+internal fun projectStoredMediaOccurrences(
+    displayItems: List<Pair<String, AttachmentItem?>>,
+): StoredMediaOccurrenceProjection {
+    val urls = mutableListOf<String>()
+    val indices = displayItems.map { (imagePath, item) ->
+        val url = when (resolveAttachmentType(imagePath, item)) {
+            "image" -> imagePath.takeIf {
+                it.isNotEmpty() && item?.unavailable != true
+            }
+            "video" -> item
+                ?.takeUnless(AttachmentItem::unavailable)
+                ?.originalUri
+                ?.takeIf(String::isNotBlank)
+            else -> null
+        }
+        url?.let {
+            urls += it
+            urls.lastIndex
+        }
+    }
+    return StoredMediaOccurrenceProjection(urls, indices)
+}
 
 @Composable
 internal fun UserMessageBubble(
@@ -182,27 +211,20 @@ internal fun UserMessageBubble(
                             metadataItems + legacyItems
                         }
 
-                        // Collect all image/video URLs for the pager
-                        val allMediaUrls = remember(displayItems) {
-                            displayItems.mapNotNull { (_, imagePath, metaItem) ->
-                                val t = resolveAttachmentType(imagePath, metaItem)
-                                when (t) {
-                                    "image" -> imagePath.takeIf {
-                                        it.isNotEmpty() && metaItem?.unavailable != true
-                                    }
-                                    "video" -> metaItem
-                                        ?.takeUnless { it.unavailable }
-                                        ?.originalUri
-                                    else -> null
-                                }
-                            }
+                        val mediaProjection = remember(displayItems) {
+                            projectStoredMediaOccurrences(
+                                displayItems.map { (_, imagePath, metaItem) ->
+                                    imagePath to metaItem
+                                },
+                            )
                         }
+                        val allMediaUrls = mediaProjection.urls
 
                         LazyRow(
                             modifier = Modifier.padding(bottom = if (message.text.isNotEmpty()) 8.dp else 0.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            itemsIndexed(displayItems) { _, (_, imagePath, metaItem) ->
+                            itemsIndexed(displayItems) { displayIndex, (_, imagePath, metaItem) ->
                                 val type = remember(imagePath, metaItem?.type) {
                                     resolveAttachmentType(imagePath, metaItem)
                                 }
@@ -217,12 +239,8 @@ internal fun UserMessageBubble(
                                     } ?: emptyList()
                                 } else emptyList()
 
-                                val mediaIndex = allMediaUrls.indexOf(
-                                    when (type) {
-                                        "video" -> metaItem?.originalUri
-                                        else -> imagePath
-                                    }
-                                ).coerceAtLeast(0)
+                                val mediaIndex =
+                                    mediaProjection.indexByDisplayItem[displayIndex] ?: 0
 
                                 AttachmentThumbnailItem(
                                     type = type,

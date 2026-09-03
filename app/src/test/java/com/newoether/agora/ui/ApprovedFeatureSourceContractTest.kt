@@ -95,13 +95,33 @@ class ApprovedFeatureSourceContractTest {
             root,
             "com/newoether/agora/ui/chat/bottombar/AttachmentPreviewRow.kt",
         )
+        val storedMessage = source(
+            root,
+            "com/newoether/agora/ui/chat/message/UserMessageBubble.kt",
+        )
+        val viewer = source(
+            root,
+            "com/newoether/agora/ui/chat/FullScreenMediaViewer.kt",
+        )
         val payload = source(
             root,
             "com/newoether/agora/viewmodel/MessagePayloadBuilder.kt",
         )
+        val generationManager = source(
+            root,
+            "com/newoether/agora/viewmodel/GenerationManager.kt",
+        )
+        val imageProcessor = source(
+            root,
+            "com/newoether/agora/viewmodel/ImageProcessor.kt",
+        )
         val sendButton = source(
             root,
             "com/newoether/agora/ui/chat/bottombar/ComposerSendButton.kt",
+        )
+        val submission = source(
+            root,
+            "com/newoether/agora/viewmodel/ConversationComposerSubmissionController.kt",
         )
         val imageActions = source(
             root,
@@ -121,7 +141,9 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(composer.contains("hasMediaType(MediaType.Image)"))
         assertTrue(composer.contains("importUris(composerOwnerId, imageUris, \"image\")"))
         assertTrue(composer.contains("inspectAttachmentIngress("))
-        assertTrue(composer.contains("composerController.importAttachment(ownerId, it)"))
+        assertTrue(composer.contains(
+            "composerController.importAttachment(ownerId, attachment) || imported",
+        ))
         assertTrue(composer.contains("return remaining"))
 
         listOf(
@@ -144,13 +166,34 @@ class ApprovedFeatureSourceContractTest {
             "mediaAttachments.mapIndexed { index, attachment -> attachment.localId to index }.toMap()",
         ))
         assertFalse(preview.contains("indexOf("))
-        assertTrue(sendButton.contains("val frozenIds = snapshot.attachments.map"))
-        assertTrue(sendButton.contains("controller.awaitProcessing(ownerId, frozenIds.toSet())"))
-        assertTrue(sendButton.contains("it.importState == AttachmentImportState.READY"))
-        assertTrue(sendButton.contains("attachment.storage.transferForSend()"))
-        assertFalse(payload.contains("vid_original_"))
-        assertTrue(payload.contains("val source = att.localPath ?: att.uri"))
-        assertTrue(payload.contains("PdfPageRenderer.renderAsImages(app, sourceUri"))
+        assertTrue(sendButton.contains("submissionController.submit("))
+        assertTrue(sendButton.contains("text = textFieldState.text.toString()"))
+        assertTrue(sendButton.contains("snapshot.attachments.map(SelectedAttachment::localId)"))
+        assertTrue(submission.contains("composers.freezeSubmission("))
+        assertTrue(submission.contains("composers.awaitProcessing("))
+        assertTrue(submission.contains("SelectedAttachment::hasCanonicalReadyArtifact"))
+        assertTrue(submission.contains("attachment.storage.transferForSend()"))
+        assertTrue(submission.contains("submissionId = request.id"))
+        assertTrue(payload.contains("fun buildComposerPayload("))
+        assertTrue(payload.contains("AttachmentImportState.READY"))
+        assertTrue(payload.contains("val imageIndex = allImages.size"))
+        listOf(
+            "processImages(",
+            "extractVideoFrames(",
+            "PdfPageRenderer",
+            "AttachmentSourceReader",
+            "preparedOwnedPaths",
+            "localPath ?:",
+            ".uri",
+        ).forEach { sendTimeFallback ->
+            assertFalse(payload.contains(sendTimeFallback))
+        }
+        assertFalse(generationManager.contains("suspend fun processImages("))
+        assertFalse(imageProcessor.contains("processImagesAndVideos("))
+        assertTrue(storedMessage.contains("projectStoredMediaOccurrences("))
+        assertFalse(storedMessage.contains("allMediaUrls.indexOf("))
+        assertTrue(viewer.contains("initialIndex.coerceIn(0, pdfPages.size - 1)"))
+        assertFalse(viewer.contains("pdfPages.indexOf("))
     }
 
     @Test
@@ -838,12 +881,23 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(selection.contains("workspaces.setModel(conversationId, resolvedModel)"))
         assertTrue(selection.contains(".stateIn(scope, SharingStarted.Eagerly, \"\")"))
 
-        val newChatAdmission = generation
-            .substringAfter("val wasNewChat =")
-            .substringBefore("// Pre-flight:")
-        assertTrue(newChatAdmission.contains("awaitNewChatWorkspace()"))
-        assertTrue(newChatAdmission.contains("val selectedModelId = currentActiveModel.value"))
-        assertFalse(newChatAdmission.contains("toSendAdmission"))
+        val foregroundTargetCapture = generation
+            .substringAfter("internal fun captureForegroundSendTarget(")
+            .substringBefore("internal suspend fun prepareForegroundSend(")
+        assertTrue(foregroundTargetCapture.contains("val wasNewChat ="))
+        assertTrue(foregroundTargetCapture.contains("modelId = currentActiveModel.value"))
+
+        val foregroundAdmission = generation
+            .substringAfter("internal suspend fun prepareForegroundSend(")
+            .substringBefore("internal suspend fun sendMessage(")
+        assertTrue(
+            foregroundAdmission.contains(
+                "if (target.wasNewChat) awaitNewChatWorkspace() else null",
+            ),
+        )
+        assertTrue(foregroundAdmission.contains("modelId = target.modelId"))
+        assertTrue(foregroundAdmission.contains("captureAdmissionSnapshot("))
+        assertFalse(foregroundAdmission.contains("toSendAdmission"))
         assertFalse(generation.contains("globalDefaultModel"))
         assertFalse(workspace.contains("NewChatSendAdmission"))
         assertFalse(workspace.contains("toSendAdmission("))

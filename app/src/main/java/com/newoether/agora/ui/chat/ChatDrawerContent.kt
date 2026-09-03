@@ -2,6 +2,7 @@ package com.newoether.agora.ui.chat
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -48,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -202,6 +204,28 @@ internal fun ChatDrawerContent(
                 }
             }
         }
+        SideEffect {
+            val firstVisibleIndex = conversationListState.firstVisibleItemIndex
+            val firstVisibleConversationId = conversationListState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.index == firstVisibleIndex }
+                ?.key
+                ?.toString()
+                ?.removePrefix("conversation:")
+            val indexedConversationId = conversations.getOrNull(firstVisibleIndex)?.id
+            if (
+                !search.isActive &&
+                conversationListState.layoutInfo.totalItemsCount == conversations.size &&
+                firstVisibleConversationId != null &&
+                indexedConversationId != null &&
+                indexedConversationId != firstVisibleConversationId &&
+                conversations.any { it.id == firstVisibleConversationId }
+            ) {
+                conversationListState.requestScrollToItem(
+                    firstVisibleIndex,
+                    conversationListState.firstVisibleItemScrollOffset,
+                )
+            }
+        }
         val atTop by remember(activeListState, edgeFadeTolerancePx) {
             derivedStateOf {
                 isDrawerListAtTop(
@@ -326,6 +350,10 @@ internal fun ChatDrawerContent(
                                     key = { "conversation:${it.id}" },
                                 ) { conversation ->
                                     val isSelected = conversation.id == currentConversationId
+                                    val visibleConversationTitle = replaceCustomProviderIdsForDisplay(
+                                        conversation.title,
+                                        customProviders,
+                                    )
                                     val isGenerating = conversation.id in generatingConversationIds
                                     val indicator = resolveDrawerConversationIndicator(
                                         isGenerating = isGenerating,
@@ -333,6 +361,10 @@ internal fun ChatDrawerContent(
                                         hasUnreadGeneration = conversation.hasUnreadGeneration,
                                     )
                                     val menuEnabled = !isSwitching && !isGenerating
+                                    val submission by viewModel.conversationComposerSubmission
+                                        .state(conversation.id)
+                                        .collectAsState()
+                                    val deleteEnabled = menuEnabled && !submission.isFrozen
                                     val unreadDescription =
                                         stringResource(R.string.conversation_unread_generation)
                                     var showMenu by remember { mutableStateOf(false) }
@@ -348,11 +380,11 @@ internal fun ChatDrawerContent(
                                             placementSpec = if (
                                                 motionPolicy.allowSpatialTransitions
                                             ) {
-                                                tween(600)
+                                                tween(400)
                                             } else {
                                                 null
                                             },
-                                            fadeOutSpec = tween(300),
+                                            fadeOutSpec = tween(180),
                                         ),
                                     ) {
                                         Surface(
@@ -410,21 +442,27 @@ internal fun ChatDrawerContent(
                                                     .padding(horizontal = 16.dp),
                                                 verticalAlignment = Alignment.CenterVertically,
                                             ) {
-                                                Text(
-                                                    text = replaceCustomProviderIdsForDisplay(
-                                                        conversation.title,
-                                                        customProviders,
+                                                Crossfade(
+                                                    targetState = visibleConversationTitle,
+                                                    animationSpec = tween(
+                                                        durationMillis = 200,
+                                                        easing = FastOutSlowInEasing,
                                                     ),
                                                     modifier = Modifier.weight(1f),
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    color = if (isSelected) {
-                                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                                    } else {
-                                                        MaterialTheme.colorScheme.onSurface
-                                                    }
-                                                )
+                                                    label = "DrawerConversationTitleCrossfade",
+                                                ) { title ->
+                                                    Text(
+                                                        text = title,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        style = MaterialTheme.typography.bodyLarge,
+                                                        color = if (isSelected) {
+                                                            MaterialTheme.colorScheme.onSecondaryContainer
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onSurface
+                                                        },
+                                                    )
+                                                }
                                                 Spacer(modifier = Modifier.width(8.dp))
                                                 Box(
                                                     modifier = Modifier.size(18.dp),
@@ -517,7 +555,7 @@ internal fun ChatDrawerContent(
                                                 text = {
                                                     Text(
                                                         stringResource(R.string.delete),
-                                                        color = if (menuEnabled) {
+                                                        color = if (deleteEnabled) {
                                                             MaterialTheme.colorScheme.error
                                                         } else {
                                                             MaterialTheme.colorScheme.error.copy(
@@ -530,7 +568,7 @@ internal fun ChatDrawerContent(
                                                     Icon(
                                                         Icons.Default.Delete,
                                                         contentDescription = null,
-                                                        tint = if (menuEnabled) {
+                                                        tint = if (deleteEnabled) {
                                                             MaterialTheme.colorScheme.error
                                                         } else {
                                                             MaterialTheme.colorScheme.error.copy(
@@ -539,7 +577,7 @@ internal fun ChatDrawerContent(
                                                         },
                                                     )
                                                 },
-                                                enabled = menuEnabled,
+                                                enabled = deleteEnabled,
                                                 onClick = {
                                                     showMenu = false
                                                     onRequestDelete(conversation.id)

@@ -138,11 +138,13 @@ internal class QueuedGuidanceDrainExecutor(
                 val queued = mergeQueuedGuidance(batch)
                 val persistId = state.nextPersistId()
                 executionCoordinator.withConversationLock(conversationId) {
-                    val generationSnapshot = requestBuilder.captureAdmissionSnapshot(
-                        conversationId = conversationId,
-                        runId = runId,
-                        modelId = modelId,
-                    )
+                    val generationSnapshot = queued.generationSnapshot
+                        ?.copy(conversationId = conversationId, runId = runId)
+                        ?: requestBuilder.captureAdmissionSnapshot(
+                            conversationId = conversationId,
+                            runId = runId,
+                            modelId = modelId,
+                        )
                     val topology =
                         conversations.getProviderContextTopologySnapshot(conversationId)
                     val leaf = topology?.let { snapshot ->

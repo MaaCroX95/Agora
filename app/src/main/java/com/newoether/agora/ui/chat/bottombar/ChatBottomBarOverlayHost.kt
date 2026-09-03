@@ -24,6 +24,7 @@ import com.newoether.agora.ui.motion.MotionAwareModalBottomSheet as ModalBottomS
 import com.newoether.agora.util.FileValidator
 import com.newoether.agora.viewmodel.ConversationComposerController
 import com.newoether.agora.viewmodel.ConversationComposerSnapshot
+import com.newoether.agora.viewmodel.ConversationComposerSubmissionController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
@@ -57,6 +58,7 @@ internal fun ChatBottomBarOverlayHost(
     onInternalCameraCleared: () -> Unit,
     composerOwnerId: String,
     composerController: ConversationComposerController,
+    submissionController: ConversationComposerSubmissionController,
     composerSnapshot: ConversationComposerSnapshot,
     composer: ChatComposerState,
     pdfViewerSelection: Set<Int>,
@@ -69,13 +71,21 @@ internal fun ChatBottomBarOverlayHost(
         withContext(NonCancellable) { composerController.release(ownerId) }
     }
 
+    fun isFrozen(ownerId: String) = submissionController.state(ownerId).value.isFrozen
+
     fun configurePdf(attachment: SelectedAttachment, selectedPages: Set<Int>) {
         composer.showPdfPageDialog = false
+        val ownerId = attachmentOwner(composer, composerOwnerId, pdf = true)
+        if (isFrozen(ownerId)) {
+            composer.resetPendingPdfState()
+            return
+        }
         scope.launch {
-            val ownerId = attachmentOwner(composer, composerOwnerId, pdf = true)
             composerController.load(ownerId)
             try {
-                composerController.configurePdf(ownerId, attachment.localId, selectedPages)
+                if (!isFrozen(ownerId)) {
+                    composerController.configurePdf(ownerId, attachment.localId, selectedPages)
+                }
             } finally {
                 composer.resetPendingPdfState()
                 releaseOwner(ownerId)
@@ -85,11 +95,15 @@ internal fun ChatBottomBarOverlayHost(
 
     fun removePending(attachment: SelectedAttachment, pdf: Boolean) {
         if (pdf) composer.showPdfPageDialog = false else composer.showVideoSliceDialog = false
+        val ownerId = attachmentOwner(composer, composerOwnerId, pdf)
+        if (isFrozen(ownerId)) {
+            if (pdf) composer.resetPendingPdfState() else composer.resetPendingVideoState()
+            return
+        }
         scope.launch {
-            val ownerId = attachmentOwner(composer, composerOwnerId, pdf)
             composerController.load(ownerId)
             try {
-                composerController.remove(ownerId, attachment.localId)
+                if (!isFrozen(ownerId)) composerController.remove(ownerId, attachment.localId)
             } finally {
                 if (pdf) composer.resetPendingPdfState() else composer.resetPendingVideoState()
                 releaseOwner(ownerId)
@@ -160,6 +174,7 @@ internal fun ChatBottomBarOverlayHost(
                 composer.completeCameraCapture(
                     internalCameraOwnerId,
                     composerController,
+                    submissionController,
                     internalCameraPath,
                     captured = true,
                 )
@@ -169,6 +184,7 @@ internal fun ChatBottomBarOverlayHost(
                 composer.completeCameraCapture(
                     internalCameraOwnerId,
                     composerController,
+                    submissionController,
                     internalCameraPath,
                     captured = false,
                 )
@@ -178,6 +194,7 @@ internal fun ChatBottomBarOverlayHost(
                 composer.completeCameraCapture(
                     internalCameraOwnerId,
                     composerController,
+                    submissionController,
                     internalCameraPath,
                     captured = false,
                 )
@@ -243,16 +260,20 @@ internal fun ChatBottomBarOverlayHost(
             durationMs = pendingVideo.videoDurationMs ?: 0L,
             onConfirm = { result ->
                 composer.showVideoSliceDialog = false
-                scope.launch {
-                    val ownerId = attachmentOwner(composer, composerOwnerId, pdf = false)
+                val ownerId = attachmentOwner(composer, composerOwnerId, pdf = false)
+                if (isFrozen(ownerId)) {
+                    composer.resetPendingVideoState()
+                } else scope.launch {
                     composerController.load(ownerId)
                     try {
-                        composerController.configureVideo(
-                            ownerId,
-                            pendingVideo.localId,
-                            result.frameCount,
-                            result.intervalMs,
-                        )
+                        if (!isFrozen(ownerId)) {
+                            composerController.configureVideo(
+                                ownerId,
+                                pendingVideo.localId,
+                                result.frameCount,
+                                result.intervalMs,
+                            )
+                        }
                     } finally {
                         composer.resetPendingVideoState()
                         releaseOwner(ownerId)

@@ -31,6 +31,7 @@ class DrawerSearchLoadingSourceContractTest {
         val dao = source("data/local/ChatDao.kt")
         val repository = source("data/repository/ConversationRepository.kt")
         val viewModel = source("viewmodel/ChatViewModel.kt")
+        val normalizedViewModel = viewModel.replace("\r\n", "\n")
         val drawer = source("ui/chat/ChatDrawerContent.kt")
         val searchState = source("ui/chat/search/DrawerSearchState.kt")
         val normalizedSearchState = searchState.replace("\r\n", "\n")
@@ -63,16 +64,66 @@ class DrawerSearchLoadingSourceContractTest {
         assertTrue(drawer.contains("key = { \"search:\${it.key}\" }"))
         assertTrue(drawer.contains("key = { \"conversation:\${it.id}\" }"))
         assertTrue(drawer.split("fadeInSpec = null").size - 1 == 1)
-        assertTrue(drawer.split("fadeOutSpec = tween(300)").size - 1 == 1)
+        assertTrue(drawer.split("fadeOutSpec = tween(180)").size - 1 == 1)
         val normalizedDrawer = drawer.replace("\r\n", "\n")
         assertTrue(normalizedDrawer.split("placementSpec = if (").size - 1 == 1)
         val placementBlock = normalizedDrawer
             .substringAfter("placementSpec = if (")
-            .substringBefore("fadeOutSpec = tween(300)")
+            .substringBefore("fadeOutSpec = tween(180)")
         assertTrue(placementBlock.contains("motionPolicy.allowSpatialTransitions"))
-        assertTrue(placementBlock.contains("tween(600)"))
+        assertTrue(placementBlock.contains("tween(400)"))
         assertTrue(placementBlock.contains("null"))
         assertFalse(normalizedDrawer.contains("placementSpec = null"))
+        assertTrue(drawer.split("conversationListState.requestScrollToItem(").size - 1 == 1)
+        val numericReorderAnchorBlock = normalizedDrawer
+            .substringAfter("SideEffect {")
+            .substringBefore("val atTop by remember")
+        assertTrue(numericReorderAnchorBlock.contains("!search.isActive"))
+        assertTrue(
+            numericReorderAnchorBlock.contains(
+                "conversationListState.layoutInfo.totalItemsCount == conversations.size",
+            ),
+        )
+        assertTrue(numericReorderAnchorBlock.contains("indexedConversationId != firstVisibleConversationId"))
+        assertTrue(
+            numericReorderAnchorBlock.contains(
+                "conversations.any { it.id == firstVisibleConversationId }",
+            ),
+        )
+        assertTrue(numericReorderAnchorBlock.contains("firstVisibleIndex,"))
+        assertTrue(
+            numericReorderAnchorBlock.contains(
+                "conversationListState.firstVisibleItemScrollOffset,",
+            ),
+        )
+        assertTrue(drawer.contains("viewModel.firstMessageCommitted.collect { conversationId ->"))
+        assertTrue(
+            drawer.split(
+                "if (viewModel.currentConversationId.value != conversationId) return@collect",
+            ).size - 1 == 2,
+        )
+        assertTrue(drawer.contains("currentConversations.firstOrNull()?.id == conversationId"))
+        assertTrue(drawer.contains("conversationListState.animateToAbsoluteTop("))
+        assertTrue(drawer.contains("feedbackSpec = SendFeedbackScrollSpec"))
+        assertTrue(drawer.contains("latestMotionPolicy.allowProgrammaticScrollMotion"))
+        assertTrue(drawer.contains("conversationListState.scrollToItem(0)"))
+        assertTrue(normalizedViewModel.contains("private val _firstMessageCommitted = MutableSharedFlow<String>("))
+        assertTrue(normalizedViewModel.contains("val firstMessageCommitted = _firstMessageCommitted.asSharedFlow()"))
+        assertTrue(
+            normalizedViewModel.contains(
+                "onConversationCreatedBySend = { conversationId ->\n" +
+                    "                suppressNextOpenScroll = true\n" +
+                    "                _firstMessageCommitted.tryEmit(conversationId)",
+            ),
+        )
+        assertTrue(drawer.contains("val visibleConversationTitle = replaceCustomProviderIdsForDisplay("))
+        val titleCrossfadeBlock = normalizedDrawer
+            .substringAfter("targetState = visibleConversationTitle")
+            .substringBefore("label = \"DrawerConversationTitleCrossfade\"")
+        assertTrue(titleCrossfadeBlock.contains("durationMillis = 200"))
+        assertTrue(titleCrossfadeBlock.contains("easing = FastOutSlowInEasing"))
+        assertTrue(titleCrossfadeBlock.contains("modifier = Modifier.weight(1f)"))
+        assertTrue(drawer.split("label = \"DrawerConversationTitleCrossfade\"").size - 1 == 1)
         assertTrue(drawer.split(".animateItem(").size - 1 == 1)
         assertFalse(drawer.contains("fadeInSpec = tween(180)"))
         assertTrue(drawer.contains("overflow = TextOverflow.Ellipsis"))

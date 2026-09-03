@@ -209,6 +209,23 @@ internal class ConversationSelectionController(
         _isNewChatMode.value = false
     }
 
+    fun publishAcceptedConversationIfOriginStillOpen(
+        conversationId: String,
+        modelId: String,
+        originNewChatEntryId: Long,
+    ): Boolean {
+        if (
+            !_isNewChatMode.value ||
+            _currentConversationId.value != null ||
+            _newChatEntryId.value != originNewChatEntryId ||
+            switching.isSwitching.value
+        ) {
+            return false
+        }
+        publishAcceptedConversation(conversationId, modelId)
+        return true
+    }
+
     fun replaceActiveModelReference(oldModelId: String, newModelId: String?) {
         if (_activeModelOverride.value == oldModelId) {
             _activeModelOverride.value = newModelId

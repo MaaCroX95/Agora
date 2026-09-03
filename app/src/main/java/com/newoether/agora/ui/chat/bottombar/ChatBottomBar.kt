@@ -62,8 +62,8 @@ import com.newoether.agora.ui.theme.ChatType
 import com.newoether.agora.util.noOpBringIntoView
 import com.newoether.agora.viewmodel.ConversationComposerController
 import com.newoether.agora.viewmodel.ConversationComposerSnapshot
+import com.newoether.agora.viewmodel.ConversationComposerSubmissionController
 import com.newoether.agora.viewmodel.QueuedSend
-import com.newoether.agora.viewmodel.SendAcceptance
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.text.font.FontWeight
@@ -95,11 +95,7 @@ internal fun contextUsageExceedsCompactThreshold(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun ChatBottomBar(
-    onSendMessage: suspend (
-        String,
-        List<SelectedAttachment>,
-        suspend () -> Unit,
-    ) -> SendAcceptance?,
+    submissionController: ConversationComposerSubmissionController,
     composerOwnerId: String,
     composerController: ConversationComposerController,
     composerSnapshot: ConversationComposerSnapshot,
@@ -176,29 +172,25 @@ internal fun ChatBottomBar(
     val scrollState = rememberScrollState()
     BackHandler(enabled = isExpanded) { onCollapse() }
     val isModelValid = selectedModel.isNotBlank() && enabledModels.contains(selectedModel)
-
-    // No-op bring-into-view to prevent auto-scrolling on text field focus
-
+    val submission by submissionController.state(composerOwnerId).collectAsState()
     val composer = composerState
-
-    // Draft persistence lives in ChatApp, keyed by conversation id (the id must be captured at
-    // edit time, not at debounce-fire time — see the draft effect there).
-
     val context = LocalContext.current
     val haptics = LocalAgoraHaptics.current
     val activityLaunchScope = rememberCoroutineScope()
-
-    suspend fun withOwner(ownerId: String, action: suspend () -> Unit) {
+    suspend fun withOwner(ownerId: String, action: suspend () -> Unit): Boolean {
+        if (submissionController.state(ownerId).value.isFrozen) return false
         composerController.load(ownerId)
-        try {
-            action()
+        return try {
+            if (submissionController.state(ownerId).value.isFrozen) false else {
+                action()
+                true
+            }
         } finally {
             withContext(NonCancellable) { composerController.release(ownerId) }
         }
     }
-
     fun importUris(ownerId: String, uris: List<Uri>, forcedType: String? = null) {
-        if (uris.isEmpty()) return
+        if (uris.isEmpty() || submissionController.state(ownerId).value.isFrozen) return
         activityLaunchScope.launch {
             val (attachments, rejected) = inspectAttachmentIngress(
                 context,
@@ -206,15 +198,18 @@ internal fun ChatBottomBar(
                 forcedType,
                 composer.acceptsLocalSandboxAttachments(),
             )
+            if (submissionController.state(ownerId).value.isFrozen) return@launch
             composer.reportUnsupportedFiles(rejected)
             if (attachments.isEmpty()) return@launch
-            withOwner(ownerId) {
-                attachments.forEach { composerController.importAttachment(ownerId, it) }
-            }
-            haptics.selection()
+            var imported = false
+            if (withOwner(ownerId) {
+                for (attachment in attachments) {
+                    if (submissionController.state(ownerId).value.isFrozen) break
+                    imported = composerController.importAttachment(ownerId, attachment) || imported
+                }
+            } && imported) haptics.selection()
         }
     }
-
     val clipboardImageReceiver = remember(context, composerOwnerId, composer) {
         object : ReceiveContentListener {
             override fun onReceive(transferableContent: TransferableContent): TransferableContent? {
@@ -251,7 +246,12 @@ internal fun ChatBottomBar(
     LaunchedEffect(openAiServiceTierAvailable) {
         if (!openAiServiceTierAvailable) showOpenAiServiceTierSheet = false
     }
-    LaunchedEffect(composerOwnerId, composerSnapshot.attachments) {
+    LaunchedEffect(composerOwnerId, composerSnapshot.attachments, submission.isFrozen) {
+        if (submission.isFrozen) {
+            composer.resetPendingPdfState()
+            composer.resetPendingVideoState()
+            return@LaunchedEffect
+        }
         if (composer.pendingPdfOwnerId != null && composer.pendingPdfOwnerId != composerOwnerId) {
             composer.resetPendingPdfState()
         }
@@ -324,9 +324,9 @@ internal fun ChatBottomBar(
         val ownerId = pendingCameraOwnerId
         pendingCameraPath = null
         pendingCameraOwnerId = null
-        if (path != null && ownerId != null) {
-            composer.completeCameraCapture(ownerId, composerController, path, captured)
-        }
+        if (path != null && ownerId != null) composer.completeCameraCapture(
+            ownerId, composerController, submissionController, path, captured,
+        )
     }
     val cameraPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
@@ -335,12 +335,14 @@ internal fun ChatBottomBar(
         val ownerId = pendingCameraPermissionOwnerId
         pendingCameraPermissionPath = null
         pendingCameraPermissionOwnerId = null
-        if (granted && path != null && ownerId != null) {
+        if (granted && path != null && ownerId != null && !submissionController.state(ownerId).value.isFrozen) {
             internalCameraPath = path
             internalCameraOwnerId = ownerId
         } else if (path != null && ownerId != null) {
-            composer.completeCameraCapture(ownerId, composerController, path, captured = false)
-            composer.reportCameraPreparationFailure()
+            composer.completeCameraCapture(
+                ownerId, composerController, submissionController, path, captured = false,
+            )
+            if (!granted) composer.reportCameraPreparationFailure()
         }
     }
 
@@ -397,11 +399,10 @@ internal fun ChatBottomBar(
                     .background(composerOcclusionColor)
                     .zIndex(1f),
             ) {
-        // Also shown while expanded: hiding it there meant a full-screen composer gave no sign
-        // that attachments were about to be sent.
         if (composerSnapshot.attachments.isNotEmpty()) {
             AttachmentPreviewRow(
                 attachments = composerSnapshot.attachments,
+                editable = !submission.isFrozen,
                 onRemove = { id -> activityLaunchScope.launch { withOwner(composerOwnerId) { composerController.remove(composerOwnerId, id) } } },
                 onRetry = { id -> activityLaunchScope.launch { withOwner(composerOwnerId) { composerController.retry(composerOwnerId, id) } } },
                 onAllMediaClick = onAllMediaClick,
@@ -430,7 +431,7 @@ internal fun ChatBottomBar(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
                 },
-                enabled = true,
+                enabled = !submission.isFrozen,
                 lineLimits = TextFieldLineLimits.MultiLine(1, if (isExpanded) Int.MAX_VALUE else 6),
                 contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 16.dp),
                 colors = TextFieldDefaults.colors(
@@ -459,6 +460,7 @@ internal fun ChatBottomBar(
         Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp, start = 8.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(48.dp).background(MaterialTheme.colorScheme.surfaceColorAtElevation(10.dp), RoundedCornerShape(100)).padding(horizontal = 8.dp, vertical = 4.dp)) {
                 AttachmentAddMenu(
+                    enabled = !submission.isFrozen,
                     onCamera = {
                         activityLaunchScope.launch {
                             val target = composer.createCameraCaptureTarget()
@@ -937,13 +939,13 @@ internal fun ChatBottomBar(
             ComposerSendButton(
                 textFieldState = textFieldState,
                 ownerId = composerOwnerId,
-                controller = composerController,
                 snapshot = composerSnapshot,
+                submissionController = submissionController,
+                submission = submission,
                 isLoading = isLoading,
                 isSwitching = isSwitching,
                 isStopping = isStopping,
                 isModelValid = isModelValid,
-                onSendMessage = onSendMessage,
                 onStopGeneration = onStopGeneration,
                 onCollapse = onCollapse,
             )
@@ -985,6 +987,7 @@ internal fun ChatBottomBar(
         onInternalCameraCleared = { internalCameraPath = null; internalCameraOwnerId = null },
         composerOwnerId = composerOwnerId,
         composerController = composerController,
+        submissionController = submissionController,
         composerSnapshot = composerSnapshot,
         composer = composer,
         pdfViewerSelection = pdfViewerSelection,

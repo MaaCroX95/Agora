@@ -226,13 +226,19 @@ internal fun CompactSegmentBlock(
         label = "compactSegmentExpansion",
     )
     val mergedBottomPadding = if (collapseImageBoundaryOnAppearance) {
-        4.dp
+        GENERATED_IMAGE_BOUNDARY_GAP_DP.dp
     } else if (allowSpatialTransitions) {
         val animatedPadding by expansionTransition.animateDp(
             transitionSpec = { tween(400) },
             label = "compactSegmentPad",
         ) { expanded ->
-            if (expanded) 12.dp else 4.dp
+            if (expanded) {
+                12.dp
+            } else if (collapseForImageBoundary) {
+                GENERATED_IMAGE_BOUNDARY_GAP_DP.dp
+            } else {
+                4.dp
+            }
         }
         animatedPadding
     } else if (
@@ -242,6 +248,8 @@ internal fun CompactSegmentBlock(
         )
     ) {
         12.dp
+    } else if (collapseForImageBoundary) {
+        GENERATED_IMAGE_BOUNDARY_GAP_DP.dp
     } else {
         4.dp
     }
@@ -572,6 +580,7 @@ internal fun timelineInfoTopPaddingExtra(hasVisibleMessageAbove: Boolean): Dp =
     if (hasVisibleMessageAbove) 8.dp else 0.dp
 
 internal const val SEGMENT_GROUP_GAP_DP = 2
+private const val GENERATED_IMAGE_BOUNDARY_GAP_DP = 8
 
 private fun segmentGroupTopPadding(
     position: SegmentGroupPosition,
@@ -792,6 +801,7 @@ internal fun TimelineSegmentsContent(
                             animateAppearance = isStreaming,
                             topPaddingExtra = cardTopPaddingExtra,
                             groupPosition = timelineSegmentGroupPosition(segments, index),
+                            endsAtGeneratedImageBoundary = seg.isImageGenerationSegment(),
                             extendIntoMessageInsets = true,
                             cardAnimationKey = "$timelineKey:card",
                             segmentAppearanceRegistry = segmentAppearanceRegistry,
@@ -828,6 +838,7 @@ internal fun TimelineInfoSegmentCard(
     animateAppearance: Boolean,
     topPaddingExtra: Dp = 0.dp,
     groupPosition: SegmentGroupPosition = SegmentGroupPosition.SINGLE,
+    endsAtGeneratedImageBoundary: Boolean = false,
     neutralPalette: Boolean = false,
     extendIntoMessageInsets: Boolean = false,
     cardAnimationKey: String,
@@ -872,7 +883,9 @@ internal fun TimelineInfoSegmentCard(
                     .width(requestedCardWidth)
             .padding(
                 top = segmentGroupTopPadding(groupPosition, topPaddingExtra),
-                bottom = segmentGroupBottomPadding(groupPosition),
+                bottom = if (endsAtGeneratedImageBoundary) {
+                    GENERATED_IMAGE_BOUNDARY_GAP_DP.dp
+                } else segmentGroupBottomPadding(groupPosition),
             )
             .then(cardAppearanceModifier)
             .clip(groupShape)

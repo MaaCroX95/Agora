@@ -235,7 +235,7 @@ class DataControlImportStrategySourceContractTest {
         assertFalse(warningBranch.contains("sendFailureNotification"))
         assertTrue(thumbnail.contains("if (unavailable)"))
         assertTrue(thumbnail.contains("R.string.attachment_unavailable"))
-        assertTrue(preview.contains("attachment.unavailable -> Modifier"))
+        assertTrue(preview.contains("attachment.unavailable || !isReady -> Modifier"))
         assertTrue(bubble.contains("metadataItems + legacyItems"))
         assertTrue(bubble.contains("unavailable = metaItem?.unavailable == true"))
     }

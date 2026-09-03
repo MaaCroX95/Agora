@@ -1,6 +1,7 @@
 package com.newoether.agora.ui.chat
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -12,6 +13,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -37,18 +39,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.newoether.agora.R
 import com.newoether.agora.model.ChatConversation
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import com.newoether.agora.ui.theme.ChatType
+
+private const val TITLE_CAPSULE_MAX_WIDTH_DP = 260
+private const val TITLE_CLIP_DURATION_MILLIS = 400
 
 /**
  * The chat screen's top bar: a title capsule (drawer menu + brand/conversation
@@ -248,6 +260,116 @@ internal fun ChatTopBar(
                         ?: conversations.find { it.id == currentConversationId }?.title?.takeIf { it.isNotBlank() }
                 }
                 val showBrandTitle = resolvedTitle == null
+                val appName = stringResource(R.string.app_name)
+                val titlePresentation = if (showBrandTitle) {
+                    Triple(true, null, null)
+                } else {
+                    Triple(false, currentConversationId, resolvedTitle)
+                }
+                val textMeasurer = rememberTextMeasurer()
+                val density = LocalDensity.current
+                val conversationTitleStyle =
+                    if (totalTokens > 0) ChatType.conversationTitle else ChatType.conversationTitleSolo
+                val tokenSubtitle = if (!showBrandTitle && totalTokens > 0) {
+                    stringResource(R.string.total_tokens, totalTokens)
+                } else {
+                    null
+                }
+                val targetTitleContentWidth = with(density) {
+                    val primaryWidth = textMeasurer.measure(
+                        text = AnnotatedString(if (showBrandTitle) appName else resolvedTitle.orEmpty()),
+                        style = if (showBrandTitle) ChatType.brandTitle else conversationTitleStyle,
+                        maxLines = 1,
+                        softWrap = false,
+                    ).size.width.toDp()
+                    val subtitleWidth = tokenSubtitle?.let { subtitle ->
+                        textMeasurer.measure(
+                            text = AnnotatedString(subtitle),
+                            style = ChatType.micro,
+                            maxLines = 1,
+                            softWrap = false,
+                        ).size.width.toDp()
+                    } ?: 0.dp
+                    minOf(maxOf(primaryWidth, subtitleWidth), 180.dp)
+                }
+                val targetTitleCapsuleWidth = minOf(
+                    5.dp + 44.dp + 5.dp + targetTitleContentWidth + 20.dp,
+                    TITLE_CAPSULE_MAX_WIDTH_DP.dp,
+                )
+                val latestTargetTitleCapsuleWidth by rememberUpdatedState(targetTitleCapsuleWidth)
+                var titleClipWidth by remember { mutableStateOf(targetTitleCapsuleWidth) }
+                var settledTitlePresentation by remember { mutableStateOf(titlePresentation) }
+                var titleMotionRunning by remember { mutableStateOf(false) }
+                val titleTransitionPending = settledTitlePresentation != titlePresentation
+                LaunchedEffect(titlePresentation, allowSpatialTransitions) {
+                    val titleChanged = settledTitlePresentation != titlePresentation
+                    if (!allowSpatialTransitions || !titleChanged) {
+                        titleClipWidth = latestTargetTitleCapsuleWidth
+                        settledTitlePresentation = titlePresentation
+                        return@LaunchedEffect
+                    }
+                    titleMotionRunning = true
+                    try {
+                        val clipStartNanos = withFrameNanos { it }
+                        val clipDeadlineNanos = clipStartNanos +
+                            TITLE_CLIP_DURATION_MILLIS * 1_000_000L
+                        var segmentStartNanos = clipStartNanos
+                        var segmentStartWidth = titleClipWidth
+                        var segmentTargetWidth = latestTargetTitleCapsuleWidth
+                        while (true) {
+                            val frameNanos = withFrameNanos { it }
+                            val latestTarget = latestTargetTitleCapsuleWidth
+                            if (frameNanos >= clipDeadlineNanos) {
+                                titleClipWidth = latestTarget
+                                break
+                            }
+                            if (latestTarget != segmentTargetWidth) {
+                                segmentStartNanos = frameNanos
+                                segmentStartWidth = titleClipWidth
+                                segmentTargetWidth = latestTarget
+                            }
+                            val segmentDurationNanos =
+                                (clipDeadlineNanos - segmentStartNanos).coerceAtLeast(1L)
+                            val segmentFraction = (
+                                (frameNanos - segmentStartNanos).toFloat() /
+                                    segmentDurationNanos.toFloat()
+                                ).coerceIn(0f, 1f)
+                            val easedFraction = FastOutSlowInEasing.transform(segmentFraction)
+                            titleClipWidth = segmentStartWidth +
+                                (segmentTargetWidth - segmentStartWidth) * easedFraction
+                        }
+                        settledTitlePresentation = titlePresentation
+                    } finally {
+                        titleMotionRunning = false
+                    }
+                }
+                LaunchedEffect(
+                    targetTitleCapsuleWidth,
+                    titleTransitionPending,
+                    titleMotionRunning,
+                    allowSpatialTransitions,
+                ) {
+                    if (!titleTransitionPending && !titleMotionRunning) {
+                        titleClipWidth = targetTitleCapsuleWidth
+                    }
+                }
+                val visibleTitleCapsuleWidth = titleClipWidth
+                val visibleTitleCapsuleWidthPx = with(density) {
+                    visibleTitleCapsuleWidth.toPx()
+                }
+                val titleCapsuleClipShape = GenericShape { size, _ ->
+                    val right = visibleTitleCapsuleWidthPx.coerceIn(0f, size.width)
+                    val cornerRadius = CornerRadius(size.height / 2f, size.height / 2f)
+                    addRoundRect(
+                        RoundRect(
+                            left = 0f,
+                            top = 0f,
+                            right = right,
+                            bottom = size.height,
+                            cornerRadius = cornerRadius,
+                        ),
+                    )
+                }
 
                 // Reserve the trailing capsule first; the title may only use the remaining width.
                 Box(
@@ -257,7 +379,15 @@ internal fun ChatTopBar(
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     ChatTopBarCapsule(
-                        modifier = Modifier.fillMaxHeight().widthIn(max = 260.dp)
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(TITLE_CAPSULE_MAX_WIDTH_DP.dp)
+                            .graphicsLayer {
+                                shape = titleCapsuleClipShape
+                                clip = true
+                                shadowElevation = 4.dp.toPx()
+                            },
+                        shadowElevation = 0.dp,
                     ) {
                         Row(
                             modifier = Modifier.fillMaxHeight(),
@@ -281,33 +411,42 @@ internal fun ChatTopBar(
                                 )
                             }
                             Spacer(modifier = Modifier.width(5.dp))
-                            if (showBrandTitle) {
-                                Text(
-                                    text = stringResource(R.string.app_name),
-                                    style = ChatType.brandTitle,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(end = 20.dp).widthIn(max = 180.dp)
-                                )
-                            } else {
-                                Column(
-                                    modifier = Modifier.padding(end = 20.dp).widthIn(max = 180.dp)
-                                ) {
+                            Crossfade(
+                                targetState = titlePresentation,
+                                animationSpec = tween(
+                                    durationMillis = 200,
+                                    easing = FastOutSlowInEasing,
+                                ),
+                                label = "chatTopBarTitle",
+                            ) { presentation ->
+                                if (presentation.first) {
                                     Text(
-                                        text = resolvedTitle,
-                                        // Single-line (no token subtitle) uses a slightly-smaller-than-brand
-                                        // solo size; with the token subtitle stacked below, the compact size.
-                                        style = if (totalTokens > 0) ChatType.conversationTitle else ChatType.conversationTitleSolo,
+                                        text = appName,
+                                        style = ChatType.brandTitle,
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(end = 20.dp).widthIn(max = 180.dp)
                                     )
-                                    if (totalTokens > 0) {
+                                } else {
+                                    Column(
+                                        modifier = Modifier.padding(end = 20.dp).widthIn(max = 180.dp)
+                                    ) {
                                         Text(
-                                            text = stringResource(R.string.total_tokens, totalTokens),
-                                            style = ChatType.micro,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                            maxLines = 1
+                                            text = presentation.third.orEmpty(),
+                                            // Single-line (no token subtitle) uses a slightly-smaller-than-brand
+                                            // solo size; with the token subtitle stacked below, the compact size.
+                                            style = conversationTitleStyle,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
+                                        if (tokenSubtitle != null) {
+                                            Text(
+                                                text = tokenSubtitle,
+                                                style = ChatType.micro,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                maxLines = 1
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -407,6 +546,7 @@ internal fun ChatTopBar(
 @Composable
 private fun ChatTopBarCapsule(
     modifier: Modifier = Modifier,
+    shadowElevation: Dp = 4.dp,
     content: @Composable () -> Unit,
 ) {
     val shape = RoundedCornerShape(50)
@@ -418,7 +558,7 @@ private fun ChatTopBarCapsule(
             modifier = Modifier.matchParentSize(),
             shape = shape,
             color = Color.Transparent,
-            shadowElevation = 4.dp,
+            shadowElevation = shadowElevation,
         ) {}
         Surface(
             shape = shape,

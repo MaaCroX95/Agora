@@ -1,6 +1,12 @@
 package com.newoether.agora.ui.components
 
+import com.newoether.agora.ui.chat.message.isScrollableDisplayLatexImage
 import java.io.File
+import org.intellij.markdown.MarkdownElementTypes
+import org.intellij.markdown.IElementType
+import org.intellij.markdown.ast.ASTNode
+import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
+import org.intellij.markdown.parser.MarkdownParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -182,6 +188,59 @@ class LatexRendererTest {
     }
 
     @Test
+    fun displayLatexLinksAreTheOnlyScrollableFormulaLinks() {
+        val displayLink = latexToMarkdown("x + y", display = true)
+            .substringAfter("](")
+            .substringBefore(')')
+        val inlineLink = latexToMarkdown("x", display = false)
+            .substringAfter("](")
+            .substringBefore(')')
+
+        assertTrue(isDisplayLatexLink(displayLink))
+        assertFalse(isDisplayLatexLink(inlineLink))
+        assertFalse(isDisplayLatexLink("https://example.com/formula.png"))
+        assertFalse(isDisplayLatexLink("latex://display/%"))
+        assertFalse(isDisplayLatexLink(null))
+    }
+
+    @Test
+    fun parsedMarkdownImageNodesPreserveDisplayLatexMode() {
+        val displayMarkdown = latexToMarkdown("x + y", display = true)
+        val inlineMarkdown = latexToMarkdown("x", display = false)
+        val ordinaryMarkdown = "![image](https://example.com/formula.png)"
+
+        assertTrue(isScrollableDisplayLatexImage(displayMarkdown, imageNode(displayMarkdown)))
+        assertFalse(isScrollableDisplayLatexImage(inlineMarkdown, imageNode(inlineMarkdown)))
+        assertFalse(isScrollableDisplayLatexImage(ordinaryMarkdown, imageNode(ordinaryMarkdown)))
+    }
+
+    @Test
+    fun displayLatexUsesSharedHorizontalOverflowViewport() {
+        val source = File(
+            locateMainSourceRoot(),
+            "com/newoether/agora/ui/chat/message/MessageBubbleAssets.kt",
+        ).readText()
+        val component = source
+            .substringAfter("private fun ScrollableDisplayLatexImage(")
+            .substringBefore("private fun TrackStreamingHorizontalScroll(")
+        val tracker = source
+            .substringAfter("private fun TrackStreamingHorizontalScroll(")
+            .substringBefore("private fun SearchHighlightedMarkdownCode(")
+
+        assertTrue(
+            Regex("""image\s*=\s*\{\s*model\s*->\s*ScrollableDisplayLatexImage\(model\)\s*}""")
+                .containsMatchIn(source),
+        )
+        assertTrue(component.contains("isScrollableDisplayLatexImage(model.content, model.node)"))
+        assertTrue(component.contains(".fillMaxWidth()"))
+        assertTrue(component.contains(".horizontalScroll(horizontalScrollState)"))
+        assertEquals(2, Regex("MarkdownImage\\(model.content, model.node\\)").findAll(component).count())
+        assertTrue(component.contains("TrackStreamingHorizontalScroll(horizontalScrollState)"))
+        assertTrue(tracker.contains("horizontalScrollState.isScrollInProgress"))
+        assertTrue(source.contains("inlineImage =").not())
+    }
+
+    @Test
     fun markdownPreprocessingUsesIndexedSourceAccessWithoutFullSuffixSlices() {
         val source = File(
             locateMainSourceRoot(),
@@ -197,6 +256,17 @@ class LatexRendererTest {
         assertTrue(scanners.contains("buf.append(text, i, protected.endExclusive)"))
         assertTrue(scanners.contains("text.startsWith(\"\$\$\", i)"))
         assertTrue(scanners.contains("text.indexOf('$', startIndex = i + 1)"))
+    }
+
+    private fun imageNode(markdown: String): ASTNode {
+        val root = MarkdownParser(GFMFlavourDescriptor()).buildMarkdownTreeFromString(markdown)
+        return root.findDescendant(MarkdownElementTypes.IMAGE)
+            ?: error("Unable to locate parsed Markdown image node")
+    }
+
+    private fun ASTNode.findDescendant(type: IElementType): ASTNode? {
+        if (this.type == type) return this
+        return children.firstNotNullOfOrNull { child -> child.findDescendant(type) }
     }
 
     private fun locateMainSourceRoot(): File {

@@ -372,6 +372,13 @@ incremental append-only scan, stable/live block split, off-main parsing, long-do
 cadence, and stream-to-terminal renderer continuity. A caller must not keep a second streaming
 Markdown algorithm or switch to a different terminal renderer merely because streaming ended.
 
+Standalone/display LaTeX uses that same shared Markdown component graph. It remains start-aligned and
+renders at its intrinsic formula width inside a message-width horizontal viewport. A formula wider
+than that viewport scrolls horizontally so all content remains inspectable; a formula that fits has
+no effective scroll range. Inline LaTeX and ordinary Markdown images retain their existing layout.
+During active streaming, display-formula scrolling uses the same interaction commit gate as code-block
+scrolling so an in-progress gesture is not replaced by a newer parsed Markdown snapshot.
+
 The implementation is only a parameterized UI variant. Its allowed inputs include Markdown
 content, streaming state, render context, font/size/color, a publication birth-time glyph timeline, and a
 generic animated empty-stream presentation. Every append-growing live text surface uses one
@@ -806,7 +813,11 @@ rendered next, and every later image call, Tool, Thought, Transcription, or Answ
 slot. Group and slot identity depend only on the append-only segment/detail position, never on the
 pending, failed, or successful payload, so lifecycle updates cannot replace, regroup, resize, or
 otherwise rewrite the preceding prefix. Multiple image calls establish multiple boundaries in their
-original segment order.
+original segment order. In Grouped/Compact and ordinary Timeline, the information card immediately
+before the generated-image slot has exactly `8 dp` of bottom separation. This matches the existing
+`8 dp` top separation owned by a later independent Timeline information card. Expanded grouped-card
+spacing, the ordinary `2 dp` within-group separation, answer spacing, the Thinking Bottom Sheet, and
+the fixed image-slot geometry remain unchanged.
 
 On the boundary's first visible frame, the owning card is presented collapsed and one collapsed
 value is committed through the existing expansion map. Compact and Bottom Sheet preserve the first

@@ -436,6 +436,10 @@ private fun decodeLatexLink(link: String): LatexImageRequest? {
     }
 }
 
+internal fun isDisplayLatexLink(link: String?): Boolean {
+    return link?.let(::decodeLatexLink)?.display == true
+}
+
 fun inlineLatexToMarkdown(latexContent: String): String {
     return latexToMarkdown(latexContent, display = false)
 }

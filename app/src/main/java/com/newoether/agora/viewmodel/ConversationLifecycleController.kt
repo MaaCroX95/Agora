@@ -18,6 +18,7 @@ internal class ConversationLifecycleController(
     private val removeRuntime: (String) -> Unit,
     private val stopVisibleGeneration: () -> Unit,
     private val settleDeletedSelectedConversation: (String) -> Unit,
+    private val isDeleteLocked: (String) -> Boolean = { false },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) {
@@ -27,16 +28,23 @@ internal class ConversationLifecycleController(
         }
     }
 
-    fun delete(conversationId: String) {
+    fun delete(conversationId: String): Boolean {
+        if (isDeleteLocked(conversationId)) return false
         val wasSelected = currentConversationId.value == conversationId
         if (wasSelected) {
             stopVisibleGeneration()
         }
         scope.launch(ioDispatcher) {
+            if (isDeleteLocked(conversationId)) return@launch
             stopLoop(conversationId)
+            var deleted = false
             withConversationLock(conversationId) {
-                conversations.deleteConversation(conversationId)
+                if (!isDeleteLocked(conversationId)) {
+                    conversations.deleteConversation(conversationId)
+                    deleted = true
+                }
             }
+            if (!deleted) return@launch
             removeRuntime(conversationId)
             if (wasSelected) {
                 withContext(mainDispatcher) {
@@ -44,5 +52,6 @@ internal class ConversationLifecycleController(
                 }
             }
         }
+        return true
     }
 }

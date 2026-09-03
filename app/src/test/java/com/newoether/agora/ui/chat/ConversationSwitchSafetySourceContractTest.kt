@@ -72,27 +72,75 @@ class ConversationSwitchSafetySourceContractTest {
 
     @Test
     fun `pending attachment send retains its exact composer owner across switching`() {
+        val root = locateMainSourceRoot()
         val sendButton = File(
-            locateMainSourceRoot(),
+            root,
             "com/newoether/agora/ui/chat/bottombar/ComposerSendButton.kt",
+        ).readText()
+        val submission = File(
+            root,
+            "com/newoether/agora/viewmodel/ConversationComposerSubmissionController.kt",
+        ).readText()
+        val generation = File(
+            root,
+            "com/newoether/agora/viewmodel/MessageGenerationController.kt",
+        ).readText()
+        val drawer = File(
+            root,
+            "com/newoether/agora/ui/chat/ChatDrawerContent.kt",
         ).readText()
 
         assertTrue(
             "attachment membership must freeze at the tap-time owner snapshot",
-            sendButton.contains("val frozenIds = snapshot.attachments.map"),
+            sendButton.contains(
+                "attachmentIds = snapshot.attachments.map(SelectedAttachment::localId)",
+            ),
         )
         assertTrue(
             "the waiting barrier must retain and use the exact tap-time owner",
-            sendButton.contains("controller.load(ownerId)") &&
-                sendButton.contains("controller.awaitProcessing(ownerId, frozenIds.toSet())"),
+            submission.contains("composers.freezeSubmission(") &&
+                submission.contains(
+                    "composers.awaitProcessing(request.ownerId, request.attachmentIds.toSet())",
+                ),
         )
         assertTrue(
-            "the exact owner retain must always be released non-cancellably",
-            sendButton.contains("withContext(NonCancellable) { controller.release(ownerId) }"),
+            "the exact owner retain and freeze must always release non-cancellably",
+            submission.contains("withContext(NonCancellable)") &&
+                submission.contains("composers.releaseSubmission(request.ownerId, request.id)") &&
+                submission.contains("composers.release(request.ownerId)"),
+        )
+        assertTrue(
+            "target and admission configuration must be captured before attachment waiting",
+            submission.indexOf("val admission = prepare(request.target, request.text)") in
+                0 until submission.indexOf(
+                    "composers.awaitProcessing(request.ownerId, request.attachmentIds.toSet())",
+                ),
+        )
+        assertTrue(
+            "foreground send must route only through the captured target",
+            generation.contains("internal fun captureForegroundSendTarget(") &&
+                generation.contains("genId = target.conversationId") &&
+                generation.contains("proposedRunId = target.runId"),
+        )
+        assertFalse(
+            "foreground send must not retain an entry point that re-reads selection after tap",
+            generation.contains("private suspend fun sendMessageOffMain("),
+        )
+        assertTrue(
+            "drawer Delete must observe the exact conversation submission freeze",
+            drawer.contains(
+                "viewModel.conversationComposerSubmission\n" +
+                    "                                        .state(conversation.id)\n" +
+                    "                                        .collectAsState()",
+            ) &&
+                drawer.contains(
+                    "val deleteEnabled = menuEnabled && !submission.isFrozen",
+                ) &&
+                drawer.contains("enabled = deleteEnabled"),
         )
         assertFalse(
             "the removed UI attachment owner must not drive submission through pendingSend",
-            sendButton.contains("pendingSend"),
+            sendButton.contains("pendingSend") || submission.contains("pendingSend"),
         )
     }
 

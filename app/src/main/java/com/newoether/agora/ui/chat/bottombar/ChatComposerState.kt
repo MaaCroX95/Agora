@@ -19,6 +19,7 @@ import com.newoether.agora.util.AttachmentFiles
 import com.newoether.agora.util.DebugLog
 import com.newoether.agora.util.FileValidator
 import com.newoether.agora.viewmodel.ConversationComposerController
+import com.newoether.agora.viewmodel.ConversationComposerSubmissionController
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -106,6 +107,7 @@ class ChatComposerState(
     internal fun completeCameraCapture(
         ownerId: String,
         controller: ConversationComposerController,
+        submissions: ConversationComposerSubmissionController,
         privatePath: String,
         captured: Boolean,
     ) {
@@ -135,16 +137,30 @@ class ChatComposerState(
                     ) to null
                 }
             }
-            if (attachment != null) {
+            if (attachment != null && !submissions.state(ownerId).value.isFrozen) {
                 runCatching {
                     controller.load(ownerId)
                     try {
-                        controller.importAttachment(ownerId, attachment)
+                        if (submissions.state(ownerId).value.isFrozen) {
+                            false
+                        } else {
+                            controller.importAttachment(ownerId, attachment)
+                        }
                     } finally {
                         withContext(NonCancellable) { controller.release(ownerId) }
                     }
                 }
-                    .onSuccess { haptics.selection() }
+                    .onSuccess { imported ->
+                        if (imported) {
+                            haptics.selection()
+                        } else {
+                            withContext(NonCancellable + Dispatchers.IO) {
+                                attachment.localPath?.let { path ->
+                                    runCatching { java.io.File(path).delete() }
+                                }
+                            }
+                        }
+                    }
                     .onFailure { failure ->
                         withContext(NonCancellable + Dispatchers.IO) {
                             attachment.localPath?.let { path ->
@@ -156,6 +172,10 @@ class ChatComposerState(
                             com.newoether.agora.R.string.attachment_copy_failed_image,
                         )
                     }
+            } else if (attachment != null) {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    attachment.localPath?.let { path -> runCatching { java.io.File(path).delete() } }
+                }
             } else if (errorRes != null) {
                 rejectedMessage = context.getString(errorRes)
             }

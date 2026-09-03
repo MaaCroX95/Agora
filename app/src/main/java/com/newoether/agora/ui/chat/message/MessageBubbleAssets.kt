@@ -1,5 +1,6 @@
 package com.newoether.agora.ui.chat.message
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,6 +45,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.ui.components.LatexImageTransformer
+import com.newoether.agora.ui.components.isDisplayLatexLink
 import com.newoether.agora.ui.chat.caseInsensitiveMatchRanges
 import com.newoether.agora.ui.chat.visibleMarkdownMatchRanges
 import com.newoether.agora.ui.theme.ChatType
@@ -64,6 +66,7 @@ import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.compose.elements.MarkdownCodeBackground
 import com.mikepenz.markdown.compose.elements.MarkdownCodeBlock
 import com.mikepenz.markdown.compose.elements.MarkdownCodeFence
+import com.mikepenz.markdown.compose.elements.MarkdownImage
 import com.mikepenz.markdown.compose.elements.MarkdownText
 import com.mikepenz.markdown.compose.elements.MarkdownTable
 import com.mikepenz.markdown.compose.elements.MarkdownTableHeader
@@ -153,6 +156,17 @@ internal fun ASTNode.needsListParagraphSpacer(): Boolean {
         .any { it.type == MarkdownElementTypes.PARAGRAPH }
 }
 
+internal fun isScrollableDisplayLatexImage(content: String, node: ASTNode): Boolean {
+    val linkNode = node.findDescendantOfType(MarkdownElementTypes.LINK_DESTINATION) ?: return false
+    val link = content.substring(linkNode.startOffset, linkNode.endOffset)
+    return isDisplayLatexLink(link)
+}
+
+private fun ASTNode.findDescendantOfType(type: org.intellij.markdown.IElementType): ASTNode? {
+    if (this.type == type) return this
+    return children.firstNotNullOfOrNull { child -> child.findDescendantOfType(type) }
+}
+
 @Composable
 internal fun rememberChatMarkdownAssets(
     textColor: Color,
@@ -234,6 +248,9 @@ internal fun rememberChatMarkdownAssets(
                     highlightColor = searchHighlightColor,
                     activeHighlightColor = activeSearchHighlightColor,
                 )
+            },
+            image = { model ->
+                ScrollableDisplayLatexImage(model)
             },
             paragraph = { model ->
                 SearchHighlightedMarkdownText(
@@ -745,6 +762,44 @@ internal fun SearchHighlightedMarkdownHeading(
 }
 
 @Composable
+private fun ScrollableDisplayLatexImage(model: MarkdownComponentModel) {
+    if (!isScrollableDisplayLatexImage(model.content, model.node)) {
+        MarkdownImage(model.content, model.node)
+        return
+    }
+
+    val horizontalScrollState = rememberScrollState()
+    TrackStreamingHorizontalScroll(horizontalScrollState)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(horizontalScrollState),
+    ) {
+        MarkdownImage(model.content, model.node)
+    }
+}
+
+@Composable
+private fun TrackStreamingHorizontalScroll(horizontalScrollState: ScrollState) {
+    val interactionController = LocalStreamingMarkdownInteractionController.current
+    val interactionOwner = remember { Any() }
+    if (interactionController != null) {
+        LaunchedEffect(interactionController, interactionOwner, horizontalScrollState) {
+            snapshotFlow { horizontalScrollState.isScrollInProgress }
+                .distinctUntilChanged()
+                .collect { active ->
+                    interactionController.setCodeBlockScrolling(interactionOwner, active)
+                }
+        }
+        DisposableEffect(interactionController, interactionOwner) {
+            onDispose {
+                interactionController.setCodeBlockScrolling(interactionOwner, active = false)
+            }
+        }
+    }
+}
+
+@Composable
 private fun SearchHighlightedMarkdownCode(
     model: MarkdownComponentModel,
     fenced: Boolean,
@@ -873,22 +928,7 @@ private fun SearchHighlightedMarkdownCodeText(
     }
 
     val horizontalScrollState = rememberScrollState()
-    val interactionController = LocalStreamingMarkdownInteractionController.current
-    val interactionOwner = remember { Any() }
-    if (interactionController != null) {
-        LaunchedEffect(interactionController, interactionOwner, horizontalScrollState) {
-            snapshotFlow { horizontalScrollState.isScrollInProgress }
-                .distinctUntilChanged()
-                .collect { active ->
-                    interactionController.setCodeBlockScrolling(interactionOwner, active)
-                }
-        }
-        DisposableEffect(interactionController, interactionOwner) {
-            onDispose {
-                interactionController.setCodeBlockScrolling(interactionOwner, active = false)
-            }
-        }
-    }
+    TrackStreamingHorizontalScroll(horizontalScrollState)
 
     MarkdownCodeBackground(
         color = LocalMarkdownColors.current.codeBackground,

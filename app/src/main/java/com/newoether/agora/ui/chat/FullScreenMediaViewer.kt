@@ -142,7 +142,7 @@ fun FullScreenMediaViewer(
     }
 
     if (isPdf) {
-        PdfPager(pdfPages, url, pdfSelectedPages, onTogglePdfPage, onClose, onNavigate)
+        PdfPager(pdfPages, initialIndex, pdfSelectedPages, onTogglePdfPage, onClose, onNavigate)
         return
     }
 
@@ -160,13 +160,13 @@ fun FullScreenMediaViewer(
 @Composable
 private fun PdfPager(
     pdfPages: List<String>,
-    url: String,
+    initialIndex: Int,
     pdfSelectedPages: Set<Int>? = null,
     onTogglePdfPage: ((Int) -> Unit)? = null,
     onClose: () -> Unit,
     onNavigate: (Int) -> Unit
 ) {
-    val pdfInitialPage = pdfPages.indexOf(url).coerceIn(0, pdfPages.size - 1)
+    val pdfInitialPage = initialIndex.coerceIn(0, pdfPages.size - 1)
     var currentScale by remember { mutableFloatStateOf(1f) }
     var showOverlay by remember { mutableStateOf(true) }
     val pagerState = rememberPagerState(initialPage = pdfInitialPage) { pdfPages.size }

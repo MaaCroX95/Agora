@@ -6,7 +6,6 @@ import android.net.Uri
 import com.newoether.agora.util.AttachmentSourceReader
 import java.io.File
 import java.net.URI
-import java.net.URLConnection
 import java.util.UUID
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
@@ -22,25 +21,6 @@ data class VideoSliceConfig(
 class ImageProcessor(
     private val app: Application,
 ) {
-    suspend fun processImagesAndVideos(
-        uris: List<String>,
-        sliceConfigs: Map<String, VideoSliceConfig> = emptyMap(),
-    ): List<String> = withContext(Dispatchers.IO) {
-        uris.flatMap { source ->
-            coroutineContext.ensureActive()
-            val sliceConfig = sliceConfigs[source]
-            val mimeType = resolveMimeType(source)
-            when {
-                sliceConfig != null -> extractVideoFrames(source, sliceConfig)
-                mimeType?.startsWith("video/") == true ->
-                    extractVideoFrames(source, VideoSliceConfig(intervalMicros = 0L, frameCount = 1))
-                mimeType?.startsWith("image/") == true || mimeType == null ->
-                    normalizeImage(source)?.let(::listOf).orEmpty()
-                else -> emptyList()
-            }
-        }
-    }
-
     suspend fun normalizeImage(source: String): String? = withContext(Dispatchers.IO) {
         var output: File? = null
         try {
@@ -136,15 +116,6 @@ class ImageProcessor(
             retriever.release()
         }
     }
-
-    private fun resolveMimeType(source: String): String? = runCatching {
-        when {
-            File(source).isAbsolute -> URLConnection.guessContentTypeFromName(source)
-            source.startsWith("file:", ignoreCase = true) ->
-                URLConnection.guessContentTypeFromName(File(URI(source)).name)
-            else -> app.contentResolver.getType(Uri.parse(source))
-        }
-    }.getOrNull()
 
     private fun setRetrieverSource(
         retriever: MediaMetadataRetriever,

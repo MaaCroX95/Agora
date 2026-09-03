@@ -361,7 +361,11 @@ fun ChatApp(
                 onOpenSettings = onOpenSettings,
                 onOpenTasks = { onOpenTasks(null) },
                 onRequestRename = dialogState::requestRename,
-                onRequestDelete = dialogState::requestDelete,
+                onRequestDelete = { conversationId ->
+                    if (!viewModel.isConversationDeleteLocked(conversationId)) {
+                        dialogState.requestDelete(conversationId)
+                    }
+                },
             )
         },
     ) {
@@ -879,13 +883,7 @@ fun ChatApp(
                                 contentAlignment = Alignment.BottomCenter,
                             ) {
                                 ChatBottomBar(
-                        onSendMessage = { text, attachments, onAccepted ->
-                            viewModel.sendMessage(
-                                text = text,
-                                attachments = attachments,
-                                onAccepted = onAccepted,
-                            )
-                        },
+                        submissionController = viewModel.conversationComposerSubmission,
                         composerOwnerId = composerOwnerId,
                         composerController = viewModel.conversationComposer,
                         composerSnapshot = composerSnapshot,

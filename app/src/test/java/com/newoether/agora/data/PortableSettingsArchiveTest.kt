@@ -94,10 +94,16 @@ class PortableSettingsArchiveTest {
         val modelSwitchPolicy = rag
             .substringAfter("fun setActiveEmbeddingModel(id: String)")
             .substringBefore("fun cacheMessagesForModel")
-        assertTrue(modelSwitchPolicy.contains("if (settings.getAutoCacheEnabled())"))
-        assertTrue(modelSwitchPolicy.contains("cacheMessagesForModel(id, silent = true)"))
-        assertTrue(modelSwitchPolicy.contains("settings.getShowUncachedNotification()"))
+        assertTrue(modelSwitchPolicy.contains("admitActiveModel(id)"))
+        assertFalse(modelSwitchPolicy.contains("cacheMessagesForModel("))
         assertFalse(modelSwitchPolicy.contains("embedding_model_caching"))
+
+        val admissionPolicy = rag
+            .substringAfter("private suspend fun admitActiveModel(")
+            .substringBefore("/**")
+        assertTrue(admissionPolicy.contains("settings.getAutoCacheEnabled()"))
+        assertTrue(admissionPolicy.contains("EmbeddingCacheWorker.schedule(modelId, workManager)"))
+        assertTrue(admissionPolicy.contains("settings.getShowUncachedNotification()"))
 
         val resourceRoot = locateDirectory("app/src/main/res", "src/main/res")
         listOf(
