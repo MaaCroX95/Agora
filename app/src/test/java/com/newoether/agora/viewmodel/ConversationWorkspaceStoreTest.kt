@@ -72,10 +72,36 @@ class ConversationWorkspaceStoreTest {
         fixture.store.setConversationSettings(NEW_CHAT_WORKSPACE_ID, capturedSettings)
 
         val snapshot = fixture.store.awaitNewChatWrites()
-        assertEquals(true, snapshot.rowExists)
+        assertEquals(true, snapshot.persisted != null)
         assertEquals("provider:model", snapshot.modelId)
         assertEquals("prompt", snapshot.systemPromptId)
         assertEquals(capturedSettings, snapshot.conversationSettings)
+    }
+
+    @Test
+    fun sendTapBarrierIncludesPriorWritesAndExcludesLaterWorkspaceChanges() = runTest {
+        val fixture = Fixture(backgroundScope, StandardTestDispatcher(testScheduler))
+        val firstWriteStarted = CompletableDeferred<Unit>()
+        val releaseFirstWrite = CompletableDeferred<Unit>()
+        coEvery { fixture.conversations.upsertNewChatPersist(any()) } coAnswers {
+            firstWriteStarted.complete(Unit)
+            releaseFirstWrite.await()
+            fixture.persisted.value = firstArg()
+        }
+        runCurrent()
+
+        fixture.store.setModel(NEW_CHAT_WORKSPACE_ID, "provider:before-tap")
+        runCurrent()
+        firstWriteStarted.await()
+        val captured = fixture.store.captureNewChatSnapshot()
+        fixture.store.setSystemPrompt(NEW_CHAT_WORKSPACE_ID, "after-tap")
+        releaseFirstWrite.complete(Unit)
+
+        val snapshot = captured.awaitCaptured()
+        assertEquals("provider:before-tap", snapshot.modelId)
+        assertNull(snapshot.systemPromptId)
+        runCurrent()
+        assertEquals("after-tap", fixture.store.newChatSystemPromptId.value)
     }
 
     @Test
@@ -152,6 +178,35 @@ class ConversationWorkspaceStoreTest {
         assertNull(fixture.persisted.value)
         assertNull(fixture.store.newChatPersist.value)
         coVerify(exactly = 1) { fixture.conversations.deleteNewChatPersist(true) }
+    }
+
+    @Test
+    fun acceptedClearPreservesWorkspaceFieldsChangedAfterTheSendSnapshot() = runTest {
+        val accepted = NewChatPersistEntity(
+            modelId = "provider:before",
+            draftText = "sent",
+        )
+        val fixture = Fixture(
+            scope = backgroundScope,
+            dispatcher = StandardTestDispatcher(testScheduler),
+            initial = accepted,
+        )
+        runCurrent()
+
+        fixture.store.setModel(NEW_CHAT_WORKSPACE_ID, "provider:after")
+        fixture.store.awaitNewChatWrites()
+        fixture.store.clearAcceptedDraft(
+            ownerId = NEW_CHAT_WORKSPACE_ID,
+            reclaimAttachments = false,
+            expectedWorkspace = accepted,
+        )
+
+        assertEquals(
+            accepted.copy(modelId = "provider:after", draftText = ""),
+            fixture.persisted.value,
+        )
+        assertEquals(fixture.persisted.value, fixture.store.newChatPersist.value)
+        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist(any()) }
     }
 
     @Test

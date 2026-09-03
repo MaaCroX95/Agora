@@ -4,6 +4,7 @@ import com.newoether.agora.automation.ConversationExecutionCoordinator
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.local.MessageEntity
+import com.newoether.agora.data.local.NewChatPersistEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.SettingsRepository
 import com.newoether.agora.model.ChatMessage
@@ -31,6 +32,7 @@ internal data class DirectAcceptedInputRequest(
     val requestKind: String,
     val touchConversationOnAdmission: Boolean,
     val newConversationSettings: ConversationSettings? = null,
+    val newChatPersistSnapshot: NewChatPersistEntity? = null,
     val alreadyHoldsLock: Boolean,
     val requestScroll: (conversationId: String, messageId: String) -> Unit,
     val onAccepted: suspend (SendAcceptance) -> Unit,
@@ -49,6 +51,7 @@ internal data class DirectAcceptedInputRequest(
         require(newConversation == null || newConversation.id == conversationId)
         require(wasNewChat == (newConversation != null))
         require(wasNewChat == (originNewChatEntryId != null))
+        require(wasNewChat || newChatPersistSnapshot == null)
         generationSnapshot?.let { snapshot ->
             require(snapshot.conversationId == conversationId)
             require(snapshot.runId == runId)
@@ -89,7 +92,6 @@ internal class DirectAcceptedInputEffectExecutor(
     private val toUiMessage: (MessageEntity) -> ChatMessage,
     private val isConversationOpen: (String) -> Boolean,
     private val applyCommittedNewConversationState: suspend (String) -> Unit,
-    private val clearCommittedNewChatWorkspace: suspend () -> Unit,
     private val publishNewConversation: suspend (String, String, Long) -> Boolean,
     private val onUserMessagePersisted: (messageId: String, text: String) -> Unit,
     private val onGenerateTitle: (String) -> Unit,
@@ -126,7 +128,7 @@ internal class DirectAcceptedInputEffectExecutor(
         var newConversationTransferAttempted = false
         var newConversationSelectionAttempted = false
         var newConversationSelected = false
-        var newChatWorkspaceCleared = false
+        var newConversationPresentationPublished = false
         val userMessageId = idFactory()
         val modelMessageId = idFactory()
         var roomProjectionFence: RoomMessageProjectionFence? = null
@@ -147,7 +149,7 @@ internal class DirectAcceptedInputEffectExecutor(
                 }
             }
         }
-        suspend fun publishAndClearNewChatIfNeeded(): Boolean {
+        suspend fun publishNewChatIfNeeded(acceptance: SendAcceptance.Direct): Boolean {
             if (!request.wasNewChat) return false
             if (!newConversationSelectionAttempted) {
                 newConversationSelected = publishNewConversation(
@@ -157,9 +159,9 @@ internal class DirectAcceptedInputEffectExecutor(
                 )
                 newConversationSelectionAttempted = true
             }
-            if (!newChatWorkspaceCleared) {
-                clearCommittedNewChatWorkspace()
-                newChatWorkspaceCleared = true
+            if (newConversationSelected && !newConversationPresentationPublished) {
+                acceptanceNotifier.publish(acceptance)
+                newConversationPresentationPublished = true
             }
             return newConversationSelected
         }
@@ -176,11 +178,15 @@ internal class DirectAcceptedInputEffectExecutor(
             }
             if (!durableAcceptance.isCompleted) {
                 val accepted = SendAcceptance.Direct(userMessageId, request.conversationId)
-                acceptanceNotifier.notify(accepted, request.onAccepted)
+                acceptanceNotifier.notify(
+                    accepted,
+                    request.onAccepted,
+                    publishEvent = !request.wasNewChat,
+                )
                 durableAcceptance.complete(accepted)
                 runCatching { request.onModelMessageCreated?.invoke(modelMessageId) }
             }
-            publishAndClearNewChatIfNeeded()
+            publishNewChatIfNeeded(SendAcceptance.Direct(userMessageId, request.conversationId))
             true
         }
 
@@ -208,6 +214,7 @@ internal class DirectAcceptedInputEffectExecutor(
                         touchConversationOnAdmission = request.touchConversationOnAdmission,
                         newConversation = request.newConversation,
                         newConversationSettings = request.newConversationSettings,
+                        newChatPersistSnapshot = request.newChatPersistSnapshot,
                     ),
                     beforeRoomCommit = {
                         if (!request.wasNewChat && isConversationOpen(request.conversationId)) {
@@ -226,7 +233,11 @@ internal class DirectAcceptedInputEffectExecutor(
                     runBound = bindingOutcome is ConversationGenerationState.RunBindingOutcome.Active
                     notifyPersistedUser(userMessageId, request.userText)
                     val accepted = SendAcceptance.Direct(userMessageId, request.conversationId)
-                    acceptanceNotifier.notify(accepted, request.onAccepted)
+                    acceptanceNotifier.notify(
+                        accepted,
+                        request.onAccepted,
+                        publishEvent = !request.wasNewChat,
+                    )
                     durableAcceptance.complete(accepted)
                     runCatching { request.onModelMessageCreated?.invoke(modelMessageId) }
                         .onFailure { error ->
@@ -239,7 +250,7 @@ internal class DirectAcceptedInputEffectExecutor(
 
                     if (
                         request.wasNewChat &&
-                        publishAndClearNewChatIfNeeded()
+                        publishNewChatIfNeeded(accepted)
                     ) {
                         request.requestScroll(request.conversationId, userMessageId)
                     }

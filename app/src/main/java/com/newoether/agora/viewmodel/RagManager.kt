@@ -137,56 +137,44 @@ class RagManager(
 
     private suspend fun refreshCachePresentation(models: List<EmbeddingModelConfig>) {
         val requestedModelIds = models.map(EmbeddingModelConfig::id).toSet()
-        val admittedModels = mutableListOf<EmbeddingModelConfig>()
-        val states = mutableMapOf<String, String>()
-        models.forEach { model ->
-            EmbeddingCacheLocks.forModel(model.id).withLock {
-                settings.embeddingModels.value.find { it.id == model.id }?.let { current ->
-                    admittedModels += current
-                    val state = conversations.getOrAdmitSemanticLedgerState(model.id)
-                    states[model.id] = state
-                    _ledgerStates.update { it + (model.id to state) }
-                }
-            }
-        }
-        if (admittedModels.isEmpty()) {
+        val configuredIds = settings.embeddingModels.value
+            .mapTo(linkedSetOf(), EmbeddingModelConfig::id)
+            .intersect(requestedModelIds)
+        if (configuredIds.isEmpty()) {
             _cacheCounts.update { it - requestedModelIds }
             clearPendingReminder(requestedModelIds)
             return
         }
-        val modelIds = admittedModels.map(EmbeddingModelConfig::id)
-        val (total, cachedByModel) = coroutineScope {
+        val (total, cachedByModel, ledgers) = coroutineScope {
             val totalDeferred = async { conversations.getIndexableMessageCount() }
             val countsDeferred = async {
-                conversations.getEmbeddingCountsByModels(modelIds)
+                conversations.getEmbeddingCountsByModels(configuredIds.toList())
                     .associate { it.modelId to it.count }
             }
-            totalDeferred.await() to countsDeferred.await()
-        }
-        val counts = admittedModels.associate { model ->
-            model.id to ((cachedByModel[model.id] ?: 0).coerceAtMost(total) to total)
-        }
-        admittedModels.forEach { model ->
-            EmbeddingCacheLocks.forModel(model.id).withLock {
-                if (settings.embeddingModels.value.any { it.id == model.id }) {
-                    _cacheCounts.update { current -> current + (model.id to checkNotNull(counts[model.id])) }
-                    _cacheCountFailures.update { it - model.id }
-                }
+            val ledgersDeferred = async {
+                conversations.getSemanticLedgers(configuredIds.toList())
+                    .associate { it.modelId to it.state }
             }
+            Triple(totalDeferred.await(), countsDeferred.await(), ledgersDeferred.await())
         }
+        val stillConfigured = settings.embeddingModels.value
+            .mapTo(linkedSetOf(), EmbeddingModelConfig::id)
+            .intersect(configuredIds)
+        val counts = stillConfigured.associateWith { modelId ->
+            (cachedByModel[modelId] ?: 0).coerceAtMost(total) to total
+        }
+        _cacheCounts.update { current -> (current - requestedModelIds) + counts }
+        _ledgerStates.update { current -> (current - requestedModelIds) + ledgers }
+        _cacheCountFailures.update { it - stillConfigured }
         takePendingReminder(requestedModelIds)?.let { modelId ->
-            emitUncachedReminder(modelId, states[modelId], counts[modelId])
+            emitUncachedReminder(modelId, ledgers[modelId], counts[modelId])
         }
     }
 
-    private suspend fun markCacheCountFailure(modelIds: Set<String>) {
-        modelIds.forEach { modelId ->
-            EmbeddingCacheLocks.forModel(modelId).withLock {
-                if (settings.embeddingModels.value.any { it.id == modelId }) {
-                    _cacheCountFailures.update { it + modelId }
-                }
-            }
-        }
+    private fun markCacheCountFailure(modelIds: Set<String>) {
+        val configuredIds = settings.embeddingModels.value
+            .mapTo(linkedSetOf(), EmbeddingModelConfig::id)
+        _cacheCountFailures.update { it + (modelIds intersect configuredIds) }
     }
 
     @Synchronized
@@ -239,19 +227,17 @@ class RagManager(
                             val finishedIds = infos.asSequence()
                                 .filter { it.state.isFinished }
                                 .mapTo(linkedSetOf()) { it.id.toString() }
-                            var refresh = false
-                            EmbeddingCacheLocks.forModel(modelId).withLock {
-                                val configured = settings.embeddingModels.value.any { it.id == modelId }
-                                _cachingModels.update { current ->
-                                    if (configured && active) current + modelId else current - modelId
-                                }
-                                refresh = configured && (
-                                    (wasActive && !active) ||
-                                        finishedIds.any { it !in observedFinishedIds }
-                                    )
-                                wasActive = configured && active
-                                observedFinishedIds = finishedIds
+                            val configured =
+                                settings.embeddingModels.value.any { it.id == modelId }
+                            _cachingModels.update { current ->
+                                if (configured && active) current + modelId else current - modelId
                             }
+                            val refresh = configured && (
+                                (wasActive && !active) ||
+                                    finishedIds.any { it !in observedFinishedIds }
+                                )
+                            wasActive = configured && active
+                            observedFinishedIds = finishedIds
                             if (refresh) requestCacheCountRefresh()
                         }
                     }
@@ -440,13 +426,13 @@ class RagManager(
         if (!isEmbeddingMessageIdEligible(messageId) || !settings.autoCacheEnabled.value) return
         activeEmbeddingModel.value?.id?.let { modelId ->
             scope.launch(Dispatchers.IO) {
-                EmbeddingCacheLocks.forModel(modelId).withLock {
-                    if (
-                        settings.autoCacheEnabled.value &&
-                        settings.embeddingModels.value.any { it.id == modelId }
-                    ) {
-                        EmbeddingCacheWorker.schedule(modelId, workManager)
-                    }
+                if (
+                    settings.autoCacheEnabled.value &&
+                    settings.embeddingModels.value.any { it.id == modelId }
+                ) {
+                    // Enqueueing is a wake-up, not a cache mutation, and must never wait behind
+                    // remote/JNI embedding work.
+                    EmbeddingCacheWorker.schedule(modelId, workManager)
                 }
             }
         }

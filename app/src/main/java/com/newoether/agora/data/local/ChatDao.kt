@@ -34,7 +34,7 @@ data class EmbeddingModelCount(
 )
 
 @Dao
-interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContextDao {
+interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContextDao, NewChatPersistDao {
     // Task executions always remain in their owning Task's History.
     @Query("SELECT id, title, systemPromptId, modelId, taskId, origin, graduated, hasUnreadGeneration, selectedBranchesJson FROM conversations WHERE taskId IS NULL ORDER BY lastUpdated DESC")
     fun getAllConversations(): Flow<List<ChatConversation>>
@@ -44,18 +44,6 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
 
     @Query("SELECT * FROM conversations WHERE id = :conversationId")
     fun observeConversation(conversationId: String): Flow<ChatEntity?>
-
-    @Query("SELECT * FROM new_chat_persist WHERE id = 0")
-    fun observeNewChatPersist(): Flow<NewChatPersistEntity?>
-
-    @Query("SELECT * FROM new_chat_persist WHERE id = 0")
-    suspend fun getNewChatPersist(): NewChatPersistEntity?
-
-    @Upsert
-    suspend fun upsertNewChatPersist(entity: NewChatPersistEntity)
-
-    @Query("DELETE FROM new_chat_persist WHERE id = 0")
-    suspend fun deleteNewChatPersist(): Int
 
     @Query("SELECT * FROM conversation_settings_transfer WHERE conversationId = :conversationId")
     suspend fun getConversationSettingsTransfer(
@@ -280,6 +268,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         messageSelectionUpdates: Map<String?, String>,
         conversationModelId: String,
         conversationSettingsJson: String?,
+        expectedNewChatPersist: NewChatPersistEntity?,
         at: Long,
     ): RunGraphCommit {
         require(conversation.id == run.conversationId)
@@ -287,7 +276,15 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
             "Conversation ${conversation.id} already exists"
         }
         require(conversationModelId.isNotBlank())
-        deleteNewChatPersist()
+        expectedNewChatPersist?.let { expected ->
+            deleteNewChatPersistIfMatches(
+                modelId = expected.modelId,
+                systemPromptId = expected.systemPromptId,
+                conversationSettingsJson = expected.conversationSettingsJson,
+                draftText = expected.draftText,
+                draftAttachments = expected.draftAttachments,
+            )
+        }
         upsertConversation(
             conversation.copy(
                 modelId = conversationModelId,

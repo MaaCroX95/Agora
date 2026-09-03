@@ -119,6 +119,13 @@ MessageItem, and AssistantMessageContent do not collect or thread that unused UI
 stored preference key and settings import/export compatibility remain readable and writable so the UI
 cleanup creates no migration or archive incompatibility.
 
+Message Info reports Provider usage for the complete Run. Every completed Provider request in a
+multi-round tool loop contributes its reported input, cached-input, cache-write-input,
+uncached-input, output, reasoning, and total counts. Multiple cumulative usage snapshots emitted by
+one request replace that request's prior snapshot instead of being added twice. If any constituent
+request omits a breakdown category, the aggregate category remains unknown rather than becoming a
+fabricated zero.
+
 ## 8. Image-transcription model chooser
 
 The primary image-transcription model chooser lists only currently enabled concrete models. It does
@@ -238,6 +245,13 @@ A New Chat first Send is the sole automatic-top exception. Only after the accept
 
 After durable deletion and runtime cleanup of the conversation that was selected when deletion was admitted, the canonical selection owner enters New Chat unless a newer explicit selection targets another conversation. A pending or completed newer conversation selection remains authoritative. Deleting a nonselected conversation or a deletion that fails before cleanup does not change the visible page.
 
+If a message action would remove every durable message in the current tree, including the
+single-Compact case, its action is presented as `Delete Conversation` and the confirmation explicitly
+warns that the whole conversation will be removed. The dialog freezes the exact message-id topology
+visible when it opens; confirmation uses canonical conversation deletion only if Room still matches
+that topology. A later graph change rejects the stale confirmation, keeps the dialog open, and emits
+no destructive-success haptic.
+
 ## 17. Model alias display fallback
 
 A model alias is presentation text, never a model identity. An explicit nonblank alias stored under
@@ -353,9 +367,11 @@ persisted with the draft for both ordinary conversations and the New Chat worksp
 another conversation does not cancel or transfer work; returning shows the same live state. After
 process death, a conversation that has not been explicitly opened remains dormant. When the user
 opens that owner, `PROCESSING` restarts from its immutable private staged source, `FAILED` remains
-retryable, and an unavailable staged source becomes `FAILED`. Legacy drafts without import state
-are `READY`. The existing `unavailable` value remains reserved for backup/import restoration when
-the attachment resource cannot be restored and never represents import failure.
+retryable, and an unavailable staged source becomes `FAILED`. A legacy draft without import state
+remains `READY` only when it already names a complete canonical private artifact; an incomplete
+legacy row is upgraded to `PROCESSING` and re-enters staging/import instead of being silently
+omitted by Send. The existing `unavailable` value remains reserved for backup/import restoration
+when the attachment resource cannot be restored and never represents import failure.
 
 An image's `READY` private path is its final normalized artifact. The immutable staged image remains
 separate until the `READY` draft write succeeds, then becomes reclaimable. A crash after output
@@ -371,21 +387,36 @@ through independent Crossfades. A `FAILED` tile remains in place with a gray exc
 tapping that overlay retries the complete import from private staging. Failed attachments do not
 disable Send and are excluded from the accepted result. `READY` tiles have no processing overlay.
 
-Tapping Send freezes that draft owner's exact text, model/settings snapshot, and attachment
-membership. Text editing, add/remove, and retry actions are disabled until the request leaves its
-pre-acceptance lifecycle. `WAITING` waits for every frozen attachment's processing coroutine to
-exit, then preserves Composer order while retaining only `READY` results; zero successful
-attachments is valid when the frozen text independently permits Send. Tapping the spinning Send
-control during `WAITING` cancels only that Send request, keeps attachment processing alive, restores
-editing, and releases the deletion lock. `SUBMITTING` is not cancellable. Failure before accepted
-input returns the same frozen Composer to editable `IDLE`. Authoritative acceptance clears that
-owner's complete Composer, including failed tiles.
+Tapping Send freezes that draft owner's exact text, tap-ordered model/settings snapshot, and
+attachment membership. The TextField remains enabled and editable in every submission and generation
+phase; add/remove and retry actions remain protected until the request leaves its pre-acceptance
+lifecycle. `WAITING` waits for every frozen attachment's processing coroutine to exit, then
+preserves Composer order while retaining only `READY` results; zero successful attachments is valid
+when the frozen text independently permits Send. Tapping the spinning Send control during `WAITING`
+cancels only that Send request, keeps attachment processing alive, and releases the deletion lock.
+`SUBMITTING` and accepted-clear recovery are non-cancellable and render one coherent neutral 3 dp
+busy indicator with disabled action semantics. Failure before accepted input returns the frozen
+request to `IDLE`.
+
+Authoritative acceptance clears only the frozen text and attachment membership. Revision-aware
+settlement preserves text typed after the tap, including a TextField edit that becomes visible before
+its asynchronous draft observer reaches the controller. A durable acceptance whose draft clear fails
+enters a non-resendable accepted-clear state and exposes a clear-only Retry; it never resubmits the
+already durable input. Only a directly accepted foreground Send for the exact still-visible origin
+clears focus, hides the IME, and collapses the Composer. Queue placement, later queue drain, and stale
+New Chat acceptance do none of those presentation effects.
 
 Switching conversations cannot cancel, redirect, duplicate, or clear the frozen request. From Send
 tap through authoritative acceptance and exact-owner clearing, Delete Conversation is disabled for
-the origin and the controller rejects deletion races below the dialog. A New Chat request selects
-its newly created conversation only if the user still occupies the originating New Chat workspace;
-otherwise it appears in the list without taking focus. A process restart leaves durable drafts and
+the origin and the controller rejects deletion races below the dialog. A New Chat request inserts a
+read barrier at tap time, so its immutable workspace includes every model, system-prompt, and
+conversation-setting write queued before the tap and excludes later workspace edits. Its conditional
+Room consumption matches the tap-time workspace plus the attachment states that actually settled
+before acceptance. If newer workspace metadata survives that transaction, accepted clearing removes
+only the sent draft fields and preserves the newer metadata. The request selects its newly created
+conversation only if the user still occupies the originating New Chat workspace;
+otherwise it appears in the list without taking focus or haptic confirmation. A process restart
+leaves durable drafts and
 attachment imports dormant until their exact owner is explicitly opened, then restores that owner
 without automatically replaying an unaccepted Send request.
 

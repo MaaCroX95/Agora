@@ -93,6 +93,9 @@ interface SemanticIndexDao {
     @Query("SELECT * FROM semantic_index_ledger WHERE modelId = :modelId")
     suspend fun getLedger(modelId: String): SemanticIndexLedgerEntity?
 
+    @Query("SELECT * FROM semantic_index_ledger WHERE modelId IN (:modelIds)")
+    suspend fun getLedgers(modelIds: List<String>): List<SemanticIndexLedgerEntity>
+
     @Query(
         """
         UPDATE semantic_index_ledger
@@ -406,10 +409,14 @@ internal suspend fun ChatDatabase.commitSemanticEmbedding(
     expectedFingerprint: String,
     updatedAt: Long,
     expectedWorkRevision: Long? = null,
+    expectedLedgerRevision: Long? = null,
     completePendingWork: Boolean = true,
 ): Boolean = withTransaction {
     val semanticDao = semanticIndexDao()
-    semanticDao.admitModel(embedding.modelId, updatedAt)
+    val ledger = semanticDao.getLedger(embedding.modelId) ?: return@withTransaction false
+    if (expectedLedgerRevision != null && ledger.sourceRevision != expectedLedgerRevision) {
+        return@withTransaction false
+    }
     val currentFingerprint = semanticDao.getSearchableMessageText(embedding.messageId)
         ?.let(::semanticSourceFingerprint)
     if (currentFingerprint != expectedFingerprint) return@withTransaction false

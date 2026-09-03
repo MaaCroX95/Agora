@@ -34,11 +34,31 @@ internal data class ConversationWorkspaceDraft(
 )
 
 internal data class NewChatWorkspaceSnapshot(
-    val rowExists: Boolean,
+    val persisted: NewChatPersistEntity?,
     val modelId: String?,
     val systemPromptId: String?,
     val conversationSettings: ConversationSettings?,
-)
+    private val pendingPersisted: CompletableDeferred<NewChatPersistEntity?>? = null,
+) {
+    suspend fun awaitCaptured(): NewChatWorkspaceSnapshot =
+        pendingPersisted?.let { fromPersisted(it.await()) } ?: this
+
+    companion object {
+        fun fromPersisted(entity: NewChatPersistEntity?) = NewChatWorkspaceSnapshot(
+            persisted = entity,
+            modelId = entity?.modelId,
+            systemPromptId = entity?.systemPromptId,
+            conversationSettings = entity?.conversationSettingsJson?.let { raw ->
+                runCatching { Json.decodeFromString<ConversationSettings>(raw) }.getOrNull()
+            },
+        )
+
+        fun pending(
+            current: NewChatPersistEntity?,
+            completion: CompletableDeferred<NewChatPersistEntity?>,
+        ) = fromPersisted(current).copy(pendingPersisted = completion)
+    }
+}
 
 internal interface ComposerDraftPersistence {
     suspend fun loadDraft(ownerId: String): ConversationWorkspaceDraft
@@ -55,6 +75,12 @@ internal interface ComposerDraftPersistence {
         ownerId: String,
         reclaimAttachments: Boolean,
     ) = clearAcceptedDraft(ownerId)
+
+    suspend fun clearAcceptedDraft(
+        ownerId: String,
+        reclaimAttachments: Boolean,
+        expectedWorkspace: NewChatPersistEntity?,
+    ) = clearAcceptedDraft(ownerId, reclaimAttachments)
 }
 
 /** Routes mutable conversation workspace state to Room or the New Chat singleton. */
@@ -77,6 +103,7 @@ internal class ConversationWorkspaceStore(
 
         data class Clear(
             val reclaimAttachments: Boolean,
+            val expectedWorkspace: NewChatPersistEntity?,
             val completion: CompletableDeferred<Unit>,
         ) : NewChatCommand
     }
@@ -219,9 +246,15 @@ internal class ConversationWorkspaceStore(
     override suspend fun clearAcceptedDraft(
         ownerId: String,
         reclaimAttachments: Boolean,
+    ) = clearAcceptedDraft(ownerId, reclaimAttachments, expectedWorkspace = null)
+
+    override suspend fun clearAcceptedDraft(
+        ownerId: String,
+        reclaimAttachments: Boolean,
+        expectedWorkspace: NewChatPersistEntity?,
     ) {
         if (ownerId == NEW_CHAT_WORKSPACE_ID) {
-            clearNewChatAndAwait(reclaimAttachments)
+            clearNewChatAndAwait(reclaimAttachments, expectedWorkspace)
         } else {
             withContext(Dispatchers.IO) {
                 conversationMutationMutex.withLock {
@@ -236,24 +269,33 @@ internal class ConversationWorkspaceStore(
         }
     }
 
-    suspend fun awaitNewChatWrites(): NewChatWorkspaceSnapshot {
-        val entity = readNewChatPersist()
-        return NewChatWorkspaceSnapshot(
-            rowExists = entity != null,
-            modelId = entity?.modelId,
-            systemPromptId = entity?.systemPromptId,
-            conversationSettings = decodeConversationSettings(entity?.conversationSettingsJson),
-        )
+    /**
+     * Inserts an ordered read barrier at Send tap time. The eventual snapshot includes every
+     * workspace mutation already queued at that tap and excludes every later New Chat edit.
+     */
+    fun captureNewChatSnapshot(): NewChatWorkspaceSnapshot {
+        val completion = CompletableDeferred<NewChatPersistEntity?>()
+        val current = synchronized(newChatStateLock) { _newChatPersist.value }
+        val result = newChatCommands.trySend(NewChatCommand.Read(completion))
+        if (result.isFailure) {
+            completion.completeExceptionally(
+                result.exceptionOrNull() ?: IllegalStateException("New Chat workspace is closed"),
+            )
+        }
+        return NewChatWorkspaceSnapshot.pending(current, completion)
     }
+
+    suspend fun awaitNewChatWrites(): NewChatWorkspaceSnapshot =
+        NewChatWorkspaceSnapshot.fromPersisted(readNewChatPersist())
 
     suspend fun applyCommittedNewConversationState(conversationId: String) {
         transfers.complete(conversationId)
     }
 
     suspend fun clearCommittedNewChatWorkspace() {
-        clearAcceptedDraft(
-            ownerId = NEW_CHAT_WORKSPACE_ID,
+        clearNewChatAndAwait(
             reclaimAttachments = false,
+            expectedWorkspace = null,
         )
     }
 
@@ -307,7 +349,10 @@ internal class ConversationWorkspaceStore(
         return completion.await()
     }
 
-    private suspend fun clearNewChatAndAwait(reclaimAttachments: Boolean) {
+    private suspend fun clearNewChatAndAwait(
+        reclaimAttachments: Boolean,
+        expectedWorkspace: NewChatPersistEntity?,
+    ) {
         val completion = CompletableDeferred<Unit>()
         synchronized(newChatStateLock) {
             pendingNewChatWrites += 1
@@ -316,6 +361,7 @@ internal class ConversationWorkspaceStore(
             newChatCommands.send(
                 NewChatCommand.Clear(
                     reclaimAttachments = reclaimAttachments,
+                    expectedWorkspace = expectedWorkspace,
                     completion = completion,
                 ),
             )
@@ -357,10 +403,20 @@ internal class ConversationWorkspaceStore(
 
             is NewChatCommand.Clear -> {
                 try {
-                    synchronized(newChatStateLock) {
-                        _newChatPersist.value = null
+                    val persisted = conversations.getNewChatPersist()
+                    val preserveNewerWorkspace = command.expectedWorkspace != null &&
+                        persisted != null && persisted != command.expectedWorkspace
+                    val next = if (preserveNewerWorkspace) {
+                        persisted.copy(draftText = "", draftAttachments = null).also {
+                            conversations.upsertNewChatPersist(it)
+                        }
+                    } else {
+                        conversations.deleteNewChatPersist(command.reclaimAttachments)
+                        null
                     }
-                    conversations.deleteNewChatPersist(command.reclaimAttachments)
+                    synchronized(newChatStateLock) {
+                        _newChatPersist.value = next
+                    }
                     command.completion.complete(Unit)
                 } catch (cancelled: CancellationException) {
                     command.completion.completeExceptionally(cancelled)

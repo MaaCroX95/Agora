@@ -1234,4 +1234,7 @@
     <string name="learn_more">Más información...</string>
     <string name="local_model_limitations_title">Limitaciones de los modelos locales</string>
     <string name="local_model_limitations_body">Los modelos locales están limitados por la memoria disponible en los dispositivos móviles. El tamaño del contexto es una de las principales limitaciones. El contexto suele incluir el mensaje del sistema, las definiciones de herramientas o funciones y las habilidades. Para reducir el uso inicial del contexto, abre el menú de tres puntos junto al selector de modelo y activa el modo de contexto reducido.</string>
+    <string name="delete_conversation_title">¿Eliminar conversación?</string>
+    <string name="delete_conversation_from_message_confirm">Al eliminar este mensaje se borrará toda la conversación. Esta acción no se puede deshacer.</string>
+    <string name="composer_clear_failed">El mensaje se envió, pero no se pudo borrar el borrador.</string>
 </resources>

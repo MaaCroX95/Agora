@@ -183,6 +183,9 @@ internal fun ChatDrawerContent(
         val edgeFadeTolerancePx = with(density) { DrawerEdgeFadeTolerance.roundToPx() }
         val latestConversations by rememberUpdatedState(conversations)
         val latestMotionPolicy by rememberUpdatedState(motionPolicy)
+        val submittingConversationIds by viewModel.conversationComposerSubmission
+            .activeOwnerIds
+            .collectAsState()
         LaunchedEffect(viewModel, conversationListState) {
             viewModel.firstMessageCommitted.collect { conversationId ->
                 if (viewModel.currentConversationId.value != conversationId) return@collect
@@ -361,10 +364,8 @@ internal fun ChatDrawerContent(
                                         hasUnreadGeneration = conversation.hasUnreadGeneration,
                                     )
                                     val menuEnabled = !isSwitching && !isGenerating
-                                    val submission by viewModel.conversationComposerSubmission
-                                        .state(conversation.id)
-                                        .collectAsState()
-                                    val deleteEnabled = menuEnabled && !submission.isFrozen
+                                    val deleteEnabled = menuEnabled &&
+                                        conversation.id !in submittingConversationIds
                                     val unreadDescription =
                                         stringResource(R.string.conversation_unread_generation)
                                     var showMenu by remember { mutableStateOf(false) }

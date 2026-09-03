@@ -22,6 +22,7 @@ import com.newoether.agora.data.local.NewChatPersistEntity
 import com.newoether.agora.data.local.ProviderContextTopologySnapshot
 import com.newoether.agora.data.local.RunEntity
 import com.newoether.agora.data.local.RunGraphCommit
+import com.newoether.agora.data.local.SemanticIndexLedgerEntity
 import com.newoether.agora.data.local.SemanticModelSnapshot
 import com.newoether.agora.data.local.ToolRoundCommit
 import com.newoether.agora.data.local.commitSemanticEmbedding
@@ -59,7 +60,6 @@ internal fun MessageEntity.matchesCitationTitle(query: String): Boolean {
     }.orEmpty()
     return segments.citationRecords(text).matchesCitationTitle(query)
 }
-
 private val citationSearchNewestFirst =
     compareByDescending<MessageEntity>(MessageEntity::timestamp).thenByDescending(MessageEntity::id)
 
@@ -92,7 +92,6 @@ internal suspend fun boundedCitationTitleMatches(
     }
     return newestMatches
 }
-
 class ConversationRepository(
     private val chatDao: ChatDao,
     /** Non-null in production; null is an explicit DAO-isolated unit-test seam. */
@@ -316,12 +315,13 @@ class ConversationRepository(
         messageSelectionUpdates: Map<String?, String>,
         conversationModelId: String,
         conversationSettingsJson: String?,
+        expectedNewChatPersist: NewChatPersistEntity?,
         at: Long = System.currentTimeMillis(),
     ): RunGraphCommit {
         lateinit var graph: RunGraphCommit
         var scheduled = false
         withSemanticTransaction(messages.map(MessageEntity::id), at) {
-            val previousRaw = chatDao.getNewChatPersist()?.draftAttachments
+            val previousRaw = expectedNewChatPersist?.draftAttachments
             val previous = previousRaw.decodeSelectedAttachments()
             graph = chatDao.createConversationRunWithMessages(
                 conversation,
@@ -330,6 +330,7 @@ class ConversationRepository(
                 messageSelectionUpdates,
                 conversationModelId,
                 conversationSettingsJson,
+                expectedNewChatPersist,
                 at,
             )
             scheduled = when {
@@ -695,12 +696,14 @@ class ConversationRepository(
     suspend fun getOrAdmitSemanticLedgerState(modelId: String): String =
         checkNotNull(database) { "Semantic ledger admission requires the production database" }
             .semanticIndexDao().admitModel(modelId, System.currentTimeMillis()).state
-
+    suspend fun getSemanticLedgers(modelIds: List<String>): List<SemanticIndexLedgerEntity> =
+        if (modelIds.isEmpty()) emptyList() else checkNotNull(database) {
+            "Semantic ledger reads require the production database"
+        }.semanticIndexDao().getLedgers(modelIds)
     suspend fun deleteSemanticModel(modelId: String) {
         checkNotNull(database) { "Semantic model deletion requires the production database" }
             .deleteSemanticModel(modelId)
     }
-
     suspend fun invalidateSemanticModel(
         modelId: String,
         updatedAt: Long = System.currentTimeMillis(),

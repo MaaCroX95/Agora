@@ -111,7 +111,7 @@ class ConversationSwitchSafetySourceContractTest {
         )
         assertTrue(
             "target and admission configuration must be captured before attachment waiting",
-            submission.indexOf("val admission = prepare(request.target, request.text)") in
+            submission.indexOf("val admission = prepare(request.target, frozen)") in
                 0 until submission.indexOf(
                     "composers.awaitProcessing(request.ownerId, request.attachmentIds.toSet())",
                 ),
@@ -130,11 +130,11 @@ class ConversationSwitchSafetySourceContractTest {
             "drawer Delete must observe the exact conversation submission freeze",
             drawer.contains(
                 "viewModel.conversationComposerSubmission\n" +
-                    "                                        .state(conversation.id)\n" +
-                    "                                        .collectAsState()",
+                    "            .activeOwnerIds\n" +
+                    "            .collectAsState()",
             ) &&
                 drawer.contains(
-                    "val deleteEnabled = menuEnabled && !submission.isFrozen",
+                    "conversation.id !in submittingConversationIds",
                 ) &&
                 drawer.contains("enabled = deleteEnabled"),
         )

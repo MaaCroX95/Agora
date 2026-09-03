@@ -270,7 +270,7 @@ class ConversationComposerConcurrencyTest {
     }
 
     @Test
-    fun `frozen owner rejects mutations until the exact submission releases it`() = runTest {
+    fun `frozen owner keeps attachment mutations locked but accepts text edits`() = runTest {
         val processor = mockk<AttachmentImportProcessor>()
         val kept = processing("kept").ready()
         val failed = processing("failed").copy(importState = AttachmentImportState.FAILED)
@@ -288,10 +288,12 @@ class ConversationComposerConcurrencyTest {
         )
 
         assertEquals("frozen text", frozen?.text)
-        assertEquals("frozen text", fixture.persistence.text(OWNER_A))
+        // The tap text is request-owned. A lagging draft observer must not overwrite the
+        // controller's current text merely to freeze it; the visible field remains authoritative.
+        assertEquals("", fixture.persistence.text(OWNER_A))
         assertFalse(fixture.controller.importAttachment(OWNER_A, processing("late")))
         fixture.controller.updateText(OWNER_A, "mutated")
-        assertFalse(fixture.controller.persistText(OWNER_A, "mutated"))
+        assertTrue(fixture.controller.persistText(OWNER_A, "mutated"))
         assertFalse(fixture.controller.remove(OWNER_A, "kept"))
         assertFalse(fixture.controller.retry(OWNER_A, "failed"))
         assertFalse(
@@ -301,7 +303,7 @@ class ConversationComposerConcurrencyTest {
                 submissionId = 41L,
             ).succeeded,
         )
-        assertEquals("frozen text", fixture.controller.state(OWNER_A).value.text)
+        assertEquals("mutated", fixture.controller.state(OWNER_A).value.text)
         assertEquals(
             listOf("kept", "failed"),
             fixture.controller.state(OWNER_A).value.attachments.map { it.localId },
@@ -311,13 +313,18 @@ class ConversationComposerConcurrencyTest {
             OWNER_A,
             reclaimAttachments = false,
             submissionId = 42L,
+            acceptedRevision = checkNotNull(frozen).revision,
+            acceptedText = "frozen text",
+            acceptedAttachmentIds = setOf("kept", "failed"),
         )
         assertTrue(acceptedClear.succeeded)
         assertEquals(listOf("kept", "failed"), acceptedClear.attachments.map { it.localId })
         assertTrue(fixture.controller.state(OWNER_A).value.attachments.isEmpty())
+        assertEquals("mutated", fixture.controller.state(OWNER_A).value.text)
         assertFalse(fixture.controller.importAttachment(OWNER_A, processing("still-frozen")))
-        fixture.controller.updateText(OWNER_A, "still frozen")
-        assertEquals("", fixture.controller.state(OWNER_A).value.text)
+        fixture.controller.updateText(OWNER_A, "still editable")
+        assertTrue(fixture.controller.persistText(OWNER_A, "still editable"))
+        assertEquals("still editable", fixture.persistence.text(OWNER_A))
 
         assertTrue(fixture.controller.releaseSubmission(OWNER_A, 42L))
         fixture.controller.updateText(OWNER_A, "editable")

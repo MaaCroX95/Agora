@@ -22,6 +22,11 @@ private const val DRAFT_TEXT_DEBOUNCE_MS = 300L
 private const val DRAFT_PERSIST_RETRY_COUNT = 2
 private const val DRAFT_PERSIST_RETRY_DELAY_MS = 80L
 
+internal fun preservesDisplayedTextAfterAcceptedProjection(
+    displayedText: String,
+    acceptedText: String?,
+): Boolean = acceptedText != null && displayedText != acceptedText
+
 @Composable
 internal fun rememberComposerDraftSnapshot(
     ownerId: String,
@@ -54,17 +59,6 @@ internal fun rememberComposerDraftSnapshot(
             var projectedTextVersion = loaded.textProjectionVersion
             var dirtyText: String? = null
 
-            suspend fun projectAuthoritativeText() {
-                val current = controller.state(ownerId).value
-                if (current.textProjectionVersion != projectedTextVersion) {
-                    projectedTextVersion = current.textProjectionVersion
-                    dirtyText = null
-                    if (textFieldState.text.toString() != current.text) {
-                        textFieldState.edit { replace(0, length, current.text) }
-                    }
-                }
-            }
-
             suspend fun persistIfCurrent(text: String): Boolean {
                 var failureCount = 0
                 while (controller.state(ownerId).value.text == text) {
@@ -75,6 +69,32 @@ internal fun rememberComposerDraftSnapshot(
                     delay(DRAFT_PERSIST_RETRY_DELAY_MS * failureCount)
                 }
                 return true
+            }
+
+            suspend fun projectAuthoritativeText() {
+                val current = controller.state(ownerId).value
+                if (current.textProjectionVersion != projectedTextVersion) {
+                    projectedTextVersion = current.textProjectionVersion
+                    val displayedText = textFieldState.text.toString()
+                    val keepNewerDisplayedText = preservesDisplayedTextAfterAcceptedProjection(
+                        displayedText = displayedText,
+                        acceptedText = current.textProjectionExpectedText,
+                    )
+                    if (keepNewerDisplayedText) {
+                        // The state-based TextField can advance before snapshotFlow reaches the
+                        // controller. Never let an older accepted Send project over that newer edit.
+                        dirtyText = displayedText
+                        controller.updateText(ownerId, displayedText)
+                        if (persistIfCurrent(displayedText) && dirtyText == displayedText) {
+                            dirtyText = null
+                        }
+                    } else {
+                        dirtyText = null
+                        if (displayedText != current.text) {
+                            textFieldState.edit { replace(0, length, current.text) }
+                        }
+                    }
+                }
             }
 
             try {

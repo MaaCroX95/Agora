@@ -11,14 +11,21 @@ internal class SendAcceptanceNotifier(
     suspend fun notify(
         acceptance: SendAcceptance,
         onAccepted: suspend (SendAcceptance) -> Unit,
+        publishEvent: Boolean = true,
     ) {
+        // Draft settlement is authoritative: callers must observe a failure instead of mistaking a
+        // presentation callback catch for a successful acknowledgement.
+        withContext(NonCancellable) { onAccepted(acceptance) }
+        if (publishEvent) publish(acceptance)
+    }
+
+    fun publish(acceptance: SendAcceptance) {
         try {
-            withContext(NonCancellable) { onAccepted(acceptance) }
             onAcceptedEvent?.invoke(acceptance.conversationId, acceptance.messageId)
         } catch (error: Exception) {
             DebugLog.e(
                 "SendAcceptanceNotifier",
-                "Failed to acknowledge accepted Send ${acceptance.messageId}",
+                "Failed to publish accepted Send ${acceptance.messageId}",
                 error,
             )
         }

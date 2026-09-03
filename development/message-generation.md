@@ -228,12 +228,22 @@ durable message identity and cannot become a parallel message graph.
 
 ### 8.1 Ordinary Send and queue drain
 
-- Composer pre-acceptance work freezes an immutable draft-owner, destination, model/settings, text,
-  and ordered `READY` attachment snapshot before it invokes ordinary admission. Conversation
-  selection may change while that work waits, but accepted input uses only the frozen identity and
-  clears only that exact draft owner. The generation path must not re-read the visible conversation
-  or current model to choose a destination for an already frozen request.
-- One accepted Send creates one fresh Run, durable USER input, and MODEL placeholder atomically.
+- Composer pre-acceptance work freezes an immutable draft-owner, destination, tap-ordered
+  model/settings snapshot, accepted text, and ordered `READY` attachment membership before it invokes
+  ordinary admission. New Chat admission inserts a workspace-store read barrier, so the snapshot
+  includes all writes ordered before the tap and excludes later writes. Conditional singleton
+  consumption combines those tap-time fields with the attachment states settled before acceptance;
+  a surviving newer workspace row loses only the accepted draft fields. Conversation selection may
+  change while that work waits, but accepted input uses only the frozen identity and never re-reads
+  the visible conversation or current model to choose its destination.
+- The TextField remains enabled throughout pre-acceptance and generation. Authoritative settlement is
+  revision-aware: it clears only the accepted text and attachment membership, preserving any text
+  typed after the tap even when that visible edit reaches the controller after freeze begins.
+- One accepted Send creates one fresh Run, durable USER input, and MODEL placeholder atomically. A
+  durable acceptance whose draft clear fails enters a non-resendable clear-only recovery state.
+- Only a direct foreground Send for the exact still-visible origin may clear focus, hide the IME, and
+  collapse the Composer after accepted clearing. Queue placement, a later FIFO drain, and stale New
+  Chat acceptance must not cause those presentation effects.
 - One claimed FIFO drain enters the same Send transaction and creates a fresh Run.
 - Input queued while another generation owns the slot stays memory-owned until a legal boundary.
 - Claim failure returns the exact batch to the front; durable success transfers ownership exactly

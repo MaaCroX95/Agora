@@ -7,6 +7,7 @@ import com.newoether.agora.api.local.LocalProvider
 import com.newoether.agora.automation.ConversationExecutionCoordinator
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.local.ChatEntity
+import com.newoether.agora.data.local.NewChatPersistEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.SettingsRepository
 import com.newoether.agora.model.ChatMessage
@@ -109,9 +110,8 @@ internal class MessageGenerationController(
     private val currentConversationId: StateFlow<String?>,
     private val isNewChatMode: StateFlow<Boolean>,
     private val newChatEntryId: StateFlow<Long>,
-    private val awaitNewChatWorkspace: suspend () -> NewChatWorkspaceSnapshot,
+    private val captureNewChatWorkspace: () -> NewChatWorkspaceSnapshot,
     private val applyCommittedNewConversationState: suspend (String) -> Unit,
-    private val clearCommittedNewChatWorkspace: suspend () -> Unit,
     private val currentActiveModel: StateFlow<String>,
     private val messages: StateFlow<List<ChatMessage>>,
     // -- Callbacks into ChatViewModel-owned side effects --
@@ -214,7 +214,6 @@ internal class MessageGenerationController(
         toUiMessage = { it.toUiChatMessage(appContext) },
         isConversationOpen = { currentConversationId.value == it },
         applyCommittedNewConversationState = applyCommittedNewConversationState,
-        clearCommittedNewChatWorkspace = clearCommittedNewChatWorkspace,
         publishNewConversation = { conversationId, modelId, entryId ->
             onConversationAcceptedBySend(conversationId, modelId, entryId).also { selected ->
                 if (selected) onConversationCreatedBySend(conversationId)
@@ -340,14 +339,21 @@ internal class MessageGenerationController(
      * MODEL target removes its regeneration subtree while retaining the shared boundary USER.
      * ACTIVE and STOPPING both reject deletion; Stop is never an implicit side effect.
      */
-    fun deleteMessage(messageId: String): Int {
-        val currentId = currentConversationId.value ?: return 0
+    fun deleteMessage(
+        messageId: String,
+        onResult: ((Boolean) -> Unit)? = null,
+    ): Int {
+        val currentId = currentConversationId.value ?: run {
+            onResult?.invoke(false)
+            return 0
+        }
         val state = registry.getOrCreate(currentId)
         return branchMutationService.delete(
             conversationId = currentId,
             messageId = messageId,
             state = state,
             snapshot = renderStore.allMessages,
+            onResult = onResult,
         )
     }
 
@@ -416,12 +422,13 @@ internal class MessageGenerationController(
             wasNewChat = wasNewChat,
             newChatEntryId = newChatEntryId.value.takeIf { wasNewChat },
             modelId = currentActiveModel.value,
+            newChatWorkspace = if (wasNewChat) captureNewChatWorkspace() else null,
         )
     }
 
     internal suspend fun prepareForegroundSend(
         target: ForegroundSendTarget,
-        text: String,
+        composer: ConversationComposerSnapshot,
     ): ForegroundSendAdmission? {
         settings.awaitInitialLoad()
         if (target.modelId.isBlank()) {
@@ -437,12 +444,12 @@ internal class MessageGenerationController(
                 return null
             }
         }
-        val workspace = if (target.wasNewChat) awaitNewChatWorkspace() else null
+        val workspace = target.newChatWorkspace?.awaitCaptured()
         val conversationSnapshot = if (target.wasNewChat) {
             ChatEntity(
                 id = target.conversationId,
                 title = initialConversationTitle(
-                    prompt = text,
+                    prompt = composer.text,
                     fallback = appContext.getString(R.string.new_chat),
                 ),
                 modelId = target.modelId,
@@ -468,6 +475,16 @@ internal class MessageGenerationController(
             generationSnapshot = generationSnapshot,
             newConversation = conversationSnapshot.takeIf { target.wasNewChat },
             newConversationSettings = workspace?.conversationSettings,
+            newChatPersistSnapshot = if (target.wasNewChat) {
+                (workspace?.persisted ?: NewChatPersistEntity()).copy(
+                    draftText = composer.text,
+                    draftAttachments = composer.attachments
+                        .takeIf(List<*>::isNotEmpty)
+                        ?.let(Json::encodeToString),
+                )
+            } else {
+                null
+            },
         )
     }
 
@@ -514,6 +531,7 @@ internal class MessageGenerationController(
             touchConversationOnAdmission = true,
             onAccepted = onAccepted,
             newConversationSettings = admission.newConversationSettings,
+            newChatPersistSnapshot = admission.newChatPersistSnapshot,
             proposedRunId = target.runId,
             admissionSnapshot = admission.generationSnapshot,
             originNewChatEntryId = target.newChatEntryId,
@@ -544,6 +562,7 @@ internal class MessageGenerationController(
         touchConversationOnAdmission: Boolean,
         onAccepted: suspend (SendAcceptance) -> Unit,
         newConversationSettings: ConversationSettings? = null,
+        newChatPersistSnapshot: NewChatPersistEntity? = null,
         scrollPolicy: SendScrollPolicy = SendScrollPolicy.FORCE,
         alreadyHoldsLock: Boolean = false,
         directOnly: Boolean = false,
@@ -688,6 +707,7 @@ internal class MessageGenerationController(
                 requestKind = requestKind,
                 touchConversationOnAdmission = touchConversationOnAdmission,
                 newConversationSettings = newConversationSettings,
+                newChatPersistSnapshot = newChatPersistSnapshot,
                 alreadyHoldsLock = alreadyHoldsLock,
                 requestScroll = resolveScrollCallback(scrollPolicy),
                 onAccepted = onAccepted,

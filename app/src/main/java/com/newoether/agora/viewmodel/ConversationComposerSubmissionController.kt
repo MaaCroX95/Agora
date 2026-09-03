@@ -1,5 +1,6 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.data.local.NewChatPersistEntity
 import com.newoether.agora.model.SelectedAttachment
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -9,8 +10,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -18,6 +23,7 @@ internal enum class ComposerSubmissionPhase {
     IDLE,
     WAITING,
     SUBMITTING,
+    ACCEPTED_PENDING_CLEAR,
 }
 
 internal data class ConversationComposerSubmissionSnapshot(
@@ -26,6 +32,8 @@ internal data class ConversationComposerSubmissionSnapshot(
     val frozenText: String = "",
     val frozenAttachmentIds: List<String> = emptyList(),
     val acceptedVersion: Long = 0L,
+    val directAcceptedVersion: Long = 0L,
+    val directAcceptedNewChatEntryId: Long? = null,
 ) {
     val isFrozen: Boolean
         get() = phase != ComposerSubmissionPhase.IDLE
@@ -33,12 +41,20 @@ internal data class ConversationComposerSubmissionSnapshot(
         get() = phase == ComposerSubmissionPhase.WAITING
     val isSubmitting: Boolean
         get() = phase == ComposerSubmissionPhase.SUBMITTING
+    val isAcceptedPendingClear: Boolean
+        get() = phase == ComposerSubmissionPhase.ACCEPTED_PENDING_CLEAR
 }
+
+internal data class DirectAcceptedComposerEffect(
+    val ownerId: String,
+    val conversationId: String,
+    val newChatEntryId: Long?,
+)
 
 internal typealias ComposerSubmissionTargetCapture =
     (ownerId: String) -> ForegroundSendTarget?
 internal typealias ComposerSubmissionPrepare =
-    suspend (ForegroundSendTarget, String) -> ForegroundSendAdmission?
+    suspend (ForegroundSendTarget, ConversationComposerSnapshot) -> ForegroundSendAdmission?
 internal typealias ComposerSubmissionSend = suspend (
     admission: ForegroundSendAdmission,
     text: String,
@@ -54,13 +70,20 @@ internal class ConversationComposerSubmissionController(
     private val captureTarget: ComposerSubmissionTargetCapture,
     private val prepare: ComposerSubmissionPrepare,
     private val send: ComposerSubmissionSend,
+    private val onAcceptedClearFailed: (
+        ownerId: String,
+        retry: () -> Unit,
+    ) -> Unit = { _, _ -> },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val presentationDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
 ) {
     private class OwnerSubmission {
         val state = MutableStateFlow(ConversationComposerSubmissionSnapshot())
         var request: FrozenRequest? = null
         var job: Job? = null
         var cancelWaitingRequested = false
+        var observerCount = 0
+        var wasObserved = false
     }
 
     private class FrozenRequest(
@@ -72,14 +95,49 @@ internal class ConversationComposerSubmissionController(
         val ownerId: String get() = target.ownerId
         val acceptanceStarted = AtomicBoolean(false)
         val acceptedAndCleared = AtomicBoolean(false)
+        var accepted: SendAcceptance? = null
+        var frozenRevision: Long? = null
+        var expectedNewChatWorkspace: NewChatPersistEntity? = null
+        var runtimeAttachmentIds: Set<String> = emptySet()
     }
 
     private val ownersLock = Any()
     private val owners = mutableMapOf<String, OwnerSubmission>()
     private val nextRequestId = AtomicLong(0L)
+    private val _activeOwnerIds = MutableStateFlow<Set<String>>(emptySet())
+    val activeOwnerIds: StateFlow<Set<String>> = _activeOwnerIds.asStateFlow()
+    private val _directAcceptedEffects = MutableSharedFlow<DirectAcceptedComposerEffect>()
+    val directAcceptedEffects: SharedFlow<DirectAcceptedComposerEffect> =
+        _directAcceptedEffects.asSharedFlow()
 
     fun state(ownerId: String): StateFlow<ConversationComposerSubmissionSnapshot> =
         owner(ownerId).state
+
+    fun observeState(ownerId: String): StateFlow<ConversationComposerSubmissionSnapshot> =
+        synchronized(ownersLock) {
+            owners.getOrPut(ownerId, ::OwnerSubmission).also { owner ->
+                owner.observerCount += 1
+                owner.wasObserved = true
+            }.state
+        }
+
+    fun releaseState(ownerId: String) {
+        synchronized(ownersLock) {
+            val owner = owners[ownerId] ?: return
+            owner.observerCount = (owner.observerCount - 1).coerceAtLeast(0)
+            if (
+                owner.wasObserved &&
+                owner.observerCount == 0 &&
+                owner.state.value.phase == ComposerSubmissionPhase.IDLE
+            ) {
+                owners.remove(ownerId, owner)
+            }
+        }
+    }
+
+    fun snapshot(ownerId: String): ConversationComposerSubmissionSnapshot =
+        synchronized(ownersLock) { owners[ownerId]?.state?.value }
+            ?: ConversationComposerSubmissionSnapshot()
 
     fun isFrozen(ownerId: String): Boolean {
         val owner = synchronized(ownersLock) { owners[ownerId] } ?: return false
@@ -111,8 +169,9 @@ internal class ConversationComposerSubmissionController(
                 )
             }
         }
+        setOwnerActive(ownerId, active = true)
         val job = scope.launch { runSubmission(owner, request) }
-        job.invokeOnCompletion { completeIdle(owner, request) }
+        job.invokeOnCompletion { completeTerminalState(owner, request) }
         synchronized(owner) {
             if (owner.request === request) {
                 owner.job = job
@@ -125,7 +184,7 @@ internal class ConversationComposerSubmissionController(
     }
 
     fun cancelWaiting(ownerId: String): Boolean {
-        val owner = owner(ownerId)
+        val owner = synchronized(ownersLock) { owners[ownerId] } ?: return false
         val job = synchronized(owner) {
             if (owner.state.value.phase != ComposerSubmissionPhase.WAITING) return false
             owner.cancelWaitingRequested = true
@@ -135,20 +194,64 @@ internal class ConversationComposerSubmissionController(
         return true
     }
 
+    fun retryAcceptedClear(ownerId: String): Boolean {
+        val owner = synchronized(ownersLock) { owners[ownerId] } ?: return false
+        val request = synchronized(owner) {
+            if (
+                owner.state.value.phase != ComposerSubmissionPhase.ACCEPTED_PENDING_CLEAR ||
+                owner.job != null
+            ) {
+                return false
+            }
+            owner.state.value = owner.state.value.copy(
+                phase = ComposerSubmissionPhase.SUBMITTING,
+            )
+            checkNotNull(owner.request)
+        }
+        val job = scope.launch {
+            var retained = false
+            try {
+                composers.load(request.ownerId)
+                retained = true
+                clearAccepted(owner, request)
+            } finally {
+                if (retained) {
+                    withContext(NonCancellable) { composers.release(request.ownerId) }
+                }
+            }
+        }
+        job.invokeOnCompletion { completeTerminalState(owner, request) }
+        synchronized(owner) {
+            if (owner.request !== request) {
+                job.cancel()
+            } else if (!job.isCompleted) {
+                owner.job = job
+            }
+        }
+        return true
+    }
+
     private suspend fun runSubmission(owner: OwnerSubmission, request: FrozenRequest) {
         var retained = false
         try {
             composers.load(request.ownerId)
             retained = true
-            composers.freezeSubmission(
+            val frozen = composers.freezeSubmission(
                 request.ownerId,
                 request.id,
                 request.text,
                 request.attachmentIds,
             ) ?: return
-            val admission = prepare(request.target, request.text) ?: return
+            request.frozenRevision = frozen.revision
+            val admission = prepare(request.target, frozen) ?: return
             composers.awaitProcessing(request.ownerId, request.attachmentIds.toSet())
-            val readyAttachments = composers.state(request.ownerId).value.attachments
+            val settledComposer = composers.state(request.ownerId).value
+            val acceptedAdmission = admission.withSettledComposerDraft(
+                acceptedText = request.text,
+                settledAttachments = settledComposer.attachments,
+            )
+            request.expectedNewChatWorkspace = acceptedAdmission.newChatPersistSnapshot
+            val readyAttachments = settledComposer.attachments
                 .associateBy(SelectedAttachment::localId)
                 .let { currentById ->
                     request.attachmentIds.mapNotNull { id ->
@@ -162,26 +265,13 @@ internal class ConversationComposerSubmissionController(
                 }
             if (request.text.isBlank() && readyAttachments.isEmpty()) return
             if (!startSubmitting(owner, request)) return
-            val runtimeAttachmentIds = readyAttachments.asSequence()
+            request.runtimeAttachmentIds = readyAttachments.asSequence()
                 .filterNot { it.storage.reclaimWhenAbandoned }
                 .mapTo(hashSetOf(), SelectedAttachment::localId)
-            send(admission, request.text, readyAttachments) { acceptance ->
+            send(acceptedAdmission, request.text, readyAttachments) { acceptance ->
                 if (!request.acceptanceStarted.compareAndSet(false, true)) return@send
-                val clearResult = withContext(NonCancellable) {
-                    composers.clearAccepted(
-                        ownerId = request.ownerId,
-                        reclaimAttachments = false,
-                        submissionId = request.id,
-                    )
-                }
-                check(clearResult.succeeded) { "Accepted Composer draft did not clear" }
-                request.acceptedAndCleared.set(true)
-                val reclaimable = clearResult.attachments.filterNot { attachment ->
-                    attachment.localId in runtimeAttachmentIds
-                }
-                if (reclaimable.isNotEmpty() && acceptance.hasDurableAttachmentOwner()) {
-                    scope.launch(ioDispatcher) { drafts.reclaimAttachments(reclaimable) }
-                }
+                request.accepted = acceptance
+                clearAccepted(owner, request)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -192,23 +282,67 @@ internal class ConversationComposerSubmissionController(
                 failure,
             )
         } finally {
-            try {
-                if (retained) {
-                    withContext(NonCancellable) {
-                        try {
-                            composers.releaseSubmission(request.ownerId, request.id)
-                        } finally {
-                            composers.release(request.ownerId)
-                        }
+            if (retained) {
+                withContext(NonCancellable) {
+                    try {
+                        composers.releaseSubmission(request.ownerId, request.id)
+                    } finally {
+                        composers.release(request.ownerId)
                     }
                 }
-            } finally {
-                if (request.acceptedAndCleared.get()) {
-                    completeAccepted(owner, request)
-                } else {
-                    completeIdle(owner, request)
-                }
             }
+        }
+    }
+
+    private suspend fun clearAccepted(
+        owner: OwnerSubmission,
+        request: FrozenRequest,
+    ) {
+        val acceptance = request.accepted ?: return
+        val clearResult = withContext(NonCancellable) {
+            composers.clearAccepted(
+                ownerId = request.ownerId,
+                reclaimAttachments = false,
+                submissionId = request.id,
+                acceptedRevision = request.frozenRevision,
+                acceptedText = request.text,
+                acceptedAttachmentIds = request.attachmentIds.toSet(),
+                expectedWorkspace = request.expectedNewChatWorkspace,
+            )
+        }
+        if (!clearResult.succeeded) {
+            markAcceptedPendingClear(owner, request)
+            onAcceptedClearFailed(request.ownerId) {
+                retryAcceptedClear(request.ownerId)
+            }
+            return
+        }
+        request.acceptedAndCleared.set(true)
+        if (acceptance is SendAcceptance.Direct) {
+            withContext(presentationDispatcher) {
+                _directAcceptedEffects.emit(
+                    DirectAcceptedComposerEffect(
+                        ownerId = request.ownerId,
+                        conversationId = acceptance.conversationId,
+                        newChatEntryId = request.target.newChatEntryId,
+                    ),
+                )
+            }
+        }
+        val reclaimable = clearResult.attachments.filterNot { attachment ->
+            attachment.localId in request.runtimeAttachmentIds
+        }
+        if (reclaimable.isNotEmpty() && acceptance.hasDurableAttachmentOwner()) {
+            scope.launch(ioDispatcher) { drafts.reclaimAttachments(reclaimable) }
+        }
+    }
+
+    private fun markAcceptedPendingClear(owner: OwnerSubmission, request: FrozenRequest) {
+        synchronized(owner) {
+            if (owner.request !== request) return
+            owner.state.value = owner.state.value.copy(
+                phase = ComposerSubmissionPhase.ACCEPTED_PENDING_CLEAR,
+            )
         }
     }
 
@@ -226,26 +360,62 @@ internal class ConversationComposerSubmissionController(
             true
         }
 
-    private fun completeAccepted(owner: OwnerSubmission, request: FrozenRequest) {
+    private fun completeTerminalState(owner: OwnerSubmission, request: FrozenRequest) {
         synchronized(owner) {
             if (owner.request !== request) return
-            val acceptedVersion = owner.state.value.acceptedVersion + 1L
-            owner.request = null
             owner.job = null
             owner.cancelWaitingRequested = false
-            owner.state.value = owner.state.value.toIdle().copy(
-                acceptedVersion = acceptedVersion,
-            )
+            when {
+                request.acceptedAndCleared.get() -> completeAcceptedLocked(owner, request)
+                request.accepted != null -> owner.state.value = owner.state.value.copy(
+                    phase = ComposerSubmissionPhase.ACCEPTED_PENDING_CLEAR,
+                )
+                else -> completeIdleLocked(owner, request)
+            }
         }
     }
 
-    private fun completeIdle(owner: OwnerSubmission, request: FrozenRequest) {
-        synchronized(owner) {
-            if (owner.request !== request) return
-            owner.request = null
-            owner.job = null
-            owner.cancelWaitingRequested = false
-            owner.state.value = owner.state.value.toIdle()
+    private fun completeAcceptedLocked(owner: OwnerSubmission, request: FrozenRequest) {
+        val current = owner.state.value
+        owner.request = null
+        owner.state.value = current.toIdle().copy(
+            acceptedVersion = current.acceptedVersion + 1L,
+            directAcceptedVersion = current.directAcceptedVersion +
+                if (request.accepted is SendAcceptance.Direct) 1L else 0L,
+            directAcceptedNewChatEntryId = request.target.newChatEntryId
+                .takeIf { request.accepted is SendAcceptance.Direct },
+        )
+        setOwnerActive(request.ownerId, active = false)
+        removeReleasedOwner(request.ownerId, owner)
+    }
+
+    private fun completeIdleLocked(owner: OwnerSubmission, request: FrozenRequest) {
+        owner.request = null
+        owner.state.value = owner.state.value.toIdle()
+        setOwnerActive(request.ownerId, active = false)
+        removeReleasedOwner(request.ownerId, owner)
+    }
+
+    private fun removeReleasedOwner(ownerId: String, owner: OwnerSubmission) {
+        synchronized(ownersLock) {
+            if (
+                owners[ownerId] === owner &&
+                owner.wasObserved &&
+                owner.observerCount == 0 &&
+                owner.state.value.phase == ComposerSubmissionPhase.IDLE
+            ) {
+                owners.remove(ownerId)
+            }
+        }
+    }
+
+    private fun setOwnerActive(ownerId: String, active: Boolean) {
+        synchronized(ownersLock) {
+            _activeOwnerIds.value = if (active) {
+                _activeOwnerIds.value + ownerId
+            } else {
+                _activeOwnerIds.value - ownerId
+            }
         }
     }
 

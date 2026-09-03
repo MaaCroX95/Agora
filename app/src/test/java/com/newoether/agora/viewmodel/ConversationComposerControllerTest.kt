@@ -730,6 +730,39 @@ class ConversationComposerControllerTest {
     }
 
     @Test
+    fun `text typed before async freeze is preserved after older acceptance`() = runTest {
+        val processor = mockk<AttachmentImportProcessor>()
+        val fixture = fixture(
+            processor = processor,
+            initial = mapOf(OWNER_A to draft(text = "sent text")),
+        )
+        fixture.controller.load(OWNER_A)
+        fixture.controller.updateText(OWNER_A, "newer text")
+
+        val frozen = checkNotNull(
+            fixture.controller.freezeSubmission(
+                ownerId = OWNER_A,
+                requestId = 7L,
+                text = "sent text",
+                attachmentIds = emptyList(),
+            ),
+        )
+        val result = fixture.controller.clearAccepted(
+            ownerId = OWNER_A,
+            submissionId = 7L,
+            acceptedRevision = frozen.revision,
+            acceptedText = frozen.text,
+            acceptedAttachmentIds = emptySet(),
+        )
+
+        assertTrue(result.succeeded)
+        assertEquals("sent text", frozen.text)
+        assertEquals(0L, frozen.revision)
+        assertEquals("newer text", fixture.controller.state(OWNER_A).value.text)
+        assertEquals("newer text", fixture.persistence.text(OWNER_A))
+    }
+
+    @Test
     fun `attachment completion preserves the active text projection version`() = runTest {
         val source = attachment("projection")
         val processor = mockk<AttachmentImportProcessor>()
@@ -776,7 +809,7 @@ class ConversationComposerControllerTest {
 
     @Test
     fun `accepted clear synchronizes durable and visible owner state`() = runTest {
-        val ready = attachment("accepted")
+        val ready = attachment("accepted").ready("/final/accepted.jpg")
         val processor = mockk<AttachmentImportProcessor>()
         val fixture = fixture(
             processor = processor,

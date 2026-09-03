@@ -67,9 +67,11 @@ No query returns message text or embedding blobs, and page entry must not issue 
 Each model keeps the last complete count snapshot. Before the first snapshot, an active request shows
 loading and an initial failure shows failure plus Retry; neither state may fabricate zero, uncached,
 or an available Cache/Re-cache action. A refresh failure after a successful snapshot retains that
-snapshot and the ledger-owned action. Status and action changes use fixed slots with a 250 ms
-crossfade. Aggregate counts may supply exact numeric status and uncached-reminder copy, but they never
-establish freshness or choose Cache versus Re-cache. Those decisions use only the semantic ledger.
+snapshot and the ledger-owned action. The presentation read never acquires the model write mutex, so
+an active or failed worker cannot strand Conversation Search in Loading. Status and action changes use
+fixed slots with a 250 ms crossfade. Aggregate counts may supply exact numeric status and
+uncached-reminder copy, but they never establish freshness or choose Cache versus Re-cache. Those
+decisions use only the semantic ledger.
 
 No timer, polling loop, periodic Worker, or continuously invalidating Room Flow is introduced for
 this status. Failures log only aggregate diagnostics. Semantic ranking remains governed by the
@@ -104,10 +106,15 @@ invalidates that model under the shared model mutex before scheduling durable wo
 unique durable scheduling, worker observation, model lifecycle, reminder delivery, and retained
 aggregate presentation; it must not hold an in-process cache loop or invoke an embedding engine.
 When the ledger is not current and Auto Cache is enabled, exactly one per-model unique worker may run.
+A wakeup that arrives while the current worker is running appends one `APPEND_OR_REPLACE` follower so
+newly admitted work is not lost behind a stale unique-work KEEP decision. Scheduling and worker-state
+observation never hold the model write mutex.
+
 The worker consumes bounded exact-work pages or bounded full-reconcile pages, limits embedding batch
-size, yields between pages, and commits only a matching source fingerprint and work revision. Failed
-items remain durable work. Worker activity is observed from unique WorkManager state; completion may
-refresh presentation but aggregate equality cannot mark the ledger current.
+size, yields between pages, and commits only when both the database source fingerprint and durable
+work revision still match its admitted candidate. Failed or superseded items remain durable work for
+a later pass. Worker activity is observed from unique WorkManager state; completion may refresh
+presentation but aggregate equality cannot mark the ledger current.
 
 The worker emits no uncached, caching, success, completion, partial-failure, or setup-failure
 Snackbar. Manual cache and recache actions retain their existing feedback. Deleting a model cancels

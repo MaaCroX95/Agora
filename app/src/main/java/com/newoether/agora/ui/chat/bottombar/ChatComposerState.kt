@@ -137,11 +137,11 @@ class ChatComposerState(
                     ) to null
                 }
             }
-            if (attachment != null && !submissions.state(ownerId).value.isFrozen) {
+            if (attachment != null && !submissions.snapshot(ownerId).isFrozen) {
                 runCatching {
                     controller.load(ownerId)
                     try {
-                        if (submissions.state(ownerId).value.isFrozen) {
+                        if (submissions.snapshot(ownerId).isFrozen) {
                             false
                         } else {
                             controller.importAttachment(ownerId, attachment)

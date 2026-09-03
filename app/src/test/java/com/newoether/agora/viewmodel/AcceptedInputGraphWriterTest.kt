@@ -3,6 +3,7 @@ package com.newoether.agora.viewmodel
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.local.MessageContextTopology
 import com.newoether.agora.data.local.MessageEntity
+import com.newoether.agora.data.local.NewChatPersistEntity
 import com.newoether.agora.data.local.ProviderContextTopologySnapshot
 import com.newoether.agora.data.local.RunEntity
 import com.newoether.agora.data.local.RunGraphCommit
@@ -89,17 +90,23 @@ class AcceptedInputGraphWriterTest {
             lowContextModeEnabled = true,
         )
         var insertedSettingsJson: String? = null
+        var insertedPersistSnapshot: NewChatPersistEntity? = null
         coEvery {
             repository.createConversationRunWithMessages(
-                any(), any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any(), any(),
             )
         } coAnswers {
             val messages = thirdArg<List<MessageEntity>>()
             val selections = arg<Map<String?, String>>(3)
             insertedSettingsJson = arg(5)
+            insertedPersistSnapshot = arg(6)
             RunGraphCommit(messages, selections, emptyMap())
         }
 
+        val persistSnapshot = NewChatPersistEntity(
+            modelId = "OpenAI:model",
+            draftText = "prompt",
+        )
         val result = AcceptedInputGraphWriter(repository).commit(
             AcceptedInputGraphWriter.Request(
                 inputEffect = inputEffect("conversation", "run"),
@@ -114,6 +121,7 @@ class AcceptedInputGraphWriterTest {
                     title = "New",
                 ),
                 newConversationSettings = capturedSettings,
+                newChatPersistSnapshot = persistSnapshot,
             )
         )
 
@@ -123,6 +131,7 @@ class AcceptedInputGraphWriterTest {
             capturedSettings,
             Json.decodeFromString<ConversationSettings>(checkNotNull(insertedSettingsJson)),
         )
+        assertEquals(persistSnapshot, insertedPersistSnapshot)
     }
 
     private fun message(

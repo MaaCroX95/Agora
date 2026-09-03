@@ -71,7 +71,7 @@ internal fun ChatBottomBarOverlayHost(
         withContext(NonCancellable) { composerController.release(ownerId) }
     }
 
-    fun isFrozen(ownerId: String) = submissionController.state(ownerId).value.isFrozen
+    fun isFrozen(ownerId: String) = submissionController.snapshot(ownerId).isFrozen
 
     fun configurePdf(attachment: SelectedAttachment, selectedPages: Set<Int>) {
         composer.showPdfPageDialog = false

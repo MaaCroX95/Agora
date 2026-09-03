@@ -39,14 +39,14 @@ class ConversationLifecycleControllerTest {
         }
 
         fixture.controller.delete("conversation")
-        assertEquals(listOf("stop"), fixture.events)
+        assertTrue(fixture.events.isEmpty())
         runCurrent()
 
         assertEquals(
             listOf(
+                "lock-start",
                 "stop",
                 "stop-loop",
-                "lock-start",
                 "delete",
                 "lock-end",
                 "remove",
@@ -66,9 +66,25 @@ class ConversationLifecycleControllerTest {
         fixture.controller.delete("conversation")
         runCurrent()
 
-        assertEquals(listOf("stop-loop", "lock-start", "delete", "lock-end", "remove"), fixture.events)
+        assertEquals(listOf("lock-start", "stop-loop", "delete", "lock-end", "remove"), fixture.events)
         assertTrue("stop" !in fixture.events)
         assertTrue(fixture.events.none { it.startsWith("settle:") })
+    }
+
+    @Test
+    fun selectionChangeBeforeFinalLockDoesNotStopTheNewVisibleConversation() = runTest {
+        val fixture = Fixture(this)
+        coEvery { fixture.conversations.deleteConversation("conversation") } answers {
+            fixture.events += "delete"
+        }
+        fixture.onLockStart = { fixture.currentConversationId.value = "other" }
+
+        fixture.controller.delete("conversation")
+        runCurrent()
+
+        assertTrue("stop" !in fixture.events)
+        assertTrue(fixture.events.none { it.startsWith("settle:") })
+        assertTrue("delete" in fixture.events)
     }
 
     @Test
@@ -112,8 +128,7 @@ class ConversationLifecycleControllerTest {
         fixture.controller.delete("conversation")
         runCurrent()
 
-        assertEquals(1, failures.size)
-        assertEquals("delete failed", failures.single().message)
+        assertTrue(failures.isEmpty())
         assertTrue("remove" !in fixture.events)
         assertTrue(fixture.events.none { it.startsWith("settle:") })
     }
@@ -128,6 +143,7 @@ class ConversationLifecycleControllerTest {
         val currentConversationId = MutableStateFlow(currentConversationId)
         val events = mutableListOf<String>()
         var onRemove: () -> Unit = {}
+        var onLockStart: () -> Unit = {}
         private val dispatcher = StandardTestDispatcher(testScope.testScheduler)
         val controller = ConversationLifecycleController(
             currentConversationId = this.currentConversationId,
@@ -136,6 +152,7 @@ class ConversationLifecycleControllerTest {
             stopLoop = { events += "stop-loop" },
             withConversationLock = { _, block ->
                 events += "lock-start"
+                onLockStart()
                 block()
                 events += "lock-end"
             },

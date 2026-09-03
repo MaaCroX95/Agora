@@ -18,7 +18,7 @@ class ConversationSettingsTransferSourceContractTest {
             dao.indexOf("\n    @Transaction", transactionStart + 1),
         )
 
-        val deleteNewChat = transaction.indexOf("deleteNewChatPersist()")
+        val deleteNewChat = transaction.indexOf("deleteNewChatPersistIfMatches(")
         val insertConversation = transaction.indexOf("upsertConversation(")
         val insertTransfer = transaction.indexOf("upsertConversationSettingsTransfer(")
         val createRunGraph = transaction.indexOf("return createRunWithMessages(")
@@ -27,6 +27,35 @@ class ConversationSettingsTransferSourceContractTest {
         assertTrue(insertTransfer > insertConversation)
         assertTrue(createRunGraph > insertTransfer)
         assertTrue(transaction.contains("settingsJson = conversationSettingsJson"))
+        assertTrue(transaction.contains("expectedNewChatPersist?.let"))
+    }
+
+    @Test
+    fun firstSendConsumesOnlyTheExactTapTimeNewChatWorkspace() {
+        val generation = sourceFile(
+            "app/src/main/java/com/newoether/agora/viewmodel/MessageGenerationController.kt",
+        ).replace("\r\n", "\n")
+        val capture = generation.substringAfter("internal fun captureForegroundSendTarget")
+            .substringBefore("internal suspend fun prepareForegroundSend")
+        val prepare = generation.substringAfter("internal suspend fun prepareForegroundSend")
+            .substringBefore("internal suspend fun sendMessage")
+
+        assertTrue(capture.contains("captureNewChatWorkspace()"))
+        assertTrue(prepare.contains("target.newChatWorkspace?.awaitCaptured()"))
+        assertTrue(prepare.contains("(workspace?.persisted ?: NewChatPersistEntity()).copy("))
+        assertTrue(prepare.contains("draftText = composer.text"))
+        assertTrue(prepare.contains("draftAttachments = composer.attachments"))
+
+        val newChatDao = sourceFile(
+            "app/src/main/java/com/newoether/agora/data/local/NewChatPersistDao.kt",
+        )
+        listOf(
+            "modelId IS :modelId",
+            "systemPromptId IS :systemPromptId",
+            "conversationSettingsJson IS :conversationSettingsJson",
+            "draftText = :draftText",
+            "draftAttachments IS :draftAttachments",
+        ).forEach { predicate -> assertTrue(newChatDao.contains(predicate)) }
     }
 
     @Test

@@ -1242,4 +1242,7 @@
     <string name="learn_more">瞭解更多...</string>
     <string name="local_model_limitations_title">本地模型的限制</string>
     <string name="local_model_limitations_body">本地模型受行動裝置可用記憶體限制，上下文大小是主要限制之一。上下文通常包含系統提示詞、工具或函式定義以及技能。若要減少初始上下文用量，請開啟模型選擇器旁的三點選單並啟用低上下文模式。</string>
+    <string name="delete_conversation_title">刪除對話？</string>
+    <string name="delete_conversation_from_message_confirm">刪除此訊息將移除整個對話。此操作無法復原。</string>
+    <string name="composer_clear_failed">訊息已傳送，但無法清除草稿。</string>
 </resources>

@@ -133,9 +133,12 @@ internal fun ChatAppDialogHost(
     state.deleteConversationId?.let { id ->
         ChatDeleteConfirmDialog(
             onConfirm = {
-                haptics.destructiveConfirmed()
-                viewModel.deleteConversation(id)
-                state.dismissDelete()
+                viewModel.deleteConversation(id) { deleted ->
+                    if (deleted) {
+                        haptics.destructiveConfirmed()
+                        state.dismissDelete()
+                    }
+                }
             },
             onDismiss = state::dismissDelete,
         )

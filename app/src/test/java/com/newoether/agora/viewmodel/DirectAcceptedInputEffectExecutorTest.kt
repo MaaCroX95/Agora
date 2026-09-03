@@ -4,6 +4,7 @@ import com.newoether.agora.automation.ConversationExecutionCoordinator
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.local.MessageEntity
+import com.newoether.agora.data.local.NewChatPersistEntity
 import com.newoether.agora.data.local.RunEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.SettingsRepository
@@ -160,7 +161,8 @@ class DirectAcceptedInputEffectExecutorTest {
         val fixture = Fixture()
         val state = ConversationGenerationState(CONVERSATION_ID)
         val effect = claimDirectEffect(state)
-        coEvery { fixture.graphWriter.commit(any(), any()) } coAnswers {
+        val graphRequest = io.mockk.slot<AcceptedInputGraphWriter.Request>()
+        coEvery { fixture.graphWriter.commit(capture(graphRequest), any()) } coAnswers {
             fixture.events += "room-commit"
             fixture.commit
         }
@@ -172,6 +174,7 @@ class DirectAcceptedInputEffectExecutorTest {
                 wasNewChat = true,
                 newConversation = ChatEntity(CONVERSATION_ID, "New chat"),
                 newConversationSettings = CAPTURED_SETTINGS,
+                newChatPersistSnapshot = NEW_CHAT_PERSIST,
             ),
             state,
         )
@@ -184,12 +187,13 @@ class DirectAcceptedInputEffectExecutorTest {
         )
         val acceptanceIndex = fixture.events.indexOf("accept-callback:$USER_ID")
         val publicationIndex = fixture.events.indexOf("publish-new:provider:model")
-        val clearIndex = fixture.events.indexOf("clear-new-chat")
+        val presentationIndex = fixture.events.indexOf("accept-event:$USER_ID")
         assertTrue(commitIndex >= 0)
         assertTrue(transferIndex > commitIndex)
         assertTrue(acceptanceIndex > transferIndex)
         assertTrue(publicationIndex > acceptanceIndex)
-        assertTrue(clearIndex > publicationIndex)
+        assertTrue(presentationIndex > publicationIndex)
+        assertEquals(NEW_CHAT_PERSIST, graphRequest.captured.newChatPersistSnapshot)
         state.dispose()
         Unit
     }
@@ -225,7 +229,7 @@ class DirectAcceptedInputEffectExecutorTest {
         assertTrue(fixture.events.contains("apply-committed:$CONVERSATION_ID"))
         assertTrue(fixture.events.contains("accept-callback:$USER_ID"))
         assertTrue(fixture.events.contains("publish-new:provider:model"))
-        assertTrue(fixture.events.contains("clear-new-chat"))
+        assertTrue(fixture.events.contains("accept-event:$USER_ID"))
         assertTrue(fixture.events.contains("bound-launch"))
         coVerify(exactly = 0) {
             fixture.terminalSettlement.failGenerationSetup(any(), any(), any(), any(), any(), any())
@@ -263,7 +267,7 @@ class DirectAcceptedInputEffectExecutorTest {
     }
 
     @Test
-    fun backgroundNewChatAcceptanceClearsWorkspaceWithoutSelectingOrScrolling() = runBlocking {
+    fun staleNewChatAcceptanceDoesNotPublishPresentationOrScroll() = runBlocking {
         val fixture = Fixture(
             selectNewConversation = false,
             conversationOpen = false,
@@ -289,7 +293,7 @@ class DirectAcceptedInputEffectExecutorTest {
         execution.job?.join()
 
         assertTrue(fixture.events.contains("publish-new:provider:model"))
-        assertTrue(fixture.events.contains("clear-new-chat"))
+        assertTrue(fixture.events.none { it.startsWith("accept-event:") })
         assertTrue(fixture.events.none { it.startsWith("scroll:") })
         state.dispose()
         Unit
@@ -350,9 +354,6 @@ class DirectAcceptedInputEffectExecutorTest {
                     events += "apply-committed:$conversationId"
                     applyCommittedError?.let { throw it }
                 },
-                clearCommittedNewChatWorkspace = {
-                    events += "clear-new-chat"
-                },
                 publishNewConversation = { _, modelId, _ ->
                     events += "publish-new:$modelId"
                     selectNewConversation
@@ -371,6 +372,7 @@ class DirectAcceptedInputEffectExecutorTest {
             wasNewChat: Boolean = false,
             newConversation: ChatEntity? = null,
             newConversationSettings: ConversationSettings? = null,
+            newChatPersistSnapshot: NewChatPersistEntity? = null,
             touchConversationOnAdmission: Boolean = true,
             generationSnapshot: GenerationAdmissionSnapshot? = null,
         ) = DirectAcceptedInputRequest(
@@ -383,6 +385,7 @@ class DirectAcceptedInputEffectExecutorTest {
             requestKind = "chat",
             touchConversationOnAdmission = touchConversationOnAdmission,
             newConversationSettings = newConversationSettings,
+            newChatPersistSnapshot = newChatPersistSnapshot,
             alreadyHoldsLock = false,
             requestScroll = { _, messageId -> events += "scroll:$messageId" },
             onAccepted = { events += "accept-callback:${it.messageId}" },
@@ -399,6 +402,10 @@ class DirectAcceptedInputEffectExecutorTest {
         const val MODEL_ID = "model"
         const val ENTRY_ID = 7L
         val CAPTURED_SETTINGS = ConversationSettings(temperature = 0.25f)
+        val NEW_CHAT_PERSIST = NewChatPersistEntity(
+            modelId = "provider:model",
+            draftText = "hello",
+        )
         val PAYLOAD = MessagePayloadBuilder.MessagePayload(
             allImages = listOf("image"),
             attachmentMeta = null,

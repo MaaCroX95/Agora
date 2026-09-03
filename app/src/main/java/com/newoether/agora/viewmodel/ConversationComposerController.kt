@@ -21,16 +21,6 @@ import kotlinx.coroutines.yield
 
 private const val MAX_GLOBAL_ATTACHMENT_PROCESSING = 2
 private const val MAX_OWNER_ATTACHMENT_PROCESSING = 1
-
-internal data class ConversationComposerSnapshot(
-    val text: String = "",
-    val attachments: List<SelectedAttachment> = emptyList(),
-    val pdfPreviewProgress: Map<String, Pair<Int, Int>> = emptyMap(),
-    val revision: Long = 0L,
-    val textProjectionVersion: Long = 0L,
-    val loaded: Boolean = false,
-)
-
 /** Owns durable attachment import sessions independently for every composer draft owner. */
 internal class ConversationComposerController(
     private val scope: CoroutineScope,
@@ -143,19 +133,25 @@ internal class ConversationComposerController(
                 if (session.state.value.attachments.map { it.localId } != attachmentIds) {
                     return@withLock null
                 }
-                val current = session.state.value.copy(text = text)
+                val current = session.state.value
+                val revisionBeforeFreeze = session.durable.revision
                 val result = drafts.persist(
-                    ownerId, session.durable.revision, text, session.durable.attachments,
+                    ownerId, revisionBeforeFreeze, current.text, session.durable.attachments,
                 )
                 if (!result.succeeded) return@withLock null
                 if (!result.matchesRequested) {
                     reloadAndMergeLocked(ownerId, session)
                     return@withLock null
                 }
-                session.durable = session.durable.copy(text = text, revision = result.revision)
+                session.durable = session.durable.copy(text = current.text, revision = result.revision)
                 session.state.value = current.copy(revision = result.revision)
                 session.frozenSubmissionId = requestId
-                session.state.value
+                // Preparation uses tap-time text. If newer text was already visible, accepted clear
+                // compares against the pre-persist revision and therefore preserves that edit.
+                session.state.value.copy(
+                    text = text,
+                    revision = if (current.text != text) revisionBeforeFreeze else result.revision,
+                )
             }
         }
     }
@@ -246,7 +242,9 @@ internal class ConversationComposerController(
                     session = session,
                     attachmentId = attachment.localId,
                     generation = generation,
-                    job = processingJob(ownerId, session, attachment, generation),
+                    job = if (attachment.localPath.isNullOrBlank()) {
+                        stagingJob(ownerId, session, attachment, generation)
+                    } else processingJob(ownerId, session, attachment, generation),
                 )
             }
         session.state.value
@@ -279,7 +277,6 @@ internal class ConversationComposerController(
     suspend fun updateText(ownerId: String, text: String) = withSession(ownerId) { session ->
         ensureLoaded(ownerId, session)
         session.mutex.withLock {
-            if (session.frozenSubmissionId != null) return@withLock
             session.state.value = session.state.value.copy(text = text)
         }
     }
@@ -289,7 +286,6 @@ internal class ConversationComposerController(
             ensureLoaded(ownerId, session)
             withContext(NonCancellable) {
                 session.mutex.withLock {
-                    if (session.frozenSubmissionId != null) return@withLock false
                     val current = session.state.value
                     if (current.text != text) return@withLock false
                     val result = drafts.persist(
@@ -311,9 +307,7 @@ internal class ConversationComposerController(
         }
 
     suspend fun configurePdf(
-        ownerId: String,
-        attachmentId: String,
-        selectedPages: Set<Int>,
+        ownerId: String, attachmentId: String, selectedPages: Set<Int>,
     ): Boolean = configureAttachment(ownerId, attachmentId, expectedType = "pdf") { attachment ->
         attachment.copy(selectedPages = selectedPages)
     }
@@ -326,47 +320,58 @@ internal class ConversationComposerController(
     ): Boolean = configureAttachment(ownerId, attachmentId, expectedType = "video") { attachment ->
         attachment.copy(frameCount = frameCount, sliceIntervalMs = intervalMs)
     }
-
     suspend fun clearAccepted(
-        ownerId: String,
-        reclaimAttachments: Boolean = true,
-        submissionId: Long? = null,
-    ): DraftClearResult =
-        withSession(ownerId) { session ->
-            ensureLoaded(ownerId, session)
-            withContext(NonCancellable) {
-                session.mutex.withLock {
-                    if (
-                        session.frozenSubmissionId != null &&
-                        session.frozenSubmissionId != submissionId
-                    ) {
-                        return@withLock DraftClearResult(
-                            emptyList(),
-                            session.durable.revision,
-                            succeeded = false,
-                        )
+        ownerId: String, reclaimAttachments: Boolean = true, submissionId: Long? = null,
+        acceptedRevision: Long? = null, acceptedText: String? = null,
+        acceptedAttachmentIds: Set<String>? = null,
+        expectedWorkspace: com.newoether.agora.data.local.NewChatPersistEntity? = null,
+    ): DraftClearResult = withSession(ownerId) { session ->
+        ensureLoaded(ownerId, session)
+        withContext(NonCancellable) {
+            session.mutex.withLock {
+                fun failure() = DraftClearResult(
+                    emptyList(), session.durable.revision, false, session.state.value.text,
+                    session.state.value.attachments,
+                )
+                if (session.frozenSubmissionId != null &&
+                    session.frozenSubmissionId != submissionId) return@withLock failure()
+                val current = session.state.value
+                if (current.text != session.durable.text) {
+                    val persisted = drafts.persist(
+                        ownerId, session.durable.revision, current.text,
+                        session.durable.attachments,
+                    )
+                    if (!persisted.succeeded || !persisted.matchesRequested) {
+                        if (persisted.succeeded) reloadAndMergeLocked(ownerId, session)
+                        return@withLock failure()
                     }
-                    val result = drafts.clearAccepted(
-                        conversationId = ownerId,
-                        reclaimAttachments = reclaimAttachments,
-                    )
-                    if (!result.succeeded) return@withLock result
-                    session.jobs.values.forEach(Job::cancel)
-                    session.jobs.clear()
-                    session.generations.clear()
-                    session.transientAttachmentIds.clear()
-                    val nextTextProjectionVersion = session.state.value.textProjectionVersion + 1L
-                    session.durable = ConversationComposerSnapshot(
-                        revision = result.revision,
-                        textProjectionVersion = nextTextProjectionVersion,
-                        loaded = true,
-                    )
-                    session.state.value = session.durable
-                    result
+                    session.durable = session.durable.copy(text = current.text, revision = persisted.revision)
+                    session.state.value = current.copy(revision = persisted.revision)
                 }
+                val result = drafts.clearAccepted(
+                    ownerId, reclaimAttachments, acceptedRevision, acceptedText,
+                    acceptedAttachmentIds, expectedWorkspace,
+                )
+                if (!result.succeeded) return@withLock result
+                session.jobs.values.forEach(Job::cancel)
+                session.jobs.clear()
+                session.generations.clear()
+                session.transientAttachmentIds.clear()
+                val projectionVersion = session.state.value.textProjectionVersion +
+                    if (session.state.value.text != result.remainingText) 1L else 0L
+                session.durable = ConversationComposerSnapshot(
+                    text = result.remainingText,
+                    attachments = result.remainingAttachments,
+                    revision = result.revision,
+                    textProjectionVersion = projectionVersion,
+                    textProjectionExpectedText = acceptedText,
+                    loaded = true,
+                )
+                session.state.value = session.durable
+                result
             }
         }
-
+    }
     suspend fun retry(ownerId: String, attachmentId: String): Boolean =
         withSession(ownerId) { session ->
             ensureLoaded(ownerId, session)

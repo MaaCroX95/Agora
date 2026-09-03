@@ -780,6 +780,8 @@
     <string name="delete_chat_confirm">Are you sure you want to delete this conversation? This action cannot be undone.</string>
     <string name="delete_message_title">Delete Message?</string>
     <string name="delete_message_confirm">This message and all follow-up replies will be permanently removed.</string>
+    <string name="delete_conversation_title">Delete Conversation?</string>
+    <string name="delete_conversation_from_message_confirm">Deleting this message will remove the entire conversation. This action cannot be undone.</string>
     <string name="delete_compact_message_title">Delete compact message?</string>
     <string name="delete_compact_message_confirm">Only this compact message will be deleted.</string>
     <string name="recompact">Recompact</string>
@@ -974,6 +976,7 @@
     <string name="all_messages_cached">All %1$d messages cached.</string>
     <string name="cached_partial_failed">Cached %1$d of %2$d. %3$d failed.</string>
     <string name="retry">Retry</string>
+    <string name="composer_clear_failed">Message sent, but the draft could not be cleared.</string>
     <string name="parse_error">Parse error</string>
     <string name="unknown_error">Unknown error</string>
     <string name="could_not_read_file">Could not read file</string>

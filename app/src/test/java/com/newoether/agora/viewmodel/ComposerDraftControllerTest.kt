@@ -2,6 +2,7 @@ package com.newoether.agora.viewmodel
 
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.repository.ConversationRepository
+import com.newoether.agora.model.AttachmentImportState
 import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.util.DebugLog
 import io.mockk.Runs
@@ -196,6 +197,75 @@ class ComposerDraftControllerTest {
         }
 
     @Test
+    fun `legacy attachments without import state are upgraded instead of silently ready`() =
+        runTest {
+            val repository = mockk<ConversationRepository>()
+            val raw = """[
+                {"localId":"image","uri":"content://legacy/image","type":"image"},
+                {"localId":"video","uri":"content://legacy/video","type":"video","localPath":"/private/video"},
+                {"localId":"pdf","uri":"content://legacy/pdf","type":"pdf","localPath":"/private/pdf"},
+                {"localId":"file","uri":"content://legacy/file","type":"file","localPath":"/private/file"}
+            ]""".trimIndent()
+            coEvery { repository.getConversation(CONVERSATION_ID) } returns ChatEntity(
+                id = CONVERSATION_ID,
+                title = "Conversation",
+                draftText = "legacy",
+                draftAttachments = raw,
+            )
+            coEvery { repository.updateDraft(any(), any(), any()) } returns Unit
+
+            val loaded = ComposerDraftController(repository).load(CONVERSATION_ID)
+
+            assertEquals(1L, loaded.revision)
+            assertEquals(
+                listOf("image", "video", "pdf", "file"),
+                loaded.attachments.map(SelectedAttachment::localId),
+            )
+            assertTrue(
+                loaded.attachments.all {
+                    it.importState == AttachmentImportState.PROCESSING
+                },
+            )
+            coVerify(exactly = 1) {
+                repository.updateDraft(
+                    CONVERSATION_ID,
+                    "legacy",
+                    Json.encodeToString(loaded.attachments),
+                )
+            }
+        }
+
+    @Test
+    fun `accepted clear preserves text persisted after the frozen revision`() = runTest {
+        val repository = mockk<ConversationRepository>()
+        coEvery { repository.getConversation(CONVERSATION_ID) } returns chat(text = "sent")
+        coEvery { repository.updateDraft(any(), any(), any()) } returns Unit
+        val controller = ComposerDraftController(repository)
+        val frozen = controller.load(CONVERSATION_ID)
+        val edited = controller.persist(
+            CONVERSATION_ID,
+            frozen.revision,
+            text = "next draft",
+            attachments = emptyList(),
+        )
+
+        val cleared = controller.clearAccepted(
+            conversationId = CONVERSATION_ID,
+            acceptedRevision = frozen.revision,
+            acceptedText = "sent",
+            acceptedAttachmentIds = emptySet(),
+        )
+
+        assertEquals(1L, edited.revision)
+        assertEquals(2L, cleared.revision)
+        assertEquals("next draft", cleared.remainingText)
+        assertTrue(cleared.remainingAttachments.isEmpty())
+        coVerify(exactly = 1) {
+            repository.updateDraft(CONVERSATION_ID, "next draft", null)
+        }
+    }
+
+    @Test
     fun `failed durable write preserves revision and does not reclaim attachments`() = runTest {
         val repository = mockk<ConversationRepository>()
         val attachment = attachment("candidate")
@@ -241,6 +311,7 @@ class ComposerDraftControllerTest {
         type = "file",
         fileName = "$id.txt",
         localPath = "/private/$id.txt",
+        preparedText = "text:$id",
     )
 
     private companion object {

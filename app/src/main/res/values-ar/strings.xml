@@ -1234,4 +1234,7 @@
     <string name="learn_more">معرفة المزيد...</string>
     <string name="local_model_limitations_title">قيود النماذج المحلية</string>
     <string name="local_model_limitations_body">تكون النماذج المحلية محدودة بالذاكرة المتاحة على الأجهزة المحمولة. ويُعد حجم السياق أحد القيود الرئيسية. غالبًا ما يتضمن السياق مطالبة النظام وتعريفات الأدوات أو الدوال والمهارات. لتقليل استخدام السياق الأولي، افتح قائمة النقاط الثلاث بجوار محدد النموذج وفعّل وضع السياق المنخفض.</string>
+    <string name="delete_conversation_title">حذف المحادثة؟</string>
+    <string name="delete_conversation_from_message_confirm">سيؤدي حذف هذه الرسالة إلى إزالة المحادثة بالكامل. لا يمكن التراجع عن هذا الإجراء.</string>
+    <string name="composer_clear_failed">تم إرسال الرسالة، ولكن تعذر مسح المسودة.</string>
 </resources>

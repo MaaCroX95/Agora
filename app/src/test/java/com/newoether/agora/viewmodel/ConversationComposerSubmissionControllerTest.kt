@@ -1,5 +1,7 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.data.local.ChatEntity
+import com.newoether.agora.data.local.NewChatPersistEntity
 import com.newoether.agora.model.AttachmentImportState
 import com.newoether.agora.model.AttachmentStorage
 import com.newoether.agora.model.SelectedAttachment
@@ -14,10 +16,14 @@ import io.mockk.mockkObject
 import io.mockk.unmockkObject
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -104,7 +110,7 @@ class ConversationComposerSubmissionControllerTest {
             ),
             fixture.events,
         )
-        coVerify(exactly = 0) { fixture.composers.clearAccepted(any(), any(), any()) }
+        coVerify(exactly = 0) { fixture.composers.clearAccepted(any(), any(), any(), any(), any(), any(), any()) }
         assertFalse(fixture.controller.cancelWaiting("owner-a"))
     }
 
@@ -125,7 +131,7 @@ class ConversationComposerSubmissionControllerTest {
         assertEquals(listOf("b", "a"), fixture.sentAttachments.map(SelectedAttachment::localId))
         assertEquals(AttachmentStorage.LOCAL_SANDBOX_RUNTIME, fixture.sentAttachments.first().storage)
         assertEquals(ComposerSubmissionPhase.IDLE, fixture.controller.state("owner").value.phase)
-        coVerify(exactly = 0) { fixture.composers.clearAccepted(any(), any(), any()) }
+        coVerify(exactly = 0) { fixture.composers.clearAccepted(any(), any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -152,7 +158,7 @@ class ConversationComposerSubmissionControllerTest {
 
         assertEquals(0, fixture.sendCount)
         assertEquals(ComposerSubmissionPhase.IDLE, fixture.controller.state("owner").value.phase)
-        coVerify(exactly = 0) { fixture.composers.clearAccepted(any(), any(), any()) }
+        coVerify(exactly = 0) { fixture.composers.clearAccepted(any(), any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -166,7 +172,7 @@ class ConversationComposerSubmissionControllerTest {
         failed.controller.submit("owner-b", "text", emptyList())
         runCurrent()
         assertEquals(ComposerSubmissionPhase.IDLE, failed.controller.state("owner-b").value.phase)
-        coVerify(exactly = 0) { failed.composers.clearAccepted(any(), any(), any()) }
+        coVerify(exactly = 0) { failed.composers.clearAccepted(any(), any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -197,7 +203,30 @@ class ConversationComposerSubmissionControllerTest {
             fixture.events,
         )
         assertEquals(1L, fixture.controller.state("draft-owner").value.acceptedVersion)
-        coVerify(exactly = 0) { fixture.composers.clearAccepted("accepted-conversation", any(), any()) }
+        assertEquals(1L, fixture.controller.state("draft-owner").value.directAcceptedVersion)
+        coVerify(exactly = 0) { fixture.composers.clearAccepted("accepted-conversation", any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun directAcceptancePublishesOneStableComposerEffectAfterClear() = runTest {
+        val fixture = Fixture(
+            this,
+            acceptance = SendAcceptance.Direct("message", "conversation"),
+        )
+        val effect = async { fixture.controller.directAcceptedEffects.first() }
+        runCurrent()
+
+        fixture.controller.submit("conversation", "text", emptyList())
+        runCurrent()
+
+        assertEquals(
+            DirectAcceptedComposerEffect(
+                ownerId = "conversation",
+                conversationId = "conversation",
+                newChatEntryId = null,
+            ),
+            effect.await(),
+        )
     }
 
     @Test
@@ -214,6 +243,7 @@ class ConversationComposerSubmissionControllerTest {
         runCurrent()
 
         assertEquals(1L, fixture.controller.state("conversation").value.acceptedVersion)
+        assertEquals(0L, fixture.controller.state("conversation").value.directAcceptedVersion)
         coVerify(exactly = 0) { fixture.drafts.reclaimAttachments(any()) }
     }
 
@@ -234,6 +264,42 @@ class ConversationComposerSubmissionControllerTest {
     }
 
     @Test
+    fun newChatAcceptanceMatchesTheSettledAttachmentDraftState() {
+        val pending = attachment("image", state = AttachmentImportState.PROCESSING)
+        val settled = attachment("image", state = AttachmentImportState.READY)
+        val target = ForegroundSendTarget(
+            ownerId = NEW_CHAT_WORKSPACE_ID,
+            conversationId = "conversation",
+            runId = "run",
+            wasNewChat = true,
+            newChatEntryId = 7L,
+            modelId = "provider:model",
+        )
+        val admission = ForegroundSendAdmission(
+            target = target,
+            generationSnapshot = testGenerationAdmissionSnapshot(
+                conversationId = target.conversationId,
+                runId = target.runId,
+            ),
+            newConversation = ChatEntity(target.conversationId, "New Chat"),
+            newConversationSettings = null,
+            newChatPersistSnapshot = NewChatPersistEntity(
+                modelId = target.modelId,
+                draftText = "sent",
+                draftAttachments = Json.encodeToString(listOf(pending)),
+            ),
+        )
+
+        val finalized = admission.withSettledComposerDraft("sent", listOf(settled))
+
+        assertEquals(
+            Json.encodeToString(listOf(settled)),
+            finalized.newChatPersistSnapshot?.draftAttachments,
+        )
+        assertEquals(target.modelId, finalized.newChatPersistSnapshot?.modelId)
+    }
+
+    @Test
     fun duplicateTapIsRejectedButDifferentOwnersRemainIndependent() = runTest {
         val gate = CompletableDeferred<Unit>()
         val fixture = Fixture(this, awaitGate = gate)
@@ -251,7 +317,7 @@ class ConversationComposerSubmissionControllerTest {
     }
 
     @Test
-    fun clearFailurePreservesDraftAndReturnsToIdle() = runTest {
+    fun clearFailureKeepsAcceptedRequestNonResendableUntilClearOnlyRetrySucceeds() = runTest {
         val fixture = Fixture(
             this,
             acceptance = SendAcceptance.Direct("message", "conversation"),
@@ -261,8 +327,21 @@ class ConversationComposerSubmissionControllerTest {
         fixture.controller.submit("owner", "text", emptyList())
         runCurrent()
 
-        assertEquals(ComposerSubmissionPhase.IDLE, fixture.controller.state("owner").value.phase)
+        assertEquals(
+            ComposerSubmissionPhase.ACCEPTED_PENDING_CLEAR,
+            fixture.controller.state("owner").value.phase,
+        )
+        assertFalse(fixture.controller.submit("owner", "text", emptyList()))
+        assertEquals(1, fixture.sendCount)
         assertEquals(0L, fixture.controller.state("owner").value.acceptedVersion)
+
+        fixture.clearSucceeded = true
+        assertTrue(fixture.controller.retryAcceptedClear("owner"))
+        runCurrent()
+
+        assertEquals(ComposerSubmissionPhase.IDLE, fixture.controller.state("owner").value.phase)
+        assertEquals(1L, fixture.controller.state("owner").value.acceptedVersion)
+        assertEquals(1, fixture.sendCount)
         coVerify(exactly = 0) { fixture.drafts.reclaimAttachments(any()) }
     }
 
@@ -289,7 +368,25 @@ class ConversationComposerSubmissionControllerTest {
         runCurrent()
 
         assertEquals(1L, fixture.controller.state("owner").value.acceptedVersion)
-        coVerify(exactly = 1) { fixture.composers.clearAccepted("owner", false, 1L) }
+        coVerify(exactly = 1) { fixture.composers.clearAccepted("owner", false, 1L, any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun releasedUiOwnerIsEvictedAfterItsSubmissionSettles() = runTest {
+        val fixture = Fixture(
+            this,
+            acceptance = SendAcceptance.Direct("message", "conversation"),
+        )
+        val observed = fixture.controller.observeState("owner")
+
+        fixture.controller.submit("owner", "text", emptyList())
+        runCurrent()
+        assertEquals(1L, observed.value.acceptedVersion)
+
+        fixture.controller.releaseState("owner")
+
+        assertEquals(0L, fixture.controller.snapshot("owner").acceptedVersion)
+        assertFalse(fixture.controller.isFrozen("owner"))
     }
 
     @Test
@@ -304,7 +401,7 @@ class ConversationComposerSubmissionControllerTest {
         runCurrent()
 
         assertEquals(1L, fixture.controller.state("owner").value.acceptedVersion)
-        coVerify(exactly = 1) { fixture.composers.clearAccepted("owner", false, 1L) }
+        coVerify(exactly = 1) { fixture.composers.clearAccepted("owner", false, 1L, any(), any(), any(), any()) }
     }
 
     private class Fixture(
@@ -316,7 +413,7 @@ class ConversationComposerSubmissionControllerTest {
         private val postAcceptanceFailure: Throwable? = null,
         private val acceptanceCallbacks: Int = 1,
         private val clearedAttachments: List<SelectedAttachment> = emptyList(),
-        private val clearSucceeded: Boolean = true,
+        var clearSucceeded: Boolean = true,
         private val captureAllowed: Boolean = true,
         private val prepareAdmission: Boolean = true,
         eagerScope: Boolean = false,
@@ -382,6 +479,7 @@ class ConversationComposerSubmissionControllerTest {
                 acceptance
             },
             ioDispatcher = dispatcher,
+            presentationDispatcher = dispatcher,
         )
 
         init {
@@ -408,7 +506,9 @@ class ConversationComposerSubmissionControllerTest {
             coEvery { composers.release(any()) } answers {
                 events += "release:${firstArg<String>()}"
             }
-            coEvery { composers.clearAccepted(any(), false, any()) } answers {
+            coEvery {
+                composers.clearAccepted(any(), false, any(), any(), any(), any(), any())
+            } answers {
                 events += "clear:${firstArg<String>()}"
                 DraftClearResult(
                     attachments = clearedAttachments,

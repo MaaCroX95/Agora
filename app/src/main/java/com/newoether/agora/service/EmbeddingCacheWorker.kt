@@ -11,7 +11,6 @@ import com.newoether.agora.AgoraApplication
 import com.newoether.agora.api.EmbeddingClient
 import com.newoether.agora.api.LlamaEngine
 import com.newoether.agora.api.ProviderDefaults
-import com.newoether.agora.data.EmbeddingCacheLocks
 import com.newoether.agora.data.EmbeddingIndexer
 import com.newoether.agora.data.EmbeddingModelConfig
 import com.newoether.agora.data.EmbeddingModelType
@@ -28,7 +27,6 @@ import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 
@@ -47,9 +45,7 @@ class EmbeddingCacheWorker(
         val container = (applicationContext as AgoraApplication).awaitContainer()
             ?: return@withContext Result.retry()
 
-        EmbeddingCacheLocks.forModel(modelId).withLock {
-            cacheModel(modelId, container.database, container.settingsManager)
-        }
+        cacheModel(modelId, container.database, container.settingsManager)
     }
 
     internal suspend fun cacheModel(
@@ -171,7 +167,15 @@ class EmbeddingCacheWorker(
                 remoteConfig = resolveEmbeddingConfig(model, settingsManager)
                 embeddingConfigResolved = true
             }
-            if (!embedCandidates(model, remoteConfig, candidates, database)) complete = false
+            if (
+                !embedCandidates(
+                    model,
+                    remoteConfig,
+                    candidates,
+                    database,
+                    expectedLedgerRevision = expectedRevision,
+                )
+            ) complete = false
             yield()
         }
         if (!complete) return false
@@ -187,6 +191,7 @@ class EmbeddingCacheWorker(
         remoteConfig: Pair<String, String>?,
         candidates: List<Triple<Long?, String, IndexableMessage>>,
         database: ChatDatabase,
+        expectedLedgerRevision: Long? = null,
     ): Boolean {
         if (candidates.isEmpty()) return true
         val texts = candidates.map { (_, _, message) ->
@@ -218,6 +223,7 @@ class EmbeddingCacheWorker(
                     ),
                     expectedFingerprint = fingerprint,
                     expectedWorkRevision = workRevision,
+                    expectedLedgerRevision = expectedLedgerRevision,
                     completePendingWork = workRevision != null,
                     updatedAt = System.currentTimeMillis(),
                 )
@@ -269,7 +275,7 @@ class EmbeddingCacheWorker(
                 .build()
             workManager.enqueueUniqueWork(
                 workNameFor(modelId),
-                ExistingWorkPolicy.KEEP,
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
                 request,
             )
         }

@@ -1234,4 +1234,7 @@
     <string name="learn_more">詳細...</string>
     <string name="local_model_limitations_title">ローカルモデルの制限</string>
     <string name="local_model_limitations_body">ローカルモデルは、モバイル端末で利用できるメモリによって制限されます。コンテキストサイズは主な制約の一つです。コンテキストには通常、システムプロンプト、ツールまたは関数の定義、スキルが含まれます。初期コンテキストの使用量を減らすには、モデル選択の横にある3点メニューを開き、低コンテキストモードを有効にしてください。</string>
+    <string name="delete_conversation_title">会話を削除しますか？</string>
+    <string name="delete_conversation_from_message_confirm">このメッセージを削除すると、会話全体が削除されます。この操作は元に戻せません。</string>
+    <string name="composer_clear_failed">メッセージは送信されましたが、下書きを消去できませんでした。</string>
 </resources>

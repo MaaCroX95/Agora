@@ -19,7 +19,8 @@ class ApprovedFeatureSourceContractTest {
         assertFalse(rag.contains("init {\n        loadCacheCounts()"))
         assertTrue(rag.contains("fun startPostList()"))
         assertTrue(rag.contains("pendingRefreshModels = models"))
-        assertTrue(rag.contains("getEmbeddingCountsByModels(modelIds)"))
+        assertTrue(rag.contains("getEmbeddingCountsByModels(configuredIds.toList())"))
+        assertTrue(rag.contains("getSemanticLedgers(configuredIds.toList())"))
         assertTrue(rag.contains("getOrAdmitSemanticLedgerState"))
         assertTrue(rag.contains("getWorkInfosForUniqueWorkFlow("))
         assertTrue(rag.contains("EmbeddingCacheWorker.schedule(modelId, workManager)"))
@@ -123,6 +124,10 @@ class ApprovedFeatureSourceContractTest {
             root,
             "com/newoether/agora/viewmodel/ConversationComposerSubmissionController.kt",
         )
+        val directAcceptedEffect = source(
+            root,
+            "com/newoether/agora/ui/chat/DirectAcceptedComposerEffect.kt",
+        )
         val imageActions = source(
             root,
             "com/newoether/agora/ui/chat/ImageActions.kt",
@@ -169,6 +174,25 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(sendButton.contains("submissionController.submit("))
         assertTrue(sendButton.contains("text = textFieldState.text.toString()"))
         assertTrue(sendButton.contains("snapshot.attachments.map(SelectedAttachment::localId)"))
+        assertTrue(sendButton.contains("strokeWidth = 3.dp"))
+        assertTrue(sendButton.contains("targetState = icon"))
+        assertTrue(sendButton.contains("ComposerActionIcon.BUSY"))
+        assertTrue(sendButton.contains("enabled = isActionable"))
+        assertFalse(sendButton.contains("LocalSoftwareKeyboardController"))
+        assertTrue(directAcceptedEffect.contains("directAcceptedEffects.collect"))
+        assertTrue(directAcceptedEffect.contains("keyboardController?.hide()"))
+        assertTrue(
+            directAcceptedEffect.contains(
+                "viewModel.newChatEntryId.value == accepted.newChatEntryId",
+            ),
+        )
+        assertTrue(submission.contains("directAcceptedVersion = current.directAcceptedVersion +"))
+        assertTrue(submission.contains("if (request.accepted is SendAcceptance.Direct) 1L else 0L"))
+        assertTrue(composer.contains("submissionController.observeState(composerOwnerId)"))
+        assertTrue(composer.contains("submissionController.releaseState(composerOwnerId)"))
+        val textFieldBlock = composer.substringAfter("TextField(")
+            .substringBefore("placeholder =")
+        assertFalse(textFieldBlock.contains("enabled ="))
         assertTrue(submission.contains("composers.freezeSubmission("))
         assertTrue(submission.contains("composers.awaitProcessing("))
         assertTrue(submission.contains("SelectedAttachment::hasCanonicalReadyArtifact"))
@@ -890,11 +914,11 @@ class ApprovedFeatureSourceContractTest {
         val foregroundAdmission = generation
             .substringAfter("internal suspend fun prepareForegroundSend(")
             .substringBefore("internal suspend fun sendMessage(")
-        assertTrue(
-            foregroundAdmission.contains(
-                "if (target.wasNewChat) awaitNewChatWorkspace() else null",
-            ),
-        )
+        assertTrue(foregroundTargetCapture.contains("captureNewChatWorkspace()"))
+        assertTrue(foregroundAdmission.contains("target.newChatWorkspace?.awaitCaptured()"))
+        assertTrue(workspace.contains("fun captureNewChatSnapshot()"))
+        assertTrue(workspace.contains("newChatCommands.trySend(NewChatCommand.Read(completion))"))
+        assertTrue(foregroundAdmission.contains("draftText = composer.text"))
         assertTrue(foregroundAdmission.contains("modelId = target.modelId"))
         assertTrue(foregroundAdmission.contains("captureAdmissionSnapshot("))
         assertFalse(foregroundAdmission.contains("toSendAdmission"))

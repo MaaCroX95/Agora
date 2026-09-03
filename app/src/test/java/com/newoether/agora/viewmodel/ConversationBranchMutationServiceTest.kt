@@ -115,12 +115,13 @@ class ConversationBranchMutationServiceTest {
             messageId = "model",
             state = state,
             snapshot = listOf(chat("user", null, Participant.USER), chat("model", "user", Participant.MODEL)),
+            onResult = { events += "result:$it" },
         )
         advanceUntilIdle()
 
         assertEquals(1, previewCount)
         assertEquals(
-            listOf("start:true", "room-commit", "settle:user", "project:user"),
+            listOf("start:true", "room-commit", "settle:user", "project:user", "result:true"),
             events,
         )
         state.dispose()
@@ -133,15 +134,18 @@ class ConversationBranchMutationServiceTest {
         val state = ConversationGenerationState("conversation")
         requireNotNull(state.acquireForSend())
 
+        val results = mutableListOf<Boolean>()
         val previewCount = service(conversations, mutableListOf()).delete(
             conversationId = "conversation",
             messageId = "model",
             state = state,
             snapshot = listOf(chat("model", null, Participant.MODEL)),
+            onResult = results::add,
         )
         advanceUntilIdle()
 
         assertEquals(0, previewCount)
+        assertEquals(listOf(false), results)
         coVerify(exactly = 0) { conversations.getLiveRun(any()) }
         state.dispose()
         Unit
@@ -167,6 +171,7 @@ class ConversationBranchMutationServiceTest {
         onMutationSettling = { _, target -> events += "settle:$target" },
         onMutationFailed = onFailed,
         ioDispatcher = StandardTestDispatcher(testScheduler),
+        resultDispatcher = StandardTestDispatcher(testScheduler),
     )
 
     private fun entity(

@@ -97,9 +97,7 @@ fun ChatApp(
     val context = LocalContext.current
     val motionPolicy = LocalAgoraMotionPolicy.current
     ConversationShareEffect(viewModel, context)
-
     val drawerState = rememberChatDrawerState()
-
     val conversations by viewModel.conversations.collectAsState()
     // Defer value reads to the narrow composition regions that actually render messages. The
     // State objects themselves are stable, so stream snapshots no longer recompose all ChatApp.
@@ -194,6 +192,7 @@ fun ChatApp(
     SendAcceptedHapticBindingEffect(viewModel, haptics)
 
     var isExpanded by remember { mutableStateOf(false) }
+    BindDirectAcceptedComposerEffects(viewModel) { isExpanded = false }
     // Composer-expand spacer collapse (44dp → 0). An Animatable driven from an effect replaces the
     // former hand-rolled clock, which wrote animation state DURING composition (Compose forbids
     // that — it makes the frame's output depend on when it happened to be composed) and ticked on
@@ -602,7 +601,14 @@ fun ChatApp(
                                 onRecompact = { id ->
                                     viewModel.startContextRecompact(id)
                                 },
-                                onDelete = { id -> viewModel.deleteMessage(id) },
+                                onDelete = { id, result ->
+                                    viewModel.deleteMessage(id, result) > 0
+                                },
+                                onDeleteConversation = { expectedIds, result ->
+                                    currentConversationId?.let { id ->
+                                        viewModel.deleteConversation(id, expectedIds, result)
+                                    } ?: false
+                                },
                                 searchQuery = if (conversationSearchActive) {
                                     conversationSearchQuery
                                 } else {
@@ -717,7 +723,6 @@ fun ChatApp(
                             )
                         }
                     }
-
                     val fabElevation by animateDpAsState(
                         targetValue = if (showButton) 4.dp else 0.dp,
                         animationSpec = if (motionPolicy.allowSpatialTransitions) {
@@ -726,7 +731,6 @@ fun ChatApp(
                             snap()
                         }
                     )
-
                     AnimatedVisibility(
                         visible = showButton,
                         enter = if (motionPolicy.allowSpatialTransitions) {

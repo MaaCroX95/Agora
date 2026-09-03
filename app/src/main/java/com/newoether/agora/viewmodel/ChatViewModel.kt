@@ -712,9 +712,8 @@ class ChatViewModel(
             currentConversationId = currentConversationId,
             isNewChatMode = isNewChatMode,
             newChatEntryId = newChatEntryId,
-            awaitNewChatWorkspace = conversationWorkspaces::awaitNewChatWrites,
+            captureNewChatWorkspace = conversationWorkspaces::captureNewChatSnapshot,
             applyCommittedNewConversationState = conversationWorkspaces::applyCommittedNewConversationState,
-            clearCommittedNewChatWorkspace = conversationWorkspaces::clearCommittedNewChatWorkspace,
             currentActiveModel = currentActiveModel,
             messages = messages,
             onScrollToMessage = { id -> triggerScrollToMessage(id) },
@@ -765,6 +764,13 @@ class ChatViewModel(
             prepare = generationController::prepareForegroundSend,
             send = { admission, text, attachments, onAccepted ->
                 generationController.sendMessage(admission, text, attachments, onAccepted)
+            },
+            onAcceptedClearFailed = { _, retry ->
+                emitSnackbar(
+                    message = appContext.getString(R.string.composer_clear_failed),
+                    actionLabel = appContext.getString(R.string.retry),
+                    onAction = retry,
+                )
             },
         )
     }
@@ -888,7 +894,11 @@ class ChatViewModel(
 
     fun setActiveModel(model: String) = selectionController.setActiveModel(model)
 
-    fun deleteConversation(id: String): Boolean = conversationLifecycleController.delete(id)
+    fun deleteConversation(
+        id: String,
+        expectedMessageIds: Set<String>? = null,
+        onResult: (Boolean) -> Unit = {},
+    ): Boolean = conversationLifecycleController.delete(id, expectedMessageIds, onResult)
 
     fun isConversationDeleteLocked(id: String): Boolean =
         conversationComposerSubmission.isFrozen(id)
@@ -915,9 +925,15 @@ class ChatViewModel(
      * Attachments, embeddings, and branch selections are cleaned up.
      * Returns the count of deleted messages (for the confirmation dialog).
      */
-    fun deleteMessage(messageId: String): Int {
-        if (isSwitching.value) return 0
-        return generationController.deleteMessage(messageId)
+    fun deleteMessage(
+        messageId: String,
+        onResult: ((Boolean) -> Unit)? = null,
+    ): Int {
+        if (isSwitching.value) {
+            onResult?.invoke(false)
+            return 0
+        }
+        return generationController.deleteMessage(messageId, onResult)
     }
 
     private val currentRuntimeFacade = CurrentConversationRuntimeFacade(

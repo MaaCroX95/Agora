@@ -1,6 +1,7 @@
 package com.newoether.agora.viewmodel
 
 import com.newoether.agora.data.repository.ConversationRepository
+import com.newoether.agora.model.AttachmentImportState
 import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.Dispatchers
@@ -10,6 +11,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 
 data class LoadedComposerDraft(
     val text: String,
@@ -27,6 +30,8 @@ data class DraftClearResult(
     val attachments: List<SelectedAttachment>,
     val revision: Long,
     val succeeded: Boolean,
+    val remainingText: String = "",
+    val remainingAttachments: List<SelectedAttachment> = emptyList(),
 )
 
 private data class PersistedComposerDraft(
@@ -165,25 +170,59 @@ internal class ComposerDraftController(
     suspend fun clearAccepted(
         conversationId: String,
         reclaimAttachments: Boolean = true,
+        acceptedRevision: Long? = null,
+        acceptedText: String? = null,
+        acceptedAttachmentIds: Set<String>? = null,
+        expectedWorkspace: com.newoether.agora.data.local.NewChatPersistEntity? = null,
     ): DraftClearResult =
         withContext(Dispatchers.IO + NonCancellable) {
             persistenceMutex.withLock {
                 try {
                     val current = persistedDrafts[conversationId] ?: read(conversationId)
-                    persistence.clearAcceptedDraft(
-                        ownerId = conversationId,
-                        reclaimAttachments = reclaimAttachments,
-                    )
+                    val preserveNewerText =
+                        acceptedRevision != null &&
+                            current.revision != acceptedRevision &&
+                            current.text != acceptedText
+                    val remainingText = current.text.takeIf { preserveNewerText }.orEmpty()
+                    val removedAttachments = if (acceptedAttachmentIds == null) {
+                        current.attachments
+                    } else {
+                        current.attachments.filter { it.localId in acceptedAttachmentIds }
+                    }
+                    val remainingAttachments = if (acceptedAttachmentIds == null) {
+                        emptyList()
+                    } else {
+                        current.attachments.filterNot { it.localId in acceptedAttachmentIds }
+                    }
+                    val attachmentsJson = remainingAttachments
+                        .takeIf(List<*>::isNotEmpty)
+                        ?.let { Json.encodeToString(it) }
+                    if (
+                        remainingText != current.text ||
+                        remainingAttachments != current.attachments
+                    ) {
+                        if (remainingText.isEmpty() && remainingAttachments.isEmpty()) {
+                            persistence.clearAcceptedDraft(
+                                ownerId = conversationId,
+                                reclaimAttachments = reclaimAttachments,
+                                expectedWorkspace = expectedWorkspace,
+                            )
+                        } else {
+                            persistence.updateDraft(conversationId, remainingText, attachmentsJson)
+                        }
+                    }
                     val revision = current.revision + 1L
                     persistedDrafts[conversationId] = PersistedComposerDraft(
-                        text = "",
-                        attachments = emptyList(),
+                        text = remainingText,
+                        attachments = remainingAttachments,
                         revision = revision,
                     )
                     DraftClearResult(
-                        attachments = current.attachments,
+                        attachments = removedAttachments,
                         revision = revision,
                         succeeded = true,
+                        remainingText = remainingText,
+                        remainingAttachments = remainingAttachments,
                     )
                 } catch (e: Exception) {
                     DebugLog.e(
@@ -191,10 +230,13 @@ internal class ComposerDraftController(
                         "Failed to clear accepted draft for $conversationId",
                         e,
                     )
+                    val current = persistedDrafts[conversationId]
                     DraftClearResult(
                         attachments = emptyList(),
-                        revision = persistedDrafts[conversationId]?.revision ?: 0L,
+                        revision = current?.revision ?: 0L,
                         succeeded = false,
+                        remainingText = current?.text.orEmpty(),
+                        remainingAttachments = current?.attachments.orEmpty(),
                     )
                 }
             }
@@ -224,23 +266,76 @@ internal class ComposerDraftController(
     private suspend fun read(conversationId: String): PersistedComposerDraft {
         val priorRevision = persistedDrafts[conversationId]?.revision ?: 0L
         val draft = persistence.loadDraft(conversationId)
-        val attachments: List<SelectedAttachment> = try {
-            draft.attachmentsJson
-                ?.let { Json.decodeFromString<List<SelectedAttachment>>(it) }
-                ?: emptyList()
+        val decoded = try {
+            decodeAttachments(draft.attachmentsJson)
         } catch (e: Exception) {
             DebugLog.w(
                 "ChatViewModel",
                 "Failed to deserialize draft attachments for $conversationId",
                 e,
             )
-            emptyList()
+            DecodedAttachments(emptyList(), migrated = false)
+        }
+        var revision = priorRevision
+        if (decoded.migrated) {
+            try {
+                persistence.updateDraft(
+                    ownerId = conversationId,
+                    text = draft.text,
+                    attachmentsJson = Json.encodeToString(decoded.attachments),
+                )
+                revision += 1L
+            } catch (e: Exception) {
+                // Keep the normalized attachment visible and retryable in memory. Its first
+                // processing transition will attempt another durable write.
+                DebugLog.w(
+                    "ChatViewModel",
+                    "Failed to persist legacy attachment upgrade for $conversationId",
+                    e,
+                )
+            }
         }
         return PersistedComposerDraft(
             text = draft.text,
-            attachments = attachments,
-            revision = priorRevision,
+            attachments = decoded.attachments,
+            revision = revision,
         )
+    }
+
+    private data class DecodedAttachments(
+        val attachments: List<SelectedAttachment>,
+        val migrated: Boolean,
+    )
+
+    /**
+     * Old drafts predate importState and canonical private artifacts. Serialization defaults would
+     * otherwise turn those records into incomplete READY attachments that Send silently omits.
+     */
+    private fun decodeAttachments(raw: String?): DecodedAttachments {
+        if (raw == null) return DecodedAttachments(emptyList(), migrated = false)
+        val elements = Json.parseToJsonElement(raw) as? JsonArray
+            ?: error("Draft attachments must be a JSON array")
+        var migrated = false
+        val attachments = elements.map { element ->
+            val attachment = Json.decodeFromJsonElement(
+                SelectedAttachment.serializer(),
+                element,
+            )
+            val objectValue = element as? JsonObject
+            if (
+                objectValue?.containsKey("importState") != false ||
+                attachment.hasCanonicalReadyArtifact()
+            ) {
+                attachment
+            } else {
+                migrated = true
+                attachment.copy(
+                    importState = AttachmentImportState.PROCESSING,
+                    unavailable = false,
+                )
+            }
+        }
+        return DecodedAttachments(attachments, migrated)
     }
 
     suspend fun reclaimAttachments(attachments: List<SelectedAttachment>) {

@@ -100,7 +100,6 @@ internal fun MessageList(
     toolCallDisplayMode: String = ToolCallDisplayModes.DEFAULT,
     thinkingSegmentDisplayMode: String = ThinkingSegmentDisplayModes.DEFAULT,
     autoExpandActiveGroup: Boolean = true,
-
     parseInlineDollarMath: Boolean = false,
     contextRetainedMessageIds: Set<String> = emptySet(),
     modelAliases: StableModelAliases = StableModelAliases(),
@@ -116,7 +115,8 @@ internal fun MessageList(
     onFork: (String) -> Unit = {},
     onShare: (String) -> Unit = {},
     onRecompact: (String) -> Unit = {},
-    onDelete: (String) -> Unit = {},
+    onDelete: (String, (Boolean) -> Unit) -> Boolean = { _, _ -> false },
+    onDeleteConversation: (Set<String>, (Boolean) -> Unit) -> Boolean = { _, _ -> false },
     searchQuery: String = "",
     activeSearchMatch: ConversationSearchMatch? = null,
     onSearchMatchDistance: (key: String, distanceToViewportCenter: Float) -> Unit = { _, _ -> },
@@ -173,21 +173,17 @@ internal fun MessageList(
     val latestAutoFollowEnabled by rememberUpdatedState(streamingAutoFollowEnabled)
     val density = androidx.compose.ui.platform.LocalDensity.current
     val tailTolerancePx = with(density) { 2.dp.toPx() }
-
     fun cacheHydratedPayload(message: ChatMessage) {
         hydratedPayloads.put(message)
     }
-
     fun cancelMutationAnchoring() {
         pendingMutationSettles.values.forEach { it.cancel() }
         pendingMutationSettles.clear()
         mutationAnchorLock.cancel()
     }
-
     LaunchedEffect(programmaticScrollActive) {
         if (programmaticScrollActive) cancelMutationAnchoring()
     }
-
     fun setStreamingTailFollowMode(nextMode: StreamingTailFollowMode) {
         streamingTailFollowMode = nextMode
         val attached =
@@ -196,13 +192,11 @@ internal fun MessageList(
         streamingTailController.isAttached = attached
         if (!attached) streamingTailController.isAutoFollowing = false
     }
-
     SideEffect {
         streamingTailController.isAttached =
             streamingTailFollowMode == StreamingTailFollowMode.ATTACHED ||
                 streamingTailFollowMode == StreamingTailFollowMode.SETTLING
     }
-
     LaunchedEffect(isSwitching) {
         if (isSwitching) cancelMutationAnchoring()
     }
@@ -756,6 +750,9 @@ internal fun MessageList(
             ?.let { height -> Modifier.heightIn(min = height) }
             ?: Modifier
 
+        val deleteTargetMessageId = presentation?.deleteTargetMessageId ?: message.id
+        val conversationMessageIds = allMessages.list.mapTo(linkedSetOf()) { it.id }
+        val deletesConversation = deletionRemovesEntireConversation(allMessages.list, deleteTargetMessageId, message.isContextCompact())
         MessageItem(
             message = message,
             segmentAppearanceRegistry = segmentAppearanceRegistry,
@@ -853,8 +850,11 @@ internal fun MessageList(
             onFork = onFork,
             onShare = onShare,
             onRecompact = onRecompact,
-            deleteTargetMessageId = presentation?.deleteTargetMessageId ?: message.id,
+            deleteTargetMessageId = deleteTargetMessageId,
+            deletesConversation = deletesConversation,
             onDelete = onDelete,
+            conversationMessageIds = conversationMessageIds,
+            onDeleteConversation = onDeleteConversation,
             onMediaClick = onMediaClick,
             onFileContentClick = onFileContentClick,
             onPdfPagesClick = onPdfPagesClick,
