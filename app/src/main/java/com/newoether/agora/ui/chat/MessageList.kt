@@ -22,10 +22,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -665,40 +665,40 @@ internal fun MessageList(
     ) -> Unit = { messageStub, requestSegmentDetail ->
         val isStreamingOverlay = messageStub.id == streamingMessageId
         val cachedMessage = hydratedPayloads[messageStub.id]
-        val observedMessage = if (isStreamingOverlay) {
-            null
-        } else {
-            remember(messageStub.id, observeMessage) { observeMessage(messageStub.id) }
-                .collectAsState(initial = cachedMessage)
-                .value
-        }
+        var hydrationRetryKey by remember(messageStub.id) { mutableIntStateOf(0) }
+        val hydrationState by rememberHistoricalMessageHydrationState(
+            messageStub.id, cachedMessage, isStreamingOverlay, hydrationRetryKey, observeMessage,
+        )
+        val observedMessage = hydrationState.message
         val message = resolveMessagePayloadForRender(messageStub, streamingMessage, observedMessage, cachedMessage)
-        val hydrationPending = !isStreamingOverlay && observedMessage == null && cachedMessage == null
+        val hydrationPending = hydrationState.phase == HistoricalMessageHydrationPhase.LOADING
         val hydrationMutationKey = "hydrate:${messageStub.id}"
 
-        LaunchedEffect(messageStub.id, observedMessage, cachedMessage, isStreamingOverlay) {
-            val hydrated = observedMessage ?: cachedMessage
-            if (isStreamingOverlay || hydrated != null) {
-                hydrated?.let(::cacheHydratedPayload)
+        LaunchedEffect(messageStub.id, hydrationState.phase, observedMessage, cachedMessage, isStreamingOverlay) {
+            val payloadReady = isStreamingOverlay ||
+                hydrationState.phase == HistoricalMessageHydrationPhase.READY
+            if (payloadReady) {
+                (observedMessage ?: cachedMessage)?.let(::cacheHydratedPayload)
                 onMessageHydrated(conversationId, messageStub.id)
-                if (mutationAnchorLock.isActive(hydrationMutationKey)) {
-                    withFrameNanos { }
-                    withFrameNanos { }
-                    mutationAnchorLock.finish(hydrationMutationKey)?.let { anchor ->
-                        state.restoreMessageListViewportAnchor(turns, anchor)
-                    }
-                }
             } else if (
+                hydrationState.phase == HistoricalMessageHydrationPhase.LOADING &&
                 messageListLayoutMode(
                     isSwitching = isSwitching,
                     isScrollInProgress = state.isScrollInProgress || programmaticScrollActive,
                 ) == MessageListLayoutMode.STABLE
             ) {
-                val anchor = mutationAnchorLock.begin(
+                mutationAnchorLock.begin(
                     key = hydrationMutationKey,
                     candidate = state.captureMessageListViewportAnchor(turns),
-                )
-                if (anchor != null) state.restoreMessageListViewportAnchor(turns, anchor)
+                )?.let { anchor -> state.restoreMessageListViewportAnchor(turns, anchor) }
+            }
+            if (hydrationState.phase != HistoricalMessageHydrationPhase.LOADING &&
+                mutationAnchorLock.isActive(hydrationMutationKey)) {
+                withFrameNanos { }
+                withFrameNanos { }
+                mutationAnchorLock.finish(hydrationMutationKey)?.let { anchor ->
+                    state.restoreMessageListViewportAnchor(turns, anchor)
+                }
             }
         }
         DisposableEffect(hydrationMutationKey) {
@@ -718,10 +718,6 @@ internal fun MessageList(
         val isInContext =
             messageIsStreaming ||
                 (!isRetainedBranchReplacementExit && message.id in inContextIds)
-        // Once the new branch commits, the active Run projection no longer contains the
-        // transparent old answer. Retain its exact presentation until the branch-replacement
-        // handoff releases that composition, otherwise the action row is conditionally removed instead
-        // of participating in the fade.
         val presentation =
             runPresentation[message.id] ?: retainedBranchReplacementPresentations[message.id]
         val animateLifecycleEntrance =
@@ -735,16 +731,12 @@ internal fun MessageList(
                     lastUserMessageId = lastUserMessage?.id,
                     requestedTargetMessageId = lifecycleEntranceTargetMessageId,
                 )
-        // LazyColumn items are subcomposed on demand. Marking the whole projected list in the
-        // parent composition races ahead of that subcomposition and makes a brand-new Send look
-        // historical before its bubble gets a first frame. Claim "known" only after this concrete
-        // item has composed and captured its one-shot entrance decision.
         SideEffect {
             lifecycleAppearanceRegistry.markKnown(message.id)
         }
 
         val reservedHydrationHeight = messageHeights[message.id]
-            ?.takeIf { hydrationPending && it > 0 }
+            ?.takeIf { hydrationState.phase != HistoricalMessageHydrationPhase.READY && it > 0 }
             ?.let { heightPx -> with(density) { heightPx.toDp() } }
         val hydrationHeightModifier = reservedHydrationHeight
             ?.let { height -> Modifier.heightIn(min = height) }
@@ -753,16 +745,20 @@ internal fun MessageList(
         val deleteTargetMessageId = presentation?.deleteTargetMessageId ?: message.id
         val conversationMessageIds = allMessages.list.mapTo(linkedSetOf()) { it.id }
         val deletesConversation = deletionRemovesEntireConversation(allMessages.list, deleteTargetMessageId, message.isContextCompact())
-        MessageItem(
-            message = message,
-            segmentAppearanceRegistry = segmentAppearanceRegistry,
+        HistoricalMessageHydrationCrossfade(
+            messageId = message.id,
+            phase = hydrationState.phase,
             modifier = (if (message.id in branchReplacementExitIds) {
-                Modifier.graphicsLayer {
-                    alpha = branchReplacementExitAlpha.value
-                }
+                Modifier.graphicsLayer { alpha = branchReplacementExitAlpha.value }
             } else {
                 Modifier
             }).then(hydrationHeightModifier),
+            onRetry = { hydrationRetryKey++ },
+        ) {
+            MessageItem(
+            message = message,
+            segmentAppearanceRegistry = segmentAppearanceRegistry,
+            modifier = Modifier,
             animateEntrance = animateLifecycleEntrance,
             onEdit = { id, text ->
                 if (!isRetainedBranchReplacementExit && pendingEditMessageId == null) {
@@ -947,7 +943,8 @@ internal fun MessageList(
                 }
             },
             thoughtExpandedStates = thoughtExpandedStates,
-        )
+            )
+        }
     }
 
     MessageSegmentDetailHost(

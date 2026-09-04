@@ -7,7 +7,6 @@ import com.newoether.agora.data.forDisplay
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.viewmodel.ChatViewModel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 
 internal data class ChatMessageHydrationBindings(
     val observeMessage: (String) -> Flow<ChatMessage?>,
@@ -21,12 +20,14 @@ internal fun rememberChatMessageHydrationBindings(
 ): ChatMessageHydrationBindings = remember(viewModel, customProviders) {
     ChatMessageHydrationBindings(
         observeMessage = { messageId ->
-            viewModel.messagePayloadHydration.observeMessage(messageId)
-                .map { message -> message?.forDisplay(customProviders) }
+            viewModel.messagePayloadHydration.observeMessage(messageId) { message ->
+                message.forDisplay(customProviders)
+            }
         },
         searchMessages = { conversationId, messageIds ->
-            viewModel.messagePayloadHydration.loadMessages(conversationId, messageIds)
-                .map { message -> message.forDisplay(customProviders) }
+            viewModel.messagePayloadHydration.loadMessages(conversationId, messageIds) { message ->
+                message.forDisplay(customProviders)
+            }
         },
     )
 }
