@@ -93,6 +93,11 @@ class GenerationRequestBuilder(
         return ProviderKey(providerName, activeKey)
     }
 
+    internal suspend fun awaitProviderKey(modelId: String): ProviderKey? {
+        providerRegistry.awaitInitialSync()
+        return resolveProviderKey(modelId)
+    }
+
     private fun resolveTranscriptionProviderName(model: String?): String =
         model?.let { providerRegistry.providerForModel(it) } ?: ""
 
@@ -165,7 +170,9 @@ class GenerationRequestBuilder(
                 overrides.openAiServiceTier ?: settings.openAiServiceTier.value,
             ),
             webSearchEnabled = if (settings.webSearchEnabled.value) (overrides.webSearchEnabled ?: true) else false,
-            shellEnabled = if (settings.shellEnabled.value) (overrides.shellEnabled ?: true) else false
+            shellEnabled = if (settings.shellEnabled.value) (overrides.shellEnabled ?: true) else false,
+            lowContextModeEnabled =
+                overrides.lowContextModeEnabled ?: settings.localLowContextModeEnabled.value,
         )
     }
 
@@ -184,6 +191,7 @@ class GenerationRequestBuilder(
         resolvedPromptOverride: ResolvedPrompt? = null,
         conversationSettingsOverride: ConversationSettings? = null,
     ): GenerationAdmissionSnapshot {
+        providerRegistry.awaitInitialSync()
         val selectedModelId = providerRegistry.canonicalModelId(modelId)
         val providerName = providerRegistry.providerForModel(selectedModelId)
         val effectiveSettings = if (conversationOverride != null) {
@@ -206,13 +214,20 @@ class GenerationRequestBuilder(
             resolvedUserPostpend = null,
             effectiveSettings = effectiveSettings,
             currentId = conversationId,
+            applyLowContextMode = true,
+            includeSkillCatalog =
+                settings.accessSkills.value &&
+                    !(
+                        providerName == Constants.PROVIDER_LOCAL &&
+                            effectiveSettings.lowContextModeEnabled == true
+                        ),
         )
         val compactModel = settings.contextCompactModel.value
             ?.takeIf(String::isNotBlank)
             ?.let(providerRegistry::canonicalModelId)
             ?: selectedModelId
         val compactProviderName = providerRegistry.providerForModel(compactModel)
-        val providerInstances = providerRegistry.all.toMap()
+        val providerInstances = providerRegistry.generationSnapshot()
         val compactKey = if (compactProviderName == providerName) {
             frozenKey
         } else {
@@ -227,6 +242,8 @@ class GenerationRequestBuilder(
             resolvedUserPostpend = null,
             effectiveSettings = effectiveSettings,
             currentId = conversationId,
+            applyLowContextMode = false,
+            includeSkillCatalog = false,
         )
         val automaticCompact = AutomaticCompactConfig(
             enabled = settings.contextCompactEnabled.value,
@@ -254,7 +271,17 @@ class GenerationRequestBuilder(
             ),
         )
         val titleGenerationEnabled = settings.titleGenerationEnabled.value
-        val ordinaryConfig = resolvedPromptOverride?.let { override ->
+        val ordinaryConfig = if (baseConfig.lowContextModeEnabled) {
+            baseConfig.copy(
+                effectiveSystemPrompt = null,
+                userPrepend = null,
+                userPostpend = null,
+                assistantPrepend = null,
+                assistantPostpend = null,
+                promptTemplate = null,
+                requestResolver = null,
+            )
+        } else resolvedPromptOverride?.let { override ->
             baseConfig.copy(
                 effectiveSystemPrompt = override.systemPrompt,
                 userPrepend = override.userPrepend,
@@ -304,6 +331,7 @@ class GenerationRequestBuilder(
     ): GenerationContextProjectionSnapshot {
         val selectedModelId = providerRegistry.canonicalModelId(modelId)
         val providerName = providerRegistry.providerForModel(selectedModelId)
+        val effectiveSettings = buildEffectiveConversationSettings(conversationId)
         val (baseConfig, context) = buildGenerationPair(
             providerName = providerName,
             modelId = selectedModelId,
@@ -311,9 +339,25 @@ class GenerationRequestBuilder(
             resolvedSystemPrompt = null,
             resolvedUserPrepend = null,
             resolvedUserPostpend = null,
-            effectiveSettings = buildEffectiveConversationSettings(conversationId),
+            effectiveSettings = effectiveSettings,
             currentId = conversationId,
+            applyLowContextMode = true,
+            includeSkillCatalog =
+                settings.accessSkills.value &&
+                    !(
+                        providerName == Constants.PROVIDER_LOCAL &&
+                            effectiveSettings.lowContextModeEnabled == true
+                        ),
         )
+        if (baseConfig.lowContextModeEnabled) {
+            return GenerationContextProjectionSnapshot(
+                config = baseConfig,
+                context = context.copy(
+                    webSearchApiKeys = context.webSearchApiKeys.toMap(),
+                    shellDevices = context.shellDevices.toList(),
+                ),
+            )
+        }
         val promptTemplate = capturePromptTemplate(
             currentId = conversationId,
             conversationOverride = null,
@@ -345,11 +389,18 @@ class GenerationRequestBuilder(
         resolvedUserPrepend: String?,
         resolvedUserPostpend: String?,
         effectiveSettings: ConversationSettings,
-        currentId: String
+        currentId: String,
+        applyLowContextMode: Boolean,
+        includeSkillCatalog: Boolean,
     ): Pair<GenerationConfig, GenerationContext> {
+        val lowContextModeEnabled =
+            applyLowContextMode &&
+                providerName == Constants.PROVIDER_LOCAL &&
+                effectiveSettings.lowContextModeEnabled == true
         val imageGenModel = settings.imageGenModel.value
         val transcriptionModel = settings.imageTranscriptionModel.value
-        val skillReadAccess = settings.accessSkills.value
+        val configuredSkillReadAccess = settings.accessSkills.value
+        val skillReadAccess = configuredSkillReadAccess && includeSkillCatalog
         val skillModifyAccess = skillReadAccess && settings.accessSkillsModify.value
         val skillCatalog = if (skillReadAccess) skillManager.catalog() else ""
         val responsesApiEnabled = isResponsesApiEnabledForProvider(
@@ -365,8 +416,10 @@ class GenerationRequestBuilder(
             maxContextWindow = ContextBudget.normalize(
                 effectiveSettings.contextWindow ?: settings.maxContextWindow.value
             ),
-            codeExecutionEnabled = effectiveSettings.codeExecutionEnabled ?: settings.codeExecutionEnabled.value,
-            googleSearchEnabled = effectiveSettings.googleSearchEnabled ?: settings.googleSearchEnabled.value,
+            codeExecutionEnabled = if (lowContextModeEnabled) false
+            else effectiveSettings.codeExecutionEnabled ?: settings.codeExecutionEnabled.value,
+            googleSearchEnabled = if (lowContextModeEnabled) false
+            else effectiveSettings.googleSearchEnabled ?: settings.googleSearchEnabled.value,
             thinkingEnabled = effectiveSettings.thinkingEnabled ?: settings.thinkingEnabled.value,
             thinkingLevel = effectiveSettings.thinkingLevel ?: settings.thinkingLevel.value,
             thinkingBudgetEnabled = effectiveSettings.thinkingBudgetEnabled ?: settings.thinkingBudgetEnabled.value,
@@ -378,10 +431,12 @@ class GenerationRequestBuilder(
             ),
             responsesApiEnabled = responsesApiEnabled,
             openAiWebSearchEnabled =
-                effectiveSettings.openAiWebSearchEnabled == true && responsesApiEnabled,
+                !lowContextModeEnabled &&
+                    effectiveSettings.openAiWebSearchEnabled == true && responsesApiEnabled,
             baseUrl = providerRegistry.getEffectiveBaseUrl(providerName),
             userPrepend = resolvedUserPrepend,
             userPostpend = resolvedUserPostpend,
+            lowContextModeEnabled = lowContextModeEnabled,
             temperature = effectiveSettings.temperature,
             maxTokens = effectiveSettings.maxTokens,
             topP = effectiveSettings.topP,

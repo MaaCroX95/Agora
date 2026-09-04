@@ -2,53 +2,39 @@ package com.newoether.agora.service
 
 import android.content.Context
 import androidx.work.CoroutineWorker
-import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.newoether.agora.AgoraApplication
 import com.newoether.agora.api.EmbeddingClient
 import com.newoether.agora.api.LlamaEngine
 import com.newoether.agora.api.ProviderDefaults
-import com.newoether.agora.data.EmbeddingCacheLocks
-import com.newoether.agora.data.EmbeddingModelType
 import com.newoether.agora.data.EmbeddingIndexer
+import com.newoether.agora.data.EmbeddingModelConfig
+import com.newoether.agora.data.EmbeddingModelType
 import com.newoether.agora.data.SettingsManager
-import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
-import com.newoether.agora.data.local.ChatDao
+import com.newoether.agora.data.local.ChatDatabase
 import com.newoether.agora.data.local.EmbeddingEntity
+import com.newoether.agora.data.local.IndexableMessage
+import com.newoether.agora.data.local.SemanticIndexLedgerEntity
+import com.newoether.agora.data.local.commitSemanticEmbedding
+import com.newoether.agora.data.local.semanticSourceFingerprint
+import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
 import com.newoether.agora.util.Constants
 import com.newoether.agora.util.DebugLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 
-/**
- * WorkManager continuation for embedding caching — the runner that survives process
- * death. RagManager's in-app coroutine is the primary runner: it enqueues this worker
- * only after taking the model's [EmbeddingCacheLocks] lock and cancels it on every
- * in-process exit, so this worker computes anything only when the process died
- * mid-cache and WorkManager restarted it. Taking the same lock here makes concurrent
- * double-computation impossible even in edge orderings.
- *
- * Input data: "model_id" (String) — the embedding model ID to cache.
- * Output data: "cached" (Int), "total" (Int), "failed" (Int).
- */
+/** The single durable consumer for one embedding model's semantic ledger work. */
 class EmbeddingCacheWorker(
     context: Context,
-    params: WorkerParameters
+    params: WorkerParameters,
 ) : CoroutineWorker(context, params) {
-
-    companion object {
-        const val KEY_MODEL_ID = "model_id"
-        const val KEY_CACHED = "cached"
-        const val KEY_TOTAL = "total"
-        const val KEY_FAILED = "failed"
-        const val TAG = "EmbeddingCache"
-
-        /** Enqueue rule: only one cache job per model at a time. */
-        fun workNameFor(modelId: String) = "embedding_cache_$modelId"
-    }
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val modelId = inputData.getString(KEY_MODEL_ID)
@@ -56,136 +42,242 @@ class EmbeddingCacheWorker(
             DebugLog.w(TAG, "No model_id in input data")
             return@withContext Result.failure()
         }
+        val container = (applicationContext as AgoraApplication).awaitContainer()
+            ?: return@withContext Result.retry()
 
-        // Container singletons, NOT fresh instances: a second Room instance on the same
-        // file bypasses the app's invalidation tracker (UI Flows would go stale), and a
-        // second DataStore on the same file throws "multiple DataStores active".
-        val container = (applicationContext as AgoraApplication)
-            .awaitContainer()
-            ?: return@withContext Result.failure(
-                workDataOf("error" to "Database unavailable"),
+        cacheModel(modelId, container.database, container.settingsManager)
+    }
+
+    internal suspend fun cacheModel(
+        modelId: String,
+        database: ChatDatabase,
+        settingsManager: SettingsManager,
+    ): Result {
+        val model = settingsManager.embeddingModels.first().find { it.id == modelId }
+            ?: return Result.success()
+        val semanticDao = database.semanticIndexDao()
+        val ledger = semanticDao.getLedger(modelId) ?: return Result.success()
+        if (ledger.state == SemanticIndexLedgerEntity.STATE_CURRENT) return Result.success()
+
+        return try {
+            val completed = when (ledger.state) {
+                SemanticIndexLedgerEntity.STATE_PENDING ->
+                    consumeExactWork(model, settingsManager, database)
+
+                SemanticIndexLedgerEntity.STATE_NEEDS_RECONCILE ->
+                    reconcileModel(model, settingsManager, ledger.sourceRevision, database)
+
+                else -> true
+            }
+            if (!completed) return Result.retry()
+            val latest = semanticDao.getLedger(modelId)
+            if (latest == null || latest.state == SemanticIndexLedgerEntity.STATE_CURRENT) {
+                Result.success(workDataOf(KEY_FAILED to 0))
+            } else {
+                Result.retry()
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            DebugLog.e(TAG, "Cache worker failed", error)
+            val displayError = replaceCustomProviderIdsForDisplay(
+                error.localizedMessage ?: "Unknown error",
+                settingsManager.customProviders.first(),
             )
-
-        // Same process-wide lock as RagManager's in-app runner: never compute alongside it.
-        EmbeddingCacheLocks.forModel(modelId).withLock {
-            cacheModel(modelId, container.chatDao, container.settingsManager)
+            Result.failure(workDataOf(KEY_ERROR to displayError))
         }
     }
 
-    private suspend fun cacheModel(
-        modelId: String,
-        chatDao: ChatDao,
+    private suspend fun consumeExactWork(
+        model: EmbeddingModelConfig,
         settingsManager: SettingsManager,
-    ): Result {
-        val models = settingsManager.embeddingModels.first()
-        val model = models.find { it.id == modelId }
-        if (model == null) {
-            DebugLog.w(TAG, "Model $modelId not found")
-            return Result.failure()
-        }
-
-        // Check cancellation
-        if (isStopped) return Result.failure()
-
-        val total = chatDao.getIndexableMessageCount()
-        if (total == 0) {
-            return Result.success(Data.Builder()
-                .putInt(KEY_CACHED, 0).putInt(KEY_TOTAL, 0).putInt(KEY_FAILED, 0).build())
-        }
-
-        val alreadyDone = chatDao.getEmbeddingCountByModel(modelId).coerceAtMost(total)
-        if (alreadyDone >= total) {
-            return Result.success(Data.Builder()
-                .putInt(KEY_CACHED, total).putInt(KEY_TOTAL, total).putInt(KEY_FAILED, 0).build())
-        }
-
-        var succeeded = 0
-        var attempted = 0
-        val batchSize = model.batchSize.coerceIn(1, 100)
-        val remoteConfig = if (model.type == EmbeddingModelType.LOCAL) {
-            if (!LlamaEngine.isModelReady(model.localFilePath)) {
-                return Result.failure(Data.Builder()
-                    .putString("error", "Local model file not found").build())
-            }
-            null
-        } else {
-            val apiKey = model.remoteApiKey.ifBlank { resolveApiKey(settingsManager) ?: "" }
-            if (apiKey.isBlank()) {
-                return Result.failure(Data.Builder()
-                    .putString("error", "No API key configured").build())
-            }
-            apiKey to model.remoteBaseUrl.ifBlank { resolveBaseUrl(settingsManager) }
-        }
-
-        try {
-            setProgress(workDataOf(KEY_CACHED to alreadyDone, KEY_TOTAL to total))
-            var afterMessageId: String? = null
-            while (true) {
-                if (isStopped) return Result.failure()
-                val batch = chatDao.getUnembeddedMessagesPage(
-                    modelId = modelId,
-                    afterId = afterMessageId,
-                    limit = batchSize,
-                )
-                if (batch.isEmpty()) break
-                afterMessageId = batch.last().id
-
-                val texts = batch.map { it.text.take(Constants.MAX_EMBEDDING_TEXT_LENGTH) }
-                val embeddings = if (model.type == EmbeddingModelType.LOCAL) {
-                    LlamaEngine.computeEmbeddings(texts, model.localFilePath)
+        database: ChatDatabase,
+    ): Boolean {
+        val semanticDao = database.semanticIndexDao()
+        var afterRevision = 0L
+        var afterMessageId = ""
+        var embeddingConfigResolved = false
+        var remoteConfig: Pair<String, String>? = null
+        var complete = true
+        while (true) {
+            val page = semanticDao.getWorkPage(
+                modelId = model.id,
+                afterSourceRevision = afterRevision,
+                afterMessageId = afterMessageId,
+                limit = model.batchSize.coerceIn(1, MAX_BATCH_SIZE),
+            )
+            if (page.isEmpty()) break
+            afterRevision = page.last().sourceRevision
+            afterMessageId = page.last().messageId
+            val candidates = mutableListOf<Triple<Long?, String, IndexableMessage>>()
+            page.forEach { work ->
+                if (work.sourceFingerprint == null) {
+                    semanticDao.completeExactWork(work, System.currentTimeMillis())
                 } else {
-                    val (apiKey, baseUrl) = requireNotNull(remoteConfig)
-                    EmbeddingClient.computeEmbeddings(
-                        texts, apiKey, model.remoteModelName, baseUrl
-                    )
-                }
-
-                attempted += batch.size
-                batch.zip(embeddings).forEach { (message, embedding) ->
-                    if (embedding != null) {
-                        chatDao.upsertEmbedding(EmbeddingEntity(
-                            messageId = message.id,
-                            modelId = modelId,
-                            embedding = EmbeddingIndexer.floatsToBytes(embedding),
-                            chunkText = message.text.take(Constants.MAX_CHUNK_TEXT_LENGTH),
-                            dimension = embedding.size,
-                        ))
-                        succeeded++
+                    val text = semanticDao.getSearchableMessageText(work.messageId)
+                    if (text != null && semanticSourceFingerprint(text) == work.sourceFingerprint) {
+                        candidates += Triple(
+                            work.sourceRevision,
+                            work.sourceFingerprint,
+                            IndexableMessage(work.messageId, text),
+                        )
                     }
                 }
-                val completed = (alreadyDone + attempted).coerceAtMost(total)
-                setProgress(workDataOf(KEY_CACHED to completed, KEY_TOTAL to total))
             }
-        } catch (e: Exception) {
-            DebugLog.e(TAG, "Cache worker failed", e)
-            val displayError = replaceCustomProviderIdsForDisplay(
-                e.localizedMessage ?: "Unknown error",
-                settingsManager.customProviders.first(),
-            )
-            return Result.failure(Data.Builder()
-                .putString("error", displayError).build())
+            if (candidates.isNotEmpty() && !embeddingConfigResolved) {
+                remoteConfig = resolveEmbeddingConfig(model, settingsManager)
+                embeddingConfigResolved = true
+            }
+            if (!embedCandidates(model, remoteConfig, candidates, database)) complete = false
+            yield()
         }
+        val latest = semanticDao.getLedger(model.id) ?: return true
+        if (latest.state == SemanticIndexLedgerEntity.STATE_PENDING) {
+            semanticDao.markCurrentAfterExactWork(
+                modelId = model.id,
+                sourceRevision = latest.sourceRevision,
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+        return complete
+    }
 
-        val failed = attempted - succeeded
-        DebugLog.d(TAG, "Cache complete: $succeeded/$total cached, $failed failed")
-        return Result.success(Data.Builder()
-            .putInt(KEY_CACHED, (alreadyDone + succeeded).coerceAtMost(total))
-            .putInt(KEY_TOTAL, total)
-            .putInt(KEY_FAILED, failed)
-            .build())
+    private suspend fun reconcileModel(
+        model: EmbeddingModelConfig,
+        settingsManager: SettingsManager,
+        expectedRevision: Long,
+        database: ChatDatabase,
+    ): Boolean {
+        val chatDao = database.chatDao()
+        var afterMessageId: String? = null
+        var embeddingConfigResolved = false
+        var remoteConfig: Pair<String, String>? = null
+        var complete = true
+        while (true) {
+            val page = chatDao.getSearchableMessagesPage(
+                afterId = afterMessageId,
+                limit = model.batchSize.coerceIn(1, MAX_BATCH_SIZE),
+            )
+            if (page.isEmpty()) break
+            afterMessageId = page.last().id
+            val candidates = page.map { message ->
+                Triple(null, semanticSourceFingerprint(message.text), message)
+            }
+            if (candidates.isNotEmpty() && !embeddingConfigResolved) {
+                remoteConfig = resolveEmbeddingConfig(model, settingsManager)
+                embeddingConfigResolved = true
+            }
+            if (
+                !embedCandidates(
+                    model,
+                    remoteConfig,
+                    candidates,
+                    database,
+                    expectedLedgerRevision = expectedRevision,
+                )
+            ) complete = false
+            yield()
+        }
+        if (!complete) return false
+        return database.semanticIndexDao().completeReconcile(
+            modelId = model.id,
+            expectedRevision = expectedRevision,
+            updatedAt = System.currentTimeMillis(),
+        )
+    }
+
+    private suspend fun embedCandidates(
+        model: EmbeddingModelConfig,
+        remoteConfig: Pair<String, String>?,
+        candidates: List<Triple<Long?, String, IndexableMessage>>,
+        database: ChatDatabase,
+        expectedLedgerRevision: Long? = null,
+    ): Boolean {
+        if (candidates.isEmpty()) return true
+        val texts = candidates.map { (_, _, message) ->
+            message.text.take(Constants.MAX_EMBEDDING_TEXT_LENGTH)
+        }
+        val embeddings = if (model.type == EmbeddingModelType.LOCAL) {
+            LlamaEngine.computeEmbeddings(texts, model.localFilePath)
+        } else {
+            val (apiKey, baseUrl) = requireNotNull(remoteConfig)
+            EmbeddingClient.computeEmbeddings(
+                texts = texts,
+                apiKey = apiKey,
+                model = model.remoteModelName,
+                baseUrl = baseUrl,
+            )
+        }
+        var complete = embeddings.size == candidates.size
+        candidates.forEachIndexed { index, (workRevision, fingerprint, message) ->
+            val embedding = embeddings.getOrNull(index)
+            if (embedding == null) {
+                complete = false
+            } else if (!database.commitSemanticEmbedding(
+                    embedding = EmbeddingEntity(
+                        messageId = message.id,
+                        modelId = model.id,
+                        embedding = EmbeddingIndexer.floatsToBytes(embedding),
+                        chunkText = message.text.take(Constants.MAX_CHUNK_TEXT_LENGTH),
+                        dimension = embedding.size,
+                    ),
+                    expectedFingerprint = fingerprint,
+                    expectedWorkRevision = workRevision,
+                    expectedLedgerRevision = expectedLedgerRevision,
+                    completePendingWork = workRevision != null,
+                    updatedAt = System.currentTimeMillis(),
+                )
+            ) {
+                complete = false
+            }
+        }
+        return complete
+    }
+
+    private suspend fun resolveEmbeddingConfig(
+        model: EmbeddingModelConfig,
+        settingsManager: SettingsManager,
+    ): Pair<String, String>? {
+        if (model.type == EmbeddingModelType.LOCAL) {
+            check(LlamaEngine.isModelReady(model.localFilePath)) { "Local model file not found" }
+            return null
+        }
+        val apiKey = model.remoteApiKey.ifBlank { resolveApiKey(settingsManager) ?: "" }
+        check(apiKey.isNotBlank()) { "No API key configured" }
+        return apiKey to model.remoteBaseUrl.ifBlank { resolveBaseUrl(settingsManager) }
     }
 
     private suspend fun resolveApiKey(settingsManager: SettingsManager): String? {
         val keys = settingsManager.apiKeys.first()
-        for (entry in keys) {
-            if (ProviderDefaults.isOpenAiCompatibleEmbedding(entry.provider)) {
-                return entry.key
-            }
-        }
-        return keys.firstOrNull()?.key
+        return keys.firstOrNull { ProviderDefaults.isOpenAiCompatibleEmbedding(it.provider) }?.key
+            ?: keys.firstOrNull()?.key
     }
 
-    private suspend fun resolveBaseUrl(settingsManager: SettingsManager): String {
-        return ProviderDefaults.openAiCompatibleBaseUrl(settingsManager.providerBaseUrls.first())
+    private suspend fun resolveBaseUrl(settingsManager: SettingsManager): String =
+        ProviderDefaults.openAiCompatibleBaseUrl(settingsManager.providerBaseUrls.first())
+
+    companion object {
+        const val KEY_MODEL_ID = "model_id"
+        const val KEY_CACHED = "cached"
+        const val KEY_TOTAL = "total"
+        const val KEY_FAILED = "failed"
+        const val KEY_ERROR = "error"
+        const val TAG = "EmbeddingCache"
+        private const val MAX_BATCH_SIZE = 32
+
+        fun workNameFor(modelId: String) = "embedding_cache_$modelId"
+
+        fun schedule(modelId: String, workManager: WorkManager = WorkManager.getInstance()) {
+            require(modelId.isNotBlank())
+            val request = OneTimeWorkRequestBuilder<EmbeddingCacheWorker>()
+                .setInputData(workDataOf(KEY_MODEL_ID to modelId))
+                .addTag(TAG)
+                .build()
+            workManager.enqueueUniqueWork(
+                workNameFor(modelId),
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
+                request,
+            )
+        }
     }
 }

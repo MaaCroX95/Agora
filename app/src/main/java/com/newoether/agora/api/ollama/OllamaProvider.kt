@@ -3,11 +3,11 @@ package com.newoether.agora.api.ollama
 import com.newoether.agora.api.*
 
 import com.newoether.agora.util.DebugLog
-import com.newoether.agora.api.util.StreamingThinkTagParser
 import com.newoether.agora.api.util.buildToolCallId
 import com.newoether.agora.api.util.RequestFormatException
 import com.newoether.agora.api.util.ProviderRetryPolicy
 import com.newoether.agora.api.util.StreamTermination
+import com.newoether.agora.api.util.asRetryableResponseBodyReadError
 import com.newoether.agora.api.util.asRetryableTransportError
 import com.newoether.agora.api.util.carriesModelOutput
 import com.newoether.agora.api.util.requireValidSerializedRequest
@@ -73,7 +73,7 @@ internal fun ollamaStreamTermination(
     timedOut: Boolean = false,
 ): StreamTermination = StreamTermination(
     sawTerminalMarker = sawDone,
-    stopReason = doneReason?.trim()?.lowercase(),
+    stopReason = doneReason?.trim()?.takeIf(String::isNotEmpty)?.lowercase(),
     producedContent = producedContent,
     toolCallInFlight = toolCallInFlight,
     streamError = streamError,
@@ -288,8 +288,6 @@ class OllamaProvider : LlmProvider {
                 }
                 try {
                     if (handle.code == 200) {
-                        val thinkParser = StreamingThinkTagParser()
-                        var receivedStructuredThinking = false
                         var producedContent = false
                         var sawDone = false
                         var doneReason: String? = null
@@ -315,10 +313,17 @@ class OllamaProvider : LlmProvider {
                                     break
                                 }
                                 continue
+                            } catch (e: Exception) {
+                                if (!currentCoroutineContext().isActive) break
+                                streamError = e.asRetryableResponseBodyReadError() ?: throw e
+                                break
                             } ?: break
                             consecutiveReadTimeouts = 0
                             try {
                                 val response = json.decodeFromString<OllamaStreamResponse>(line)
+                                response.doneReason?.takeIf(String::isNotBlank)?.let {
+                                    doneReason = it
+                                }
                                 response.error?.takeIf(String::isNotBlank)?.let { message ->
                                     streamError = GenerationError.Api(
                                         code = null,
@@ -329,9 +334,8 @@ class OllamaProvider : LlmProvider {
                                 response.message?.let { msg ->
                                     // 1. Handle explicit thinking field (Ollama 0.5.4+)
                                     msg.thinking?.let { thinking ->
-                                        if (thinking.isNotEmpty() && config.thinkingEnabled) {
+                                        if (thinking.isNotBlank()) {
                                             emitTracked(StreamEvent.ThoughtChunk(thinking, null))
-                                            receivedStructuredThinking = true
                                         }
                                     }
 
@@ -341,7 +345,7 @@ class OllamaProvider : LlmProvider {
                                     msg.toolCalls?.takeIf { it.isNotEmpty() }?.let { toolCalls ->
                                         val parsed = toolCalls.map { tc ->
                                             val streamKey = "call_stream_${java.util.UUID.randomUUID()}"
-                                            val id = tc.id
+                                            val id = tc.id?.takeIf(String::isNotBlank)
                                                 ?: "${Constants.TOOL_CALL_ID_PREFIX}${java.util.UUID.randomUUID()}"
                                             val name = tc.function?.name.orEmpty()
                                             val args = tc.function?.arguments?.let {
@@ -389,24 +393,14 @@ class OllamaProvider : LlmProvider {
                                         }
                                     }
 
-                                    // 3. Handle content: if structured thinking was received, emit
-                                    // content directly. Otherwise parse inline tags for old models.
+                                    // 3. Compatibility parsing of inline thinking markers is
+                                    // centralized after the native Ollama decoder.
                                     if (msg.content.isNotEmpty()) {
-                                        if (receivedStructuredThinking) {
-                                            emitTracked(StreamEvent.TextChunk(msg.content))
-                                        } else {
-                                            thinkParser.feed(
-                                                content = msg.content,
-                                                thinkingEnabled = config.thinkingEnabled,
-                                                onText = { emitTracked(StreamEvent.TextChunk(it)) },
-                                                onThought = { emitTracked(StreamEvent.ThoughtChunk(it)) },
-                                            )
-                                        }
+                                        emitTracked(StreamEvent.TextChunk(msg.content))
                                     }
                                 }
                                 if (response.done) {
                                     sawDone = true
-                                    doneReason = response.doneReason
                                     emit(StreamEvent.UsageUpdate(response.toTokenUsage()))
                                 }
                                 if (streamError != null || sawDone) break
@@ -422,11 +416,6 @@ class OllamaProvider : LlmProvider {
                                 break
                             }
                         }
-                        thinkParser.flush(
-                            onText = { emitTracked(StreamEvent.TextChunk(it)) },
-                            onThought = { emitTracked(StreamEvent.ThoughtChunk(it)) },
-                            thinkingEnabled = config.thinkingEnabled,
-                        )
                         if (!currentCoroutineContext().isActive) {
                             throw kotlinx.coroutines.CancellationException("Stream cancelled")
                         }

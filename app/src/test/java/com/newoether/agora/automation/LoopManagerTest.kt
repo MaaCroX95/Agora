@@ -6,6 +6,7 @@ import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.TaskRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
@@ -38,6 +39,7 @@ class LoopManagerTest {
         coEvery { taskRepository.deleteLoop(any()) } coAnswers {
             stored.value = null
         }
+        coEvery { conversationRepository.recoverConversationRuntime("conversation", any()) } returns 0
         coEvery { conversationRepository.getConversation("conversation") } returns
             ChatEntity(id = "conversation", title = "Conversation", modelId = "OpenAI:model")
     }
@@ -87,7 +89,7 @@ class LoopManagerTest {
     fun successfulCycleAdvancesAndSchedulesFromCompletionTime() = runTest {
         stored.value = loop(maxCycles = 2, revision = 3L)
         coEvery {
-            engine.runOnceWithAutomationGuardsHeld("conversation", "Continue.", "OpenAI:model", null, true, any())
+            engine.runOnceWithAutomationGuardsHeld("conversation", "Continue.", "OpenAI:model", null, true, any(), "loop")
         } returns TaskExecutionEngine.Result.Success("model-message", "done")
         val manager = manager()
 
@@ -98,13 +100,39 @@ class LoopManagerTest {
         assertTrue(stored.value!!.active)
         assertEquals(now + LoopPolicy.MIN_INTERVAL_MS, stored.value!!.nextFireAt)
         assertEquals(3L, stored.value!!.revision)
+        coVerifyOrder {
+            conversationRepository.recoverConversationRuntime("conversation", any())
+            conversationRepository.getConversation("conversation")
+            engine.runOnceWithAutomationGuardsHeld(
+                "conversation", "Continue.", "OpenAI:model", null, true, any(), "loop",
+            )
+        }
+    }
+
+    @Test
+    fun exactRecoveryFailureStopsBeforeConversationLoadClaimOrGeneration() = runTest {
+        stored.value = loop(maxCycles = 2)
+        coEvery { conversationRepository.recoverConversationRuntime("conversation", any()) } throws
+            IllegalStateException("recovery failed")
+        val manager = manager()
+
+        val failure = runCatching {
+            manager.executeByConversationId("conversation")
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertEquals(0, stored.value!!.cycleCount)
+        coVerify(exactly = 0) { conversationRepository.getConversation(any()) }
+        coVerify(exactly = 0) {
+            engine.runOnceWithAutomationGuardsHeld(any(), any(), any(), any(), any(), any())
+        }
     }
 
     @Test
     fun modelFailureStillConsumesFinalCycleWithoutImmediateRetry() = runTest {
         stored.value = loop(maxCycles = 1)
         coEvery {
-            engine.runOnceWithAutomationGuardsHeld("conversation", "Continue.", "OpenAI:model", null, true, any())
+            engine.runOnceWithAutomationGuardsHeld("conversation", "Continue.", "OpenAI:model", null, true, any(), "loop")
         } returns TaskExecutionEngine.Result.Failure("provider failed")
         val manager = manager()
 
@@ -121,7 +149,7 @@ class LoopManagerTest {
         stored.value = loop(maxCycles = 2)
         coEvery {
             engine.runOnceWithAutomationGuardsHeld(
-                "conversation", "Continue.", "OpenAI:model", null, true, any(),
+                "conversation", "Continue.", "OpenAI:model", null, true, any(), "loop",
             )
         } returns TaskExecutionEngine.Result.Busy()
         val manager = manager()
@@ -138,7 +166,7 @@ class LoopManagerTest {
         stored.value = loop(maxCycles = 2)
         coEvery {
             engine.runOnceWithAutomationGuardsHeld(
-                "conversation", "Continue.", "OpenAI:model", null, true, any(),
+                "conversation", "Continue.", "OpenAI:model", null, true, any(), "loop",
             )
         } returns TaskExecutionEngine.Result.Success("model", "done")
         val gate = AutomationExecutionGate()
@@ -171,7 +199,7 @@ class LoopManagerTest {
     fun stopDuringGenerationCannotBeOverwrittenByStaleCompletion() = runTest {
         stored.value = loop(maxCycles = 5, revision = 10L)
         coEvery {
-            engine.runOnceWithAutomationGuardsHeld("conversation", "Continue.", "OpenAI:model", null, true, any())
+            engine.runOnceWithAutomationGuardsHeld("conversation", "Continue.", "OpenAI:model", null, true, any(), "loop")
         } coAnswers {
             stored.value = stored.value!!.copy(active = false, revision = 11L)
             TaskExecutionEngine.Result.Success("model-message", "done")
@@ -193,7 +221,7 @@ class LoopManagerTest {
         val scheduledAt = now
         stored.value = loop(nextFireAt = scheduledAt, maxCycles = 3)
         coEvery {
-            engine.runOnceWithAutomationGuardsHeld("conversation", "Continue.", "OpenAI:model", null, true, any())
+            engine.runOnceWithAutomationGuardsHeld("conversation", "Continue.", "OpenAI:model", null, true, any(), "loop")
         } returns TaskExecutionEngine.Result.Success("model-message", "done")
         val manager = manager()
 
@@ -204,7 +232,7 @@ class LoopManagerTest {
         assertTrue(retry is LoopManager.ExecutionResult.Superseded)
         assertEquals(1, stored.value!!.cycleCount)
         coVerify(exactly = 1) {
-            engine.runOnceWithAutomationGuardsHeld("conversation", "Continue.", "OpenAI:model", null, true, any())
+            engine.runOnceWithAutomationGuardsHeld("conversation", "Continue.", "OpenAI:model", null, true, any(), "loop")
         }
     }
 

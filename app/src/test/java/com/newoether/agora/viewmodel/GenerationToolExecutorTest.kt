@@ -101,6 +101,12 @@ class GenerationToolExecutorTest {
     }
 
     @Test
+    fun `image generation alone receives the extended execution timeout`() {
+        assertEquals(600_000L, toolExecutionTimeoutMs("generate_image", 25L))
+        assertEquals(25L, toolExecutionTimeoutMs("blocking_tool", 25L))
+    }
+
+    @Test
     fun `active tool stop releases when durable write settles first`() = runBlocking {
         assertActiveToolStopRelease(persistenceFirst = true)
     }

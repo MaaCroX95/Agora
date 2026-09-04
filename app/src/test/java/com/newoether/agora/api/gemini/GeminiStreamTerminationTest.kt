@@ -137,6 +137,57 @@ class GeminiStreamTerminationTest {
     }
 
     @Test
+    fun blankThoughtFragmentsAndIdsDoNotSuppressEffectiveGeminiMetadata() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            exchange.requestBody.use { it.readBytes() }
+            val response = (
+                "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[" +
+                    "{\"thought\":true,\"text\":\" \",\"thoughtSignature\":\"sig-1\"}," +
+                    "{\"text\":\"reason\"}," +
+                    "{\"thoughtSignature\":\" \",\"reasoning_content\":\" \"," +
+                    "\"functionCall\":{\"id\":\" \",\"name\":\"file_read\"," +
+                    "\"args\":{\"path\":\"a.txt\"},\"thought_signature\":\"sig-tool\"}}" +
+                    "]},\"finishReason\":\"STOP\"}]}\n\n"
+                ).toByteArray()
+            exchange.responseHeaders.add("Content-Type", "text/event-stream")
+            exchange.sendResponseHeaders(200, response.size.toLong())
+            exchange.responseBody.use { it.write(response) }
+        }
+        server.start()
+        try {
+            val events = runBlocking {
+                withTimeout(2_000L) {
+                    GeminiProvider().generateResponse(
+                        messages = listOf(
+                            ChatMessage(text = "inspect", participant = Participant.USER),
+                        ),
+                        config = ProviderConfig(
+                            apiKey = "test-key",
+                            modelId = "gemini-2.5-flash",
+                            baseUrl = "http://127.0.0.1:${server.address.port}",
+                            thinkingEnabled = false,
+                        ),
+                    ).toList()
+                }
+            }
+
+            val thoughts = events.filterIsInstance<StreamEvent.ThoughtChunk>()
+            assertEquals(listOf("reason"), thoughts.map { it.thought })
+            assertEquals("sig-1", thoughts.single().signature)
+            val update = events.filterIsInstance<StreamEvent.ToolCallUpdate>().single()
+            val call = events.filterIsInstance<StreamEvent.ToolCallRequest>().single()
+            assertTrue(update.id?.isNotBlank() == true)
+            assertEquals(update.id, call.id)
+            assertEquals("sig-tool", update.signature)
+            assertEquals("sig-tool", call.signature)
+            assertTrue(events.none { it is StreamEvent.Error })
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
     fun terminalMarkerCannotCompletePendingCodeExecution() {
         val termination = geminiStreamTermination(
             sawDone = true,

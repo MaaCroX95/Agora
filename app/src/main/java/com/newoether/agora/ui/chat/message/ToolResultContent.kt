@@ -1,7 +1,13 @@
 package com.newoether.agora.ui.chat.message
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,18 +16,24 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -30,18 +42,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
+import coil.compose.AsyncImagePainter
+import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
 import com.newoether.agora.R
 import com.newoether.agora.model.CitationPolicy
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.ToolImageAttachment
+import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import com.newoether.agora.ui.theme.ChatType
 import com.newoether.agora.ui.theme.MonoFamily
 import com.newoether.agora.util.NoAutoScrollSelectionContainer
@@ -85,14 +104,19 @@ internal fun ToolDetailContent(
         }
     }
 
-    Column(modifier = contentAlignmentModifier.fillMaxWidth()) {
-        ToolSectionLabel(stringResource(R.string.result_label))
-        Spacer(Modifier.height(6.dp))
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = contentAlignmentModifier.fillMaxWidth()) {
+            ToolSectionLabel(stringResource(R.string.result_label))
+            Spacer(Modifier.height(6.dp))
+        }
         if (segment.toolImages.isNotEmpty()) {
-            ToolImageResults(
-                images = segment.toolImages,
-                onMediaClick = onMediaClick,
-            )
+            Column(modifier = contentAlignmentModifier.fillMaxWidth()) {
+                ToolImageResults(
+                    images = segment.toolImages,
+                    squareCrop = segment.isImageGenerationSegment(),
+                    onMediaClick = onMediaClick,
+                )
+            }
             Spacer(Modifier.height(12.dp))
         }
     }
@@ -130,16 +154,6 @@ internal fun ToolDetailContent(
                 ToolErrorContent(
                     presentation.errorMessage ?: stringResource(R.string.tool_call_failed),
                 )
-                if (
-                    presentation.kind == ToolKind.MCP &&
-                    (
-                        !presentation.rawTextResult.isNullOrBlank() ||
-                            !presentation.rawStructuredResult.isNullOrBlank()
-                        )
-                ) {
-                    Spacer(Modifier.height(10.dp))
-                    McpResultContent(presentation)
-                }
                 if (!presentation.liveOutput.isNullOrBlank()) {
                     Spacer(Modifier.height(8.dp))
                     TerminalOutput(presentation.liveOutput)
@@ -151,6 +165,194 @@ internal fun ToolDetailContent(
             )
             ToolPresentationState.EMPTY,
             ToolPresentationState.COMPLETED -> ToolCompletedContent(presentation)
+        }
+    }
+}
+
+@Composable
+internal fun GeneratedImageThumbnail(
+    segment: MessageSegment,
+    messageId: String,
+    detailIndex: Int,
+    isStreaming: Boolean,
+    segmentAppearanceRegistry: SegmentAppearanceRegistry,
+    onMediaClick: (List<String>, Int) -> Unit,
+) {
+    if (!segment.isImageGenerationSegment()) return
+    val presentation = ToolPresentationResolver.resolve(segment)
+    val appearanceKey = generatedImageAppearanceKey(messageId, detailIndex)
+    val animateAppearance = rememberSegmentAppearance(
+        registry = segmentAppearanceRegistry,
+        animationKey = appearanceKey,
+        isStreaming = isStreaming,
+    )
+    val appearanceModifier = generationLifecycleAppearanceModifier(
+        animationKey = appearanceKey,
+        animate = animateAppearance,
+        durationMillis = SEGMENT_ENTER_DURATION_MS,
+        initialScale = SEGMENT_ENTER_INITIAL_SCALE,
+    )
+    val images = remember(segment.toolImages) {
+        segment.toolImages.filter { it.path.isNotBlank() }
+    }
+    val paths = remember(images) { images.map(ToolImageAttachment::path) }
+    val image = images.firstOrNull()
+    val thumbnailSize = 300.dp
+    val thumbnailSizePx = with(LocalDensity.current) {
+        thumbnailSize.roundToPx().coerceAtLeast(1)
+    }
+    val context = LocalContext.current
+    val imageRequest = remember(image?.path, thumbnailSizePx, context) {
+        image?.path?.let { path ->
+            ImageRequest.Builder(context)
+                .data(path)
+                .size(thumbnailSizePx, thumbnailSizePx)
+                .build()
+        }
+    }
+    val imagePainter = rememberAsyncImagePainter(model = imageRequest)
+    val contentState = when {
+        presentation.isActive -> "pending"
+        presentation.state != ToolPresentationState.COMPLETED -> "failed"
+        image == null -> "failed"
+        imagePainter.state is AsyncImagePainter.State.Error -> "failed"
+        imagePainter.state is AsyncImagePainter.State.Success -> "success"
+        else -> "pending"
+    }
+    val shape = RoundedCornerShape(8.dp)
+
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.TopStart,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(thumbnailSize)
+                .then(appearanceModifier)
+                .clip(shape)
+                .background(
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Crossfade(
+                targetState = contentState,
+                animationSpec = tween(
+                    durationMillis = STATUS_CROSSFADE_DURATION_MS,
+                    easing = LinearEasing,
+                ),
+                label = "generatedImageContent:$appearanceKey",
+            ) { state ->
+                when (state) {
+                    "pending" -> GeneratedImagePendingDots(
+                        animationKey = appearanceKey,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    "success" -> Image(
+                        painter = imagePainter,
+                        contentDescription = stringResource(R.string.tool_view_image),
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(
+                                enabled = paths.isNotEmpty(),
+                                onClick = { onMediaClick(paths, 0) },
+                            ),
+                    )
+                    else -> Icon(
+                        imageVector = Icons.Default.BrokenImage,
+                        contentDescription = stringResource(R.string.attachment_copy_failed_image),
+                        modifier = Modifier.size(36.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GeneratedImagePendingDots(
+    animationKey: String,
+    modifier: Modifier = Modifier,
+) {
+    val allowContinuousMotion = LocalAgoraMotionPolicy.current.allowContinuousMotion
+    val density = LocalDensity.current
+    val progress = remember(animationKey) { Animatable(0f) }
+    val random = remember(animationKey) { kotlin.random.Random(animationKey.hashCode()) }
+    var anchorStart by remember(animationKey) { mutableStateOf(Offset(0.5f, 0.5f)) }
+    var anchorTarget by remember(animationKey) { mutableStateOf(anchorStart) }
+    LaunchedEffect(animationKey, allowContinuousMotion) {
+        if (!allowContinuousMotion) {
+            progress.snapTo(0f)
+            anchorStart = Offset(0.5f, 0.5f)
+            anchorTarget = anchorStart
+            return@LaunchedEffect
+        }
+        while (true) {
+            progress.snapTo(0f)
+            anchorTarget = Offset(
+                x = random.nextFloat(),
+                y = random.nextFloat(),
+            )
+            progress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(
+                    durationMillis = 1_300,
+                    easing = FastOutSlowInEasing,
+                ),
+            )
+            anchorStart = anchorTarget
+        }
+    }
+    val dotColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+    val dotFieldInsetPx = with(density) { 16.dp.toPx() }
+    val anchorInsetPx = with(density) { 32.dp.toPx() }
+    val spacingPx = with(density) { 16.dp.toPx() }
+    val minRadiusPx = with(density) { 0.7.dp.toPx() }
+    val maxRadiusPx = with(density) { 3.9.dp.toPx() }
+    val influenceDistancePx = with(density) { 150.dp.toPx() }
+
+    Canvas(modifier = modifier) {
+        val dotLeft = dotFieldInsetPx
+        val dotTop = dotFieldInsetPx
+        val dotRight = (size.width - dotFieldInsetPx).coerceAtLeast(dotLeft)
+        val dotBottom = (size.height - dotFieldInsetPx).coerceAtLeast(dotTop)
+        val dotCenterLeft = (dotLeft + maxRadiusPx).coerceAtMost(dotRight)
+        val dotCenterTop = (dotTop + maxRadiusPx).coerceAtMost(dotBottom)
+        val dotCenterRight = (dotRight - maxRadiusPx).coerceAtLeast(dotCenterLeft)
+        val dotCenterBottom = (dotBottom - maxRadiusPx).coerceAtLeast(dotCenterTop)
+        val anchorLeft = anchorInsetPx
+        val anchorTop = anchorInsetPx
+        val anchorRight = (size.width - anchorInsetPx).coerceAtLeast(anchorLeft)
+        val anchorBottom = (size.height - anchorInsetPx).coerceAtLeast(anchorTop)
+        val animatedAnchor = Offset(
+            x = anchorStart.x + (anchorTarget.x - anchorStart.x) * progress.value,
+            y = anchorStart.y + (anchorTarget.y - anchorStart.y) * progress.value,
+        )
+        val anchorPx = Offset(
+            x = anchorLeft + (anchorRight - anchorLeft) * animatedAnchor.x,
+            y = anchorTop + (anchorBottom - anchorTop) * animatedAnchor.y,
+        )
+        val dotFieldWidth = dotCenterRight - dotCenterLeft
+        val dotFieldHeight = dotCenterBottom - dotCenterTop
+        val columnCount = ((dotFieldWidth / spacingPx).toInt() + 1).coerceAtLeast(1)
+        val rowCount = ((dotFieldHeight / spacingPx).toInt() + 1).coerceAtLeast(1)
+        val columnStep = if (columnCount > 1) dotFieldWidth / (columnCount - 1) else 0f
+        val rowStep = if (rowCount > 1) dotFieldHeight / (rowCount - 1) else 0f
+        repeat(rowCount) { row ->
+            val y = dotCenterTop + row * rowStep
+            repeat(columnCount) { column ->
+                val x = dotCenterLeft + column * columnStep
+                val distance = kotlin.math.hypot(x - anchorPx.x, y - anchorPx.y)
+                val distanceScale = (1f - distance / influenceDistancePx).coerceIn(0f, 1f)
+                val influence = distanceScale * distanceScale
+                drawCircle(
+                    color = dotColor,
+                    radius = minRadiusPx + (maxRadiusPx - minRadiusPx) * influence,
+                    center = Offset(x, y),
+                )
+            }
         }
     }
 }
@@ -170,6 +372,7 @@ private enum class ToolImagePreviewState {
 @Composable
 private fun ToolImageResults(
     images: List<ToolImageAttachment>,
+    squareCrop: Boolean,
     onMediaClick: (List<String>, Int) -> Unit,
 ) {
     val displayImages = remember(images) {
@@ -183,6 +386,7 @@ private fun ToolImageResults(
             key(image.path, image.sha256) {
                 ToolImagePreview(
                     image = image,
+                    squareCrop = squareCrop,
                     onClick = { onMediaClick(paths, index) },
                 )
             }
@@ -193,6 +397,7 @@ private fun ToolImageResults(
 @Composable
 private fun ToolImagePreview(
     image: ToolImageAttachment,
+    squareCrop: Boolean,
     onClick: () -> Unit,
 ) {
     val aspectRatio = remember(image.width, image.height) {
@@ -214,11 +419,14 @@ private fun ToolImagePreview(
     )
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val previewHeight = (maxWidth / aspectRatio).coerceIn(140.dp, 420.dp)
+        val previewHeight = if (squareCrop) {
+            maxWidth
+        } else {
+            (maxWidth / aspectRatio).coerceIn(140.dp, 420.dp)
+        }
+        val previewModifier = Modifier.fillMaxWidth().height(previewHeight)
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(previewHeight)
+            modifier = previewModifier
                 .clip(RoundedCornerShape(12.dp))
                 .background(
                     MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.45f),
@@ -248,14 +456,12 @@ private fun ToolImagePreview(
             coil.compose.AsyncImage(
                 model = image.path,
                 contentDescription = stringResource(R.string.tool_view_image),
-                contentScale = ContentScale.Fit,
+                contentScale = if (squareCrop) ContentScale.Crop else ContentScale.Fit,
+                alignment = Alignment.Center,
                 onLoading = { state = ToolImagePreviewState.LOADING },
                 onSuccess = { state = ToolImagePreviewState.LOADED },
                 onError = { state = ToolImagePreviewState.FAILED },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(previewHeight)
-                    .graphicsLayer { alpha = imageAlpha },
+                modifier = previewModifier.graphicsLayer { alpha = imageAlpha },
             )
         }
     }

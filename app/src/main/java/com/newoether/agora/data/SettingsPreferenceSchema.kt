@@ -73,11 +73,14 @@ internal val SEARCH_CONTEXT_WINDOW = intPreferencesKey("search_context_window")
 internal val SEARCH_MATCH_LIMIT = intPreferencesKey("search_match_limit")
 internal val RAG_THRESHOLD = stringPreferencesKey("rag_threshold")
 internal val AUTO_CACHE_ENABLED = booleanPreferencesKey("auto_cache_enabled")
+internal val SHOW_UNCACHED_NOTIFICATION = booleanPreferencesKey("show_uncached_notification")
 internal val AUTO_UPDATE_CHECK = booleanPreferencesKey("auto_update_check")
 internal val LAST_UPDATE_CHECK_TIME = longPreferencesKey("last_update_check_time")
 internal val LOCAL_CHAT_MODELS_JSON = stringPreferencesKey("local_chat_models_json")
 internal val LOCAL_MODEL_IDLE_RETENTION_MINUTES =
     intPreferencesKey("local_model_idle_retention_minutes")
+internal val LOCAL_LOW_CONTEXT_MODE_ENABLED =
+    booleanPreferencesKey("local_low_context_mode_enabled")
 internal val CUSTOM_PROVIDERS_JSON = stringPreferencesKey("custom_providers_json")
 internal val SHELL_ENABLED = booleanPreferencesKey("shell_enabled")
 internal val AUTOMATION_TOOLS_ENABLED = booleanPreferencesKey("automation_tools_enabled")
@@ -116,8 +119,9 @@ internal val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed"
 internal val RATING_PROMPT_SUBMITTED = booleanPreferencesKey("rating_prompt_submitted")
 internal val RATING_PROMPT_DISMISSED = booleanPreferencesKey("rating_prompt_dismissed")
 internal val SHOW_DOCUMENTATION_FAB = booleanPreferencesKey("show_documentation_fab")
-/** Device-local release feature gate. Intentionally excluded from portable settings archives. */
+/** Device-local Developer feature gates. Intentionally excluded from portable settings archives. */
 internal val DEVELOPER_OPTIONS_ENABLED = booleanPreferencesKey("developer_options_enabled")
+internal val DEBUG_MODEL_ENABLED = booleanPreferencesKey("debug_model_enabled")
 internal val TOTAL_MESSAGES_SENT = intPreferencesKey("total_messages_sent")
 internal val DEFAULT_TEMPERATURE = stringPreferencesKey("default_temperature")
 internal val DEFAULT_MAX_TOKENS = intPreferencesKey("default_max_tokens")

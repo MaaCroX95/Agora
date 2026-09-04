@@ -1,10 +1,7 @@
 package com.newoether.agora.ui.chat.bottombar
-
-import android.net.Uri
-import android.os.Build
-import com.newoether.agora.util.DebugLog
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -15,145 +12,108 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Videocam
 import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.newoether.agora.R
+import com.newoether.agora.model.AttachmentImportState
+import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.ui.chat.FileThumbnail
-import com.newoether.agora.ui.chat.readFileContent
 import com.newoether.agora.ui.common.LocalAgoraHaptics
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-
-/**
- * The horizontal strip of pending-attachment thumbnails shown above the composer
- * (images, video frames, files, PDFs), each with a processing overlay and a remove
- * button. Extracted from [ChatBottomBar]; tapping a thumbnail routes through the
- * media / file / PDF click handlers.
- */
+private const val ATTACHMENT_STATUS_CROSSFADE_MS = 200
+/** Projects the exact conversation-owned attachment snapshot and emits identity commands. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun AttachmentPreviewRow(
-    composer: ChatComposerState,
+    attachments: List<SelectedAttachment>,
+    editable: Boolean,
+    onRemove: (String) -> Unit,
+    onRetry: (String) -> Unit,
     onAllMediaClick: ((urls: List<String>, index: Int) -> Unit)?,
     onFileContentClick: ((fileName: String, content: String) -> Unit)?,
     onPdfPagesClick: ((pages: List<String>, startIndex: Int) -> Unit)?,
 ) {
-    val context = LocalContext.current
     val haptics = LocalAgoraHaptics.current
-    val scope = rememberCoroutineScope()
-    val allMediaUrls = composer.selectedAttachments.filter {
-        it.type == "image" || it.type == "video"
-    }.map { it.uri }
+    val mediaAttachments = remember(attachments) {
+        attachments.filter {
+            !it.unavailable && it.importState == AttachmentImportState.READY &&
+                (it.type == "image" || it.type == "video")
+        }
+    }
+    val allMediaUrls = remember(mediaAttachments) {
+        mediaAttachments.map { it.localPath ?: it.uri }
+    }
+    val mediaIndexById = remember(mediaAttachments) {
+        mediaAttachments.mapIndexed { index, attachment -> attachment.localId to index }.toMap()
+    }
     LazyRow(
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp, start = 8.dp, end = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(
-            count = composer.selectedAttachments.size,
-            key = { index -> composer.selectedAttachments[index].localId },
-        ) { index ->
-            val attachment = composer.selectedAttachments[index]
+        items(attachments, key = SelectedAttachment::localId) { attachment ->
             val uriStr = attachment.uri
             val isVideo = attachment.type == "video"
             val isPdf = attachment.type == "pdf"
             val isFile = attachment.type == "file"
-            val attachmentProgress = composer.processingStates[attachment.localId]
-            val legacyProgress = composer.processingStates[uriStr]
-            val isProcessing = attachmentProgress != null || legacyProgress != null
-            val progress = attachmentProgress ?: legacyProgress ?: 0f
-            // Sandbox copy progress is keyed by stable attachment identity. Known byte sizes are
-            // determinate; unknown sizes and legacy non-video processing remain indeterminate.
-            val showIndeterminate = isProcessing && (
-                attachmentProgress?.isNaN() == true ||
-                    (attachmentProgress == null && !isVideo)
-            )
-
-            var videoThumb by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-            LaunchedEffect(uriStr, isVideo) {
-                if (isVideo && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    try {
-                        videoThumb = withContext(Dispatchers.IO) {
-                            context.contentResolver.loadThumbnail(
-                                Uri.parse(uriStr), android.util.Size(128, 128), null
-                            )
-                        }
-                    } catch (e: Exception) { DebugLog.e("AttachmentPreview", "Failed to load video thumbnail", e) }
-                }
-            }
-
+            val isReady = attachment.importState == AttachmentImportState.READY
+            val isProcessing = attachment.importState == AttachmentImportState.PROCESSING
+            val mediaIndex = mediaIndexById[attachment.localId]
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.width(64.dp).padding(top = 5.dp)
             ) {
                 Box {
                     val clickableMod = when {
+                        attachment.unavailable || !isReady -> Modifier
                         isFile -> {
-                            if (!attachment.storage.canPreview) {
+                            if (!attachment.storage.canPreview || attachment.preparedText == null) {
                                 Modifier
                             } else if (onFileContentClick != null) Modifier.clickable {
-                                scope.launch {
-                                    val content = readFileContent(
-                                        context,
-                                        attachment.localPath ?: uriStr,
-                                    )
-                                    onFileContentClick(
-                                        attachment.fileName ?: uriStr,
-                                        content,
-                                    )
-                                }
+                                onFileContentClick(attachment.fileName ?: uriStr, attachment.preparedText)
                             } else Modifier
                         }
                         isPdf -> {
                             if (onPdfPagesClick != null) Modifier.clickable {
-                                val allPaths = attachment.preRenderedPaths ?: emptyList()
-                                val sel = attachment.selectedPages
-                                val paths = if (sel != null && allPaths.isNotEmpty()) {
-                                    allPaths.filterIndexed { i, _ -> i in sel }
-                                } else allPaths
-                                onPdfPagesClick(paths, 0)
+                                onPdfPagesClick(attachment.preRenderedPaths.orEmpty(), 0)
                             } else Modifier
                         }
-                        isVideo -> {
-                            val mediaIndex = allMediaUrls.indexOf(uriStr).coerceAtLeast(0)
-                            Modifier.combinedClickable(
-                                onClick = { onAllMediaClick?.invoke(allMediaUrls, mediaIndex) },
-                                onLongClick = { haptics.longPress() },
-                                hapticFeedbackEnabled = false,
-                            )
-                        }
-                        else -> {
-                            val mediaIndex = allMediaUrls.indexOf(uriStr).coerceAtLeast(0)
-                            Modifier.combinedClickable(
-                                onClick = { onAllMediaClick?.invoke(allMediaUrls, mediaIndex) },
-                                onLongClick = { haptics.longPress() },
-                                hapticFeedbackEnabled = false,
-                            )
-                        }
+                        mediaIndex != null -> Modifier.combinedClickable(
+                            onClick = { onAllMediaClick?.invoke(allMediaUrls, mediaIndex) },
+                            onLongClick = { haptics.longPress() },
+                            hapticFeedbackEnabled = false,
+                        )
+                        else -> Modifier
                     }
                     val thumbModifier = Modifier
                         .size(64.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .then(clickableMod)
-
                     when {
-                        isVideo && videoThumb != null -> {
-                            Image(
-                                bitmap = videoThumb!!.asImageBitmap(),
+                        attachment.unavailable -> {
+                            FileThumbnail(
+                                fileName = attachment.fileName,
+                                isPdf = isPdf,
+                                modifier = thumbModifier,
+                                fallbackLabel = attachment.type.uppercase().take(4)
+                                    .ifEmpty { "FILE" },
+                            )
+                        }
+                        isVideo && isReady && !attachment.processedFrames.isNullOrEmpty() -> {
+                            coil.compose.AsyncImage(
+                                model = attachment.processedFrames.first(),
                                 contentDescription = stringResource(R.string.video_thumbnail),
                                 modifier = thumbModifier,
                                 contentScale = androidx.compose.ui.layout.ContentScale.Crop
@@ -183,12 +143,16 @@ internal fun AttachmentPreviewRow(
                                 )
                             }
                         }
-                        isPdf -> {
-                            FileThumbnail(fileName = null, isPdf = true, modifier = thumbModifier)
-                        }
-                        isFile -> {
-                            FileThumbnail(fileName = attachment.fileName ?: uriStr, isPdf = false, modifier = thumbModifier)
-                        }
+                        isPdf -> FileThumbnail(
+                            fileName = attachment.fileName,
+                            isPdf = true,
+                            modifier = thumbModifier,
+                        )
+                        isFile -> FileThumbnail(
+                            fileName = attachment.fileName ?: uriStr,
+                            isPdf = false,
+                            modifier = thumbModifier,
+                        )
                         else -> {
                             coil.compose.AsyncImage(
                                 model = attachment.localPath ?: uriStr,
@@ -198,61 +162,90 @@ internal fun AttachmentPreviewRow(
                             )
                         }
                     }
-
-                    // Processing indicator overlay
-                    if (isProcessing) {
-                        Box(
+                    Crossfade(
+                        targetState = isProcessing,
+                        animationSpec = tween(ATTACHMENT_STATUS_CROSSFADE_MS),
+                        label = "attachmentProcessingOverlay",
+                    ) { visible ->
+                        if (visible) Box(
                             modifier = Modifier
                                 .matchParentSize()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color.Black.copy(alpha = 0.4f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (showIndeterminate) {
-                                CircularProgressIndicator(
+                                .background(Color.Black.copy(alpha = 0.4f))
+                        )
+                    }
+                    Crossfade(
+                        targetState = attachment.importState,
+                        animationSpec = tween(ATTACHMENT_STATUS_CROSSFADE_MS),
+                        label = "attachmentStatusIndicator",
+                        modifier = Modifier.matchParentSize(),
+                    ) { state ->
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            when (state) {
+                                AttachmentImportState.PROCESSING -> CircularProgressIndicator(
                                     modifier = Modifier.size(24.dp),
                                     strokeWidth = 2.dp,
                                     color = Color.White
                                 )
-                            } else {
-                                CircularProgressIndicator(
-                                    progress = { progress },
-                                    modifier = Modifier.size(24.dp),
-                                    strokeWidth = 2.dp,
-                                    color = Color.White
-                                )
+                                AttachmentImportState.FAILED -> Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color.Black.copy(alpha = 0.25f))
+                                        .clickable(enabled = editable) {
+                                            haptics.selection()
+                                            onRetry(attachment.localId)
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        Icons.Default.ErrorOutline,
+                                        contentDescription = stringResource(R.string.retry),
+                                        tint = Color(0xFFB0B0B0),
+                                        modifier = Modifier.size(28.dp),
+                                    )
+                                }
+                                AttachmentImportState.READY -> Unit
                             }
                         }
                     }
-
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .offset(x = 5.dp, y = (-5).dp)
-                        .size(18.dp)
-                        .background(Color.Black.copy(alpha = 0.8f), CircleShape)
-                        .clip(RoundedCornerShape(18.dp))
-                        .clickable {
-                            composer.removeAttachmentAt(index)
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = stringResource(R.string.remove),
-                        tint = Color.White,
-                        modifier = Modifier.size(10.dp)
-                    )
+                            .size(18.dp)
+                            .background(Color.Black.copy(alpha = 0.8f), CircleShape)
+                            .clip(CircleShape)
+                            .clickable(enabled = editable) {
+                                haptics.selection()
+                                onRemove(attachment.localId)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = stringResource(R.string.remove),
+                            tint = Color.White,
+                            modifier = Modifier.size(10.dp)
+                        )
+                    }
                 }
-                }
-                if ((isFile || isPdf) && attachment.fileName != null) {
+                if ((attachment.unavailable || isFile || isPdf) && attachment.fileName != null) {
                     Text(
                         text = attachment.fileName,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp)
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                if (attachment.unavailable) {
+                    Text(
+                        text = stringResource(R.string.attachment_unavailable),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 1,
                     )
                 }
             }

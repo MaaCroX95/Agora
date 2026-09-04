@@ -1,5 +1,6 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.api.DebugProvider
 import com.newoether.agora.api.LlmProvider
 import com.newoether.agora.api.ModelFetchEmptyResultException
 import com.newoether.agora.api.ModelFetchTimeoutException
@@ -20,6 +21,7 @@ import com.newoether.agora.data.CustomProviderIdentityPolicy
 import com.newoether.agora.data.CustomProviderNamePolicy
 import com.newoether.agora.data.canonicalCustomModelId
 import com.newoether.agora.data.providerDisplayName
+import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.SettingsRepository
 import com.newoether.agora.model.ModelId
 import com.newoether.agora.util.Constants
@@ -101,9 +103,11 @@ internal fun providerConfigurationIsValid(
     registered: Boolean,
     builtIn: Boolean,
     effectiveBaseUrl: String?,
+    debugProviderEnabled: Boolean = false,
 ): Boolean = when {
     providerName == Constants.PROVIDER_UNKNOWN -> false
     !registered -> false
+    providerName == DebugProvider.PROVIDER_NAME -> debugProviderEnabled
     providerName == Constants.PROVIDER_LOCAL -> true
     !builtIn || providerName == Constants.PROVIDER_OLLAMA -> !effectiveBaseUrl.isNullOrBlank()
     else -> activeKey.isNotBlank()
@@ -122,6 +126,7 @@ internal fun providerConfigurationIsValid(
  */
 class ProviderRegistry(
     private val settings: SettingsRepository,
+    private val conversations: ConversationRepository,
     localProvider: LocalProvider,
     private val scope: CoroutineScope,
 ) {
@@ -137,25 +142,47 @@ class ProviderRegistry(
         Constants.PROVIDER_LOCAL to localProvider
     )
 
+    private val debugProvider = DebugProvider()
+
     // Declared as MutableMap so `in`/`contains` keep Map (containsKey) semantics (KT-18053).
     private val providers: MutableMap<String, LlmProvider> = ConcurrentHashMap(builtInProviders)
     private val runtimeEndpointResolutions = ConcurrentHashMap<String, CustomEndpointResolution>()
     private val initialCustomProviderSync = CompletableDeferred<Unit>()
+    @Volatile
+    private var syncStarted = false
 
-    /** Live, thread-safe read view shared with the generation pipeline. */
+    /** Live, thread-safe read view shared with normal provider synchronization and settings UI. */
     val all: Map<String, LlmProvider> get() = providers
 
-    fun isBuiltIn(name: String): Boolean = name in builtInProviders
+    /** Immutable provider set captured for one generation admission. */
+    fun generationSnapshot(): Map<String, LlmProvider> =
+        if (isDebugProviderEnabled()) {
+            providers.toMap() + (DebugProvider.PROVIDER_NAME to debugProvider)
+        } else {
+            providers.toMap()
+        }
 
-    fun getInstance(name: String): LlmProvider = requireNotNull(providers[name]) {
+    private fun isDebugProviderEnabled(): Boolean =
+        settings.developerOptionsEnabled.value && settings.debugModelEnabled.value
+
+    fun isBuiltIn(name: String): Boolean =
+        name == DebugProvider.PROVIDER_NAME || name in builtInProviders
+
+    fun getInstance(name: String): LlmProvider = requireNotNull(getInstanceOrNull(name)) {
         "Provider is not registered: $name"
     }
 
     /** Null-tolerant lookup for UI reads: a settings page can recompose one frame after
      *  its provider was deleted, which must render gracefully, not crash. */
-    fun getInstanceOrNull(name: String): LlmProvider? = providers[name]
+    fun getInstanceOrNull(name: String): LlmProvider? =
+        if (name == DebugProvider.PROVIDER_NAME) {
+            debugProvider.takeIf { isDebugProviderEnabled() }
+        } else {
+            providers[name]
+        }
 
     fun getEffectiveBaseUrl(providerName: String): String? {
+        if (providerName == DebugProvider.PROVIDER_NAME) return null
         val configuredBaseUrl = settings.providerBaseUrls.value[providerName]?.takeIf { it.isNotBlank() }
             ?: return providers[providerName]?.takeIf { !isBuiltIn(providerName) }?.defaultBaseUrl
         val customConfig = settings.customProviders.value.firstOrNull { it.name == providerName }
@@ -173,12 +200,14 @@ class ProviderRegistry(
         providerConfigurationIsValid(
             providerName = providerName,
             activeKey = activeKey,
-            registered = providerName in providers,
+            registered = getInstanceOrNull(providerName) != null,
             builtIn = isBuiltIn(providerName),
             effectiveBaseUrl = getEffectiveBaseUrl(providerName),
+            debugProviderEnabled = isDebugProviderEnabled(),
         )
 
     fun providerForModel(modelId: String): String {
+        if (modelId == DebugProvider.MODEL_ID) return DebugProvider.PROVIDER_NAME
         // Custom model IDs carry the provider's immutable ID. Resolve it to the mutable display
         // name only at the live connection boundary; renaming can no longer reclassify the model.
         if (modelId.contains(":")) {
@@ -279,8 +308,11 @@ class ProviderRegistry(
         }
     }
 
-    /** Waits until the live map reflects persisted custom provider names and base URLs. */
-    suspend fun awaitInitialSync() = initialCustomProviderSync.await()
+    /** Starts and waits for the single identity-migration and live-map synchronization path. */
+    suspend fun awaitInitialSync() {
+        ensureStarted()
+        initialCustomProviderSync.await()
+    }
 
     /**
      * Fetches the live model list for a single provider and caches it. Unlike a full
@@ -353,19 +385,31 @@ class ProviderRegistry(
         "$name|$keyId|$url|$protocol"
     }.sorted().joinToString(",").hashCode().toString()
 
-    /** Starts the long-lived collectors that keep the provider map and caches consistent. */
-    fun launchSyncJobs() {
-        // Sync custom providers into the live map whenever the persisted set changes.
+    /** Starts the process-wide provider lifecycle once, from UI post-list or headless demand. */
+    @Synchronized
+    fun ensureStarted() {
+        if (syncStarted) return
+        syncStarted = true
         scope.launch {
             try {
-                // This DataStore transaction completes before the live registry admits custom
-                // providers, so all newly emitted model IDs use immutable provider identities.
-                settings.normalizeCustomProviderIdentities()
-                // Avoid treating the eager empty default as an authoritative provider set during
-                // a Worker cold start. The first collected value is now the on-disk snapshot.
+                val pending = settings.normalizeCustomProviderIdentities()
+                val migrationResults = pending.map { migration ->
+                    migration to runCatching {
+                        conversations.renameConfiguredProviderModelReferences(
+                            migration.legacyReference,
+                            migration.providerId,
+                        )
+                    }
+                }
+                settings.clearLegacyCustomProviderNames(
+                    migrationResults.filter { (_, result) -> result.isSuccess }.map { it.first },
+                )
+                migrationResults.firstOrNull { (_, result) -> result.isFailure }
+                    ?.second
+                    ?.getOrThrow()
                 settings.awaitInitialLoad()
-                settings.customProviders.first { providers ->
-                    providers.all { CustomProviderIdentityPolicy.isStableId(it.id) }
+                settings.customProviders.first { custom ->
+                    custom.all { CustomProviderIdentityPolicy.isStableId(it.id) }
                 }
                 settings.customProviders.collect { custom ->
                     providers.keys.filter { !isBuiltIn(it) }.forEach { providers.remove(it) }
@@ -383,45 +427,49 @@ class ProviderRegistry(
                 throw error
             }
         }
-        // Auto-clear cached available models when a provider loses its credentials.
         scope.launch {
-            var prevConfigured = emptyMap<String, Boolean>()
-            combine(
-                settings.apiKeys,
-                settings.activeApiKeyIds,
-                settings.providerBaseUrls
-            ) { keys, activeIds, baseUrls -> Triple(keys, activeIds, baseUrls) }
-                .collect { (keys, activeIds, _) ->
-                    if (keys.isEmpty() && activeIds.isEmpty()) return@collect
+            initialCustomProviderSync.await()
+            collectCredentialChanges()
+        }
+    }
 
-                    val current = mutableMapOf<String, Boolean>()
-                    providers.toMap().forEach { (name, _) ->
-                        val activeKey = keys.find { it.id == activeIds[name] }?.key ?: ""
-                        current[name] = isConfigured(name, activeKey)
-                    }
+    private suspend fun collectCredentialChanges() {
+        var prevConfigured = emptyMap<String, Boolean>()
+        combine(
+            settings.apiKeys,
+            settings.activeApiKeyIds,
+            settings.providerBaseUrls
+        ) { keys, activeIds, baseUrls -> Triple(keys, activeIds, baseUrls) }
+            .collect { (keys, activeIds, _) ->
+                if (keys.isEmpty() && activeIds.isEmpty()) return@collect
 
-                    var changed = false
-                    current.forEach { (name, configured) ->
-                        if (prevConfigured[name] == true && !configured) {
-                            val existing = settings.getAvailableModels()[name]
-                            if (!existing.isNullOrEmpty()) {
-                                settings.saveAvailableModels(name, emptyList())
-                                changed = true
-                            }
-                        }
-                    }
-                    prevConfigured = current
+                val current = mutableMapOf<String, Boolean>()
+                providers.toMap().forEach { (name, _) ->
+                    val activeKey = keys.find { it.id == activeIds[name] }?.key ?: ""
+                    current[name] = isConfigured(name, activeKey)
+                }
 
-                    if (changed) {
-                        val allKnownModels =
-                            settings.getAvailableModels().values.flatten().toSet() +
-                                settings.customModels.value
-                        val newEnabled = settings.enabledModels.value.intersect(allKnownModels)
-                        if (newEnabled != settings.enabledModels.value) {
-                            settings.setEnabledModels(newEnabled)
+                var changed = false
+                current.forEach { (name, configured) ->
+                    if (prevConfigured[name] == true && !configured) {
+                        val existing = settings.getAvailableModels()[name]
+                        if (!existing.isNullOrEmpty()) {
+                            settings.saveAvailableModels(name, emptyList())
+                            changed = true
                         }
                     }
                 }
-        }
+                prevConfigured = current
+
+                if (changed) {
+                    val allKnownModels =
+                        settings.getAvailableModels().values.flatten().toSet() +
+                            settings.customModels.value
+                    val newEnabled = settings.enabledModels.value.intersect(allKnownModels)
+                    if (newEnabled != settings.enabledModels.value) {
+                        settings.setEnabledModels(newEnabled)
+                    }
+                }
+            }
     }
 }

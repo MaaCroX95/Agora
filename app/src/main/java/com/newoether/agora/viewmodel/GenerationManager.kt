@@ -3,6 +3,7 @@ package com.newoether.agora.viewmodel
 import android.app.Application
 import com.newoether.agora.util.DebugLog
 import com.newoether.agora.api.LlmProvider
+import com.newoether.agora.api.GenerationError
 import com.newoether.agora.api.ProviderConfig
 import com.newoether.agora.api.StreamEvent
 import com.newoether.agora.api.resolveRequest
@@ -77,6 +78,9 @@ class GenerationManager(
     private val runFinalizationExecutor = GenerationRunFinalizationExecutor(conversations)
     private val apiPathBuilder = GenerationApiPathBuilder(
         conversations = conversations,
+        generationErrorFormatter = { raw ->
+            normalizePersistedGenerationErrorText(context, raw)
+        },
         toolDefinitions = toolExecutor,
     )
     private val completionEffects = GenerationCompletionEffectsExecutor(
@@ -84,14 +88,6 @@ class GenerationManager(
         releaseForegroundLease = AgoraForegroundService::release,
         notify = ::showTerminalNotification,
     )
-
-    // Image/video frame extraction lives in ImageProcessor (single source of truth).
-    private val imageProcessor = ImageProcessor(app)
-
-    suspend fun processImages(
-        uris: List<String>,
-        sliceConfigs: Map<String, VideoSliceConfig> = emptyMap()
-    ): List<String> = imageProcessor.processImagesAndVideos(uris, sliceConfigs)
 
     /** Semantic message search — delegates to the RAG tool provider, which owns the
      *  embedding-search logic. Kept here as the entry point used by ChatViewModel's
@@ -117,7 +113,8 @@ class GenerationManager(
         context: GenerationContext,
     ): Int = ContextTokenEstimator.estimateFixed(
         systemPrompt = config.effectiveSystemPrompt,
-        tools = toolExecutor.definitions(context),
+        tools = if (config.lowContextModeEnabled) emptyList()
+        else toolExecutor.definitions(context),
         initialUserPrompt = config.initialUserPrompt,
         codeExecutionEnabled = config.codeExecutionEnabled,
         googleSearchEnabled = config.googleSearchEnabled,
@@ -129,7 +126,8 @@ class GenerationManager(
         context: GenerationContext,
     ): Int {
         val resolver = config.requestResolver ?: return fixedContextTokenCost(config, context)
-        val definitions = toolExecutor.definitions(context)
+        val definitions = if (config.lowContextModeEnabled) emptyList()
+        else toolExecutor.definitions(context)
         val providerConfig = ProviderConfig(
             apiKey = config.apiKey,
             modelId = config.modelId,
@@ -183,7 +181,7 @@ class GenerationManager(
         var endedAtGuidanceBoundary = false
         var endedForFollowUp = false
         var followUpParentMessageId: String? = null
-        var totalText = ""
+        val totalText = StringBuilder()
         var totalThoughts = ""
         var thinkingPlaceholder = ""
         var totalThoughtTitle: String? = null
@@ -193,6 +191,7 @@ class GenerationManager(
         val thoughtTiming = GenerationThoughtTiming()
         var currentStatus = MessageStatus.SENDING
         var generationErrorMessage: String? = null
+        var generationErrorCode: String? = null
         var retryText: String? = null
         val toolOverlay = GenerationToolOverlay(toolExecutor, config.providerName)
         val generatedImages = mutableListOf<String>()
@@ -227,7 +226,8 @@ class GenerationManager(
 
         fun adoptIncompleteTranscriptionSnapshot() {
             transcriptionExecution.incompleteSnapshot()?.let { snapshot ->
-                totalText = snapshot.text
+                totalText.clear()
+                totalText.append(snapshot.text)
                 totalThoughts = snapshot.thoughts.orEmpty()
                 totalThoughtTitle = snapshot.thoughtTitle
                 totalTokenCount = snapshot.tokenCount
@@ -271,6 +271,8 @@ class GenerationManager(
             val transcription = transcriptionExecution.execute(
                 request = GenerationTranscriptionStageRequest(
                     conversationId = conversationId,
+                    runId = runId,
+                    pass = pass,
                     parentId = parentId,
                     context = ctx,
                     generationJob = generationJob,
@@ -319,7 +321,7 @@ class GenerationManager(
 
             fun modelMessage() = ChatMessage(
                 id = modelMessageId, parentId = parentId,
-                text = totalText, thoughts = totalThoughts.ifBlank { null },
+                text = totalText.toString(), thoughts = totalThoughts.ifBlank { null },
                 thoughtTitle = totalThoughtTitle, tokenCount = totalTokenCount,
                 tokenUsage = totalTokenUsage,
                 status = currentStatus, participant = Participant.MODEL,
@@ -334,6 +336,7 @@ class GenerationManager(
                     currentThoughtSignatureProvider,
                     thoughtTiming.liveDurationMs(),
                     generationErrorMessage,
+                    generationErrorCode,
                     answerDeltas = currentAnswerDeltas,
                 ),
                 retryText = retryText,
@@ -424,6 +427,10 @@ class GenerationManager(
                                         image = image,
                                         ctx = ctx,
                                         generationJob = generationJob,
+                                        conversationId = conversationId,
+                                        runId = runId,
+                                        pass = pass,
+                                        modelMessageId = modelMessageId,
                                         onProgress = onProgress,
                                     )
                                 }
@@ -438,7 +445,6 @@ class GenerationManager(
                     ),
                 )
                 check(outcome.identity == batchEffect.identity)
-                generatedImages.addAll(outcome.generatedImages)
                 roundToolSegments.addAll(outcome.segments)
                 toolCallData = outcome.calls.firstOrNull()
                 toolCallDataList = outcome.calls
@@ -452,7 +458,6 @@ class GenerationManager(
                 event: StreamEvent,
                 providerAnswerStart: Int,
             ) {
-                requestTrace?.recordParsedEvent(event)
                 when (event) {
                     is StreamEvent.TextChunk -> {
                         val answerText = if (currentStatus == MessageStatus.THINKING) event.text.trimStart() else event.text
@@ -463,7 +468,7 @@ class GenerationManager(
                         if (currentStatus == MessageStatus.THINKING) {
                             flushThoughtSegment()
                         }
-                        totalText += answerText
+                        totalText.append(answerText)
                         currentAnswerBuf.append(answerText)
                         val deltaCodePointCount =
                             answerText.codePointCount(0, answerText.length)
@@ -483,7 +488,7 @@ class GenerationManager(
                             rebaseCitationForFinalAnswer(
                                 citation = event.citation,
                                 providerAnswerStart = providerAnswerStart,
-                                finalAnswer = totalText,
+                                finalAnswer = totalText.toString(),
                             ),
                         )
                     }
@@ -538,6 +543,7 @@ class GenerationManager(
                         toolOverlay.failIncompleteStreams(completedToolCalls.keys)
                         currentStatus = MessageStatus.ERROR
                         generationErrorMessage = localizedGenerationError(context, event.error)
+                        generationErrorCode = (event.error as? GenerationError.LocalModel)?.code
                     }
                     is StreamEvent.HostedToolCallUpdate -> {
                         if (!toolOverlay.hasStream(event.streamKey)) {
@@ -612,12 +618,21 @@ class GenerationManager(
             ): ProviderPassOutcome {
                 val providerAnswerStart = totalText.length
                 tokenUsageAccumulator.beginRequest()
+                val providerRequestIndex = providerRequestOrdinal++
+                val providerRequestTrace = if (providerRequestIndex == 0) {
+                    requestTrace
+                } else {
+                    requestTrace?.child(
+                        requestKind = "tool_continuation",
+                        requestIdSuffix = "provider-$providerRequestIndex",
+                    )
+                }
                 val proposedIdentity = RunEffectIdentity(
                     conversationId = conversationId,
                     ownerToken = ownerToken,
                     runId = runId,
                     pass = pass,
-                    effectId = "provider-$pass-${providerRequestOrdinal++}",
+                    effectId = "provider-$pass-$providerRequestIndex",
                 )
                 try {
                     return providerPassEffects.execute(
@@ -626,6 +641,7 @@ class GenerationManager(
                             provider = provider,
                             messages = messages,
                             config = providerConfig,
+                            requestTrace = providerRequestTrace,
                         ),
                         callbacks = ProviderPassExecutionCallbacks(
                             requestEffect = callbacks.onProviderPassRequested,
@@ -851,9 +867,6 @@ class GenerationManager(
             // one terminal effect that may write Room. A concurrent Stop wins by entering
             // Stopping first; a natural completion wins by entering Finalizing first.
             withContext(NonCancellable) {
-                // A cancellation can arrive as ImageGenToolProvider's withContext returns,
-                // after the file was queued but before the normal post-tool drain ran.
-                generatedImages.addAll(toolExecutor.drainGeneratedImages(conversationId))
                 try {
                     val conversationExists = conversations.getConversation(conversationId) != null
                     if (conversationExists) {
@@ -863,7 +876,7 @@ class GenerationManager(
                         val generatedMessage = GenerationFinalSnapshot(
                             messageId = modelMessageId,
                             parentId = parentId,
-                            text = totalText,
+                            text = totalText.toString(),
                             images = generatedImages.toList(),
                             thoughts = totalThoughts,
                             thoughtTitle = totalThoughtTitle,
@@ -880,6 +893,7 @@ class GenerationManager(
                             thoughtSignatureProvider = currentThoughtSignatureProvider,
                             thoughtDurationMs = thoughtTiming.currentDurationMs.takeIf { it > 0L },
                             errorMessage = generationErrorMessage,
+                            errorCode = generationErrorCode,
                             runId = runId,
                             runSequence = modelRunSequence,
                             answerDeltas = currentAnswerDeltas.toList(),

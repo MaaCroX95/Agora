@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
@@ -96,6 +97,54 @@ class ToolCallTextParserTest {
     }
 
     @Test
+    fun parsesIdAliasesAndRejectsConflicts() {
+        val id = ToolCallTextParser.parse(
+            """{"id":"call_1","name":"file_read","arguments":{}}"""
+        ).single()
+        val callId = ToolCallTextParser.parse(
+            """{"call_id":"call_2","name":"file_read","arguments":{}}"""
+        ).single()
+        val matchingAliases = ToolCallTextParser.parse(
+            """{"id":"call_3","call_id":"call_3","name":"file_read","arguments":{}}"""
+        ).single()
+
+        assertEquals("call_1", id.id)
+        assertEquals("call_2", callId.id)
+        assertEquals("call_3", matchingAliases.id)
+        assertTrue(
+            ToolCallTextParser.parse(
+                """{"id":"call_1","call_id":"call_2","name":"file_read","arguments":{}}"""
+            ).isEmpty()
+        )
+    }
+
+    @Test
+    fun rejectsNonStringAndUnsafeIds() {
+        listOf(
+            """{"id":7,"name":"file_read","arguments":{}}""",
+            """{"call_id":false,"name":"file_read","arguments":{}}""",
+            """{"id":"bad id","name":"file_read","arguments":{}}""",
+        ).forEach { content ->
+            assertTrue(ToolCallTextParser.parse(content).isEmpty())
+        }
+    }
+
+    @Test
+    fun parsesNestedFunctionArgumentsAndParameters() {
+        val arguments = ToolCallTextParser.parse(
+            """{"id":"call_1","function":{"name":"file_read","arguments":{"path":"a.txt"}}}"""
+        ).single()
+        val parameters = ToolCallTextParser.parse(
+            """{"call_id":"call_2","function":{"name":"file_write","parameters":"{\"path\":\"b.txt\",\"content\":\"x\"}"}}"""
+        ).single()
+
+        assertEquals("file_read", arguments.name)
+        assertEquals("a.txt", Json.parseToJsonElement(arguments.arguments).jsonObject["path"]?.jsonPrimitive?.content)
+        assertEquals("file_write", parameters.name)
+        assertEquals("b.txt", Json.parseToJsonElement(parameters.arguments).jsonObject["path"]?.jsonPrimitive?.content)
+    }
+
+    @Test
     fun malformedMemberRejectsWholeJsonBatch() {
         val parsed = ToolCallTextParser.parse(
             """[{"name":"file_read","arguments":{"path":"a"}},{"name":"file_write","arguments":"broken"}]"""
@@ -143,7 +192,7 @@ class ToolCallTextParserTest {
 
     @Test
     fun responsesCompletedRoutesTextReasoningAndUsage() {
-        val router = responsesRouter(thinkingEnabled = true)
+        val router = responsesRouter()
 
         assertEquals(
             "answer",
@@ -174,7 +223,7 @@ class ToolCallTextParserTest {
 
     @Test
     fun responsesSummaryPartsAreSeparatedWithoutSplittingSamePartDeltas() {
-        val router = responsesRouter(thinkingEnabled = true)
+        val router = responsesRouter()
 
         val first = router.route(
             responseEvent(
@@ -326,13 +375,49 @@ class ToolCallTextParserTest {
     }
 
     @Test
-    fun responsesThinkingDisabledSuppressesReasoning() {
-        val router = responsesRouter(thinkingEnabled = false)
+    fun responsesReasoningIsAlwaysSurfaced() {
+        val router = responsesRouter()
 
-        assertTrue(
-            router.route(responseEvent("response.reasoning_summary_text.delta", 1, delta = "hidden"))
-                .isEmpty()
-        )
+        val thoughts = listOf(
+            router.route(responseEvent("response.reasoning_text.delta", 1, delta = "reason")),
+            router.route(
+                responseEvent(
+                    "response.reasoning_summary_text.delta",
+                    2,
+                    delta = "summary",
+                    outputIndex = 0,
+                    summaryIndex = 0,
+                )
+            ),
+        ).flatten().filterIsInstance<StreamEvent.ThoughtChunk>()
+
+        assertEquals(listOf("reason", "summary"), thoughts.map { it.thought })
+    }
+
+    @Test
+    fun responsesBlankHostedCompletionIdRetainsEffectiveIdentity() {
+        val router = responsesRouter()
+        val addedItem = OpenAiResponseOutputItem(id = "ws_1", type = "web_search_call")
+        val started = router.route(
+            responseEvent(
+                "response.output_item.added",
+                1,
+                outputIndex = 0,
+                item = addedItem,
+            )
+        ).filterIsInstance<StreamEvent.HostedToolCallUpdate>().single()
+        val completed = router.route(
+            responseEvent(
+                "response.output_item.done",
+                2,
+                outputIndex = 0,
+                item = addedItem.copy(id = " ", type = " "),
+            )
+        ).filterIsInstance<StreamEvent.HostedToolCallUpdate>().single()
+
+        assertEquals("ws_1", started.streamKey)
+        assertEquals(started.streamKey, completed.streamKey)
+        assertTrue(completed.result?.contains("\"id\":\"ws_1\"") == true)
     }
 
     @Test
@@ -341,7 +426,7 @@ class ToolCallTextParserTest {
         val reasoning = OpenAiResponseOutputItem(
             id = "rs_1",
             type = "reasoning",
-            summary = JsonArray(emptyList()),
+            summary = JsonArray(listOf(JsonPrimitive("summary"))),
             encryptedContent = "opaque-reasoning-state",
         )
         assertTrue(
@@ -360,7 +445,12 @@ class ToolCallTextParserTest {
                     "response.output_item.done",
                     2,
                     outputIndex = 0,
-                    item = reasoning,
+                    item = OpenAiResponseOutputItem(
+                        id = " ",
+                        type = " ",
+                        summary = JsonArray(emptyList()),
+                        encryptedContent = " ",
+                    ),
                 ),
             ).isEmpty(),
         )
@@ -440,6 +530,57 @@ class ToolCallTextParserTest {
 
         assertTrue((done + itemDone).none { it is StreamEvent.Error })
         assertEquals(finalArguments, call.arguments)
+    }
+
+    @Test
+    fun responsesBlankCompletionMetadataCannotEraseEffectiveCallState() {
+        val router = responsesRouter()
+        val item = responseCallItem("item_1", "call_1", "lookup")
+        router.route(responseEvent("response.output_item.added", 1, outputIndex = 0, item = item))
+        router.route(
+            responseEvent(
+                "response.function_call_arguments.delta",
+                2,
+                delta = "{}",
+                itemId = "item_1",
+                outputIndex = 0,
+            )
+        )
+        val argumentsDone = router.route(
+            responseEvent(
+                "response.function_call_arguments.done",
+                3,
+                arguments = " ",
+                name = " ",
+                itemId = " ",
+                outputIndex = 0,
+            )
+        )
+        val itemDone = router.route(
+            responseEvent(
+                "response.output_item.done",
+                4,
+                outputIndex = 0,
+                item = responseCallItem(" ", " ", " ", " ").copy(type = " "),
+            )
+        )
+        val call = router.route(
+            responseEvent(
+                "response.completed",
+                5,
+                response = OpenAiResponseEnvelope(status = "completed"),
+            )
+        ).filterIsInstance<StreamEvent.ToolCallRequest>().single()
+
+        assertTrue((argumentsDone + itemDone).none { it is StreamEvent.Error })
+        assertEquals("call_1", call.id)
+        assertEquals("lookup", call.name)
+        assertEquals("{}", call.arguments)
+        val retainedItem = call.responseOutputItems.orEmpty().single()
+        assertEquals("item_1", retainedItem["id"]?.jsonPrimitive?.content)
+        assertEquals("call_1", retainedItem["call_id"]?.jsonPrimitive?.content)
+        assertEquals("lookup", retainedItem["name"]?.jsonPrimitive?.content)
+        assertEquals("{}", retainedItem["arguments"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -725,8 +866,8 @@ class ToolCallTextParserTest {
         )
     }
 
-    private fun responsesRouter(thinkingEnabled: Boolean = true) =
-        OpenAiResponsesEventRouter(Json { ignoreUnknownKeys = true }, thinkingEnabled)
+    private fun responsesRouter() =
+        OpenAiResponsesEventRouter(Json { ignoreUnknownKeys = true })
 
     private fun responseItem(item: OpenAiResponseOutputItem) =
         Json.encodeToJsonElement(OpenAiResponseOutputItem.serializer(), item).jsonObject

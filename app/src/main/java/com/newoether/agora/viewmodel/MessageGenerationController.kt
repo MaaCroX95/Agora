@@ -7,6 +7,7 @@ import com.newoether.agora.api.local.LocalProvider
 import com.newoether.agora.automation.ConversationExecutionCoordinator
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.local.ChatEntity
+import com.newoether.agora.data.local.NewChatPersistEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.SettingsRepository
 import com.newoether.agora.model.ChatMessage
@@ -108,10 +109,9 @@ internal class MessageGenerationController(
     private val renderStore: ConversationRenderStore,
     private val currentConversationId: StateFlow<String?>,
     private val isNewChatMode: StateFlow<Boolean>,
-    private val awaitNewChatWorkspace: suspend () -> NewChatWorkspaceSnapshot,
+    private val newChatEntryId: StateFlow<Long>,
+    private val captureNewChatWorkspace: () -> NewChatWorkspaceSnapshot,
     private val applyCommittedNewConversationState: suspend (String) -> Unit,
-    private val clearCommittedNewChatWorkspace: suspend () -> Unit,
-    private val globalDefaultModel: StateFlow<String>,
     private val currentActiveModel: StateFlow<String>,
     private val messages: StateFlow<List<ChatMessage>>,
     // -- Callbacks into ChatViewModel-owned side effects --
@@ -131,8 +131,9 @@ internal class MessageGenerationController(
     // conversation-open auto-scroll (the send's own physical-bottom scroll handles it) and
     // avoid a double scroll on the first message of a new chat.
     private val onConversationCreatedBySend: (String) -> Unit = {},
-    /** Publishes the first durable Send's conversation and captured model into selection state. */
-    private val onConversationAcceptedBySend: (String, String) -> Unit = { _, _ -> },
+    /** Selects a first durable Send only while its exact New Chat entry is still occupied. */
+    private val onConversationAcceptedBySend:
+        suspend (String, String, Long) -> Boolean = { _, _, _ -> false },
     // Called once when a hidden task/loop execution becomes searchable. The callback
     // only enqueues background work; embedding computation must not run under the send lock.
     // Called after a USER message row is persisted (send / edit), so incremental RAG
@@ -145,11 +146,16 @@ internal class MessageGenerationController(
     private val onTreeMutationSettling: (requestId: Long?, targetMessageId: String?) -> Unit =
         { _, _ -> },
     private val onTreeMutationFailed: (requestId: Long?) -> Unit = {},
-    private val regenerationTransitions: RegenerationTransitionCoordinator,
+    private val regenerationTransitions: BranchReplacementTransitionCoordinator,
     private val pauseConversationTasks: suspend (String) -> Unit = {},
 ) {
     private val titleGenerator = ConversationTitleGenerator(convRepo, settings, providerRegistry)
-    private val contextCompactor = ContextCompactor(conversations = convRepo)
+    private val contextCompactor = ContextCompactor(
+        conversations = convRepo,
+        generationErrorFormatter = { raw ->
+            normalizePersistedGenerationErrorText(appContext, raw)
+        },
+    )
     private val terminalSettlement = GenerationTerminalSettlementController(
         conversations = convRepo,
         stopFinalizer = GenerationFinalizer(convRepo) { _, _ -> },
@@ -208,39 +214,13 @@ internal class MessageGenerationController(
         toUiMessage = { it.toUiChatMessage(appContext) },
         isConversationOpen = { currentConversationId.value == it },
         applyCommittedNewConversationState = applyCommittedNewConversationState,
-        clearCommittedNewChatWorkspace = clearCommittedNewChatWorkspace,
-        publishNewConversation = { conversationId, modelId ->
-            onConversationAcceptedBySend(conversationId, modelId)
-            onConversationCreatedBySend(conversationId)
+        publishNewConversation = { conversationId, modelId, entryId ->
+            onConversationAcceptedBySend(conversationId, modelId, entryId).also { selected ->
+                if (selected) onConversationCreatedBySend(conversationId)
+            }
         },
         onUserMessagePersisted = onUserMessagePersisted,
         onGenerateTitle = ::generateTitle,
-    )
-    private val editService = ConversationEditService(
-        conversations = convRepo,
-        requestBuilder = requestBuilder,
-        executionCoordinator = executionCoordinator,
-        inputCloner = EditedRunInputCloner(
-            java.io.File(application.filesDir, "run-inputs"),
-        ),
-        terminalSettlement = terminalSettlement,
-        boundRunGenerationLauncher = boundRunGenerationLauncher,
-        toUiMessage = { it.toUiChatMessage(appContext) },
-        isConversationOpen = { currentConversationId.value == it },
-        projectGraph = { _, committedMessages, selectedChildren, streamingMessage ->
-            renderStore.commitGraph(
-                committedMessages = committedMessages,
-                selectedChildren = selectedChildren,
-                streamingMessage = streamingMessage,
-            )
-        },
-        awaitProjectedPath = { conversationId, messageId ->
-            combine(messages, currentConversationId) { path, openConversationId ->
-                openConversationId != conversationId || path.any { it.id == messageId }
-            }.first { projectedOrClosed -> projectedOrClosed }
-        },
-        onUserMessagePersisted = onUserMessagePersisted,
-        onScrollToMessage = { onScrollToMessage(it) },
     )
     private val queuedGuidanceDrainExecutor = QueuedGuidanceDrainExecutor(
         conversations = convRepo,
@@ -259,6 +239,33 @@ internal class MessageGenerationController(
             )
         },
         onScrollToAbsoluteBottomAfter = onScrollToAbsoluteBottomAfter,
+        onUserMessagePersisted = onUserMessagePersisted,
+    )
+    private val editService = ConversationEditService(
+        conversations = convRepo,
+        requestBuilder = requestBuilder,
+        executionCoordinator = executionCoordinator,
+        transitions = regenerationTransitions,
+        inputCloner = EditedRunInputCloner(
+            java.io.File(application.filesDir, "run-inputs"),
+        ),
+        terminalSettlement = terminalSettlement,
+        boundRunGenerationLauncher = boundRunGenerationLauncher,
+        guidanceDrain = queuedGuidanceDrainExecutor,
+        toUiMessage = { it.toUiChatMessage(appContext) },
+        isConversationOpen = { currentConversationId.value == it },
+        projectGraph = { _, committedMessages, selectedChildren, streamingMessage ->
+            renderStore.commitGraph(
+                committedMessages = committedMessages,
+                selectedChildren = selectedChildren,
+                streamingMessage = streamingMessage,
+            )
+        },
+        awaitProjectedPath = { conversationId, messageId ->
+            combine(messages, currentConversationId) { path, openConversationId ->
+                openConversationId != conversationId || path.any { it.id == messageId }
+            }.first { projectedOrClosed -> projectedOrClosed }
+        },
         onUserMessagePersisted = onUserMessagePersisted,
     )
     private val regenerationService = ConversationRegenerationService(
@@ -332,14 +339,21 @@ internal class MessageGenerationController(
      * MODEL target removes its regeneration subtree while retaining the shared boundary USER.
      * ACTIVE and STOPPING both reject deletion; Stop is never an implicit side effect.
      */
-    fun deleteMessage(messageId: String): Int {
-        val currentId = currentConversationId.value ?: return 0
+    fun deleteMessage(
+        messageId: String,
+        onResult: ((Boolean) -> Unit)? = null,
+    ): Int {
+        val currentId = currentConversationId.value ?: run {
+            onResult?.invoke(false)
+            return 0
+        }
         val state = registry.getOrCreate(currentId)
         return branchMutationService.delete(
             conversationId = currentId,
             messageId = messageId,
             state = state,
             snapshot = renderStore.allMessages,
+            onResult = onResult,
         )
     }
 
@@ -351,7 +365,6 @@ internal class MessageGenerationController(
         val genId = currentConversationId.value ?: return false
         val state = registry.getOrCreate(genId)
         val modelId = currentActiveModel.value
-        requestBuilder.resolveProviderKey(modelId) ?: return false
         return regenerationService.regenerate(
             ConversationRegenerationRequest(
                 conversationId = genId,
@@ -377,7 +390,7 @@ internal class MessageGenerationController(
         val genId = currentConversationId.value ?: return false
         val state = registry.getOrCreate(genId)
         val modelId = currentActiveModel.value
-        requestBuilder.resolveProviderKey(modelId) ?: return false
+        requestBuilder.awaitProviderKey(modelId) ?: return false
         return editService.edit(
             ConversationEditRequest(
                 conversationId = genId,
@@ -394,75 +407,105 @@ internal class MessageGenerationController(
     // sendMessage
     // ==================================
 
-    suspend fun sendMessage(
-        text: String,
-        images: List<String> = emptyList(),
-        attachments: List<SelectedAttachment> = emptyList(),
-        onAccepted: suspend (SendAcceptance) -> Unit = {},
-    ): SendAcceptance? = withContext(Dispatchers.Default) {
-        sendMessageOffMain(text, images, attachments, onAccepted)
+    internal fun captureForegroundSendTarget(ownerId: String): ForegroundSendTarget? {
+        val currentId = currentConversationId.value
+        val wasNewChat = ownerId == NEW_CHAT_WORKSPACE_ID
+        if (wasNewChat) {
+            if (!isNewChatMode.value || currentId != null) return null
+        } else if (isNewChatMode.value || currentId != ownerId) {
+            return null
+        }
+        return ForegroundSendTarget(
+            ownerId = ownerId,
+            conversationId = if (wasNewChat) UUID.randomUUID().toString() else ownerId,
+            runId = UUID.randomUUID().toString(),
+            wasNewChat = wasNewChat,
+            newChatEntryId = newChatEntryId.value.takeIf { wasNewChat },
+            modelId = currentActiveModel.value,
+            newChatWorkspace = if (wasNewChat) captureNewChatWorkspace() else null,
+        )
     }
 
-    private suspend fun sendMessageOffMain(
-        text: String,
-        images: List<String>,
-        attachments: List<SelectedAttachment>,
-        onAccepted: suspend (SendAcceptance) -> Unit,
-    ): SendAcceptance? {
-
-        val wasNewChat = isNewChatMode.value || currentConversationId.value == null
-        val newChatAdmission = if (wasNewChat) {
-            awaitNewChatWorkspace().toSendAdmission(globalDefaultModel.value)
-        } else {
-            null
-        }
-        val selectedModelId = newChatAdmission?.modelId ?: currentActiveModel.value
-        val capturedNewChatSystemPromptId = newChatAdmission?.systemPromptId
-        val capturedNewConversationSettings = newChatAdmission?.conversationSettings
-        // Pre-flight: a blank model fails fast BEFORE creating a new-chat row or enqueueing, so the
-        // Send button never swallows a message into a conversation that can't generate.
-        if (selectedModelId.isBlank()) {
+    internal suspend fun prepareForegroundSend(
+        target: ForegroundSendTarget,
+        composer: ConversationComposerSnapshot,
+    ): ForegroundSendAdmission? {
+        settings.awaitInitialLoad()
+        if (target.modelId.isBlank()) {
             onSnackbar(application.getString(R.string.no_model_selected))
             return null
         }
-        val selectedProvider = requestBuilder.resolveProviderKey(selectedModelId) ?: return null
+        val selectedProvider = requestBuilder.awaitProviderKey(target.modelId) ?: return null
         if (selectedProvider.providerName == Constants.PROVIDER_LOCAL) {
-            val localModelId = selectedModelId.substringAfter("${Constants.PROVIDER_LOCAL}:")
+            val localModelId = target.modelId.substringAfter("${Constants.PROVIDER_LOCAL}:")
             val localConfig = settings.localChatModels.value.find { it.modelId == localModelId }
             if (localConfig == null || !java.io.File(localConfig.localFilePath).exists()) {
                 onSnackbar(application.getString(R.string.local_model_not_found))
                 return null
             }
         }
-        // Resolve a stable id before claiming the generation slot, but do not publish a new-chat
-        // transition yet. Its conversation + Run + message graph commit atomically below; only
-        // after the composer acknowledges that durable success may the screen switch and render.
-
-        val genId = if (wasNewChat) {
-            UUID.randomUUID().toString()
+        val workspace = target.newChatWorkspace?.awaitCaptured()
+        val conversationSnapshot = if (target.wasNewChat) {
+            ChatEntity(
+                id = target.conversationId,
+                title = initialConversationTitle(
+                    prompt = composer.text,
+                    fallback = appContext.getString(R.string.new_chat),
+                ),
+                modelId = target.modelId,
+                systemPromptId = workspace?.systemPromptId,
+            )
         } else {
-            currentConversationId.value ?: return null
+            convRepo.getConversation(target.conversationId) ?: return null
         }
-        if (!wasNewChat) {
-            val state = registry.getOrCreate(genId)
-            if (!state.generating.value) {
-                settings.awaitInitialLoad()
-                val preflightRunId = "compact_preflight_${UUID.randomUUID()}"
-                val snapshot = requestBuilder.captureAdmissionSnapshot(
-                    conversationId = genId,
-                    runId = preflightRunId,
-                    modelId = selectedModelId,
+        val settingsOverride = if (target.wasNewChat) {
+            workspace?.conversationSettings
+        } else {
+            settings.conversationSettings.value[target.ownerId]
+        }
+        val generationSnapshot = requestBuilder.captureAdmissionSnapshot(
+            conversationId = target.conversationId,
+            runId = target.runId,
+            modelId = target.modelId,
+            conversationOverride = conversationSnapshot,
+            conversationSettingsOverride = settingsOverride,
+        )
+        return ForegroundSendAdmission(
+            target = target,
+            generationSnapshot = generationSnapshot,
+            newConversation = conversationSnapshot.takeIf { target.wasNewChat },
+            newConversationSettings = workspace?.conversationSettings,
+            newChatPersistSnapshot = if (target.wasNewChat) {
+                (workspace?.persisted ?: NewChatPersistEntity()).copy(
+                    draftText = composer.text,
+                    draftAttachments = composer.attachments
+                        .takeIf(List<*>::isNotEmpty)
+                        ?.let(Json::encodeToString),
                 )
+            } else {
+                null
+            },
+        )
+    }
+
+    internal suspend fun sendMessage(
+        admission: ForegroundSendAdmission,
+        text: String,
+        attachments: List<SelectedAttachment>,
+        onAccepted: suspend (SendAcceptance) -> Unit,
+    ): SendAcceptance? = withContext(Dispatchers.Default) {
+        val target = admission.target
+        if (!target.wasNewChat) {
+            val state = registry.getOrCreate(target.conversationId)
+            if (!state.generating.value) {
+                val snapshot = admission.generationSnapshot
                 val fixedTokenCost = generationManagerProvider().resolvedFixedContextTokenCost(
                     snapshot.config,
                     snapshot.context,
                 )
-                // The Compact row is durable and visible before this returns. sendInto then sees
-                // the same occupied generation slot and accepts this input through the ordinary
-                // FIFO guidance queue instead of waiting in a Compact-specific preflight state.
                 when (
                     val compact = compactController.startAutomaticBeforeSend(
-                        conversationId = genId,
+                        conversationId = target.conversationId,
                         contextLimit = snapshot.config.maxContextWindow,
                         config = snapshot.automaticCompact.copy(fixedTokenCost = fixedTokenCost),
                         state = state,
@@ -470,37 +513,28 @@ internal class MessageGenerationController(
                 ) {
                     is CompactResult.Failed -> {
                         onSnackbar(compactFailureMessage(appContext, compact))
-                        return null
+                        return@withContext null
                     }
-                    is CompactResult.Stopped -> return null
+                    is CompactResult.Stopped -> return@withContext null
                     CompactResult.NotNeeded,
                     is CompactResult.Created -> Unit
                 }
             }
         }
-        val newConversation = if (wasNewChat) {
-            ChatEntity(
-                id = genId,
-                title = initialConversationTitle(
-                    prompt = text,
-                    fallback = appContext.getString(R.string.new_chat),
-                ),
-                modelId = selectedModelId,
-                systemPromptId = capturedNewChatSystemPromptId,
-            )
-        } else {
-            null
-        }
-        return sendInto(
-            genId = genId,
-            wasNewChat = wasNewChat,
-            newConversation = newConversation,
+        sendInto(
+            genId = target.conversationId,
+            wasNewChat = target.wasNewChat,
+            newConversation = admission.newConversation,
             text = text,
-            images = images,
             attachments = attachments,
-            modelId = selectedModelId,
-            newConversationSettings = capturedNewConversationSettings,
+            modelId = admission.generationSnapshot.selectedModelId,
+            touchConversationOnAdmission = true,
             onAccepted = onAccepted,
+            newConversationSettings = admission.newConversationSettings,
+            newChatPersistSnapshot = admission.newChatPersistSnapshot,
+            proposedRunId = target.runId,
+            admissionSnapshot = admission.generationSnapshot,
+            originNewChatEntryId = target.newChatEntryId,
         )
     }
 
@@ -522,37 +556,44 @@ internal class MessageGenerationController(
         wasNewChat: Boolean,
         newConversation: ChatEntity?,
         text: String,
-        images: List<String>,
         attachments: List<SelectedAttachment>,
         modelId: String,
+        requestKind: String = "chat",
+        touchConversationOnAdmission: Boolean,
         onAccepted: suspend (SendAcceptance) -> Unit,
         newConversationSettings: ConversationSettings? = null,
+        newChatPersistSnapshot: NewChatPersistEntity? = null,
         scrollPolicy: SendScrollPolicy = SendScrollPolicy.FORCE,
         alreadyHoldsLock: Boolean = false,
         directOnly: Boolean = false,
+        proposedRunId: String = UUID.randomUUID().toString(),
+        admissionSnapshot: GenerationAdmissionSnapshot? = null,
+        originNewChatEntryId: Long? = null,
         /** Reports the model row this send created, so an automation caller never has to re-derive
          *  it by scanning the conversation tail (a concurrent branch would win that scan). */
         onModelMessageCreated: ((String) -> Unit)? = null,
         onGenerationJob: ((kotlinx.coroutines.Job?) -> Unit)? = null,
     ): SendAcceptance? {
         val state = registry.getOrCreate(genId)
-        val providerName = requestBuilder.resolveProviderKey(modelId)?.providerName ?: return null
-        if (providerName == Constants.PROVIDER_LOCAL) {
-            val localModelId = modelId.substringAfter("${Constants.PROVIDER_LOCAL}:")
-            val config = settings.localChatModels.value.find { it.modelId == localModelId }
-            if (config == null || !java.io.File(config.localFilePath).exists()) {
-                onSnackbar(application.getString(R.string.local_model_not_found))
-                return null
+        if (admissionSnapshot == null) {
+            val providerName = requestBuilder.awaitProviderKey(modelId)?.providerName ?: return null
+            if (providerName == Constants.PROVIDER_LOCAL) {
+                val localModelId = modelId.substringAfter("${Constants.PROVIDER_LOCAL}:")
+                val config = settings.localChatModels.value.find { it.modelId == localModelId }
+                if (config == null || !java.io.File(config.localFilePath).exists()) {
+                    onSnackbar(application.getString(R.string.local_model_not_found))
+                    return null
+                }
             }
+        } else {
+            require(admissionSnapshot.conversationId == genId)
+            require(admissionSnapshot.runId == proposedRunId)
+            require(admissionSnapshot.selectedModelId == modelId)
         }
 
-        // Expensive media work finishes before the atomic placement decision. The composer does
-        // not clear until this function returns, and the placement below does not report success
-        // until Room owns every input/file reference.
-        val payloadLease = PreparedMessagePayloadLease(
-            payloadBuilder.buildMessagePayload(application, images, attachments),
-        )
-        val payload = payloadLease.payload
+        // Attachment IO and transformation completed before submission freeze. This is a pure,
+        // ordered projection of the frozen READY artifacts.
+        val payload = payloadBuilder.buildComposerPayload(attachments)
 
         suspend fun enqueueAcceptedGuidance(runId: String): QueuedSend {
             val queued = QueuedSend(
@@ -561,16 +602,14 @@ internal class MessageGenerationController(
                 modelId = modelId,
                 attachments = attachments,
                 runId = runId,
-                images = images,
                 preparedImages = payload.allImages,
                 preparedAttachmentMetaJson = payload.attachmentMeta?.let(Json::encodeToString),
-                preparedOwnedPaths = payload.preparedOwnedPaths,
+                generationSnapshot = admissionSnapshot,
             )
             // Guidance acceptance is intentionally memory-only. The current provider pass
             // observes it through hasQueuedSends(), but Room, the selected tree, and LazyColumn
             // cannot expose a bubble before the next durable boundary.
             state.enqueueSend(queued)
-            payloadLease.transferOwnership()
             try {
                 acceptanceNotifier.notify(
                     acceptance = SendAcceptance.Queued(queued.id, genId),
@@ -578,17 +617,14 @@ internal class MessageGenerationController(
                 )
             } catch (error: Exception) {
                 state.removeQueuedSend(queued.id)
-                payloadLease.reclaimAfterRejectedTransfer()
                 throw error
             }
             return queued
         }
 
         var placement: SendPlacement? = null
-        val proposedRunId = UUID.randomUUID().toString()
         val sendEffectId = "send-$proposedRunId"
-        try {
-            while (placement == null) {
+        while (placement == null) {
                 val decision = state.queueMutationMutex.withLock {
                     val pendingQueue = state.queuedSends.value
                     val transition = state.commands.requestSend(
@@ -648,13 +684,8 @@ internal class MessageGenerationController(
                     placement = decision
                 }
             }
-        } catch (error: Exception) {
-            payloadLease.releaseIfUnowned()
-            throw error
-        }
 
         if (placement is SendPlacement.Rejected) {
-            payloadLease.releaseIfUnowned()
             return null
         }
         if (placement is SendPlacement.Queued) {
@@ -671,13 +702,18 @@ internal class MessageGenerationController(
                 wasNewChat = wasNewChat,
                 newConversation = newConversation,
                 userText = text,
-                payloadLease = payloadLease,
+                payload = payload,
                 modelId = modelId,
+                requestKind = requestKind,
+                touchConversationOnAdmission = touchConversationOnAdmission,
                 newConversationSettings = newConversationSettings,
+                newChatPersistSnapshot = newChatPersistSnapshot,
                 alreadyHoldsLock = alreadyHoldsLock,
                 requestScroll = resolveScrollCallback(scrollPolicy),
                 onAccepted = onAccepted,
                 onModelMessageCreated = onModelMessageCreated,
+                generationSnapshot = admissionSnapshot,
+                originNewChatEntryId = originNewChatEntryId,
             ),
             state,
         )
@@ -714,6 +750,7 @@ internal class MessageGenerationController(
         genId: String,
         text: String,
         modelId: String,
+        requestKind: String,
     ): AutomationSendOutcome {
         var generationJob: kotlinx.coroutines.Job? = null
         var createdModelMessageId: String? = null
@@ -722,9 +759,10 @@ internal class MessageGenerationController(
             wasNewChat = false,
             newConversation = null,
             text = text,
-            images = emptyList(),
             attachments = emptyList(),
             modelId = modelId,
+            requestKind = requestKind,
+            touchConversationOnAdmission = false,
             onAccepted = {},
             scrollPolicy = SendScrollPolicy.ATTACHED_ONLY,
             alreadyHoldsLock = true,
@@ -784,6 +822,7 @@ internal class MessageGenerationController(
                         conversationId = request.generationRequest.conversationId,
                         parentMessageId = compactMessageId,
                         snapshot = request.generationRequest.snapshot,
+                        touchConversationOnAdmission = false,
                     ),
                     state = state,
                 )

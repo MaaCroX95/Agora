@@ -2,6 +2,10 @@ package com.newoether.agora.viewmodel
 
 import com.newoether.agora.api.GenerationError
 import com.newoether.agora.api.StreamEvent
+import com.newoether.agora.api.ToolDefinition
+import com.newoether.agora.api.ToolFunction
+import com.newoether.agora.api.ToolParameters
+import com.newoether.agora.api.util.ProviderStreamNormalizer
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -173,11 +177,199 @@ class ProviderThoughtBoundaryNormalizerTest {
         assertFalse(events.any { it is StreamEvent.ThoughtChunk && it.thought.contains("</thinking>") })
     }
 
-    private suspend fun normalize(events: List<StreamEvent>): List<StreamEvent> {
+    @Test
+    fun `native parser authority keeps tool authority while recovering inline thinking`() = runTest {
+        val content = "<think>reason</think><tool_call>{\"name\":\"file_read\",\"arguments\":{}}</tool_call>"
+        val native = StreamEvent.ToolCallRequest(
+            id = "call_native",
+            name = "file_read",
+            arguments = "{}",
+            streamKey = "native_stream",
+        )
+        val events = mutableListOf<StreamEvent>()
+        val normalizer = ProviderStreamNormalizer(
+            tools = TOOLS,
+            nativeTextParsingAuthoritative = true,
+        )
+
+        normalizer.emit(StreamEvent.TextChunk(content), events::add)
+        normalizer.emit(native, events::add)
+        normalizer.finish(events::add)
+
+        assertEquals("reason", events.filterIsInstance<StreamEvent.ThoughtChunk>()
+            .joinToString("") { it.thought })
+        assertEquals(
+            "<tool_call>{\"name\":\"file_read\",\"arguments\":{}}</tool_call>",
+            events.filterIsInstance<StreamEvent.TextChunk>().joinToString("") { it.text },
+        )
+        assertEquals(listOf(native), events.filterIsInstance<StreamEvent.ToolCallRequest>())
+    }
+
+    @Test
+    fun `native parser authority recovers device channel thinking across every split`() = runTest {
+        val source = "<|channel>thought Thinking Process:reason<channel|>final answer"
+        for (split in 0..source.length) {
+            val events = mutableListOf<StreamEvent>()
+            val normalizer = ProviderStreamNormalizer(
+                tools = TOOLS,
+                nativeTextParsingAuthoritative = true,
+            )
+
+            normalizer.emit(StreamEvent.TextChunk(source.substring(0, split)), events::add)
+            normalizer.emit(StreamEvent.TextChunk(source.substring(split)), events::add)
+            normalizer.finish(events::add)
+
+            assertEquals(
+                "split=$split",
+                "Thinking Process:reason",
+                events.filterIsInstance<StreamEvent.ThoughtChunk>()
+                    .joinToString("") { it.thought },
+            )
+            assertEquals(
+                "split=$split",
+                "final answer",
+                events.filterIsInstance<StreamEvent.TextChunk>()
+                    .joinToString("") { it.text },
+            )
+            assertTrue(
+                "split=$split",
+                events.none { event ->
+                    event is StreamEvent.TextChunk &&
+                        (event.text.contains("<|channel>") || event.text.contains("<channel|>"))
+                },
+            )
+            assertTrue(events.none { it is StreamEvent.ToolCallRequest })
+        }
+    }
+
+    @Test
+    fun `native parser authority keeps device markers literal inside markdown code`() = runTest {
+        val content = "`<|channel>thought Thinking Process:inline<channel|>`\n```\n" +
+            "<|channel>thought Thinking Process:fenced<channel|>\n```"
+        val events = mutableListOf<StreamEvent>()
+        val normalizer = ProviderStreamNormalizer(
+            tools = TOOLS,
+            nativeTextParsingAuthoritative = true,
+        )
+
+        content.map(Char::toString).forEach { chunk ->
+            normalizer.emit(StreamEvent.TextChunk(chunk), events::add)
+        }
+        normalizer.finish(events::add)
+
+        assertEquals(content, events.filterIsInstance<StreamEvent.TextChunk>()
+            .joinToString("") { it.text })
+        assertTrue(events.none { it is StreamEvent.ThoughtChunk })
+    }
+
+    @Test
+    fun `text tool candidates stay private until stream completion`() = runTest {
+        val events = mutableListOf<StreamEvent>()
+        val normalizer = ProviderStreamNormalizer(TOOLS)
+
+        normalizer.emit(StreamEvent.TextChunk("<tool_call>{\"id\":\"call_1\","), events::add)
+        normalizer.emit(
+            StreamEvent.TextChunk("\"name\":\"file_read\",\"arguments\":{}}</tool_call>"),
+            events::add,
+        )
+        assertTrue(events.none { it is StreamEvent.ToolCallUpdate || it is StreamEvent.ToolCallRequest })
+
+        normalizer.finish(events::add)
+
+        val call = events.filterIsInstance<StreamEvent.ToolCallRequest>().single()
+        assertEquals("call_1", call.id)
+        assertEquals("file_read", call.name)
+        assertEquals("{}", call.arguments)
+        assertTrue(events.none { it is StreamEvent.ToolCallUpdate })
+    }
+
+    @Test
+    fun `native tool call suppresses equivalent buffered text call`() = runTest {
+        val events = mutableListOf<StreamEvent>()
+        val normalizer = ProviderStreamNormalizer(TOOLS)
+        val native = StreamEvent.ToolCallRequest(
+            id = "call_native",
+            name = "file_read",
+            arguments = "{ \"path\": \"a.txt\" }",
+            streamKey = "native_stream",
+        )
+
+        normalizer.emit(
+            StreamEvent.TextChunk(
+                "<tool_call>{\"name\":\"file_read\",\"arguments\":{\"path\":\"a.txt\"}}</tool_call>"
+            ),
+            events::add,
+        )
+        normalizer.emit(native, events::add)
+        normalizer.finish(events::add)
+
+        assertEquals(listOf(native), events.filterIsInstance<StreamEvent.ToolCallRequest>())
+        assertTrue(events.none { it is StreamEvent.ToolCallUpdate })
+    }
+
+    @Test
+    fun `prose and markdown tool examples remain literal text`() = runTest {
+        val content = "Example: <invoke name=\"file_read\"></invoke>\n`<tool_call>{}</tool_call>`"
+        val events = normalize(listOf(StreamEvent.TextChunk(content)), TOOLS)
+
+        assertEquals(content, events.filterIsInstance<StreamEvent.TextChunk>().joinToString("") { it.text })
+        assertTrue(events.none { it is StreamEvent.ToolCallRequest || it is StreamEvent.Error })
+    }
+
+    @Test
+    fun `malformed syntax and unknown tool names fail closed`() = runTest {
+        val malformed = normalize(
+            listOf(StreamEvent.TextChunk("<tool_call>{\"name\":\"file_read\"}")),
+            TOOLS,
+        )
+        val unknown = normalize(
+            listOf(
+                StreamEvent.TextChunk(
+                    "<tool_call>{\"name\":\"File_Read\",\"arguments\":{}}</tool_call>"
+                )
+            ),
+            TOOLS,
+        )
+
+        assertTrue(malformed.any { it is StreamEvent.Error })
+        assertTrue(unknown.any { it is StreamEvent.Error })
+        assertTrue((malformed + unknown).none { it is StreamEvent.ToolCallRequest })
+    }
+
+    @Test
+    fun `native thought metadata wins without duplicating equivalent inline content`() = runTest {
+        val events = normalize(
+            listOf(
+                StreamEvent.TextChunk("<think>same reasoning</think>"),
+                StreamEvent.ThoughtChunk("same reasoning", title = "Thinking", signature = "sig"),
+            )
+        )
+        val thoughts = events.filterIsInstance<StreamEvent.ThoughtChunk>()
+
+        assertEquals("same reasoning", thoughts.joinToString("") { it.thought })
+        assertTrue(thoughts.any { it.title == "Thinking" && it.signature == "sig" })
+    }
+
+    private suspend fun normalize(
+        events: List<StreamEvent>,
+        tools: List<ToolDefinition>? = null,
+    ): List<StreamEvent> {
         val normalized = mutableListOf<StreamEvent>()
-        val normalizer = ProviderThoughtBoundaryNormalizer()
+        val normalizer = ProviderStreamNormalizer(tools)
         events.forEach { event -> normalizer.emit(event, normalized::add) }
         normalizer.finish(normalized::add)
         return normalized
+    }
+
+    private companion object {
+        val TOOLS = listOf(
+            ToolDefinition(
+                function = ToolFunction(
+                    name = "file_read",
+                    description = "Read a file",
+                    parameters = ToolParameters(properties = emptyMap()),
+                )
+            )
+        )
     }
 }

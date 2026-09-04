@@ -11,7 +11,9 @@ import com.newoether.agora.api.util.safeWireToolName
 import com.newoether.agora.model.CitationAnchor
 import com.newoether.agora.model.CitationPolicy
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -25,6 +27,13 @@ private val RESPONSES_THOUGHT_TITLE_HEADING = Regex("(?m)^#+\\s*(.*)$")
 private fun extractResponsesThoughtTitle(content: String): String? =
     RESPONSES_THOUGHT_TITLE_BOLD.find(content)?.groupValues?.get(1)
         ?: RESPONSES_THOUGHT_TITLE_HEADING.find(content)?.groupValues?.get(1)
+
+private fun JsonElement?.effectiveResponseMetadata(): JsonElement? = when (this) {
+    null, JsonNull -> null
+    is JsonPrimitive -> takeUnless { isString && content.isBlank() }
+    is JsonArray -> takeUnless(JsonArray::isEmpty)
+    is JsonObject -> takeUnless(JsonObject::isEmpty)
+}
 
 /**
  * Recovers tool calls that an OpenAI-compatible server emitted as **content text** rather than as
@@ -49,7 +58,11 @@ private fun extractResponsesThoughtTitle(content: String): String? =
  */
 internal object ToolCallTextParser {
 
-    data class ParsedCall(val name: String, val arguments: String)
+    data class ParsedCall(
+        val id: String?,
+        val name: String,
+        val arguments: String,
+    )
 
     // Split so the bare tag literals never appear as a contiguous substring in source tooling.
     private const val OPEN_TAG = "<tool_" + "call>"
@@ -60,6 +73,14 @@ internal object ToolCallTextParser {
     )
     private val XML_PARAMETER = Regex(
         """<(?:(?:antml):)?parameter\s+name\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)</(?:(?:antml):)?parameter\s*>""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val XML_ID_ATTRIBUTE_NAME = Regex(
+        """\b(?:id|call_id)\s*=""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val XML_ID_ATTRIBUTE = Regex(
+        """\b(?:id|call_id)\s*=\s*(["'])([^"']+)\1""",
         RegexOption.IGNORE_CASE,
     )
 
@@ -118,6 +139,12 @@ internal object ToolCallTextParser {
         val name = decodeXml(match.groupValues[1]).trim()
             .takeIf { it.matches(safeWireToolName) }
             ?: return null
+        val openingTag = match.value.substringBefore('>')
+        val idAttributePresent = XML_ID_ATTRIBUTE_NAME.containsMatchIn(openingTag)
+        val id = XML_ID_ATTRIBUTE.find(openingTag)?.groupValues?.getOrNull(2)
+            ?.let(::decodeXml)
+            ?.trim()
+        if (idAttributePresent && (id == null || !id.matches(safeWireToolCallId))) return null
         val body = match.groupValues[2]
         val entries = linkedMapOf<String, JsonElement>()
         XML_PARAMETER.findAll(body).forEach { parameter ->
@@ -129,7 +156,7 @@ internal object ToolCallTextParser {
                 entries[key] = JsonPrimitive(value)
             }
         }
-        return ParsedCall(name, JsonObject(entries).toString())
+        return ParsedCall(id, name, JsonObject(entries).toString())
     }
 
     private fun decodeXml(value: String): String = value
@@ -141,13 +168,21 @@ internal object ToolCallTextParser {
 
     private fun parseCallJson(jsonStr: String): ParsedCall? {
         val obj = try { Json.parseToJsonElement(jsonStr).jsonObject } catch (_: Exception) { return null }
+        val function = obj["function"] as? JsonObject
         val name = stringField(obj, "name")
-            ?: (obj["function"] as? JsonObject)?.let { stringField(it, "name") }
+            ?: function?.let { stringField(it, "name") }
             ?: return null
         if (!name.matches(safeWireToolName)) return null
+        val idFields = listOf("id", "call_id").filter(obj::containsKey)
+        val ids = idFields.map { key -> stringField(obj, key) ?: return null }
+        val distinctIds = ids.distinct()
+        if (distinctIds.size > 1) return null
+        val id = distinctIds.singleOrNull()
+        if (id != null && !id.matches(safeWireToolCallId)) return null
         val args = obj["arguments"] ?: obj["parameters"]
+            ?: function?.get("arguments") ?: function?.get("parameters")
         val arguments = args?.let { normalizeArguments(it) ?: return null } ?: "{}"
-        return ParsedCall(name, arguments)
+        return ParsedCall(id, name, arguments)
     }
 
     private fun stringField(obj: JsonObject, key: String): String? =
@@ -163,7 +198,6 @@ internal object ToolCallTextParser {
 
 internal class OpenAiResponsesEventRouter(
     private val json: Json,
-    private val thinkingEnabled: Boolean,
 ) {
     private data class FunctionCall(
         val outputIndex: Int,
@@ -229,7 +263,7 @@ internal class OpenAiResponsesEventRouter(
                 }.orEmpty()
             "response.output_text.annotation.added" -> routeCitation(event)
             "response.reasoning_text.delta" ->
-                event.delta?.takeIf { thinkingEnabled && it.isNotEmpty() }
+                event.delta?.takeIf(String::isNotBlank)
                     ?.let { listOf(StreamEvent.ThoughtChunk(it)) }.orEmpty()
             "response.reasoning_summary_text.delta" -> routeReasoningSummary(event)
             "response.output_item.added" -> addOutputItem(event)
@@ -245,7 +279,7 @@ internal class OpenAiResponsesEventRouter(
     }
 
     private fun routeReasoningSummary(event: OpenAiResponseStreamEvent): List<StreamEvent> {
-        val delta = event.delta?.takeIf { thinkingEnabled && it.isNotEmpty() }
+        val delta = event.delta?.takeIf(String::isNotBlank)
             ?: return emptyList()
         val outputIndex = event.outputIndex
         val summaryIndex = event.summaryIndex
@@ -302,7 +336,7 @@ internal class OpenAiResponsesEventRouter(
 
     private fun outputTextPartKey(event: OpenAiResponseStreamEvent): OutputTextPartKey? =
         OutputTextPartKey(
-            itemId = event.itemId,
+            itemId = event.itemId?.takeIf(String::isNotBlank),
             outputIndex = event.outputIndex,
             contentIndex = event.contentIndex,
         ).takeUnless { key ->
@@ -387,12 +421,15 @@ internal class OpenAiResponsesEventRouter(
         if (responseItemsByOutputIndex.containsKey(index)) {
             return fail(event.type, "duplicate output_index")
         }
+        val itemId = item.id?.takeIf(String::isNotBlank)
+        val callId = item.callId?.takeIf(String::isNotBlank)
+        val name = item.name?.takeIf(String::isNotBlank)
         responseItemsByOutputIndex[index] = rawItem
         if (item.type == "web_search_call") {
             openHostedOutputIndexes += index
             return listOf(
                 rawItem.toHostedWebSearchUpdate(
-                    streamKey = item.id ?: "response_hosted_$index",
+                    streamKey = itemId ?: "response_hosted_$index",
                     completed = false,
                 ),
             )
@@ -400,14 +437,14 @@ internal class OpenAiResponsesEventRouter(
         if (item.type != "function_call") return emptyList()
         val call = FunctionCall(
             outputIndex = index,
-            streamKey = item.id ?: "response_tool_$index",
-            itemId = item.id,
-            callId = item.callId,
-            name = item.name,
+            streamKey = itemId ?: "response_tool_$index",
+            itemId = itemId,
+            callId = callId,
+            name = name,
         )
         call.arguments.append(item.arguments)
         callsByOutputIndex[index] = call
-        item.id?.let { id ->
+        itemId?.let { id ->
             if (callsByItemId.put(id, call) != null) return fail(event.type, "duplicate item id")
         }
         return listOf(call.updateEvent())
@@ -423,8 +460,8 @@ internal class OpenAiResponsesEventRouter(
     private fun completeArguments(event: OpenAiResponseStreamEvent): List<StreamEvent> {
         val call = findCall(event) ?: return fail(event.type, "function call item was not added")
         if (call.completed) return fail(event.type, "function call already completed")
-        event.name?.let { call.name = it }
-        event.arguments?.let { finalArguments ->
+        event.name?.takeIf(String::isNotBlank)?.let { call.name = it }
+        event.arguments?.takeIf(String::isNotBlank)?.let { finalArguments ->
             val accumulated = call.arguments.toString()
             if (accumulated.isNotEmpty() && finalArguments != accumulated) {
                 call.arguments.replace(finalArguments)
@@ -449,37 +486,74 @@ internal class OpenAiResponsesEventRouter(
         } catch (error: Exception) {
             return fail(event.type, error.localizedMessage ?: "invalid added output item")
         }
-        if (item.type == "web_search_call" || addedItem.type == "web_search_call") {
-            if (item.type != addedItem.type) {
-                return fail(event.type, "hosted output item type changed")
-            }
-            if (addedItem.id != null && item.id != addedItem.id) {
-                return fail(event.type, "hosted output item id changed")
-            }
+        val addedItemId = addedItem.id?.takeIf(String::isNotBlank)
+        val completedItemId = item.id?.takeIf(String::isNotBlank)
+        if (addedItemId != null && completedItemId != null && completedItemId != addedItemId) {
+            return fail(event.type, "output item id changed")
+        }
+        val addedItemType = addedItem.type?.takeIf(String::isNotBlank)
+        val completedItemType = item.type?.takeIf(String::isNotBlank)
+        if (addedItemType != null && completedItemType != null && completedItemType != addedItemType) {
+            return fail(event.type, "output item type changed")
+        }
+        val effectiveItemId = completedItemId ?: addedItemId
+        val effectiveItemType = completedItemType ?: addedItemType
+        val retainedMetadata = buildMap<String, JsonElement> {
+            effectiveItemId?.let { put("id", JsonPrimitive(it)) }
+            effectiveItemType?.let { put("type", JsonPrimitive(it)) }
+            (item.summary.effectiveResponseMetadata()
+                ?: addedItem.summary.effectiveResponseMetadata())
+                ?.let { put("summary", it) }
+            item.encryptedContent?.takeIf(String::isNotBlank)
+                ?.let { put("encrypted_content", JsonPrimitive(it)) }
+                ?: addedItem.encryptedContent?.takeIf(String::isNotBlank)
+                    ?.let { put("encrypted_content", JsonPrimitive(it)) }
+        }
+        val retainedRawItem = JsonObject(
+            (rawItem - setOf("id", "type", "summary", "encrypted_content")) + retainedMetadata,
+        )
+        if (effectiveItemType == "web_search_call") {
             if (!openHostedOutputIndexes.remove(index)) {
                 return fail(event.type, "hosted output item was already completed")
             }
-            responseItemsByOutputIndex[index] = rawItem
+            responseItemsByOutputIndex[index] = retainedRawItem
             return listOf(
-                rawItem.toHostedWebSearchUpdate(
-                    streamKey = addedItem.id ?: "response_hosted_$index",
+                retainedRawItem.toHostedWebSearchUpdate(
+                    streamKey = addedItemId ?: "response_hosted_$index",
                     completed = true,
                 ),
             )
         }
-        responseItemsByOutputIndex[index] = rawItem
-        if (item.type != "function_call") return emptyList()
-        val call = findCall(event, item.id)
+        responseItemsByOutputIndex[index] = retainedRawItem
+        if (effectiveItemType != "function_call") return emptyList()
+        val itemId = effectiveItemId
+        val call = findCall(event, itemId)
             ?: return fail(event.type, "function call item was not added")
-        item.callId?.let { call.callId = it }
-        item.name?.let { call.name = it }
-        item.arguments?.let { finalArguments ->
+        if (call.itemId != null && itemId != null && itemId != call.itemId) {
+            return fail(event.type, "function call item id changed")
+        }
+        if (call.itemId == null && itemId != null) {
+            if (callsByItemId.put(itemId, call) != null) {
+                return fail(event.type, "duplicate item id")
+            }
+            call.itemId = itemId
+        }
+        item.callId?.takeIf(String::isNotBlank)?.let { call.callId = it }
+        item.name?.takeIf(String::isNotBlank)?.let { call.name = it }
+        item.arguments?.takeIf(String::isNotBlank)?.let { finalArguments ->
             val accumulated = call.arguments.toString()
             if (accumulated.isNotEmpty() && finalArguments != accumulated) {
                 call.arguments.replace(finalArguments)
             }
             if (accumulated.isEmpty()) call.arguments.append(finalArguments)
         }
+        val retainedFields = buildMap<String, JsonElement> {
+            call.itemId?.let { put("id", JsonPrimitive(it)) }
+            call.callId?.let { put("call_id", JsonPrimitive(it)) }
+            call.name?.let { put("name", JsonPrimitive(it)) }
+            put("arguments", JsonPrimitive(call.arguments.toString().ifEmpty { "{}" }))
+        }
+        responseItemsByOutputIndex[index] = JsonObject(retainedRawItem + retainedFields)
         return completeCall(call, event.type)
     }
 
@@ -554,8 +628,8 @@ internal class OpenAiResponsesEventRouter(
     }
 
     private fun findCall(event: OpenAiResponseStreamEvent, itemId: String? = null): FunctionCall? =
-        event.itemId?.let(callsByItemId::get)
-            ?: itemId?.let(callsByItemId::get)
+        event.itemId?.takeIf(String::isNotBlank)?.let(callsByItemId::get)
+            ?: itemId?.takeIf(String::isNotBlank)?.let(callsByItemId::get)
             ?: event.outputIndex?.let(callsByOutputIndex::get)
 
     private fun validateSequence(event: OpenAiResponseStreamEvent): String? {
@@ -613,6 +687,7 @@ internal class StreamingTextToolCallParser {
 
     data class CompletedCall(
         val streamKey: String,
+        val id: String?,
         val name: String,
         val arguments: String,
     )
@@ -737,7 +812,7 @@ internal class StreamingTextToolCallParser {
                     if (parsed != null) {
                         val key = checkNotNull(streamKey)
                         emitSnapshot(key, parsed.name, parsed.arguments, onUpdate)
-                        onComplete(CompletedCall(key, parsed.name, parsed.arguments))
+                        onComplete(CompletedCall(key, parsed.id, parsed.name, parsed.arguments))
                     } else {
                         announcePartial(body, onUpdate)
                         onMalformed("Tagged tool call was not valid complete JSON")
@@ -770,7 +845,7 @@ internal class StreamingTextToolCallParser {
                     newStreamKey()
                 }
                 emitSnapshot(key, call.name, call.arguments, onUpdate)
-                onComplete(CompletedCall(key, call.name, call.arguments))
+                onComplete(CompletedCall(key, call.id, call.name, call.arguments))
             }
             return
         }

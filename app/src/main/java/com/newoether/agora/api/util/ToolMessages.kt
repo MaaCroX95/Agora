@@ -216,15 +216,19 @@ internal fun protocolAtomicUnits(messages: List<ChatMessage>): List<List<ChatMes
  * Projects a durable terminal generation row as complete text on that same assistant turn.
  *
  * Room and UI state remain untouched. The API-only copy keeps any partial answer first, appends one
- * terminal annotation, and includes the exact persisted error-segment detail when present. Clearing
- * UI/protocol-only payload from the aggregate is safe because ApiPathAssembler emits durable tool
- * protocol rows separately before this visible model row.
+ * terminal annotation, and formats the selected persisted error detail through the same explicit
+ * presentation function used by the gray error bar. Clearing UI/protocol-only payload from the
+ * aggregate is safe because ApiPathAssembler emits durable tool protocol rows separately before
+ * this visible model row.
  */
-fun projectGenerationStatusesForApi(messages: List<ChatMessage>): List<ChatMessage> {
+fun projectGenerationStatusesForApi(
+    messages: List<ChatMessage>,
+    generationErrorFormatter: (String) -> String,
+): List<ChatMessage> {
     if (messages.none(ChatMessage::isGenerationStatusMessage)) return messages
     return messages.map { message ->
         if (message.isGenerationStatusMessage()) {
-            message.asTerminalAssistantMessage()
+            message.asTerminalAssistantMessage(generationErrorFormatter)
         } else {
             message
         }
@@ -237,7 +241,9 @@ private fun ChatMessage.isGenerationStatusMessage(): Boolean =
             status == MessageStatus.ERROR ||
             status == MessageStatus.STOPPED)
 
-private fun ChatMessage.asTerminalAssistantMessage(): ChatMessage {
+private fun ChatMessage.asTerminalAssistantMessage(
+    generationErrorFormatter: (String) -> String,
+): ChatMessage {
     val isError = participant == Participant.ERROR || status == MessageStatus.ERROR
     val persistedError = segments
         ?.lastOrNull { it.type == "error" && it.content.isNotBlank() }
@@ -247,7 +253,8 @@ private fun ChatMessage.asTerminalAssistantMessage(): ChatMessage {
     val legacyErrorDetail = text.takeIf {
         isError && persistedError == null && !hasPersistedAnswer && it.isNotBlank()
     }
-    val errorDetail = persistedError ?: legacyErrorDetail
+    val errorDetail = (persistedError ?: legacyErrorDetail)
+        ?.let(generationErrorFormatter)
     val partialAnswer = when {
         !isError -> text
         legacyErrorDetail != null -> ""

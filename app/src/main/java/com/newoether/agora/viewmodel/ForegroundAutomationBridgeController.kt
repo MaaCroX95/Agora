@@ -9,6 +9,7 @@ internal typealias ForegroundSendBridge = suspend (
     conversationId: String,
     userText: String,
     modelId: String,
+    requestKind: String,
 ) -> BridgeOutcome
 
 /** Owns one ViewModel-scoped foreground automation bridge registration. */
@@ -18,6 +19,7 @@ internal class ForegroundAutomationBridgeController(
         conversationId: String,
         userText: String,
         modelId: String,
+        requestKind: String,
     ) -> AutomationSendOutcome,
     private val loadMessage: suspend (String) -> MessageEntity?,
     private val attach: (owner: Any, bridge: ForegroundSendBridge) -> Unit,
@@ -44,12 +46,13 @@ internal class ForegroundAutomationBridgeController(
         conversationId: String,
         userText: String,
         modelId: String,
+        requestKind: String,
     ): BridgeOutcome {
         if (currentConversationId.value != conversationId) {
             return BridgeOutcome.NotDelegated
         }
         val delivered = when (
-            val outcome = send(conversationId, userText, modelId)
+            val outcome = send(conversationId, userText, modelId, requestKind)
         ) {
             AutomationSendOutcome.SlotBusy -> return BridgeOutcome.Busy()
             is AutomationSendOutcome.Delivered -> outcome

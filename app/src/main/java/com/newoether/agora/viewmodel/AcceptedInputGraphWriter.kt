@@ -3,6 +3,7 @@ package com.newoether.agora.viewmodel
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.local.MessageEntity
+import com.newoether.agora.data.local.NewChatPersistEntity
 import com.newoether.agora.data.local.RunEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.model.MessageStatus
@@ -32,8 +33,10 @@ internal class AcceptedInputGraphWriter(
         val attachmentMeta: String? = null,
         val modelId: String,
         val userTimestamp: Long,
+        val touchConversationOnAdmission: Boolean,
         val newConversation: ChatEntity? = null,
         val newConversationSettings: ConversationSettings? = null,
+        val newChatPersistSnapshot: NewChatPersistEntity? = null,
     ) {
         val conversationId: String get() = inputEffect.identity.conversationId
         val runId: String get() = inputEffect.identity.runId
@@ -118,12 +121,16 @@ internal class AcceptedInputGraphWriter(
                 messageSelectionUpdates = selectionUpdates,
                 conversationModelId = request.modelId,
                 conversationSettingsJson = request.newConversationSettings?.let(Json::encodeToString),
+                expectedNewChatPersist = request.newChatPersistSnapshot,
+                at = request.userTimestamp,
             )
         } ?: conversations.createRunWithMessages(
             run = run,
             messages = listOf(userMessage, modelMessage),
             messageSelectionUpdates = selectionUpdates,
             conversationModelId = request.modelId,
+            at = request.userTimestamp,
+            touchConversationOnAdmission = request.touchConversationOnAdmission,
         )
         check(graph.messages.size == 2) {
             "Accepted-input graph must contain exactly one USER and one MODEL row"

@@ -19,6 +19,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -33,6 +34,7 @@ import com.newoether.agora.R
 @androidx.compose.material3.ExperimentalMaterial3Api
 @Composable
 internal fun AttachmentAddMenu(
+    enabled: Boolean,
     onCamera: () -> Unit,
     onPhotos: () -> Unit,
     onVideos: () -> Unit,
@@ -40,21 +42,23 @@ internal fun AttachmentAddMenu(
 ) {
     var showAddMenu by remember { mutableStateOf(false) }
     var lastAddDismissTime by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(enabled) { if (!enabled) showAddMenu = false }
     fun select(action: () -> Unit) {
         showAddMenu = false
         lastAddDismissTime = 0L
         action()
     }
-    ExposedDropdownMenuBox(expanded = showAddMenu, onExpandedChange = {}) {
+    ExposedDropdownMenuBox(expanded = enabled && showAddMenu, onExpandedChange = {}) {
         IconButton(
             onClick = {
                 val now = System.currentTimeMillis()
                 if (showAddMenu) showAddMenu = false
                 else if (now - lastAddDismissTime > 200) showAddMenu = true
             },
+            enabled = enabled,
             modifier = Modifier.size(32.dp).menuAnchor(
                 type = ExposedDropdownMenuAnchorType.PrimaryNotEditable,
-                enabled = true,
+                enabled = enabled,
             ),
         ) {
             Icon(
@@ -66,7 +70,7 @@ internal fun AttachmentAddMenu(
         }
         ExposedDropdownMenu(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            expanded = showAddMenu,
+            expanded = enabled && showAddMenu,
             onDismissRequest = {
                 if (showAddMenu) {
                     showAddMenu = false

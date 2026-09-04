@@ -1,6 +1,7 @@
 package com.newoether.agora.viewmodel
 
 import com.newoether.agora.data.repository.ConversationRepository
+import com.newoether.agora.model.AttachmentImportState
 import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.Dispatchers
@@ -10,6 +11,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 
 data class LoadedComposerDraft(
     val text: String,
@@ -21,6 +24,14 @@ data class DraftPersistResult(
     val revision: Long,
     val succeeded: Boolean,
     val matchesRequested: Boolean,
+)
+
+data class DraftClearResult(
+    val attachments: List<SelectedAttachment>,
+    val revision: Long,
+    val succeeded: Boolean,
+    val remainingText: String = "",
+    val remainingAttachments: List<SelectedAttachment> = emptyList(),
 )
 
 private data class PersistedComposerDraft(
@@ -49,7 +60,19 @@ private class RepositoryComposerDraftPersistence(
     }
 
     override suspend fun clearAcceptedDraft(ownerId: String) {
-        conversations.updateDraft(ownerId, "", null)
+        clearAcceptedDraft(ownerId, reclaimAttachments = true)
+    }
+
+    override suspend fun clearAcceptedDraft(
+        ownerId: String,
+        reclaimAttachments: Boolean,
+    ) {
+        conversations.updateDraft(
+            conversationId = ownerId,
+            draftText = "",
+            draftAttachments = null,
+            reclaimRemovedAttachments = reclaimAttachments,
+        )
     }
 }
 
@@ -144,25 +167,77 @@ internal class ComposerDraftController(
      * A successfully accepted send invalidates every older UI tail-flush by advancing the cached
      * revision only after the draft reference is durably cleared.
      */
-    suspend fun clearAccepted(conversationId: String): List<SelectedAttachment> =
+    suspend fun clearAccepted(
+        conversationId: String,
+        reclaimAttachments: Boolean = true,
+        acceptedRevision: Long? = null,
+        acceptedText: String? = null,
+        acceptedAttachmentIds: Set<String>? = null,
+        expectedWorkspace: com.newoether.agora.data.local.NewChatPersistEntity? = null,
+    ): DraftClearResult =
         withContext(Dispatchers.IO + NonCancellable) {
             persistenceMutex.withLock {
                 try {
                     val current = persistedDrafts[conversationId] ?: read(conversationId)
-                    persistence.clearAcceptedDraft(conversationId)
+                    val preserveNewerText =
+                        acceptedRevision != null &&
+                            current.revision != acceptedRevision &&
+                            current.text != acceptedText
+                    val remainingText = current.text.takeIf { preserveNewerText }.orEmpty()
+                    val removedAttachments = if (acceptedAttachmentIds == null) {
+                        current.attachments
+                    } else {
+                        current.attachments.filter { it.localId in acceptedAttachmentIds }
+                    }
+                    val remainingAttachments = if (acceptedAttachmentIds == null) {
+                        emptyList()
+                    } else {
+                        current.attachments.filterNot { it.localId in acceptedAttachmentIds }
+                    }
+                    val attachmentsJson = remainingAttachments
+                        .takeIf(List<*>::isNotEmpty)
+                        ?.let { Json.encodeToString(it) }
+                    if (
+                        remainingText != current.text ||
+                        remainingAttachments != current.attachments
+                    ) {
+                        if (remainingText.isEmpty() && remainingAttachments.isEmpty()) {
+                            persistence.clearAcceptedDraft(
+                                ownerId = conversationId,
+                                reclaimAttachments = reclaimAttachments,
+                                expectedWorkspace = expectedWorkspace,
+                            )
+                        } else {
+                            persistence.updateDraft(conversationId, remainingText, attachmentsJson)
+                        }
+                    }
+                    val revision = current.revision + 1L
                     persistedDrafts[conversationId] = PersistedComposerDraft(
-                        text = "",
-                        attachments = emptyList(),
-                        revision = current.revision + 1L,
+                        text = remainingText,
+                        attachments = remainingAttachments,
+                        revision = revision,
                     )
-                    current.attachments
+                    DraftClearResult(
+                        attachments = removedAttachments,
+                        revision = revision,
+                        succeeded = true,
+                        remainingText = remainingText,
+                        remainingAttachments = remainingAttachments,
+                    )
                 } catch (e: Exception) {
                     DebugLog.e(
                         "ChatViewModel",
                         "Failed to clear accepted draft for $conversationId",
                         e,
                     )
-                    emptyList()
+                    val current = persistedDrafts[conversationId]
+                    DraftClearResult(
+                        attachments = emptyList(),
+                        revision = current?.revision ?: 0L,
+                        succeeded = false,
+                        remainingText = current?.text.orEmpty(),
+                        remainingAttachments = current?.attachments.orEmpty(),
+                    )
                 }
             }
         }
@@ -180,26 +255,87 @@ internal class ComposerDraftController(
         }
     }
 
+    /** Releases this owner's process-local cache without changing durable draft state. */
+    suspend fun evictCached(conversationId: String): Unit = withContext(Dispatchers.IO) {
+        persistenceMutex.withLock {
+            persistedDrafts.remove(conversationId)
+            Unit
+        }
+    }
+
     private suspend fun read(conversationId: String): PersistedComposerDraft {
         val priorRevision = persistedDrafts[conversationId]?.revision ?: 0L
         val draft = persistence.loadDraft(conversationId)
-        val attachments: List<SelectedAttachment> = try {
-            draft.attachmentsJson
-                ?.let { Json.decodeFromString<List<SelectedAttachment>>(it) }
-                ?: emptyList()
+        val decoded = try {
+            decodeAttachments(draft.attachmentsJson)
         } catch (e: Exception) {
             DebugLog.w(
                 "ChatViewModel",
                 "Failed to deserialize draft attachments for $conversationId",
                 e,
             )
-            emptyList()
+            DecodedAttachments(emptyList(), migrated = false)
+        }
+        var revision = priorRevision
+        if (decoded.migrated) {
+            try {
+                persistence.updateDraft(
+                    ownerId = conversationId,
+                    text = draft.text,
+                    attachmentsJson = Json.encodeToString(decoded.attachments),
+                )
+                revision += 1L
+            } catch (e: Exception) {
+                // Keep the normalized attachment visible and retryable in memory. Its first
+                // processing transition will attempt another durable write.
+                DebugLog.w(
+                    "ChatViewModel",
+                    "Failed to persist legacy attachment upgrade for $conversationId",
+                    e,
+                )
+            }
         }
         return PersistedComposerDraft(
             text = draft.text,
-            attachments = attachments,
-            revision = priorRevision,
+            attachments = decoded.attachments,
+            revision = revision,
         )
+    }
+
+    private data class DecodedAttachments(
+        val attachments: List<SelectedAttachment>,
+        val migrated: Boolean,
+    )
+
+    /**
+     * Old drafts predate importState and canonical private artifacts. Serialization defaults would
+     * otherwise turn those records into incomplete READY attachments that Send silently omits.
+     */
+    private fun decodeAttachments(raw: String?): DecodedAttachments {
+        if (raw == null) return DecodedAttachments(emptyList(), migrated = false)
+        val elements = Json.parseToJsonElement(raw) as? JsonArray
+            ?: error("Draft attachments must be a JSON array")
+        var migrated = false
+        val attachments = elements.map { element ->
+            val attachment = Json.decodeFromJsonElement(
+                SelectedAttachment.serializer(),
+                element,
+            )
+            val objectValue = element as? JsonObject
+            if (
+                objectValue?.containsKey("importState") != false ||
+                attachment.hasCanonicalReadyArtifact()
+            ) {
+                attachment
+            } else {
+                migrated = true
+                attachment.copy(
+                    importState = AttachmentImportState.PROCESSING,
+                    unavailable = false,
+                )
+            }
+        }
+        return DecodedAttachments(attachments, migrated)
     }
 
     suspend fun reclaimAttachments(attachments: List<SelectedAttachment>) {

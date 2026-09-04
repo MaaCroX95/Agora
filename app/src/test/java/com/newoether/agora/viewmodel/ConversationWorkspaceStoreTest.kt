@@ -58,9 +58,13 @@ class ConversationWorkspaceStoreTest {
     }
 
     @Test
-    fun queuedBarrierReturnsOneAuthoritativeAdmissionSnapshot() = runTest {
+    fun queuedBarrierReturnsOneAuthoritativeWorkspaceSnapshot() = runTest {
         val fixture = Fixture(backgroundScope, StandardTestDispatcher(testScheduler))
-        val capturedSettings = ConversationSettings(temperature = 0.35f, maxTokens = 768)
+        val capturedSettings = ConversationSettings(
+            temperature = 0.35f,
+            maxTokens = 768,
+            lowContextModeEnabled = true,
+        )
         runCurrent()
 
         fixture.store.setModel(NEW_CHAT_WORKSPACE_ID, "provider:model")
@@ -68,24 +72,46 @@ class ConversationWorkspaceStoreTest {
         fixture.store.setConversationSettings(NEW_CHAT_WORKSPACE_ID, capturedSettings)
 
         val snapshot = fixture.store.awaitNewChatWrites()
-        assertEquals(true, snapshot.rowExists)
+        assertEquals(true, snapshot.persisted != null)
         assertEquals("provider:model", snapshot.modelId)
         assertEquals("prompt", snapshot.systemPromptId)
         assertEquals(capturedSettings, snapshot.conversationSettings)
-        assertEquals(
-            NewChatSendAdmission("provider:model", "prompt", capturedSettings),
-            snapshot.toSendAdmission("global:model"),
-        )
-        assertEquals(
-            "global:model",
-            snapshot.copy(modelId = null).toSendAdmission("global:model").modelId,
-        )
+    }
+
+    @Test
+    fun sendTapBarrierIncludesPriorWritesAndExcludesLaterWorkspaceChanges() = runTest {
+        val fixture = Fixture(backgroundScope, StandardTestDispatcher(testScheduler))
+        val firstWriteStarted = CompletableDeferred<Unit>()
+        val releaseFirstWrite = CompletableDeferred<Unit>()
+        coEvery { fixture.conversations.upsertNewChatPersist(any()) } coAnswers {
+            firstWriteStarted.complete(Unit)
+            releaseFirstWrite.await()
+            fixture.persisted.value = firstArg()
+        }
+        runCurrent()
+
+        fixture.store.setModel(NEW_CHAT_WORKSPACE_ID, "provider:before-tap")
+        runCurrent()
+        firstWriteStarted.await()
+        val captured = fixture.store.captureNewChatSnapshot()
+        fixture.store.setSystemPrompt(NEW_CHAT_WORKSPACE_ID, "after-tap")
+        releaseFirstWrite.complete(Unit)
+
+        val snapshot = captured.awaitCaptured()
+        assertEquals("provider:before-tap", snapshot.modelId)
+        assertNull(snapshot.systemPromptId)
+        runCurrent()
+        assertEquals("after-tap", fixture.store.newChatSystemPromptId.value)
     }
 
     @Test
     fun queuedCrossFieldMutationsPreserveCompleteRow() = runTest {
         val fixture = Fixture(backgroundScope, StandardTestDispatcher(testScheduler))
-        val capturedSettings = ConversationSettings(temperature = 0.4f, maxTokens = 512)
+        val capturedSettings = ConversationSettings(
+            temperature = 0.4f,
+            maxTokens = 512,
+            lowContextModeEnabled = true,
+        )
         runCurrent()
 
         fixture.store.setModel(NEW_CHAT_WORKSPACE_ID, "provider:model")
@@ -145,13 +171,42 @@ class ConversationWorkspaceStoreTest {
         }
         runCurrent()
 
-        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist() }
+        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist(any()) }
         releaseWrite.complete(Unit)
         clear.await()
 
         assertNull(fixture.persisted.value)
         assertNull(fixture.store.newChatPersist.value)
-        coVerify(exactly = 1) { fixture.conversations.deleteNewChatPersist() }
+        coVerify(exactly = 1) { fixture.conversations.deleteNewChatPersist(true) }
+    }
+
+    @Test
+    fun acceptedClearPreservesWorkspaceFieldsChangedAfterTheSendSnapshot() = runTest {
+        val accepted = NewChatPersistEntity(
+            modelId = "provider:before",
+            draftText = "sent",
+        )
+        val fixture = Fixture(
+            scope = backgroundScope,
+            dispatcher = StandardTestDispatcher(testScheduler),
+            initial = accepted,
+        )
+        runCurrent()
+
+        fixture.store.setModel(NEW_CHAT_WORKSPACE_ID, "provider:after")
+        fixture.store.awaitNewChatWrites()
+        fixture.store.clearAcceptedDraft(
+            ownerId = NEW_CHAT_WORKSPACE_ID,
+            reclaimAttachments = false,
+            expectedWorkspace = accepted,
+        )
+
+        assertEquals(
+            accepted.copy(modelId = "provider:after", draftText = ""),
+            fixture.persisted.value,
+        )
+        assertEquals(fixture.persisted.value, fixture.store.newChatPersist.value)
+        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist(any()) }
     }
 
     @Test
@@ -202,7 +257,7 @@ class ConversationWorkspaceStoreTest {
             fixture.store.applyCommittedNewConversationState("conversation")
         }
         transferStarted.await()
-        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist() }
+        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist(any()) }
 
         releaseTransfer.complete(Unit)
         apply.await()
@@ -210,11 +265,11 @@ class ConversationWorkspaceStoreTest {
         assertEquals(listOf("transfer-start", "transfer-complete"), fixture.events)
         coVerify(exactly = 1) { fixture.transfers.complete("conversation") }
         assertEquals(initial, fixture.persisted.value)
-        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist() }
+        coVerify(exactly = 0) { fixture.conversations.deleteNewChatPersist(any()) }
         fixture.store.clearCommittedNewChatWorkspace()
         assertEquals(listOf("transfer-start", "transfer-complete", "delete"), fixture.events)
         assertNull(fixture.persisted.value)
-        coVerify(exactly = 1) { fixture.conversations.deleteNewChatPersist() }
+        coVerify(exactly = 1) { fixture.conversations.deleteNewChatPersist(false) }
     }
 
     private class Fixture(
@@ -235,7 +290,7 @@ class ConversationWorkspaceStoreTest {
             coEvery { conversations.upsertNewChatPersist(any()) } coAnswers {
                 persisted.value = firstArg()
             }
-            coEvery { conversations.deleteNewChatPersist() } coAnswers {
+            coEvery { conversations.deleteNewChatPersist(any()) } coAnswers {
                 events += "delete"
                 val existed = persisted.value != null
                 persisted.value = null

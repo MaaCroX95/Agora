@@ -12,7 +12,7 @@ import com.newoether.agora.api.util.adaptToolRoundsForProvider
 import com.newoether.agora.api.util.RequestFormatException
 import com.newoether.agora.api.util.requireValidSerializedRequest
 import com.newoether.agora.api.util.StreamTermination
-import com.newoether.agora.api.util.TextToolCallRecovery
+import com.newoether.agora.api.util.asRetryableResponseBodyReadError
 import com.newoether.agora.api.util.asRetryableTransportError
 import com.newoether.agora.api.util.carriesModelOutput
 import com.newoether.agora.api.util.ProviderRetryPolicy
@@ -462,18 +462,13 @@ class AnthropicProvider(
                     // block boundary can no longer masquerade as a finished answer.
                     var producedContent = false
                     var timedOut = false
-                    var recoveryReportedError = false
-                    // Native Anthropic tool_use blocks are preferred. This only recovers gateways
-                    // that incorrectly put <invoke>/<tool_call>/JSON tool syntax in text content.
-                    val textToolRecovery = TextToolCallRecovery(
-                        enabled = !anthropicTools.isNullOrEmpty(),
-                    )
-                    suspend fun emitRecovered(event: StreamEvent) {
-                        textToolRecovery.route(event) {
-                            if (it.carriesModelOutput()) producedContent = true
-                            if (it is StreamEvent.Error) recoveryReportedError = true
-                            emit(it)
-                        }
+                    var reportedError = false
+                    var responseBodyReadError: GenerationError? = null
+
+                    suspend fun emitTracked(event: StreamEvent) {
+                        if (event.carriesModelOutput()) producedContent = true
+                        if (event is StreamEvent.Error) reportedError = true
+                        emit(event)
                     }
 
                     // Tolerate long thinking pauses, but not a silently-dead connection:
@@ -491,16 +486,18 @@ class AnthropicProvider(
                                 break
                             }
                             continue
+                        } catch (e: Exception) {
+                            if (!currentCoroutineContext().isActive) break
+                            responseBodyReadError =
+                                e.asRetryableResponseBodyReadError() ?: throw e
+                            break
                         }
                         if (line.startsWith("data: ")) {
                             val jsonStr = line.substring(6).trim()
                             try {
                                 val event = json.decodeFromString<AnthropicStreamEvent>(jsonStr)
                                 eventRouter.route(event).forEach { routed ->
-                                    // A native tool block proves the provider is using the protocol
-                                    // correctly. It never passes through text recovery; only ordinary
-                                    // text chunks are inspected for relay-flattened calls.
-                                    emitRecovered(routed)
+                                    emitTracked(routed)
                                 }
                             } catch (e: Exception) {
                                 DebugLog.e(
@@ -519,18 +516,13 @@ class AnthropicProvider(
                         if (
                             eventRouter.streamError != null ||
                             eventRouter.reportedError ||
-                            recoveryReportedError
+                            reportedError
                         ) break
                         // message_stop is the semantic end. Some gateways then hold the connection
                         // open, so stop reading rather than waiting for a close that may never come.
                         if (eventRouter.messageStopReceived) break
                     }
-                    eventRouter.reportIncompleteBlocks().forEach { emitRecovered(it) }
-                    textToolRecovery.finish {
-                        if (it.carriesModelOutput()) producedContent = true
-                        if (it is StreamEvent.Error) recoveryReportedError = true
-                        emit(it)
-                    }
+                    eventRouter.reportIncompleteBlocks().forEach { emitTracked(it) }
                     if (!currentCoroutineContext().isActive) {
                         throw kotlinx.coroutines.CancellationException("Stream cancelled")
                     }
@@ -540,8 +532,8 @@ class AnthropicProvider(
                         stopReason = eventRouter.stopReason,
                         producedContent = producedContent,
                         toolCallInFlight = eventRouter.toolCallInFlight,
-                        streamError = eventRouter.streamError,
-                        alreadyReportedError = eventRouter.reportedError || recoveryReportedError,
+                        streamError = responseBodyReadError ?: eventRouter.streamError,
+                        alreadyReportedError = eventRouter.reportedError || reportedError,
                         timedOut = timedOut,
                     )
                     DebugLog.d("AgoraSSE",

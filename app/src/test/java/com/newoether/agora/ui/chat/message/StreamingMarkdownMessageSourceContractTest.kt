@@ -77,7 +77,7 @@ class StreamingMarkdownMessageSourceContractTest {
     }
 
     @Test
-    fun `terminal citation projection keeps one Markdown subtree and anchors size handoff`() {
+    fun `terminal citation projection keeps one Markdown subtree and anchors immediate handoff`() {
         val root = locateMainSourceRoot()
         val assistant = source(root, "AssistantMessageContent.kt")
         val timeline = source(root, "MessageItemTimeline.kt")
@@ -93,18 +93,22 @@ class StreamingMarkdownMessageSourceContractTest {
         assertTrue(timeline.contains("presentedProjection, presentedIsStreaming"))
         assertTrue(
             handoff.contains(
-                "LaunchedEffect(animationKey, isStreaming, projection, allowSpatialTransitions)",
+                "LaunchedEffect(animationKey, isStreaming, projection)",
             ),
         )
-        assertTrue(handoff.contains("currentLayoutMutationStarted(mutationKey)"))
-        assertTrue(handoff.contains("withFrameNanos { }"))
-        assertTrue(handoff.contains("animateContentSize("))
-        assertTrue(
-            handoff.contains(
-                "durationMillis = CITATION_TERMINAL_PROJECTION_SIZE_DURATION_MS",
-            ),
-        )
-        assertTrue(handoff.contains("currentLayoutMutationSettled(mutationKey)"))
+        val startIndex = handoff.indexOf("currentLayoutMutationStarted(mutationKey)")
+        val commitFrameIndex = handoff.indexOf("withFrameNanos { }", startIndex)
+        val commitIndex = handoff.indexOf("presentedProjection = projection", commitFrameIndex)
+        val settleIndex = handoff.indexOf("currentLayoutMutationSettled(mutationKey)", commitIndex)
+        assertTrue(startIndex >= 0)
+        assertTrue(commitFrameIndex > startIndex)
+        assertTrue(commitIndex > commitFrameIndex)
+        assertTrue(settleIndex > commitIndex)
+        assertTrue(handoff.contains("Box(modifier = modifier)"))
+        assertFalse(handoff.contains("animateContentSize("))
+        assertFalse(handoff.contains("CITATION_TERMINAL_PROJECTION_SIZE_DURATION_MS"))
+        assertFalse(handoff.contains("CITATION_TERMINAL_PROJECTION_SETTLE_FALLBACK_MS"))
+        assertFalse(handoff.contains("delay("))
         assertFalse(handoff.contains("AnimatedContent("))
         assertFalse(handoff.contains("Crossfade("))
         assertFalse(Regex("content\\(\\)\\s*return").containsMatchIn(inlineHost))
@@ -125,7 +129,7 @@ class StreamingMarkdownMessageSourceContractTest {
     }
 
     @Test
-    fun `generation error bar is one stateless sibling rather than Markdown state`() {
+    fun `generation error bar owns only Local help dialog state outside Markdown`() {
         val root = locateMainSourceRoot()
         val wrapper = source(root, "StreamingMarkdownMessage.kt")
         val errorBar = source(root, "GenerationErrorBar.kt")
@@ -133,18 +137,24 @@ class StreamingMarkdownMessageSourceContractTest {
         val detail = source(root, "SegmentDetailSheet.kt")
 
         assertTrue(errorBar.contains("internal fun GenerationErrorBar("))
-        assertFalse(errorBar.contains("mutableState"))
+        assertTrue(errorBar.contains("var showHelpDialog by remember { mutableStateOf(false) }"))
+        assertEquals(1, Regex("mutableStateOf\\(").findAll(errorBar).count())
         assertFalse(errorBar.contains("MessageStatus"))
         assertFalse(wrapper.contains("GenerationErrorBar"))
+        assertFalse(wrapper.contains("showHelpDialog"))
+        assertFalse(assistant.contains("showHelpDialog"))
         assertTrue(assistant.contains("GenerationErrorBar("))
         assertTrue(assistant.contains("precededByCard = terminalImmediatelyFollowsCard"))
         assertTrue(detail.contains("GenerationErrorBar(it)"))
     }
 
     @Test
-    fun `Compact detail and pill use stable content geometry and neutral error state`() {
+    fun `Compact detail and pill share presentation crossfade and size transform`() {
         val source = source(locateMainSourceRoot(), "MessageItem.kt")
         val pillSource = source.substringAfter("internal fun ContextCompactPill(")
+        val labelTransition = pillSource
+            .substringAfter("presentationTransition.AnimatedContent(")
+            .substringBefore("Box {\n                IconButton(")
 
         assertTrue(source.contains("R.string.context_compact_streaming"))
         assertTrue(source.contains("directMarkdownContent = compactDetailText"))
@@ -152,15 +162,19 @@ class StreamingMarkdownMessageSourceContractTest {
         assertFalse(source.contains("\\u200B"))
         assertTrue(source.contains("R.string.context_compact_error"))
         assertTrue(source.contains("R.string.context_compact_stopped"))
-        assertTrue(pillSource.contains("animateColorAsState("))
+        assertTrue(pillSource.contains("val presentationTransition = updateTransition("))
+        assertEquals(3, Regex("presentationTransition\\.animateColor\\(").findAll(pillSource).count())
+        assertEquals(1, Regex("presentationTransition\\.Crossfade\\(").findAll(pillSource).count())
+        assertEquals(1, Regex("presentationTransition\\.AnimatedContent\\(").findAll(pillSource).count())
+        assertFalse(pillSource.contains("animateColorAsState("))
+        assertFalse(pillSource.contains("animateContentSize("))
+        assertTrue(labelTransition.contains("SizeTransform("))
+        assertTrue(labelTransition.contains("motionPolicy.allowSpatialTransitions"))
+        assertTrue(labelTransition.contains("snap()"))
+        assertTrue(labelTransition.contains("contentAlignment = Alignment.CenterStart"))
         assertTrue(pillSource.contains("Icons.Default.Error"))
         assertTrue(pillSource.contains("MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)"))
         assertTrue(pillSource.contains("MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)"))
-        assertTrue(
-            Regex(
-                """targetValue = if \(error\) \{\s*MaterialTheme\.colorScheme\.onSurfaceVariant""",
-            ).containsMatchIn(pillSource),
-        )
         assertFalse(pillSource.contains("MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)"))
         assertFalse(pillSource.contains("MaterialTheme.colorScheme.error.copy(alpha = 0.8f)"))
         assertTrue(pillSource.contains(".padding(horizontal = 7.dp)"))

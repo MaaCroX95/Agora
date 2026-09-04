@@ -70,6 +70,44 @@ interface ChatContextCompactDao {
         at: Long,
     ): Int
 
+    @Query(
+        """
+        UPDATE conversations
+        SET selectedBranchesJson = :selectedBranchesJson
+        WHERE id = :conversationId
+        """
+    )
+    suspend fun updateMessageBranchSelections(
+        conversationId: String,
+        selectedBranchesJson: String,
+    ): Int
+
+    @Query(
+        """
+        UPDATE conversations
+        SET selectedRunBranchesJson = :selectedRunBranchesJson
+        WHERE id = :conversationId
+        """
+    )
+    suspend fun updateRunBranchSelections(
+        conversationId: String,
+        selectedRunBranchesJson: String,
+    ): Int
+
+    @Query(
+        """
+        UPDATE conversations
+        SET selectedBranchesJson = :selectedBranchesJson,
+            selectedRunBranchesJson = :selectedRunBranchesJson
+        WHERE id = :conversationId
+        """
+    )
+    suspend fun updateBranchSelections(
+        conversationId: String,
+        selectedBranchesJson: String,
+        selectedRunBranchesJson: String,
+    ): Int
+
     @Query("SELECT * FROM runs WHERE conversationId = :conversationId AND activeSlot = 1 LIMIT 1")
     suspend fun getLiveRun(conversationId: String): RunEntity?
 

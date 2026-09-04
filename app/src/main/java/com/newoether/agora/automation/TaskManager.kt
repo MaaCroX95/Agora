@@ -17,12 +17,10 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -43,6 +41,7 @@ class TaskManager(
     private val refreshScheduling: () -> Unit = {},
     private val conversationExecutionCoordinator: ConversationExecutionCoordinator =
         ConversationExecutionCoordinator(),
+    private val automationExecutionGate: AutomationExecutionGate = AutomationExecutionGate(),
     private val titleExecutionConversation: suspend (
         conversationId: String,
         response: String,
@@ -73,8 +72,20 @@ class TaskManager(
         data class Ambiguous(val matches: List<TaskEntity>) : DeleteResult
     }
 
-    val tasks: StateFlow<List<TaskEntity>> =
-        taskRepository.getAllTasks().stateIn(scope, SharingStarted.Eagerly, emptyList())
+    private val mutableTasks = MutableStateFlow<List<TaskEntity>>(emptyList())
+    val tasks: StateFlow<List<TaskEntity>> = mutableTasks.asStateFlow()
+    @Volatile
+    private var started = false
+
+    /** Starts the Task list projection after the conversation list has published. */
+    @Synchronized
+    fun start() {
+        if (started) return
+        started = true
+        scope.launch {
+            taskRepository.getAllTasks().collect { mutableTasks.value = it }
+        }
+    }
 
     private val reservationMonitor = Any()
     private val reservedTaskIds = mutableSetOf<String>()
@@ -244,20 +255,22 @@ class TaskManager(
     }
 
     /** Starts one exclusive manual run. A second tap while queued/running is ignored. */
-    fun runNow(task: TaskEntity) {
+    fun runNow(task: TaskEntity, preservePersistedEnabled: Boolean = true) {
         if (task.name.isBlank() || task.prompt.isBlank() || !reserve(task.id)) return
 
         lateinit var job: Job
         job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 withTaskLock(task.id) {
-                    // Persist the caller's name/prompt/model/cron (the user expects "Run now" to use
-                    // what they see), but NEVER overwrite the enabled flag from the UI snapshot.
-                    // The snapshot may be stale (e.g. the user just toggled the switch off and the
-                    // flow hasn't re-emitted yet); letting runNow re-enable a disabled task would
-                    // silently revive it. The persisted enabled state is authoritative here.
-                    val persistedEnabled = taskRepository.getTask(task.id)?.enabled ?: task.enabled
-                    saveTaskLocked(task.copy(enabled = persistedEnabled))
+                    // List snapshots may be stale immediately after a switch change, so list Run
+                    // Now keeps the persisted enabled state. The editor explicitly opts out because
+                    // its current draft is the configuration the command must save.
+                    val enabledForSave = if (preservePersistedEnabled) {
+                        taskRepository.getTask(task.id)?.enabled ?: task.enabled
+                    } else {
+                        task.enabled
+                    }
+                    saveTaskLocked(task.copy(enabled = enabledForSave))
                     val persisted = taskRepository.getTask(task.id) ?: task
                     executeLocked(
                         task = persisted,
@@ -362,21 +375,49 @@ class TaskManager(
         requestedConversationId: String,
         foregroundServiceManagedExternally: Boolean,
         finishManualSchedule: Boolean,
-    ): ExecutionResult {
-        // Existing deterministic execution IDs are meaningful only after orphaned Runs have been
-        // terminalized. Otherwise recovery can misclassify a live-looking SENDING row and replay
-        // or delete the wrong occurrence.
-        conversationRepository.ensureRunRecovery()
-        var conversationId = requestedConversationId
-        val existing = conversationRepository.getConversation(conversationId)
-        if (existing != null) {
-            if (existing.taskId == task.id) {
-                val recovery = recoverExistingExecution(existing)
-                if (recovery != null) return recovery
-                conversationRepository.deleteConversation(conversationId)
-            } else {
-                conversationId = UUID.randomUUID().toString()
+    ): ExecutionResult = automationExecutionGate.withExecution {
+        val requestedResult = conversationExecutionCoordinator
+            .withAutomationConversationLock(requestedConversationId) {
+                conversationRepository.recoverConversationRuntime(requestedConversationId)
+                val existing = conversationRepository.getConversation(requestedConversationId)
+                if (existing != null && existing.taskId != task.id) {
+                    null
+                } else {
+                    executeConversationLocked(
+                        task = task,
+                        conversationId = requestedConversationId,
+                        existing = existing,
+                        foregroundServiceManagedExternally = foregroundServiceManagedExternally,
+                        finishManualSchedule = finishManualSchedule,
+                    )
+                }
             }
+        if (requestedResult != null) return@withExecution requestedResult
+
+        val conversationId = UUID.randomUUID().toString()
+        conversationExecutionCoordinator.withAutomationConversationLock(conversationId) {
+            conversationRepository.recoverConversationRuntime(conversationId)
+            executeConversationLocked(
+                task = task,
+                conversationId = conversationId,
+                existing = null,
+                foregroundServiceManagedExternally = foregroundServiceManagedExternally,
+                finishManualSchedule = finishManualSchedule,
+            )
+        }
+    }
+
+    private suspend fun executeConversationLocked(
+        task: TaskEntity,
+        conversationId: String,
+        existing: ChatEntity?,
+        foregroundServiceManagedExternally: Boolean,
+        finishManualSchedule: Boolean,
+    ): ExecutionResult {
+        if (existing != null) {
+            val recovery = recoverExistingExecution(existing)
+            if (recovery != null) return recovery
+            conversationRepository.deleteConversation(conversationId)
         }
 
         conversationRepository.upsertConversation(
@@ -389,12 +430,13 @@ class TaskManager(
             )
         )
 
-        val result = engine.runOnce(
+        val result = engine.runOnceWithAutomationGuardsHeld(
             conversationId = conversationId,
             userText = task.prompt,
             modelId = task.modelId,
             systemPromptOverride = task.systemPrompt ?: "",
             foregroundServiceManagedExternally = foregroundServiceManagedExternally,
+            requestKind = "task",
         )
         val outcome = when (result) {
             is TaskExecutionEngine.Result.Success -> {

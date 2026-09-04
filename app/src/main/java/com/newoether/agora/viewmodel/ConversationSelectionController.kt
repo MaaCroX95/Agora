@@ -1,6 +1,8 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.api.DebugProvider
 import com.newoether.agora.data.repository.ConversationRepository
+import com.newoether.agora.data.repository.SettingsRepository
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.util.Constants
 import com.newoether.agora.util.DebugLog
@@ -12,10 +14,45 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
+
+internal fun validChatModels(
+    enabledModels: Set<String>,
+    developerOptionsEnabled: Boolean,
+    debugModelEnabled: Boolean,
+): Set<String> {
+    val ordinaryModels = enabledModels - DebugProvider.MODEL_ID
+    return if (developerOptionsEnabled && debugModelEnabled) {
+        ordinaryModels + DebugProvider.MODEL_ID
+    } else {
+        ordinaryModels
+    }
+}
+
+internal fun SettingsRepository.validChatModels(
+    scope: CoroutineScope,
+): StateFlow<Set<String>?> = flow {
+    awaitInitialLoad()
+    combine(
+        enabledModels,
+        developerOptionsEnabled,
+        debugModelEnabled,
+        ::validChatModels,
+    ).collect { emit(it) }
+}.stateIn(scope, SharingStarted.Eagerly, null)
+
+private fun resolveValidModel(
+    referencedModel: String?,
+    defaultModel: String,
+    validModels: Set<String>,
+): String = referencedModel
+    ?.takeIf(validModels::contains)
+    ?: defaultModel.takeIf(validModels::contains).orEmpty()
 
 /**
  * Owns the open-conversation projection and its mutually superseding transition Job.
@@ -29,6 +66,7 @@ internal class ConversationSelectionController(
     private val conversations: ConversationRepository,
     private val registry: ConversationStateRegistry,
     defaultModel: StateFlow<String>,
+    validModels: StateFlow<Set<String>?>,
     private val scrollRequests: ScrollRequestCoordinator,
     private val renderStore: () -> ConversationRenderStore,
     private val clearConversationGraph: () -> Unit,
@@ -42,6 +80,12 @@ internal class ConversationSelectionController(
 
     private val _currentConversationId = MutableStateFlow<String?>(null)
     val currentConversationId: StateFlow<String?> = _currentConversationId.asStateFlow()
+    private val _selectedConversationGenerationSnapshot =
+        MutableStateFlow(ConversationGenerationSnapshot())
+    val selectedConversationGenerationSnapshot: StateFlow<ConversationGenerationSnapshot> =
+        _selectedConversationGenerationSnapshot.asStateFlow()
+    private var selectedRuntimeCollectorJob: Job? = null
+    private var selectedRuntimeBindingGeneration = 0L
 
     private val _isNewChatMode = MutableStateFlow(true)
     val isNewChatMode: StateFlow<Boolean> = _isNewChatMode.asStateFlow()
@@ -52,9 +96,74 @@ internal class ConversationSelectionController(
         newChatModelId,
         _isNewChatMode,
         defaultModel,
-    ) { active, newChatModel, isNewChat, fallback ->
-        if (isNewChat) active ?: newChatModel ?: fallback else active ?: fallback
-    }.stateIn(scope, SharingStarted.Eagerly, Constants.EXAMPLE_MODEL_ID)
+        validModels,
+    ) { active, newChatModel, isNewChat, fallback, valid ->
+        if (valid == null) {
+            ""
+        } else {
+            val referencedModel = if (isNewChat) active ?: newChatModel else active
+            resolveValidModel(referencedModel, fallback, valid)
+        }
+    }.stateIn(scope, SharingStarted.Eagerly, "")
+
+    init {
+        scope.launch {
+            combine(
+                _activeModelOverride,
+                newChatModelId,
+                _isNewChatMode,
+                defaultModel,
+                validModels,
+            ) { active, stored, isNewChat, fallback, valid ->
+                if (isNewChat && active == null && valid != null) {
+                    reconcileNewChatModel(stored, fallback, valid)
+                }
+            }.collect { }
+        }
+        scope.launch {
+            combine(
+                _activeModelOverride,
+                _currentConversationId,
+                _isNewChatMode,
+                defaultModel,
+                validModels,
+            ) { active, conversationId, isNewChat, fallback, valid ->
+                if (!isNewChat && conversationId != null && valid != null) {
+                    reconcileConversationModel(conversationId, active, fallback, valid)
+                }
+            }.collect { }
+        }
+    }
+
+    private fun reconcileNewChatModel(
+        referencedModel: String?,
+        defaultModel: String,
+        validModels: Set<String>,
+    ) {
+        if (referencedModel == null || referencedModel in validModels) return
+        if (!_isNewChatMode.value || _activeModelOverride.value != null) return
+        if (newChatModelId.value != referencedModel) return
+        workspaces.setModel(
+            NEW_CHAT_WORKSPACE_ID,
+            resolveValidModel(referencedModel, defaultModel, validModels)
+                .takeIf(String::isNotBlank),
+        )
+    }
+
+    private fun reconcileConversationModel(
+        conversationId: String,
+        referencedModel: String?,
+        defaultModel: String,
+        validModels: Set<String>,
+    ) {
+        if (referencedModel == null || referencedModel in validModels) return
+        if (_isNewChatMode.value || _currentConversationId.value != conversationId) return
+        if (_activeModelOverride.value != referencedModel) return
+        val resolvedModel = resolveValidModel(referencedModel, defaultModel, validModels)
+            .takeIf(String::isNotBlank)
+        _activeModelOverride.value = resolvedModel
+        workspaces.setModel(conversationId, resolvedModel)
+    }
 
     private val _newChatEntryId = MutableStateFlow(1L)
     val newChatEntryId: StateFlow<Long> = _newChatEntryId.asStateFlow()
@@ -66,13 +175,55 @@ internal class ConversationSelectionController(
     val isSwitching: StateFlow<Boolean> = switching.isSwitching
     val switchingScrollRequest: StateFlow<SwitchingScrollRequest?> = switching.request
 
+    private fun publishSelectedConversation(conversationId: String?) {
+        selectedRuntimeBindingGeneration += 1L
+        val bindingGeneration = selectedRuntimeBindingGeneration
+        selectedRuntimeCollectorJob?.cancel()
+        if (conversationId == null) {
+            _selectedConversationGenerationSnapshot.value = ConversationGenerationSnapshot()
+            _currentConversationId.value = null
+            selectedRuntimeCollectorJob = null
+            return
+        }
+        val runtimeSnapshot = registry.getOrCreate(conversationId).generationSnapshot
+        _selectedConversationGenerationSnapshot.value = runtimeSnapshot.value
+        _currentConversationId.value = conversationId
+        selectedRuntimeCollectorJob = scope.launch {
+            runtimeSnapshot.collect { snapshot ->
+                if (
+                    _currentConversationId.value == conversationId &&
+                    selectedRuntimeBindingGeneration == bindingGeneration
+                ) {
+                    _selectedConversationGenerationSnapshot.value = snapshot
+                }
+            }
+        }
+    }
+
     /** Publish a first Send only after its conversation/Run/message graph is durable. */
     fun publishAcceptedConversation(conversationId: String, modelId: String) {
         require(conversationId.isNotBlank())
         require(modelId.isNotBlank())
         _activeModelOverride.value = modelId
-        _currentConversationId.value = conversationId
+        publishSelectedConversation(conversationId)
         _isNewChatMode.value = false
+    }
+
+    fun publishAcceptedConversationIfOriginStillOpen(
+        conversationId: String,
+        modelId: String,
+        originNewChatEntryId: Long,
+    ): Boolean {
+        if (
+            !_isNewChatMode.value ||
+            _currentConversationId.value != null ||
+            _newChatEntryId.value != originNewChatEntryId ||
+            switching.isSwitching.value
+        ) {
+            return false
+        }
+        publishAcceptedConversation(conversationId, modelId)
+        return true
     }
 
     fun replaceActiveModelReference(oldModelId: String, newModelId: String?) {
@@ -106,7 +257,7 @@ internal class ConversationSelectionController(
             try {
                 fadeDelay()
                 if (!switching.isCurrent(request.id)) return@launch
-                _currentConversationId.value = null
+                publishSelectedConversation(null)
                 _activeModelOverride.value = null
                 clearConversationGraph()
             } finally {
@@ -115,6 +266,25 @@ internal class ConversationSelectionController(
                 }
             }
         }
+    }
+
+    fun settleDeletedSelectedConversation(conversationId: String) {
+        require(conversationId.isNotBlank())
+        if (_isNewChatMode.value) return
+        val pendingRequest = switching.request.value
+        if (
+            pendingRequest?.kind == SwitchingRequestKind.CONVERSATION &&
+            pendingRequest.conversationId != conversationId
+        ) {
+            return
+        }
+        if (
+            pendingRequest?.kind != SwitchingRequestKind.CONVERSATION &&
+            _currentConversationId.value?.let { it != conversationId } == true
+        ) {
+            return
+        }
+        createNewChat()
     }
 
     fun selectConversation(
@@ -144,7 +314,7 @@ internal class ConversationSelectionController(
                     return@launch
                 }
                 _isNewChatMode.value = false
-                _currentConversationId.value = conversationId
+                publishSelectedConversation(conversationId)
                 _activeModelOverride.value = conversation.modelId
                 switching.markConversationReady(request.id)
             } catch (error: CancellationException) {

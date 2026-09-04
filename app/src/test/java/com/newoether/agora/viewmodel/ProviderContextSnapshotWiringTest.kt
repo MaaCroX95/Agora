@@ -33,7 +33,9 @@ class ProviderContextSnapshotWiringTest {
         )
         assertTrue(
             "production dependency wiring must supply the database",
-            "ConversationRepository(chatDao, database)" in container,
+            "ConversationRepository(" in container &&
+                "chatDao = chatDao" in container &&
+                "database = database" in container,
         )
         assertTrue(
             "the loader must enter the repository snapshot before reading topology",

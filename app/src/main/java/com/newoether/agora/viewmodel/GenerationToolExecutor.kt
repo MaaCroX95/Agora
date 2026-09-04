@@ -21,6 +21,7 @@ import com.newoether.agora.tool.ToolImageStore
 import com.newoether.agora.tool.ToolPresentationMetadata
 import com.newoether.agora.tool.ToolProvider
 import com.newoether.agora.tool.WebSearchToolProvider
+import com.newoether.agora.util.Constants
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -150,9 +151,6 @@ internal class GenerationToolExecutor private constructor(
         .first()
         .semanticSearch(query, limit, context)
 
-    fun drainGeneratedImages(conversationId: String): List<String> =
-        imageGenProvider?.drainImages(conversationId).orEmpty()
-
     /** Cleanup side effect only; it cannot authorize continuation or change runtime state. */
     suspend fun acknowledgeCommittedShellJobs(
         calls: List<ToolCallData>,
@@ -188,6 +186,10 @@ internal class GenerationToolExecutor private constructor(
             )
         }
 
+        val executionTimeoutMs = toolExecutionTimeoutMs(
+            toolName = call.name,
+            defaultTimeoutMs = call.context.toolTimeoutMs,
+        )
         val result = try {
             val provider = providers.firstOrNull { it.handles(call.name) }
                 ?: return call.result(
@@ -212,13 +214,13 @@ internal class GenerationToolExecutor private constructor(
                     )
             }
             try {
-                withTimeout(call.context.toolTimeoutMs) { attempt.await() }
+                withTimeout(executionTimeoutMs) { attempt.await() }
             } finally {
                 attemptJob.cancel()
             }
         } catch (error: TimeoutCancellationException) {
             ToolExecutionResult(
-                text = "Error executing tool '${call.name}': timed out after ${call.context.toolTimeoutMs}ms",
+                text = "Error executing tool '${call.name}': timed out after ${executionTimeoutMs}ms",
                 isError = true,
             )
         } catch (error: CancellationException) {
@@ -237,6 +239,15 @@ internal class GenerationToolExecutor private constructor(
         callId = callId,
         result = result,
     )
+}
+
+internal fun toolExecutionTimeoutMs(
+    toolName: String,
+    defaultTimeoutMs: Long,
+): Long = if (toolName == "generate_image") {
+    Constants.IMAGE_GENERATION_TIMEOUT_MS
+} else {
+    defaultTimeoutMs
 }
 
 internal fun appendBoundedToolOutput(

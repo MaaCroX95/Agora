@@ -27,13 +27,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -79,9 +78,11 @@ class ProotSandboxManager(
     override suspend fun refreshPackageList() {
         if (isAvailable()) _packageList.value = apkList()
     }
-    private val _snackbarMessage = MutableStateFlow<String?>(null)
-    override val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
+    private val snackbarMessages = Channel<String>(Channel.UNLIMITED)
+    override val snackbarMessage = snackbarMessages.receiveAsFlow()
     override var pendingPkgName: String = ""
+
+    private fun emitSnackbar(message: String) = check(snackbarMessages.trySend(message).isSuccess)
 
     private val rootfsDir: File = File(context.filesDir, "alpine-rootfs")
     private val homeMountDir: File = File(context.filesDir, "sandbox-home")
@@ -264,11 +265,11 @@ class ProotSandboxManager(
                 ensureShell()
                 _packageList.value = apkList()
                 _terminalOutput.value += if (ok) "✓ Installed $name\n" else "✗ Failed\n"
-                _snackbarMessage.value = if (ok) context.getString(R.string.sandbox_snackbar_installed, name) else context.getString(R.string.sandbox_snackbar_install_failed, name)
+                emitSnackbar(if (ok) context.getString(R.string.sandbox_snackbar_installed, name) else context.getString(R.string.sandbox_snackbar_install_failed, name))
             } catch (e: Throwable) { ensureShell()
                 _packageList.value = apkList()
                 _terminalOutput.value += "✗ Error: ${e.message}\n"
-                _snackbarMessage.value = context.getString(R.string.sandbox_snackbar_error, e.message ?: "")
+                emitSnackbar(context.getString(R.string.sandbox_snackbar_error, e.message ?: ""))
             } finally { _isBusy.value = false }
         }
     }
@@ -282,10 +283,10 @@ class ProotSandboxManager(
             try {
                 val ok = apkDelete(name)
                 _terminalOutput.value += if (ok) "✓ Removed $name\n" else "✗ Failed to remove $name\n"
-                _snackbarMessage.value = if (ok) context.getString(R.string.sandbox_snackbar_removed, name) else context.getString(R.string.sandbox_snackbar_remove_failed, name)
+                emitSnackbar(if (ok) context.getString(R.string.sandbox_snackbar_removed, name) else context.getString(R.string.sandbox_snackbar_remove_failed, name))
             } catch (e: Throwable) {
                 _terminalOutput.value += "✗ Error: ${e.message}\n"
-                _snackbarMessage.value = context.getString(R.string.sandbox_snackbar_error, e.message ?: "")
+                emitSnackbar(context.getString(R.string.sandbox_snackbar_error, e.message ?: ""))
             } finally { ensureShell(); _isBusy.value = false; _packageList.value = apkList() }
         }
     }
@@ -306,23 +307,20 @@ class ProotSandboxManager(
                     ok -> "✓ Packages already up to date\n"
                     else -> "✗ Upgrade failed\n"
                 }
-                _snackbarMessage.value = when {
+                emitSnackbar(when {
                     upgraded > 0 -> context.getString(R.string.sandbox_snackbar_upgrade_done, upgraded)
                     ok -> context.getString(R.string.sandbox_snackbar_upgrade_none)
                     else -> context.getString(R.string.sandbox_snackbar_upgrade_failed)
-                }
+                })
             } catch (e: Throwable) {
                 _terminalOutput.value += "✗ Error: ${e.message}\n"
-                _snackbarMessage.value = context.getString(R.string.sandbox_snackbar_error, e.message ?: "")
+                emitSnackbar(context.getString(R.string.sandbox_snackbar_error, e.message ?: ""))
             } finally { ensureShell(); _isBusy.value = false; _packageList.value = apkList() }
         }
     }
 
     override fun getSandboxHomeDir(): File? = homeMountDir
 
-    override fun close() {
-        sandboxScope.cancel()
-    }
     override suspend fun reset(): Boolean = withContext(Dispatchers.IO) {
         sandboxScope.cancel(); sandboxScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         _terminalOutput.value = ""
@@ -334,9 +332,9 @@ class ProotSandboxManager(
                 kotlinx.coroutines.delay(200)
             }
             prootBin.delete()
-            _snackbarMessage.value = context.getString(R.string.sandbox_snackbar_reset)
+            emitSnackbar(context.getString(R.string.sandbox_snackbar_reset))
             true
-        } catch (e: Throwable) { _snackbarMessage.value = context.getString(R.string.sandbox_snackbar_reset_failed); false }
+        } catch (e: Throwable) { emitSnackbar(context.getString(R.string.sandbox_snackbar_reset_failed)); false }
     }
 
     // ── Shell Execution ─────────────────────────────────

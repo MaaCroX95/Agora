@@ -2,11 +2,13 @@ package com.newoether.agora.viewmodel
 
 import android.content.Context
 import com.newoether.agora.R
+import com.newoether.agora.api.HttpClient
 import com.newoether.agora.api.LlmProvider
 import com.newoether.agora.api.ProviderConfig
 import com.newoether.agora.api.StreamEvent
 import com.newoether.agora.data.BuiltInPrompts
 import com.newoether.agora.data.repository.ConversationRepository
+import com.newoether.agora.diagnostics.DeveloperDiagnostics
 import com.newoether.agora.model.AttachmentMeta
 import com.newoether.agora.model.AttachmentItem
 import com.newoether.agora.model.ChatMessage
@@ -24,6 +26,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.util.UUID
 
 /**
  * Handles image/video/PDF transcription as a pre-processing stage before
@@ -37,7 +40,12 @@ class TranscriptionManager(
     private val conversations: ConversationRepository,
     private val context: Context
 ) {
-    private val contextLoader = DurableSelectedContextLoader(conversations)
+    private val contextLoader = DurableSelectedContextLoader(
+        conversations = conversations,
+        generationErrorFormatter = { raw ->
+            normalizePersistedGenerationErrorText(context, raw)
+        },
+    )
 
     data class TranscriptionTarget(
         val messageId: String,
@@ -144,6 +152,10 @@ class TranscriptionManager(
         image: ToolImageAttachment,
         ctx: GenerationContext,
         generationJob: Job?,
+        conversationId: String,
+        runId: String,
+        pass: Int,
+        modelMessageId: String,
         onProgress: suspend (String) -> Unit,
     ): String? {
         // The block must never render as empty: announce the transcribing state immediately and
@@ -177,19 +189,39 @@ class TranscriptionManager(
                 status = MessageStatus.SUCCESS,
             ),
         )
+        val requestId = "$modelMessageId:tool-image-${UUID.randomUUID()}"
+        val requestTrace = HttpClient.RequestTrace(
+            requestId = requestId,
+            origin = "transcription",
+            diagnosticContext = DeveloperDiagnostics.newRequestContext(
+                requestId = requestId,
+                conversationId = conversationId,
+                runId = runId,
+                pass = pass,
+                provider = ctx.transcriptionProviderName,
+                model = ctx.transcriptionModelId,
+                requestKind = "transcription",
+            ),
+        )
         val transcription = StringBuilder()
         var streamError: StreamEvent.Error? = null
-        provider.generateResponse(promptMessages, transcriptionConfig).collect { event ->
-            when (event) {
-                is StreamEvent.TextChunk -> {
-                    transcription.append(event.text)
-                    onProgress(transcription.toString())
+        HttpClient.withStreamScope(
+            scope = HttpClient.boundStreamScope(),
+            requestTrace = requestTrace,
+        ) {
+            provider.generateResponse(promptMessages, transcriptionConfig).collect { event ->
+                requestTrace.recordParsedEvent(event)
+                when (event) {
+                    is StreamEvent.TextChunk -> {
+                        transcription.append(event.text)
+                        onProgress(transcription.toString())
+                    }
+                    is StreamEvent.Error -> streamError = event
+                    else -> {}
                 }
-                is StreamEvent.Error -> streamError = event
-                else -> {}
-            }
-            if (generationJob?.isCancelled == true || !currentCoroutineContext().isActive) {
-                throw CancellationException("Tool image transcription cancelled")
+                if (generationJob?.isCancelled == true || !currentCoroutineContext().isActive) {
+                    throw CancellationException("Tool image transcription cancelled")
+                }
             }
         }
         if (streamError != null) {
@@ -224,6 +256,8 @@ class TranscriptionManager(
     suspend fun transcribe(
         targets: List<TranscriptionTarget>,
         conversationId: String,
+        runId: String,
+        pass: Int,
         providerName: String,
         modelId: String,
         apiKey: String,
@@ -281,25 +315,45 @@ class TranscriptionManager(
                 participant = Participant.USER,
                 status = MessageStatus.SUCCESS
             ))
+            val requestId = "$modelMessageId:transcription-$processed"
+            val requestTrace = HttpClient.RequestTrace(
+                requestId = requestId,
+                origin = "transcription",
+                diagnosticContext = DeveloperDiagnostics.newRequestContext(
+                    requestId = requestId,
+                    conversationId = conversationId,
+                    runId = runId,
+                    pass = pass,
+                    provider = providerName,
+                    model = modelId,
+                    requestKind = "transcription",
+                ),
+            )
             val transcription = StringBuilder()
             var streamError: String? = null
-            provider.generateResponse(promptMessages, transcriptionConfig).collect { event ->
-                when (event) {
-                    is StreamEvent.TextChunk -> {
-                        transcription.append(event.text)
-                        transcriptionSegments[transcriptionSegments.lastIndex] = currentSegment.copy(content = transcription.toString())
-                        onProgress(ChatMessage(
-                            id = modelMessageId, parentId = parentId, text = "",
-                            participant = Participant.MODEL, status = MessageStatus.TRANSCRIBING, timestamp = startTime,
-                            thoughtTitle = context.getString(R.string.transcription_label),
-                            // Trailing empty answer segment keeps the timeline renderer active during
-                // transcription (it keys on the presence of an "answer" segment), so the
-                // block morphs in place into the thought block instead of disappearing.
-                segments = transcriptionSegments.toList() + MessageSegment(type = "answer"),
-                        ))
+            HttpClient.withStreamScope(
+                scope = HttpClient.boundStreamScope(),
+                requestTrace = requestTrace,
+            ) {
+                provider.generateResponse(promptMessages, transcriptionConfig).collect { event ->
+                    requestTrace.recordParsedEvent(event)
+                    when (event) {
+                        is StreamEvent.TextChunk -> {
+                            transcription.append(event.text)
+                            transcriptionSegments[transcriptionSegments.lastIndex] = currentSegment.copy(content = transcription.toString())
+                            onProgress(ChatMessage(
+                                id = modelMessageId, parentId = parentId, text = "",
+                                participant = Participant.MODEL, status = MessageStatus.TRANSCRIBING, timestamp = startTime,
+                                thoughtTitle = context.getString(R.string.transcription_label),
+                                // Trailing empty answer segment keeps the timeline renderer active during
+                                // transcription (it keys on the presence of an "answer" segment), so the
+                                // block morphs in place into the thought block instead of disappearing.
+                                segments = transcriptionSegments.toList() + MessageSegment(type = "answer"),
+                            ))
+                        }
+                        is StreamEvent.Error -> { streamError = localizedGenerationError(context, event.error) }
+                        else -> {}
                     }
-                    is StreamEvent.Error -> { streamError = localizedGenerationError(context, event.error) }
-                    else -> {}
                 }
             }
             if (streamError != null) return Pair(transcriptionSegments, streamError)

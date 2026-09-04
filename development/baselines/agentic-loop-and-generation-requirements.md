@@ -71,7 +71,7 @@ HTTP 200 is not proof of stream success. Provider paths track protocol terminal 
 - Empty/null relay deltas never erase previously accumulated non-empty output. Structured tool arguments tolerate incremental deltas and growth snapshots without duplication.
 - A nameless/incomplete tool call is an error, never silently discarded.
 
-Transient failures use one policy across providers: initial request plus at most five retries, waiting `[5s, 5s, 5s, 30s, 30s]`. Request timeout, retryable transport/open-stream failure, eligible incomplete stream before visible output, and upstream outcome/message containing `failed to generate` are covered.
+Transient failures use one policy across providers: initial request plus at most five retries, waiting `[5s, 5s, 5s, 30s, 30s]`. Request timeout, retryable transport/open-stream failure, eligible incomplete stream before visible output, and transient upstream outcome/message text containing `failed to generate` are covered. For every applicable remote Provider, a zero-output parse/protocol failure presented as localized `The server response could not be read.` and a response-body read exception whose cause chain contains that exact phrase enter the same existing Provider retry pipeline. Eligibility is per current Provider pass: any nonblank Answer, Thought, Tool, hosted-tool, or other Provider output blocks replay, while a fresh pass after a completed Tool call is evaluated independently. Unrelated `IOException` and partial output remain non-retryable.
 
 Retry UI invariants:
 

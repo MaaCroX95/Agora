@@ -40,6 +40,18 @@ class ToolImageStore(context: Context) {
         return persistBytes(bytes, mimeType, filePrefix)
     }
 
+    fun persistGeneratedBytes(
+        bytes: ByteArray,
+        filePrefix: String = "generated",
+    ): ToolImageAttachment {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        val detectedMimeType = bounds.outMimeType
+            ?.takeIf { it.startsWith("image/") }
+            ?: throw IOException("Generated image has an unknown media type")
+        return persistBytes(bytes, detectedMimeType, filePrefix)
+    }
+
     fun persistBytes(
         bytes: ByteArray,
         mimeType: String,

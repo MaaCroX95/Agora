@@ -95,6 +95,7 @@ internal fun MessageInfoDialog(
 /** Specialized confirmation: Compact deletion reparents descendants and removes only the pill. */
 @Composable
 internal fun ContextCompactDeleteDialog(
+    enabled: Boolean = true,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -111,13 +112,16 @@ internal fun ContextCompactDeleteDialog(
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
+                enabled = enabled,
                 colors = ButtonDefaults.textButtonColors(
                     contentColor = MaterialTheme.colorScheme.error,
                 ),
             ) { Text(stringResource(R.string.delete)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = onDismiss, enabled = enabled) {
+                Text(stringResource(R.string.cancel))
+            }
         },
     )
 }
@@ -125,22 +129,42 @@ internal fun ContextCompactDeleteDialog(
 /** Destructive confirmation for deleting a single message (and its subtree). */
 @Composable
 internal fun MessageDeleteDialog(
+    deletesConversation: Boolean = false,
+    enabled: Boolean = true,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.delete_message_title), fontWeight = FontWeight.Bold) },
-        text = { Text(stringResource(R.string.delete_message_confirm)) },
+        title = {
+            Text(
+                stringResource(
+                    if (deletesConversation) R.string.delete_conversation_title
+                    else R.string.delete_message_title,
+                ),
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            Text(
+                stringResource(
+                    if (deletesConversation) R.string.delete_conversation_from_message_confirm
+                    else R.string.delete_message_confirm,
+                ),
+            )
+        },
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
+                enabled = enabled,
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
             ) { Text(stringResource(R.string.delete)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = onDismiss, enabled = enabled) {
+                Text(stringResource(R.string.cancel))
+            }
         }
     )
 }

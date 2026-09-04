@@ -9,7 +9,9 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.animation.*
@@ -64,9 +66,8 @@ import com.newoether.agora.ui.onboarding.WelcomeScreen
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import com.newoether.agora.ui.motion.ProvideAgoraMotionPolicy
 import com.newoether.agora.ui.settings.SettingsScreen
+import com.newoether.agora.ui.tasks.TaskEditorSessionViewModel
 import com.newoether.agora.ui.tasks.TaskHistoryPreviewPhase
-import com.newoether.agora.ui.tasks.TaskHistoryPreviewState
-import com.newoether.agora.ui.tasks.TaskHistoryPreviewStateSaver
 import com.newoether.agora.ui.theme.AgoraTheme
 import com.newoether.agora.util.CrashReporter
 import com.newoether.agora.viewmodel.ChatViewModel
@@ -119,13 +120,6 @@ class MainActivity : ComponentActivity() {
         handleNavigationIntent(intent)
 
         com.newoether.agora.util.DebugLog.init(this)
-        AgoraForegroundService.createChannel(this)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
-            }
-        }
 
         val settingsManager = SettingsManager(applicationContext)
         val agoraApplication = application as AgoraApplication
@@ -300,6 +294,24 @@ fun MainNavigation(
 ) {
     val appContext = LocalContext.current.applicationContext
     val motionPolicy = LocalAgoraMotionPolicy.current
+    val shouldRequestNotificationPermission =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        appContext.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+        PackageManager.PERMISSION_GRANTED
+    var initialComposerFocusReady by remember {
+        mutableStateOf(!shouldRequestNotificationPermission)
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        initialComposerFocusReady = true
+    }
+    LaunchedEffect(Unit) {
+        AgoraForegroundService.createChannels(appContext)
+        if (shouldRequestNotificationPermission) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showTasks by rememberSaveable { mutableStateOf(false) }
     val topLevelPresentation = remember {
@@ -315,14 +327,12 @@ fun MainNavigation(
         )
     }
     val tasksListState = rememberLazyListState()
-    var taskToOpen by rememberSaveable { mutableStateOf<String?>(null) }
-    var taskHistoryPreview by rememberSaveable(
-        stateSaver = TaskHistoryPreviewStateSaver,
-    ) {
-        mutableStateOf(TaskHistoryPreviewState.Idle)
-    }
+    val taskEditorSession: TaskEditorSessionViewModel = viewModel()
+    var taskToOpen by remember { mutableStateOf<String?>(null) }
+    val taskHistoryPreview = taskEditorSession.historyPreview
     val currentConversationId by viewModel.currentConversationId.collectAsState()
     val isNewChatMode by viewModel.isNewChatMode.collectAsState()
+    com.newoether.agora.ui.tasks.TaskHistoryDestinationEffect(taskEditorSession, currentConversationId, isNewChatMode)
     val notificationTarget by notificationConversationId.collectAsState()
     LaunchedEffect(notificationTarget) {
         val id = notificationTarget ?: return@LaunchedEffect
@@ -335,7 +345,7 @@ fun MainNavigation(
                 showSettings = false
                 showTasks = false
                 taskToOpen = null
-                taskHistoryPreview = TaskHistoryPreviewState.Idle
+                taskEditorSession.clear()
                 viewModel.selectConversation(id)
             }
         } finally {
@@ -677,24 +687,16 @@ fun MainNavigation(
 
     val customProviders by viewModel.settings.customProviders.collectAsState()
 
-    // Keep every flavor-specific snackbar on the same display-only provider-ID boundary.
-    // Uses a launch+Job pattern so a new message cancels the
-    // previous showSnackbar suspension immediately.
+    // Sandbox outcomes are buffered by their manager and displayed in production order.
     LaunchedEffect(Unit) {
-        var snackbarJob: Job? = null
         viewModel.sandboxManager?.snackbarMessage?.collect { msg ->
-            if (msg != null) {
-                snackbarHostState.currentSnackbarData?.dismiss()
-                snackbarJob?.cancel()
-                snackbarJob = launch {
-                    try {
-                        snackbarHostState.showSnackbar(
-                            viewModel.displayText(msg),
-                        )
-                    } finally {
-                        snackbarVersion++
-                    }
-                }
+            snackbarHostState.currentSnackbarData?.dismiss()
+            try {
+                snackbarHostState.showSnackbar(
+                    viewModel.displayText(msg),
+                )
+            } finally {
+                snackbarVersion++
             }
         }
     }
@@ -728,12 +730,13 @@ fun MainNavigation(
         Box(modifier = Modifier.fillMaxSize()) {
             ChatApp(
                 viewModel = viewModel,
+                initialComposerFocusReady = initialComposerFocusReady,
                 onNavigateBack = taskHistoryPreview.taskId
                     ?.takeIf { taskHistoryPreview.active }
                     ?.let { taskId ->
                         {
                             taskToOpen = taskId
-                            taskHistoryPreview = taskHistoryPreview.requestReturn()
+                            taskEditorSession.requestHistoryReturn()
                             topLevelPresentation.present(TopLevelPresentation.TASKS)
                             showTasks = true
                         }
@@ -800,12 +803,15 @@ fun MainNavigation(
 
             SettingsOverlayHost(
                 visible = showTasks,
-                onDismiss = { showTasks = false },
+                onDismiss = {
+                    taskEditorSession.clear()
+                    showTasks = false
+                },
                 onExitFinished = {
                     topLevelPresentation.release(TopLevelPresentation.TASKS)
                 },
                 onEnterFinished = {
-                    val preview = taskHistoryPreview
+                    val preview = taskEditorSession.historyPreview
                     if (preview.phase == TaskHistoryPreviewPhase.RETURNING) {
                         if (preview.originWasNewChat) {
                             viewModel.createNewChat()
@@ -817,19 +823,24 @@ fun MainNavigation(
                                 )
                             }
                         }
-                        taskHistoryPreview = TaskHistoryPreviewState.Idle
+                        taskEditorSession.finishHistoryReturn()
                     }
                 },
             ) {
                 com.newoether.agora.ui.tasks.TasksScreen(
                     viewModel = viewModel,
+                    editorSession = taskEditorSession,
                     taskListState = tasksListState,
+                    backHandlingEnabled = showTasks,
                     initialTaskId = taskToOpen,
                     onInitialTaskHandled = { taskToOpen = null },
-                    onBack = { showTasks = false },
-                    onOpenConversation = { taskId, conversationId ->
-                        taskHistoryPreview = taskHistoryPreview.open(
-                            taskId = taskId,
+                    onBack = {
+                        taskEditorSession.clear()
+                        showTasks = false
+                    },
+                    onOpenConversation = { conversationId ->
+                        taskEditorSession.openHistory(
+                            previewConversationId = conversationId,
                             currentConversationId = currentConversationId,
                             isNewChatMode = isNewChatMode,
                         )

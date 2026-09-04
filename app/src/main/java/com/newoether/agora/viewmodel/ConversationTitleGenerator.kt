@@ -1,10 +1,12 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.api.HttpClient
 import com.newoether.agora.api.ProviderConfig
 import com.newoether.agora.api.StreamEvent
 import com.newoether.agora.data.BuiltInPrompts
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.SettingsRepository
+import com.newoether.agora.diagnostics.DeveloperDiagnostics
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.ModelId
@@ -12,6 +14,7 @@ import com.newoether.agora.model.Participant
 import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
+import java.util.UUID
 
 private val TITLE_WHITESPACE = Regex("\\s+")
 
@@ -142,14 +145,31 @@ class ConversationTitleGenerator(
             baseUrl = providers.getEffectiveBaseUrl(providerName),
         )
 
+        val requestId = UUID.randomUUID().toString()
+        val requestTrace = HttpClient.RequestTrace(
+            requestId = requestId,
+            origin = "title",
+            diagnosticContext = DeveloperDiagnostics.newRequestContext(
+                requestId = requestId,
+                conversationId = conversationId,
+                runId = null,
+                pass = null,
+                provider = providerName,
+                model = prefixedModelId,
+                requestKind = "title",
+            ),
+        )
         var title = ""
         var providerError: String? = null
         suspend fun collectTitle() {
-            provider.generateResponse(titlePrompt, config).collect { event ->
-                when (event) {
-                    is StreamEvent.TextChunk -> title += event.text
-                    is StreamEvent.Error -> providerError = event.message
-                    else -> Unit
+            HttpClient.withStreamScope(scope = null, requestTrace = requestTrace) {
+                provider.generateResponse(titlePrompt, config).collect { event ->
+                    requestTrace.recordParsedEvent(event)
+                    when (event) {
+                        is StreamEvent.TextChunk -> title += event.text
+                        is StreamEvent.Error -> providerError = event.message
+                        else -> Unit
+                    }
                 }
             }
         }

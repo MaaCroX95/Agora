@@ -4,6 +4,9 @@ import com.newoether.agora.api.anthropic.AnthropicProvider
 import com.newoether.agora.api.gemini.GeminiProvider
 import com.newoether.agora.api.ollama.OllamaProvider
 import com.newoether.agora.api.openai.BaseOpenAiProvider
+import com.newoether.agora.api.openai.CustomOpenAiProvider
+import com.newoether.agora.api.openai.OpenAiProvider
+import com.newoether.agora.api.util.ProviderRetryPolicy
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.Participant
 import com.newoether.agora.util.DebugLog
@@ -11,8 +14,10 @@ import com.sun.net.httpserver.HttpServer
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
+import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
@@ -29,13 +34,16 @@ class ProviderRetryRequestResolutionTest {
     @Before
     fun disableAndroidLoggingForJvmNetworkTests() {
         mockkObject(DebugLog)
+        mockkObject(ProviderRetryPolicy)
         every { DebugLog.d(any(), any()) } just Runs
         every { DebugLog.e(any(), any()) } just Runs
         every { DebugLog.w(any(), any()) } just Runs
+        every { ProviderRetryPolicy.delayMillis(any()) } returns 1L
     }
 
     @After
     fun restoreAndroidLogging() {
+        unmockkObject(ProviderRetryPolicy)
         unmockkObject(DebugLog)
     }
 
@@ -111,6 +119,197 @@ class ProviderRetryRequestResolutionTest {
             server = server,
         )
     }
+
+    @Test
+    fun exactBodyReadFailureUsesExistingRetryPipelineAcrossRemoteProviders() {
+        val chatSuccess = listOf(
+            "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}",
+            "data: [DONE]",
+        )
+        val responsesSuccess = listOf(
+            "data: {\"type\":\"response.output_text.delta\",\"sequence_number\":1,\"delta\":\"ok\"}",
+            "data: {\"type\":\"response.completed\",\"sequence_number\":2,\"response\":{\"status\":\"completed\"}}",
+        )
+        val anthropicSuccess = listOf(
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}",
+            "data: {\"type\":\"content_block_stop\",\"index\":0}",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}",
+            "data: {\"type\":\"message_stop\"}",
+        )
+        val geminiSuccess = listOf(
+            "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}",
+        )
+        val ollamaSuccess = listOf(
+            "{\"model\":\"test\",\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"done\":false}",
+            "{\"model\":\"test\",\"done\":true,\"done_reason\":\"stop\"}",
+        )
+
+        assertReadFailureBoundary(
+            CustomOpenAiProvider("Custom OpenAI", "https://example.invalid/v1"),
+            streamConfig("gpt-test"),
+            chatSuccess,
+            listOf("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"partial\"}}]}"),
+        )
+        assertReadFailureBoundary(
+            CustomOpenAiProvider("Custom OpenAI", "https://example.invalid/v1"),
+            streamConfig("gpt-test", responsesApiEnabled = true),
+            responsesSuccess,
+            listOf("data: {\"type\":\"response.output_text.delta\",\"sequence_number\":1,\"delta\":\"partial\"}"),
+        )
+        assertReadFailureBoundary(
+            AnthropicProvider("Custom Anthropic", "https://example.invalid/v1"),
+            streamConfig("claude-3-5-sonnet-20240620"),
+            anthropicSuccess,
+            listOf(
+                "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}",
+                "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}",
+                "data: {\"type\":\"content_block_stop\",\"index\":0}",
+            ),
+        )
+        assertReadFailureBoundary(
+            GeminiProvider("Custom Google", "https://example.invalid/v1beta"),
+            streamConfig("gemini-test"),
+            geminiSuccess,
+            listOf("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"partial\"}]}}]}"),
+        )
+        assertReadFailureBoundary(
+            OllamaProvider(),
+            streamConfig("llama3"),
+            ollamaSuccess,
+            listOf("{\"model\":\"test\",\"message\":{\"role\":\"assistant\",\"content\":\"partial\"},\"done\":false}"),
+        )
+    }
+
+    @Test
+    fun malformedZeroOutputUsesExistingRetryPipelineAcrossRemoteProviders() {
+        val chatSuccess = listOf(
+            "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}",
+            "data: [DONE]",
+        )
+        val responsesSuccess = listOf(
+            "data: {\"type\":\"response.output_text.delta\",\"sequence_number\":1,\"delta\":\"ok\"}",
+            "data: {\"type\":\"response.completed\",\"sequence_number\":2,\"response\":{\"status\":\"completed\"}}",
+        )
+        val anthropicSuccess = listOf(
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}",
+            "data: {\"type\":\"content_block_stop\",\"index\":0}",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}",
+            "data: {\"type\":\"message_stop\"}",
+        )
+        assertMalformedRetry(OpenAiProvider(), streamConfig("gpt-test"), "data: not-json", chatSuccess)
+        assertMalformedRetry(
+            OpenAiProvider(),
+            streamConfig("gpt-test", responsesApiEnabled = true),
+            "data: not-json",
+            responsesSuccess,
+        )
+        assertMalformedRetry(
+            AnthropicProvider(),
+            streamConfig("claude-3-5-sonnet-20240620"),
+            "data: not-json",
+            anthropicSuccess,
+        )
+        assertMalformedRetry(
+            GeminiProvider(),
+            streamConfig("gemini-test"),
+            "data: not-json",
+            listOf("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}"),
+        )
+        assertMalformedRetry(
+            OllamaProvider(),
+            streamConfig("llama3"),
+            "not-json",
+            listOf(
+                "{\"model\":\"test\",\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"done\":false}",
+                "{\"model\":\"test\",\"done\":true,\"done_reason\":\"stop\"}",
+            ),
+        )
+    }
+
+    private fun assertReadFailureBoundary(
+        provider: LlmProvider,
+        config: ProviderConfig,
+        successReads: List<String>,
+        partialReads: List<String>,
+    ) {
+        val retried = collectWithMockedStream(
+            provider,
+            config,
+            listOf(IOException("The server response could not be read.")) + successReads,
+        )
+        assertEquals(2, retried.second)
+        assertEquals(StreamEvent.Retrying(1, 5), retried.first.filterIsInstance<StreamEvent.Retrying>().single())
+        assertEquals("ok", retried.first.filterIsInstance<StreamEvent.TextChunk>().joinToString("") { it.text })
+        assertTrue(retried.first.none { it is StreamEvent.Error })
+
+        val partial = collectWithMockedStream(
+            provider,
+            config,
+            partialReads + IOException("The server response could not be read."),
+        )
+        assertEquals(1, partial.second)
+        assertEquals("partial", partial.first.filterIsInstance<StreamEvent.TextChunk>().joinToString("") { it.text })
+        assertTrue(partial.first.none { it is StreamEvent.Retrying })
+        assertTrue(partial.first.filterIsInstance<StreamEvent.Error>().single().error is GenerationError.Network)
+    }
+
+    private fun assertMalformedRetry(
+        provider: LlmProvider,
+        config: ProviderConfig,
+        malformedRead: String,
+        successReads: List<String>,
+    ) {
+        val result = collectWithMockedStream(provider, config, listOf(malformedRead) + successReads)
+        assertEquals(2, result.second)
+        assertEquals(StreamEvent.Retrying(1, 5), result.first.filterIsInstance<StreamEvent.Retrying>().single())
+        assertEquals("ok", result.first.filterIsInstance<StreamEvent.TextChunk>().joinToString("") { it.text })
+        assertTrue(result.first.none { it is StreamEvent.Error })
+    }
+
+    private fun collectWithMockedStream(
+        provider: LlmProvider,
+        config: ProviderConfig,
+        reads: List<Any?>,
+    ): Pair<List<StreamEvent>, Int> {
+        val readIndex = AtomicInteger()
+        val opens = AtomicInteger()
+        val handle = mockk<HttpClient.StreamHandle>(relaxed = true)
+        every { handle.code } returns 200
+        every { handle.readLine() } answers {
+            reads.getOrNull(readIndex.getAndIncrement()).let { read ->
+                if (read is Throwable) throw read else read as String?
+            }
+        }
+        mockkObject(HttpClient)
+        every { HttpClient.streamPost(any(), any(), any()) } answers {
+            opens.incrementAndGet()
+            handle
+        }
+        return try {
+            val messages = listOf(
+                ChatMessage(id = "user", text = "hello", participant = Participant.USER),
+            )
+            val events = runBlocking {
+                withTimeout(3_000L) { provider.generateResponse(messages, config).toList() }
+            }
+            events to opens.get()
+        } finally {
+            unmockkObject(HttpClient)
+        }
+    }
+
+    private fun streamConfig(
+        modelId: String,
+        responsesApiEnabled: Boolean = false,
+    ) = ProviderConfig(
+        apiKey = "",
+        modelId = modelId,
+        baseUrl = "https://example.invalid/v1",
+        thinkingEnabled = false,
+        responsesApiEnabled = responsesApiEnabled,
+    )
 
     private fun assertRetryResolvesAgain(
         provider: LlmProvider,

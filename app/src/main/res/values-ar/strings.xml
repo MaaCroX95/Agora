@@ -564,7 +564,7 @@
     <string name="memory_create">إنشاء</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">جارٍ جلب النماذج المتاحة...</string>
+    <string name="models_syncing">جارٍ المزامنة...</string>
     <string name="snackbar_generating_title">جارٍ توليد العنوان...</string>
     <string name="snackbar_title_generated">تم توليد العنوان.</string>
     <string name="snackbar_title_error">حدث خطأ أثناء توليد العنوان.</string>
@@ -665,6 +665,8 @@
     <string name="auto_cache_title">التخزين المؤقت</string>
     <string name="auto_cache">تخزين الرسائل الجديدة مؤقتًا تلقائيًا</string>
     <string name="auto_cache_desc">يفهرس الرسائل الجديدة تلقائيًا بنموذج التضمين المحدد. عند الإيقاف، لا تُخزَّن الرسائل مؤقتًا حتى يتم تشغيلها يدويًا.</string>
+    <string name="show_uncached_notification">إظهار إشعار الرسائل غير المخزنة مؤقتًا</string>
+    <string name="show_uncached_notification_desc">اعرض تذكيرًا عندما يكون التخزين المؤقت التلقائي متوقفًا وتبقى رسائل غير مخزنة مؤقتًا</string>
     <string name="cache_action">تخزين مؤقت</string>
     <string name="recache_action">إعادة التخزين المؤقت</string>
     <string name="recache_confirm_title">إعادة تخزين جميع الرسائل مؤقتًا</string>
@@ -825,6 +827,9 @@
     <string name="export_button">تصدير</string>
     <string name="exporting_label">جارٍ التصدير…</string>
     <string name="export_success">تم تصدير البيانات بنجاح.</string>
+    <string name="attachment_unavailable">المرفق غير متاح</string>
+    <string name="export_success_missing_resources">تم تصدير البيانات، لكن %1$d من الموارد لم تكن متاحة.</string>
+    <string name="auto_backup_missing_resources">اكتمل النسخ الاحتياطي، لكن %1$d من الموارد لم تكن متاحة.</string>
 
     <string name="export_failed">فشل التصدير: %1$s</string>
     <string name="import_preview_title">استيراد البيانات</string>
@@ -833,9 +838,13 @@
     <string name="import_strategy_merge">دمج</string>
     <string name="import_strategy_replace">استبدال</string>
     <string name="import_strategy_skip">تخطٍّ</string>
+    <string name="external_import_replace_confirm_title">هل تريد استبدال المحادثات الحالية؟</string>
+    <string name="external_import_replace_confirm_message">سيؤدي هذا إلى حذف جميع المحادثات الحالية والاحتفاظ فقط بالمحادثات المستوردة المحددة.</string>
+    <string name="external_import_replace_confirm_button">استبدال المحادثات</string>
     <string name="import_api_keys_warning">تحتوي هذه النسخة الاحتياطية على بيانات اعتماد وأسرار. سيتم استيرادها كنص عادي. تابع فقط إذا كنت تثق بالمصدر.</string>
     <string name="import_button">استيراد</string>
     <string name="importing_label">جارٍ الاستيراد…</string>
+    <string name="loading_label">جارٍ التحميل…</string>
     <string name="import_success">اكتمل الاستيراد: %1$s</string>
     <string name="import_failed">فشل الاستيراد: %1$s</string>
     <string name="import_invalid_file">ملف .agora غير صالح. يرجى اختيار تصدير صالح.</string>
@@ -1130,44 +1139,46 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">المطوّر</string>
     <string name="settings_developer">خيارات المطوّر</string>
-    <string name="settings_developer_desc">أدوات التشخيص وفحص البروتوكولات والاختبار</string>
+    <string name="settings_developer_desc">التقاط التشخيصات وعناصر تحكم نموذج Debug المحلي</string>
     <string name="developer_options_title">خيارات المطوّر</string>
-    <string name="developer_options_status_group">الحالة</string>
-    <string name="developer_options_enabled_desc">مفعّلة لهذا التثبيت. أوقفها لإيقاف التشخيصات المؤقتة ومسحها.</string>
+    <string name="developer_options_features_group">الميزات</string>
+    <string name="developer_options_debug_model">نموذج تصحيح الأخطاء</string>
+    <string name="developer_options_mode_description">يؤدي إيقاف هذا الخيار إلى إيقاف الالتقاط وحذف التشخيصات المحفوظة وتعطيل نموذج Debug.</string>
+    <string name="developer_options_capture_description">سجّل تشخيصات الطلب والبث ووقت التشغيل بعد إزالة بيانات الاعتماد، ثم صدّرها.</string>
+    <string name="developer_options_debug_model_description">أضف نموذج Debug المحلي والحتمي إلى منتقي نماذج الدردشة فقط.</string>
+    <string name="developer_options_capture_summary">الملخص</string>
+    <string name="developer_options_capture_raw">خام</string>
+    <string name="developer_options_capture_play">بدء الالتقاط أو استئنافه</string>
+    <string name="developer_options_capture_pause">إيقاف الالتقاط مؤقتًا</string>
+    <string name="developer_options_capture_scroll_to_top">التمرير إلى الأعلى</string>
+    <string name="developer_options_capture_scroll_to_bottom">التمرير إلى الأسفل</string>
+    <string name="developer_options_capture_more_actions">إجراءات الالتقاط</string>
+    <string name="developer_options_capture_clear_message">هل تريد مسح الأحداث والعدادات الملتقطة؟ سيتم الاحتفاظ بحالة الالتقاط والجلسة.</string>
+    <string name="developer_options_capture_clear_confirm">مسح</string>
+    <string name="developer_options_capture_export_redacted_json">تصدير JSON المنقح</string>
+    <string name="developer_options_capture_export_summary_text">تصدير نص الملخص</string>
+    <string name="developer_options_capture_empty">لا توجد أحداث ملتقطة</string>
+    <string name="developer_options_capture_state_idle">خامل</string>
+    <string name="developer_options_capture_state_running">قيد التشغيل</string>
+    <string name="developer_options_capture_state_paused">متوقف مؤقتًا</string>
+    <string name="developer_options_capture_status_summary">%1$s · %2$d أحداث · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">الالتقاط غير مكتمل · تم بلوغ حد 64 ميبيبايت</string>
+    <string name="developer_options_capture_counters">مُسقطة %1$d · مُزالة %2$d · مبتورة %3$d</string>
+    <string name="developer_options_capture_session">الجلسة %1$s · التالي #%2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · أحرف النص=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">استجابة HTTP · الرمز=%1$d · الأحرف=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">سطر الشبكة %1$d · الأحرف=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">تم تحليل %1$s</string>
     <string name="developer_options_taps_remaining">تبقّى %1$d من النقرات لتفعيل خيارات المطوّر.</string>
     <string name="developer_options_enabled_message">تم تفعيل خيارات المطوّر.</string>
     <string name="developer_options_already_enabled_message">خيارات المطوّر مفعّلة بالفعل.</string>
-    <string name="developer_options_capture_group">التشخيصات</string>
     <string name="developer_options_capture">التقاط التشخيصات</string>
-    <string name="developer_options_capture_off_desc">لا توجد جلسة تشخيص نشطة. يبقى الالتقاط متوقفًا حتى تشغيله صراحةً.</string>
 
-    <string name="developer_options_test_lab_group">الاختبار</string>
-    <string name="developer_options_test_lab">مختبر الاختبار</string>
-    <string name="developer_options_test_lab_desc">ستظهر هنا اختبارات مستقلة عن المزوّد وعينات بروتوكول آمنة.</string>
     <string name="developer_options_disable_title">إيقاف خيارات المطوّر؟</string>
-    <string name="developer_options_disable_message">سيؤدي ذلك إلى إيقاف الالتقاط النشط ومسح بيانات التشخيص المؤقتة.</string>
+    <string name="developer_options_disable_message">يؤدي هذا إلى إيقاف الالتقاط وحذف بيانات التشخيص وإيقاف نموذج تصحيح الأخطاء.</string>
     <string name="developer_options_disable_confirm">إيقاف</string>
-    <string name="developer_options_capture_on_desc">%1$d من أحداث البيانات الوصفية · تم إسقاط %2$d. لا يتم التقاط محتوى الرسائل.</string>
-    <string name="developer_options_capture_stopped_desc">تم إيقاف الالتقاط. تم الاحتفاظ بـ %1$d من الأحداث · تم إسقاط %2$d.</string>
-    <string name="developer_options_clear_diagnostics">مسح جلسة التشخيص</string>
-    <string name="developer_options_clear_diagnostics_desc">يوقف الالتقاط ويمسح جميع أحداث التشخيص من الذاكرة.</string>
-    <string name="developer_options_timeline_group">المخطط الزمني للبيانات الوصفية</string>
-    <string name="developer_options_timeline_empty">ابدأ الالتقاط ثم نفّذ عملية لعرض بيانات وقت التشغيل وHTTP الوصفية بالترتيب.</string>
-    <string name="developer_options_payload_capture">التقاط حمولات البروتوكول</string>
-    <string name="developer_options_payload_capture_desc">التقاط بنية الطلب والاستجابة وSSE بعد تنقيحها. يؤدي تغيير الوضع إلى بدء جلسة جديدة.</string>
-    <string name="developer_options_sensitive_capture">المحتوى الحساس</string>
-    <string name="developer_options_sensitive_capture_desc">تضمين محتوى الرسائل والأدوات في هذه الجلسة. تظل بيانات الاعتماد منقّحة دائمًا.</string>
-    <string name="developer_options_sensitive_capture_title">التقاط المحتوى الحساس؟</string>
-    <string name="developer_options_sensitive_capture_message">يبدأ هذا جلسة جديدة في الذاكرة قد تحتوي على بيانات خاصة للمحادثة والأدوات. يتوقف عند إيقاف الالتقاط أو إعادة تشغيل عملية التطبيق. تظل بيانات الاعتماد منقّحة.</string>
-    <string name="developer_options_sensitive_capture_confirm">بدء الالتقاط الحساس</string>
-    <string name="developer_options_capture_redacted_desc">%1$d من الأحداث · تم إسقاط %2$d. يتم التقاط بنية الحمولة مع تنقيح المحتوى.</string>
-    <string name="developer_options_capture_sensitive_desc">%1$d من الأحداث · تم إسقاط %2$d. يتم التقاط المحتوى الحساس؛ وتظل بيانات الاعتماد منقّحة.</string>
-    <string name="developer_options_inspector_group">أدوات الفحص</string>
-    <string name="developer_options_inspector">فاحص المحادثة</string>
-    <string name="developer_options_inspector_empty">لم يتم تحديد محادثة. افتح محادثة قبل فحصها.</string>
-    <string name="developer_options_export_group">التصدير</string>
-    <string name="developer_options_export">تصدير حزمة التشخيص</string>
-    <string name="developer_options_export_desc">مشاركة حزمة JSON محدودة. يتم تنقيح المحتوى الحساس ولا يتم رفع الملف تلقائيًا.</string>
+    <string name="developer_options_clear_diagnostics">مسح جلسة التشخيص؟</string>
+    <string name="developer_options_clear_diagnostics_action">مسح جلسة التشخيص</string>
     <string name="developer_options_export_share_title">مشاركة حزمة تشخيص Agora</string>
     <string name="developer_options_export_failed">تعذر إنشاء حزمة التشخيص.</string>
     <string name="responses_api">Responses API</string>
@@ -1219,4 +1230,12 @@
     <string name="tool_edit_skill">تعديل المهارة</string>
     <string name="tool_delete_skill">حذف المهارة</string>
     <string name="tool_read_file_truncated">تم عرض محتوى جزئي · تابع من البايت %1$d</string>
+    <string name="low_context_mode">وضع السياق المنخفض</string>
+    <string name="low_context_mode_default_desc">تفعيل وضع السياق المنخفض افتراضيًا</string>
+    <string name="learn_more">معرفة المزيد...</string>
+    <string name="local_model_limitations_title">قيود النماذج المحلية</string>
+    <string name="local_model_limitations_body">تكون النماذج المحلية محدودة بالذاكرة المتاحة على الأجهزة المحمولة. ويُعد حجم السياق أحد القيود الرئيسية. غالبًا ما يتضمن السياق مطالبة النظام وتعريفات الأدوات أو الدوال والمهارات. لتقليل استخدام السياق الأولي، افتح قائمة النقاط الثلاث بجوار محدد النموذج وفعّل وضع السياق المنخفض.</string>
+    <string name="delete_conversation_title">حذف المحادثة؟</string>
+    <string name="delete_conversation_from_message_confirm">سيؤدي حذف هذه الرسالة إلى إزالة المحادثة بالكامل. لا يمكن التراجع عن هذا الإجراء.</string>
+    <string name="composer_clear_failed">تم إرسال الرسالة، ولكن تعذر مسح المسودة.</string>
 </resources>

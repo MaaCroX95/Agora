@@ -21,7 +21,7 @@ class AnsweringHapticEligibilityTest {
 
     @Test
     fun ordinaryAnswerOnChatIsEligible() {
-        assertTrue(answeringHapticEligible(activeSnapshot(), "conversation", TopLevelPresentation.CHAT))
+        assertTrue(answeringHapticEligible(activeSnapshot(), TopLevelPresentation.CHAT))
     }
 
     @Test
@@ -31,29 +31,26 @@ class AnsweringHapticEligibilityTest {
                 activeSnapshot().copy(
                     streamingMessage = answer.copy(id = "compact_stream"),
                 ),
-                "conversation",
                 TopLevelPresentation.CHAT,
             ),
         )
         TopLevelPresentation.entries
             .filterNot { it == TopLevelPresentation.CHAT }
             .forEach { presentation ->
-                assertFalse(
-                    answeringHapticEligible(activeSnapshot(), "conversation", presentation),
-                )
+                assertFalse(answeringHapticEligible(activeSnapshot(), presentation))
             }
     }
 
     @Test
-    fun staleConversationIsIneligible() {
+    fun inactiveSnapshotIsIneligible() {
         assertFalse(
             answeringHapticEligible(
-                activeSnapshot(),
-                "another-conversation",
+                ConversationGenerationSnapshot(),
                 TopLevelPresentation.CHAT,
             ),
         )
     }
+
     @Test
     fun nonAnswerSegmentsAndTerminalMessagesAreIneligible() {
         assertFalse(
@@ -64,7 +61,6 @@ class AnsweringHapticEligibilityTest {
                         segments = listOf(MessageSegment(type = "thought", content = "thinking")),
                     ),
                 ),
-                "conversation",
                 TopLevelPresentation.CHAT,
             ),
         )
@@ -73,7 +69,6 @@ class AnsweringHapticEligibilityTest {
                 activeSnapshot().copy(
                     streamingMessage = answer.copy(status = MessageStatus.SUCCESS),
                 ),
-                "conversation",
                 TopLevelPresentation.CHAT,
             ),
         )

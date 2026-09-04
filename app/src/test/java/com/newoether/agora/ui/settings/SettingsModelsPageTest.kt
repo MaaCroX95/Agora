@@ -1,6 +1,9 @@
 package com.newoether.agora.ui.settings
 
+import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsModelsPageTest {
@@ -116,5 +119,59 @@ class SettingsModelsPageTest {
         )
 
         assertEquals(listOf("Relay:model-a", "Relay:model-b"), groups.single().models)
+    }
+
+    @Test
+    fun `sync card owns progress feedback and settings host emits no progress snackbar`() {
+        val page = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/settings/SettingsModelsPage.kt",
+        )
+        val settingsHost = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/settings/SettingsScreen.kt",
+        )
+        val syncCard = page.substringAfter("item(key = \"sync\")")
+            .substringBefore("item(key = \"auto_search\")")
+
+        assertTrue(page.contains("val isSyncingModels by viewModel.isSyncingModels.collectAsState()"))
+        assertEquals(2, Regex("Crossfade\\(").findAll(syncCard).count())
+        assertEquals(2, Regex("tween\\(durationMillis = 250\\)").findAll(syncCard).count())
+        assertTrue(syncCard.contains("R.string.models_syncing"))
+        assertTrue(syncCard.contains("CircularProgressIndicator("))
+        assertTrue(syncCard.contains("Icons.Default.Refresh"))
+        assertEquals(2, Regex("Modifier\\.size\\(24\\.dp\\)").findAll(syncCard).count())
+        assertFalse(settingsHost.contains("snackbar_fetching_models"))
+        assertFalse(settingsHost.contains("LaunchedEffect(isSyncingModels)"))
+    }
+
+    @Test
+    fun `syncing copy replaces fetching snackbar copy in every locale`() {
+        val directories = listOf(
+            "values", "values-ar", "values-de", "values-es", "values-fr", "values-ja",
+            "values-ko", "values-pt-rBR", "values-ru", "values-vi", "values-zh",
+            "values-zh-rTW",
+        )
+
+        directories.forEach { directory ->
+            val strings = sourceFile("app/src/main/res/$directory/strings.xml")
+            assertTrue("$directory models_syncing", strings.contains("name=\"models_syncing\""))
+            assertFalse(
+                "$directory snackbar_fetching_models",
+                strings.contains("name=\"snackbar_fetching_models\""),
+            )
+        }
+        assertTrue(
+            sourceFile("app/src/main/res/values/strings.xml")
+                .contains("<string name=\"models_syncing\">Syncing...</string>"),
+        )
+    }
+
+    private fun sourceFile(relativePath: String): String {
+        var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
+        repeat(8) {
+            val candidate = File(directory, relativePath)
+            if (candidate.isFile) return candidate.readText()
+            directory = directory.parentFile ?: error("Reached filesystem root")
+        }
+        error("Unable to locate $relativePath")
     }
 }

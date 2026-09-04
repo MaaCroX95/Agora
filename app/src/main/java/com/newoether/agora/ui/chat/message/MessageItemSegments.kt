@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
+import com.newoether.agora.api.LOCAL_CONTEXT_CAPACITY_ERROR_CODE
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageSegment
 
@@ -74,6 +75,28 @@ internal fun MessageSegment.isVisibleAnswerSegment(): Boolean =
 
 internal fun MessageSegment.isInfoSegment(): Boolean =
     (type == "thought" && content.isNotBlank()) || type == "tool" || type == "transcription"
+
+internal fun MessageSegment.isImageGenerationSegment(): Boolean =
+    type == "tool" && toolName == "generate_image"
+
+internal fun groupedInfoBlockEndExclusive(
+    segments: List<MessageSegment>,
+    startIndex: Int,
+): Int {
+    if (startIndex !in segments.indices) return startIndex
+    var endIndex = startIndex
+    while (endIndex < segments.size && !segments[endIndex].isVisibleAnswerSegment()) {
+        val segment = segments[endIndex]
+        endIndex++
+        if (segment.isImageGenerationSegment()) break
+    }
+    return endIndex
+}
+
+internal fun generatedImageAppearanceKey(
+    messageId: String,
+    detailIndex: Int,
+): String = "$messageId:generated-image:$detailIndex"
 
 internal enum class SegmentGroupPosition {
     SINGLE,
@@ -157,12 +180,14 @@ private fun List<MessageSegment>.hasTimelineInfoNeighbor(
     index: Int,
     direction: Int,
 ): Boolean {
+    if (direction > 0 && this[index].isImageGenerationSegment()) return false
     var cursor = index + direction
     while (cursor in indices) {
         val candidate = this[cursor]
         when {
-            candidate.isInfoSegment() -> return true
             candidate.isVisibleAnswerSegment() -> return false
+            candidate.isInfoSegment() ->
+                return direction > 0 || !candidate.isImageGenerationSegment()
         }
         cursor += direction
     }
@@ -194,7 +219,14 @@ internal fun ChatMessage.hasActiveAnswerSegment(): Boolean {
 internal data class AssistantErrorContent(
     val answerText: String?,
     val errorText: String,
+    val showLocalContextHelp: Boolean,
 )
+
+internal fun shouldShowLocalContextHelp(
+    errorCode: String?,
+    modelName: String?,
+): Boolean = errorCode == LOCAL_CONTEXT_CAPACITY_ERROR_CODE &&
+    modelName?.startsWith("Local:") == true
 
 /**
  * Keeps already-generated assistant content separate from the terminal failure detail. Rows
@@ -211,9 +243,9 @@ internal fun assistantErrorContent(
     ) {
         return null
     }
-    val persistedError = mergedSegments
+    val persistedErrorSegment = mergedSegments
         .lastOrNull { it.type == "error" && it.content.isNotBlank() }
-        ?.content
+    val persistedError = persistedErrorSegment?.content
     val hasPersistedAnswer = mergedSegments.any { it.isVisibleAnswerSegment() }
     return AssistantErrorContent(
         answerText = message.text.takeIf {
@@ -222,6 +254,10 @@ internal fun assistantErrorContent(
         errorText = persistedError
             ?: message.text.takeIf { it.isNotBlank() && !hasPersistedAnswer }
             ?: fallbackErrorText,
+        showLocalContextHelp = shouldShowLocalContextHelp(
+            errorCode = persistedErrorSegment?.errorCode,
+            modelName = message.modelName,
+        ),
     )
 }
 
@@ -284,6 +320,7 @@ internal fun buildTimelineBlockKeys(
                             detailIndex++
                         }
                         blockEnd++
+                        if (blockSeg.isImageGenerationSegment()) break
                     }
                     keys += "$messageId:group:${firstDetailIndex ?: index}"
                     index = blockEnd
@@ -333,6 +370,13 @@ internal enum class GroupedSegmentAutoExpansionAction {
     COLLAPSE,
 }
 
+internal fun groupedSegmentExpandedState(
+    persistedExpanded: Boolean?,
+    initiallyAutoExpanded: Boolean,
+    collapseForImageBoundary: Boolean = false,
+): Boolean = !collapseForImageBoundary &&
+    (initiallyAutoExpanded || persistedExpanded == true)
+
 /**
  * Session-scoped lifecycle memory for Grouped cards.
  *
@@ -348,6 +392,27 @@ internal class GroupedSegmentAutoExpansionController {
     }
 
     private val states = HashMap<String, State>()
+    private val collapsedImageBoundaryKeys = HashSet<String>()
+
+    fun shouldCollapseForImageBoundary(
+        key: String,
+        hasImageBoundary: Boolean,
+    ): Boolean = hasImageBoundary && key !in collapsedImageBoundaryKeys
+
+    fun claimImageBoundaryCollapse(
+        key: String,
+        hasImageBoundary: Boolean,
+    ): Boolean {
+        if (!hasImageBoundary || !collapsedImageBoundaryKeys.add(key)) return false
+        states[key] = State.FINISHED
+        return true
+    }
+
+    fun shouldPresentInitiallyExpanded(
+        key: String,
+        isActive: Boolean,
+        enabled: Boolean,
+    ): Boolean = enabled && isActive && states[key] == null
 
     fun update(
         key: String,

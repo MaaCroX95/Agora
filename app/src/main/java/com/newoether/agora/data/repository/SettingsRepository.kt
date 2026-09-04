@@ -9,6 +9,7 @@ import com.newoether.agora.data.DEFAULT_CONTEXT_COMPACT_ENABLED
 import com.newoether.agora.data.DEFAULT_CONTEXT_COMPACT_RETAIN_COUNT
 import com.newoether.agora.data.DEFAULT_CONTEXT_COMPACT_THRESHOLD_PERCENT
 import com.newoether.agora.data.DEFAULT_LOCAL_MODEL_IDLE_RETENTION_MINUTES
+import com.newoether.agora.data.DEFAULT_LOCAL_LOW_CONTEXT_MODE_ENABLED
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.CustomEndpointProtocol
 import com.newoether.agora.data.CustomEndpointResolution
@@ -30,6 +31,7 @@ import com.newoether.agora.util.Constants
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +42,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * Repository wrapping DataStore-backed SettingsManager.
@@ -171,6 +174,7 @@ class SettingsRepository(
     val accessSkillsModify: StateFlow<Boolean> = hot(settingsManager.accessSkillsModify, true)
     val ragSearchEnabled: StateFlow<Boolean> = hot(settingsManager.ragSearchEnabled, false)
     val autoCacheEnabled: StateFlow<Boolean> = hot(settingsManager.autoCacheEnabled, true)
+    val showUncachedNotification: StateFlow<Boolean> = hot(settingsManager.showUncachedNotification, true)
     val autoUpdateCheck: StateFlow<Boolean> = hot(settingsManager.autoUpdateCheck, true)
     val lastUpdateCheckTime: StateFlow<Long> = hot(settingsManager.lastUpdateCheckTime, 0L)
     val modelSearchMethod: StateFlow<String> = hot(settingsManager.modelSearchMethod, "keyword")
@@ -189,6 +193,8 @@ class SettingsRepository(
     val showDocumentationFab: StateFlow<Boolean> = hot(settingsManager.showDocumentationFab, true)
     val developerOptionsEnabled: StateFlow<Boolean> =
         hot(settingsManager.developerOptionsEnabled, false)
+    val debugModelEnabled: StateFlow<Boolean> =
+        hot(settingsManager.debugModelEnabled, false)
     val shellEnabled: StateFlow<Boolean> = hot(settingsManager.shellEnabled, false)
     val automationToolsEnabled: StateFlow<Boolean> = hot(settingsManager.automationToolsEnabled, false)
     val exactExecutionEnabled: StateFlow<Boolean> = hot(settingsManager.exactExecutionEnabled, false)
@@ -239,6 +245,10 @@ class SettingsRepository(
     val localModelIdleRetentionMinutes: StateFlow<Int> = hot(
         settingsManager.localModelIdleRetentionMinutes,
         DEFAULT_LOCAL_MODEL_IDLE_RETENTION_MINUTES,
+    )
+    val localLowContextModeEnabled: StateFlow<Boolean> = hot(
+        settingsManager.localLowContextModeEnabled,
+        DEFAULT_LOCAL_LOW_CONTEXT_MODE_ENABLED,
     )
     val customProviders: StateFlow<List<CustomProviderConfig>> = hot(settingsManager.customProviders, emptyList())
     val lastModelsFetchFingerprint: StateFlow<String> = hot(settingsManager.lastModelsFetchFingerprint, "")
@@ -355,15 +365,29 @@ class SettingsRepository(
         assistantItems: List<PromptTemplateItem>,
     ) {
         scope.launch {
-            val newList = systemPrompts.value + SystemPromptEntry(
-                title = title,
-                systemItems = systemItems,
-                userItems = PredefinedVariables.normalizeMessageTemplate(userItems),
-                assistantItems = PredefinedVariables.normalizeMessageTemplate(assistantItems),
-            )
-            settingsManager.saveSystemPrompts(newList)
-            if (activeSystemPromptId.value == null) settingsManager.setActiveSystemPromptId(newList.last().id)
+            addSystemPromptAndAwait(title, systemItems, userItems, assistantItems)
         }
+    }
+
+    suspend fun addSystemPromptAndAwait(
+        title: String,
+        systemItems: List<PromptTemplateItem>,
+        userItems: List<PromptTemplateItem>,
+        assistantItems: List<PromptTemplateItem>,
+        id: String? = null,
+    ): String {
+        val entry = SystemPromptEntry(
+            id = id ?: java.util.UUID.randomUUID().toString(),
+            title = title,
+            systemItems = systemItems,
+            userItems = PredefinedVariables.normalizeMessageTemplate(userItems),
+            assistantItems = PredefinedVariables.normalizeMessageTemplate(assistantItems),
+        )
+        val newList = systemPrompts.value + entry
+        settingsManager.saveSystemPrompts(newList)
+        systemPrompts.first { prompts -> prompts.any { it.id == entry.id } }
+        if (activeSystemPromptId.value == null) settingsManager.setActiveSystemPromptId(entry.id)
+        return entry.id
     }
 
     fun deleteSystemPrompt(id: String) {
@@ -514,6 +538,29 @@ class SettingsRepository(
         persistConversationSettingsWrite(conversationSettingsState.set(convId, settings))
     }
 
+    suspend fun applyConversationSettingsImportAndAwait(
+        imported: Map<String, ConversationSettings>,
+        replace: Boolean,
+    ) {
+        conversationSettingsWriteMutex.withLock {
+            val updated = conversationSettingsState.applyImport(imported, replace)
+            try {
+                settingsManager.saveConversationSettingsMap(updated)
+                conversationSettingsState.acceptPersisted(updated)
+            } catch (cancelled: CancellationException) {
+                val persisted = withContext(NonCancellable) {
+                    runCatching { settingsManager.conversationSettings.first() }.getOrNull()
+                }
+                persisted?.let(conversationSettingsState::acceptPersisted)
+                throw cancelled
+            } catch (error: Exception) {
+                runCatching { settingsManager.conversationSettings.first() }
+                    .getOrNull()
+                    ?.let(conversationSettingsState::acceptPersisted)
+                throw error
+            }
+        }
+    }
     fun updateConversationSettings(
         convId: String,
         update: (ConversationSettings) -> ConversationSettings,
@@ -586,6 +633,8 @@ class SettingsRepository(
     fun setAccessSkillsModify(enabled: Boolean) = scope.launch { settingsManager.saveAccessSkillsModify(enabled) }
     fun setRagSearchEnabled(enabled: Boolean) = scope.launch { settingsManager.saveRagSearchEnabled(enabled) }
     fun setAutoCacheEnabled(enabled: Boolean) = scope.launch { settingsManager.saveAutoCacheEnabled(enabled) }
+    fun setShowUncachedNotification(enabled: Boolean) =
+        scope.launch { settingsManager.saveShowUncachedNotification(enabled) }
     fun setAutoUpdateCheck(enabled: Boolean) = scope.launch { settingsManager.saveAutoUpdateCheck(enabled) }
     fun setLastUpdateCheckTime(time: Long) = scope.launch { settingsManager.saveLastUpdateCheckTime(time) }
     fun setModelSearchMethod(method: String) = scope.launch { settingsManager.saveModelSearchMethod(method) }
@@ -602,6 +651,8 @@ class SettingsRepository(
     fun setShowDocumentationFab(enabled: Boolean) = scope.launch { settingsManager.saveShowDocumentationFab(enabled) }
     fun setDeveloperOptionsEnabled(enabled: Boolean) =
         scope.launch { settingsManager.saveDeveloperOptionsEnabled(enabled) }
+    fun setDebugModelEnabled(enabled: Boolean) =
+        scope.launch { settingsManager.saveDebugModelEnabled(enabled) }
     fun setShellEnabled(enabled: Boolean) = scope.launch { settingsManager.saveShellEnabled(enabled) }
     fun setAutomationToolsEnabled(enabled: Boolean) = scope.launch { settingsManager.saveAutomationToolsEnabled(enabled) }
     fun setExactExecutionEnabled(enabled: Boolean) = scope.launch { settingsManager.saveExactExecutionEnabled(enabled) }
@@ -700,6 +751,8 @@ class SettingsRepository(
     // detail of this repository — the single owner of the settings surface.
 
     suspend fun getAutoUpdateCheck(): Boolean = settingsManager.autoUpdateCheck.first()
+    suspend fun getAutoCacheEnabled(): Boolean = settingsManager.autoCacheEnabled.first()
+    suspend fun getShowUncachedNotification(): Boolean = settingsManager.showUncachedNotification.first()
     suspend fun getLastUpdateCheckTime(): Long = settingsManager.lastUpdateCheckTime.first()
     suspend fun getEmbeddingModels(): List<EmbeddingModelConfig> = settingsManager.embeddingModels.first()
     suspend fun getActiveEmbeddingModelId(): String = settingsManager.activeEmbeddingModelId.first()
@@ -732,6 +785,9 @@ class SettingsRepository(
     suspend fun saveLocalChatModels(models: List<LocalChatModelConfig>) = settingsManager.saveLocalChatModels(models)
     fun setLocalModelIdleRetentionMinutes(minutes: Int) = scope.launch {
         settingsManager.saveLocalModelIdleRetentionMinutes(minutes)
+    }
+    fun setLocalLowContextModeEnabled(enabled: Boolean) = scope.launch {
+        settingsManager.saveLocalLowContextModeEnabled(enabled)
     }
     suspend fun saveEmbeddingModels(models: List<EmbeddingModelConfig>) = settingsManager.saveEmbeddingModels(models)
     suspend fun setActiveEmbeddingModelId(id: String) = settingsManager.setActiveEmbeddingModelId(id)

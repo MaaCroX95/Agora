@@ -80,6 +80,26 @@ data class ConversationSettingsTransferEntity(
     val settingsJson: String? = null,
 )
 
+@Entity(tableName = "conversation_settings_import_transfer")
+data class ConversationSettingsImportTransferEntity(
+    @PrimaryKey val id: Int = SINGLETON_ID,
+    val transferId: String,
+    val settingsJson: String,
+    val mode: String,
+) {
+    init {
+        require(id == SINGLETON_ID)
+        require(transferId.isNotBlank())
+        require(mode == MODE_MERGE || mode == MODE_REPLACE)
+    }
+
+    companion object {
+        const val SINGLETON_ID = 0
+        const val MODE_MERGE = "MERGE"
+        const val MODE_REPLACE = "REPLACE"
+    }
+}
+
 @Entity(tableName = "conversations", indices = [Index(value = ["taskId"])])
 data class ChatEntity(
     @PrimaryKey val id: String,

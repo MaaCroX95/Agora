@@ -45,6 +45,7 @@ class ConversationContextProjectorTest {
             conversations = conversations,
             requestBuilder = requestBuilder,
             generationManager = { generationManager },
+            generationErrorFormatter = { it },
             newChatSystemPromptId = { "prompt-selected-for-new-chat" },
         )
 
@@ -122,6 +123,7 @@ class ConversationContextProjectorTest {
             conversations = conversations,
             requestBuilder = requestBuilder,
             generationManager = { generationManager },
+            generationErrorFormatter = { it },
             contextLoader = contextLoader,
         )
 
@@ -164,6 +166,7 @@ class ConversationContextProjectorTest {
             conversations = conversations,
             requestBuilder = requestBuilder,
             generationManager = { generationManager },
+            generationErrorFormatter = { it },
             contextLoader = contextLoader,
         )
 
@@ -200,6 +203,7 @@ class ConversationContextProjectorTest {
             conversations = conversations,
             requestBuilder = requestBuilder,
             generationManager = { generationManager },
+            generationErrorFormatter = { it },
             contextLoader = contextLoader,
         )
 
@@ -240,6 +244,7 @@ class ConversationContextProjectorTest {
             conversations = conversations,
             requestBuilder = requestBuilder,
             generationManager = { generationManager },
+            generationErrorFormatter = { it },
             contextLoader = contextLoader,
         )
         val firstSelection = """{"root":"branch-first"}"""
@@ -296,6 +301,7 @@ class ConversationContextProjectorTest {
             conversations = conversations,
             requestBuilder = requestBuilder,
             generationManager = { generationManager },
+            generationErrorFormatter = { it },
             contextLoader = contextLoader,
         )
 
@@ -369,6 +375,7 @@ class ConversationContextProjectorTest {
             conversations = conversations,
             requestBuilder = requestBuilder,
             generationManager = { generationManager },
+            generationErrorFormatter = { it },
             contextLoader = contextLoader,
         )
 
@@ -446,6 +453,7 @@ class ConversationContextProjectorTest {
             conversations = conversations,
             requestBuilder = requestBuilder,
             generationManager = { generationManager },
+            generationErrorFormatter = { it },
             contextLoader = contextLoader,
         )
         val firstSelection = """{"root":"branch-first"}"""
@@ -500,6 +508,7 @@ class ConversationContextProjectorTest {
             conversations = conversations,
             requestBuilder = requestBuilder,
             generationManager = { generationManager },
+            generationErrorFormatter = { it },
             contextLoader = contextLoader,
         )
 

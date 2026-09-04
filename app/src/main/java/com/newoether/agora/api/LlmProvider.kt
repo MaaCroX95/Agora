@@ -515,6 +515,8 @@ class PendingToolCall(
 interface LlmProvider {
     val name: String
     val defaultBaseUrl: String
+    val nativeTextParsingAuthoritative: Boolean
+        get() = false
     val baseUrlPlaceholder: String
         get() = defaultBaseUrl
 

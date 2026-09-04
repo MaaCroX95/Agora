@@ -67,7 +67,10 @@
     <string name="settings_automation_desc">タスク、ループ、スケジュール精度</string>
     <string name="automation_ai_tools">タスクとループへのアクセス</string>
     <string name="automation_ai_tools_desc">モデルによるタスクの作成と管理、会話ループの開始と停止を許可します。デフォルトではオフです。</string>
-    <string name="automation_scheduling">スケジュール</string>
+    <string name="automation_background_execution">バックグラウンド実行</string>
+    <string name="automation_battery_optimization">バッテリー最適化</string>
+    <string name="automation_battery_optimization_ignored_desc">最適化なし。Android は Agora をバッテリー最適化の対象外で実行できます</string>
+    <string name="automation_battery_optimization_active_desc">最適化あり。Android がバックグラウンド実行を制限する場合があります</string>
     <string name="automation_exact_execution">正確な実行</string>
     <string name="automation_exact_execution_on_desc">タスクとループに正確なアラームを使用します。Androidのシステム制限が適用される場合があります。</string>
     <string name="automation_exact_execution_off_desc">省電力の不正確なアラームを使用します。有効にすると、アラームとリマインダーへのアクセスを要求します。</string>

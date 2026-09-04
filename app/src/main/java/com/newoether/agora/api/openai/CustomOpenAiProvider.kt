@@ -42,8 +42,4 @@ class CustomOpenAiProvider(
         ) ?: return request
         return request.copy(reasoningEffort = effort)
     }
-
-    // Reasoning arrives either as reasoning_content deltas (vLLM, DeepSeek-compatible servers)
-    // or inline <think> tags in content (llama.cpp server, LM Studio) — parse both.
-    override val parseInlineThinkTags: Boolean = true
 }

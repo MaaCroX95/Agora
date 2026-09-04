@@ -1,13 +1,20 @@
 package com.newoether.agora.ui.chat.message
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColor
 import androidx.compose.animation.expandIn
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkOut
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Delete
@@ -52,6 +59,12 @@ import com.mikepenz.markdown.compose.components.markdownComponents
 import kotlinx.coroutines.flow.StateFlow
 
 
+
+private data class PendingMessageDeletion(
+    val targetMessageId: String,
+    val deletesConversation: Boolean,
+    val expectedConversationMessageIds: Set<String>,
+)
 
 internal enum class ContextCompactPillPresentation {
     IN_PROGRESS,
@@ -112,8 +125,11 @@ internal fun MessageItem(
     onFork: (String) -> Unit = {},
     onShare: (String) -> Unit = {},
     deleteTargetMessageId: String = message.id,
+    deletesConversation: Boolean = false,
+    conversationMessageIds: Set<String> = emptySet(),
     onRecompact: (String) -> Unit = {},
-    onDelete: (String) -> Unit = {},
+    onDelete: (String, (Boolean) -> Unit) -> Boolean = { _, _ -> false },
+    onDeleteConversation: (Set<String>, (Boolean) -> Unit) -> Boolean = { _, _ -> false },
     onMediaClick: (List<String>, Int) -> Unit = { _, _ -> },
     onFileContentClick: ((fileName: String, content: String) -> Unit)? = null,
     onPdfPagesClick: ((pages: List<String>, startIndex: Int) -> Unit)? = null,
@@ -121,7 +137,11 @@ internal fun MessageItem(
     onHeightChanged: (Int) -> Unit = {},
     searchQuery: String = "",
     activeSearchMatch: ConversationSearchMatch? = null,
-    onSearchMatchPosition: (key: String, centerYInRoot: Float) -> Unit = { _, _ -> },
+    onSearchMatchPosition: (
+        key: String,
+        measurementEpoch: String?,
+        centerYInRoot: Float,
+    ) -> Unit = { _, _, _ -> },
     selectionMode: Boolean = false,
     selected: Boolean = false,
     onToggleSelection: () -> Unit = {},
@@ -137,7 +157,8 @@ internal fun MessageItem(
     }
     var showInfoDialog by remember { mutableStateOf(false) }
     var showUserTextSelection by remember(message.id) { mutableStateOf(false) }
-    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var pendingDelete by remember(message.id) { mutableStateOf<PendingMessageDeletion?>(null) }
+    var deleteInProgress by remember(message.id) { mutableStateOf(false) }
     var showCompactDetail by remember(message.id) { mutableStateOf(false) }
     val haptics = LocalAgoraHaptics.current
     val motionPolicy = LocalAgoraMotionPolicy.current
@@ -155,21 +176,49 @@ internal fun MessageItem(
         )
     }
 
-    if (showDeleteConfirm) {
+    pendingDelete?.let { pending ->
         val onConfirmDelete = {
-            showDeleteConfirm = false
-            haptics.destructiveConfirmed()
-            onDelete(deleteTargetMessageId)
+            if (!deleteInProgress) {
+                deleteInProgress = true
+                val accepted = if (pending.deletesConversation) {
+                    onDeleteConversation(pending.expectedConversationMessageIds) { deleted ->
+                        deleteInProgress = false
+                        if (deleted) {
+                            pendingDelete = null
+                            haptics.destructiveConfirmed()
+                        }
+                    }
+                } else {
+                    onDelete(pending.targetMessageId) { deleted ->
+                        deleteInProgress = false
+                        if (deleted) {
+                            pendingDelete = null
+                            haptics.destructiveConfirmed()
+                        }
+                    }
+                }
+                if (!accepted) deleteInProgress = false
+            }
+            Unit
         }
-        if (message.isContextCompact()) {
-            ContextCompactDeleteDialog(
+        if (pending.deletesConversation) {
+            MessageDeleteDialog(
+                deletesConversation = true,
+                enabled = !deleteInProgress,
                 onConfirm = onConfirmDelete,
-                onDismiss = { showDeleteConfirm = false },
+                onDismiss = { if (!deleteInProgress) pendingDelete = null },
+            )
+        } else if (message.isContextCompact()) {
+            ContextCompactDeleteDialog(
+                enabled = !deleteInProgress,
+                onConfirm = onConfirmDelete,
+                onDismiss = { if (!deleteInProgress) pendingDelete = null },
             )
         } else {
             MessageDeleteDialog(
+                enabled = !deleteInProgress,
                 onConfirm = onConfirmDelete,
-                onDismiss = { showDeleteConfirm = false },
+                onDismiss = { if (!deleteInProgress) pendingDelete = null },
             )
         }
     }
@@ -204,7 +253,8 @@ internal fun MessageItem(
 
     val searchHighlight = searchQuery.takeIf { it.isNotBlank() }?.let { query ->
         val active = activeSearchMatch?.takeIf { it.messageId == message.id }
-        val matchKeys = conversationSearchMatchRanges(displayMessage, query).map { range ->
+        val matchRanges = conversationSearchMatchRanges(displayMessage, query)
+        val matchKeys = matchRanges.map { range ->
             "${message.id}:${range.first}:${range.last + 1}"
         }
         SearchHighlightSpec(
@@ -214,12 +264,12 @@ internal fun MessageItem(
                 ?.let { it.start until it.endExclusive },
             activeKey = active?.key,
             matchKeys = matchKeys,
+            sourceRanges = matchRanges,
             onMatchPosition = onSearchMatchPosition,
         )
     }
     val markdownAssets = rememberChatMarkdownAssets(
         textColor,
-        searchHighlight,
         parseInlineDollarMath,
     )
     val markdownRenderContext = markdownAssets.renderContext
@@ -284,7 +334,13 @@ internal fun MessageItem(
                             actionsEnabled = compactActionsEnabled && !compactInProgress,
                             onClick = { showCompactDetail = true },
                             onRecompact = { onRecompact(message.id) },
-                            onDelete = { showDeleteConfirm = true },
+                            onDelete = {
+                                pendingDelete = PendingMessageDeletion(
+                                    targetMessageId = deleteTargetMessageId,
+                                    deletesConversation = deletesConversation,
+                                    expectedConversationMessageIds = conversationMessageIds,
+                                )
+                            },
                         )
                     }
                 } else if (message.participant == Participant.USER) {
@@ -312,7 +368,13 @@ internal fun MessageItem(
                         onFileContentClick = onFileContentClick,
                         onPdfPagesClick = onPdfPagesClick,
                         onShowInfo = { showInfoDialog = true },
-                        onShowDelete = { showDeleteConfirm = true },
+                        onShowDelete = {
+                            pendingDelete = PendingMessageDeletion(
+                                targetMessageId = deleteTargetMessageId,
+                                deletesConversation = deletesConversation,
+                                expectedConversationMessageIds = conversationMessageIds,
+                            )
+                        },
                         searchHighlight = searchHighlight,
                     )
                 } else {
@@ -349,7 +411,13 @@ internal fun MessageItem(
                         onShare = { onShare(message.id) },
                         onMediaClick = onMediaClick,
                         onShowInfo = { showInfoDialog = true },
-                        onShowDelete = { showDeleteConfirm = true },
+                        onShowDelete = {
+                            pendingDelete = PendingMessageDeletion(
+                                targetMessageId = deleteTargetMessageId,
+                                deletesConversation = deletesConversation,
+                                expectedConversationMessageIds = conversationMessageIds,
+                            )
+                        },
                         onSegmentSelected = { indices, showListFirst ->
                             onSegmentDetailRequest(message.id, indices, showListFirst)
                         },
@@ -424,6 +492,7 @@ internal fun MessageItem(
     }
 }
 
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 internal fun ContextCompactPill(
     presentation: ContextCompactPillPresentation,
@@ -432,40 +501,47 @@ internal fun ContextCompactPill(
     onRecompact: () -> Unit = {},
     onDelete: () -> Unit = {},
 ) {
-    val inProgress = presentation == ContextCompactPillPresentation.IN_PROGRESS
-    val error = presentation == ContextCompactPillPresentation.ERROR
     var actionsExpanded by remember { mutableStateOf(false) }
+    val motionPolicy = LocalAgoraMotionPolicy.current
     val pillShape = RoundedCornerShape(100.dp)
-    val containerColor by animateColorAsState(
-        targetValue = if (error) {
+    val presentationTransition = updateTransition(
+        targetState = presentation,
+        label = "compactPillPresentation",
+    )
+    val containerColor by presentationTransition.animateColor(
+        transitionSpec = { tween(durationMillis = 240) },
+        label = "compactPillContainer",
+    ) { renderedPresentation ->
+        if (renderedPresentation == ContextCompactPillPresentation.ERROR) {
             MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
         } else {
             MaterialTheme.colorScheme.secondaryContainer
-        },
-        animationSpec = tween(durationMillis = 240),
-        label = "compactPillContainer",
-    )
-    val contentColor by animateColorAsState(
-        targetValue = if (error) {
+        }
+    }
+    val contentColor by presentationTransition.animateColor(
+        transitionSpec = { tween(durationMillis = 240) },
+        label = "compactPillContent",
+    ) { renderedPresentation ->
+        if (renderedPresentation == ContextCompactPillPresentation.ERROR) {
             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
         } else {
             MaterialTheme.colorScheme.onSecondaryContainer
-        },
-        animationSpec = tween(durationMillis = 240),
-        label = "compactPillContent",
-    )
-    val iconColor by animateColorAsState(
-        targetValue = if (error) {
+        }
+    }
+    val iconColor by presentationTransition.animateColor(
+        transitionSpec = { tween(durationMillis = 240) },
+        label = "compactPillIcon",
+    ) { renderedPresentation ->
+        if (renderedPresentation == ContextCompactPillPresentation.ERROR) {
             MaterialTheme.colorScheme.onSurfaceVariant
         } else {
             MaterialTheme.colorScheme.onSecondaryContainer
-        },
-        animationSpec = tween(durationMillis = 240),
-        label = "compactPillIcon",
-    )
+        }
+    }
     val destructiveActionTint = MaterialTheme.colorScheme.error.copy(
         alpha = if (actionsEnabled) 1f else 0.38f,
     )
+    val presentationCrossfadeSpec = tween<Float>(durationMillis = 240)
     Surface(
         modifier = if (onClick != null) {
             Modifier
@@ -489,36 +565,65 @@ internal fun ContextCompactPill(
                 modifier = Modifier.size(32.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                if (inProgress) {
-                    com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Icon(
-                        imageVector = when (presentation) {
-                            ContextCompactPillPresentation.ERROR ->
-                                androidx.compose.material.icons.Icons.Default.Error
-                            ContextCompactPillPresentation.STOPPED ->
-                                androidx.compose.material.icons.Icons.Default.StopCircle
-                            else -> androidx.compose.material.icons.Icons.Default.Compress
-                        },
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = iconColor,
-                    )
+                presentationTransition.Crossfade(
+                    animationSpec = presentationCrossfadeSpec,
+                ) { renderedPresentation ->
+                    if (renderedPresentation == ContextCompactPillPresentation.IN_PROGRESS) {
+                        com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = iconColor,
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = when (renderedPresentation) {
+                                ContextCompactPillPresentation.ERROR ->
+                                    androidx.compose.material.icons.Icons.Default.Error
+                                ContextCompactPillPresentation.STOPPED ->
+                                    androidx.compose.material.icons.Icons.Default.StopCircle
+                                else -> androidx.compose.material.icons.Icons.Default.Compress
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = iconColor,
+                        )
+                    }
                 }
             }
-            Text(
-                when {
-                    error -> stringResource(R.string.context_compact_error)
-                    presentation == ContextCompactPillPresentation.STOPPED -> stringResource(R.string.context_compact_stopped)
-                    inProgress -> stringResource(com.newoether.agora.R.string.context_compacting)
-                    else -> stringResource(com.newoether.agora.R.string.context_compact)
+            presentationTransition.AnimatedContent(
+                transitionSpec = {
+                    val fade = fadeIn(animationSpec = presentationCrossfadeSpec) togetherWith
+                        fadeOut(animationSpec = presentationCrossfadeSpec)
+                    fade.using(
+                        SizeTransform(
+                            clip = false,
+                            sizeAnimationSpec = { _, _ ->
+                                if (motionPolicy.allowSpatialTransitions) {
+                                    tween(durationMillis = 240)
+                                } else {
+                                    snap()
+                                }
+                            },
+                        )
+                    )
                 },
-                maxLines = 1,
-                style = MaterialTheme.typography.labelLarge,
-            )
+                contentAlignment = Alignment.CenterStart,
+            ) { renderedPresentation ->
+                Text(
+                    when (renderedPresentation) {
+                        ContextCompactPillPresentation.ERROR ->
+                            stringResource(R.string.context_compact_error)
+                        ContextCompactPillPresentation.STOPPED ->
+                            stringResource(R.string.context_compact_stopped)
+                        ContextCompactPillPresentation.IN_PROGRESS ->
+                            stringResource(R.string.context_compacting)
+                        ContextCompactPillPresentation.SUCCESS ->
+                            stringResource(R.string.context_compact)
+                    },
+                    maxLines = 1,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
             Box {
                 IconButton(
                     onClick = { actionsExpanded = true },

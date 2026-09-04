@@ -3,6 +3,7 @@ package com.newoether.agora.sandbox
 import com.newoether.agora.util.ShellFileEditResult
 import com.newoether.agora.util.ShellFileReadResult
 import java.io.File
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -20,8 +21,8 @@ interface SandboxManager {
     /** Live package list — updated automatically after install/remove. */
     val packageList: StateFlow<List<PackageInfo>>
 
-    /** Global snackbar messages for install/remove/reset events. UI shows via SnackbarHost. */
-    val snackbarMessage: StateFlow<String?>
+    /** Process-local buffered one-shot messages for install/remove/upgrade/reset outcomes. */
+    val snackbarMessage: Flow<String>
 
     /** Load installed packages (call on UI init after confirming available). */
     suspend fun refreshPackageList()
@@ -124,9 +125,6 @@ interface SandboxManager {
 
     /** Physical directory mounted as /home inside the sandbox, or null if not available. */
     fun getSandboxHomeDir(): File?
-
-    /** Release any held resources. */
-    fun close()
 
     // ── Nested types ───────────────────────────────────────
 

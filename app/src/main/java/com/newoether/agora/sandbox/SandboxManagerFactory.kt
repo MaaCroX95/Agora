@@ -1,13 +1,13 @@
 package com.newoether.agora.sandbox
 
 /**
- * Factory for creating [SandboxManager] instances.
- * Each flavor provides its own implementation:
- * - fdroid → FdroidSandboxManagerFactory (creates ProotSandboxManager)
- * - play   → PlaySandboxManagerFactory (creates no-op stub)
+ * Provides flavor-specific access to the Sandbox manager.
+ *
+ * The F-Droid implementation returns one process-shared manager. Consumers borrow that reference
+ * and must not shut it down when their own lifecycle ends. The Play flavor returns a no-op stub.
  */
 interface SandboxManagerFactory {
-    /** Create a new SandboxManager instance. */
+    /** Return the manager for this flavor. The returned instance may be process-shared. */
     fun create(): SandboxManager
 
     /** Whether the sandbox feature is available in this build. */

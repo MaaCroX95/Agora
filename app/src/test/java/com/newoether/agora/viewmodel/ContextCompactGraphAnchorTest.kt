@@ -1,9 +1,13 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.api.util.contextWindowUsage
+import com.newoether.agora.api.util.projectGenerationStatusesForApi
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -260,6 +264,76 @@ class ContextCompactGraphAnchorTest {
     }
 
     @Test
+    fun automaticEligibilityUsesFormattedTerminalErrorForTokenAccounting() {
+        val rawError = "raw failure"
+        val displayedError = "displayed provider failure ".repeat(80)
+        val oldUser = entity("old-user", null, Participant.USER, 1).copy(text = "old")
+        val failedModel = entity("failed-model", oldUser.id, Participant.MODEL, 2).copy(
+            text = "partial answer",
+            status = MessageStatus.ERROR,
+            toolCallJson = Json.encodeToString(
+                listOf(
+                    MessageSegment(type = "answer", content = "partial answer"),
+                    MessageSegment(type = "error", content = rawError),
+                ),
+            ),
+        )
+        val currentUser = entity("current-user", failedModel.id, Participant.USER, 3)
+            .copy(text = "continue")
+        val entities = listOf(oldUser, failedModel, currentUser)
+        val selectedChildren = mapOf<String?, String>(
+            null to oldUser.id,
+            oldUser.id to failedModel.id,
+            failedModel.id to currentUser.id,
+        )
+        val providerPath = projectProviderMessages(entities, includeStoredTranscriptions = false)
+        val rawUsage = contextWindowUsage(
+            projectGenerationInputMessages(
+                messages = projectGenerationStatusesForApi(providerPath) { it },
+                includeImages = true,
+                userPrepend = null,
+                userPostpend = null,
+            ),
+            tokenBudget = Int.MAX_VALUE,
+        ).estimatedTokenCount
+        val displayedUsage = contextWindowUsage(
+            projectGenerationInputMessages(
+                messages = projectGenerationStatusesForApi(providerPath) { displayedError },
+                includeImages = true,
+                userPrepend = null,
+                userPostpend = null,
+            ),
+            tokenBudget = Int.MAX_VALUE,
+        ).estimatedTokenCount
+        val threshold = rawUsage + 1
+        var formatterCalls = 0
+
+        assertTrue(displayedUsage >= threshold)
+        assertFalse(
+            automaticCompactNeeded(
+                entities = entities,
+                selectedChildren = selectedChildren,
+                contextLimit = threshold,
+                retainLogicalMessages = 1,
+                generationErrorFormatter = { it },
+            ),
+        )
+        assertTrue(
+            automaticCompactNeeded(
+                entities = entities,
+                selectedChildren = selectedChildren,
+                contextLimit = threshold,
+                retainLogicalMessages = 1,
+                generationErrorFormatter = {
+                    formatterCalls += 1
+                    displayedError
+                },
+            ),
+        )
+        assertEquals(1, formatterCalls)
+    }
+
+    @Test
     fun automaticEligibilityUsesOnlySelectedConversationBranch() {
         val selectedRoot = entity("selected-root", null, Participant.USER, 1)
             .copy(text = "selected")
@@ -281,6 +355,7 @@ class ContextCompactGraphAnchorTest {
                 selectedChildren = mapOf(null to selectedRoot.id),
                 contextLimit = 1,
                 retainLogicalMessages = 1,
+                generationErrorFormatter = { it },
             ),
         )
     }

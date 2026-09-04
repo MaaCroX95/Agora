@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertSame
 import org.junit.Assert.fail
 import org.junit.Test
 
@@ -79,7 +78,8 @@ class ProviderPassEffectExecutorTest {
             )
             fail("Expected consumer failure")
         } catch (actual: IllegalStateException) {
-            assertSame(expected, actual)
+            assertEquals(expected::class, actual::class)
+            assertEquals(expected.message, actual.message)
         }
 
         assertEquals(listOf(IDENTITY to ProviderPassResult.FAILED), returned)

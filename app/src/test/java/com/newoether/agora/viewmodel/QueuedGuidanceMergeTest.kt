@@ -15,24 +15,38 @@ class QueuedGuidanceMergeTest {
     @Test
     fun drainMergesFifoTextAndAttachmentOwnershipIntoOneBubble() {
         val firstMeta = Json.encodeToString(
-            AttachmentMeta(listOf(AttachmentItem(type = "image", fileName = "one.png")))
+            AttachmentMeta(
+                listOf(AttachmentItem(type = "image", fileName = "one.png", imageIndex = 0)),
+            )
         )
         val secondMeta = Json.encodeToString(
-            AttachmentMeta(listOf(AttachmentItem(type = "file", fileName = "two.txt")))
+            AttachmentMeta(
+                listOf(AttachmentItem(type = "image", fileName = "two.png", imageIndex = 0)),
+            )
+        )
+        val olderSnapshot = testGenerationAdmissionSnapshot(
+            conversationId = "conversation",
+            runId = "older-run",
+            selectedModelId = "older-model",
+        )
+        val latestSnapshot = testGenerationAdmissionSnapshot(
+            conversationId = "conversation",
+            runId = "latest-run",
+            selectedModelId = "latest-model",
         )
         val merged = mergeQueuedGuidance(
             listOf(
                 queued("one", "first").copy(
                     modelId = "older-model",
+                    generationSnapshot = olderSnapshot,
                     preparedImages = listOf("one.png"),
                     preparedAttachmentMetaJson = firstMeta,
-                    preparedOwnedPaths = listOf("one-owned"),
                 ),
                 queued("two", "second").copy(
                     modelId = "latest-model",
+                    generationSnapshot = latestSnapshot,
                     preparedImages = listOf("two.png"),
                     preparedAttachmentMetaJson = secondMeta,
-                    preparedOwnedPaths = listOf("two-owned"),
                 ),
             )
         )
@@ -40,14 +54,13 @@ class QueuedGuidanceMergeTest {
         assertEquals("one", merged.id)
         assertEquals("first\n\nsecond", merged.text)
         assertEquals("latest-model", merged.modelId)
+        assertEquals(latestSnapshot, merged.generationSnapshot)
         assertEquals(listOf("one.png", "two.png"), merged.preparedImages)
-        assertEquals(listOf("one-owned", "two-owned"), merged.preparedOwnedPaths)
-        assertEquals(
-            listOf("one.png", "two.txt"),
-            Json.decodeFromString<AttachmentMeta>(
-                checkNotNull(merged.preparedAttachmentMetaJson)
-            ).items.map(AttachmentItem::fileName),
-        )
+        val items = Json.decodeFromString<AttachmentMeta>(
+            checkNotNull(merged.preparedAttachmentMetaJson),
+        ).items
+        assertEquals(listOf("one.png", "two.png"), items.map(AttachmentItem::fileName))
+        assertEquals(listOf(0, 1), items.map(AttachmentItem::imageIndex))
     }
 
     @Test

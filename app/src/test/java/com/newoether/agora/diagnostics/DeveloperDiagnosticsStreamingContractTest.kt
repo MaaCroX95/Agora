@@ -26,19 +26,20 @@ class DeveloperDiagnosticsStreamingContractTest {
     }
 
     @Test
-    fun `parsed semantic observation stays at the unified consumer boundary`() {
+    fun `parsed semantic observation stays at the authorized provider consumer boundary`() {
         val sourceRoot = locateMainSourceRoot()
-        val managerSource = File(
+        val executorSource = File(
             sourceRoot,
-            "com/newoether/agora/viewmodel/GenerationManager.kt",
+            "com/newoether/agora/viewmodel/ProviderPassEffectExecutor.kt",
         ).readText()
-        val handler = managerSource
-            .substringAfter("suspend fun handleStreamEvent(event: StreamEvent)")
-            .substringBefore("suspend fun collectProviderRequest")
+        val consumer = executorSource
+            .substringAfter("runner.run(")
+            .substringBefore("            }\n        } catch")
 
-        assertEquals(1, Regex("""recordParsedEvent\(event\)""").findAll(handler).count())
+        assertEquals(1, Regex("""recordParsedEvent\(event\)""").findAll(consumer).count())
         assertTrue(
-            handler.indexOf("recordParsedEvent(event)") < handler.indexOf("when (event)"),
+            consumer.indexOf("recordParsedEvent(event)") <
+                consumer.indexOf("callbacks.onEvent(event)"),
         )
     }
 

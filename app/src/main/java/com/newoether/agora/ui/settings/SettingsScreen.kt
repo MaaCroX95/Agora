@@ -306,14 +306,6 @@ fun SettingsScreen(viewModel: ChatViewModel, onBack: () -> Unit) {
         }
     }
     val listState = rememberLazyListState()
-    val isSyncingModels by viewModel.isSyncingModels.collectAsState()
-    val fetchingModelsMessage = stringResource(R.string.snackbar_fetching_models)
-
-    LaunchedEffect(isSyncingModels) {
-        if (isSyncingModels) {
-            viewModel.emitSnackbar(fetchingModelsMessage)
-        }
-    }
 
     BackHandler {
         if (selectedCategory != null) {

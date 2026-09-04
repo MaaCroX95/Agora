@@ -1,159 +1,50 @@
 package com.newoether.agora.ui.chat.message
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-
 import androidx.compose.animation.core.*
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.material3.Icon
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-
-import androidx.compose.ui.zIndex
-import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.MutatePriority
-import androidx.compose.ui.unit.Velocity
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.text.input.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.CloseFullscreen
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.OpenInFull
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.MoreVert
-
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateMap
-import androidx.compose.runtime.snapshots.SnapshotStateList
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.scale
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.layout.onSizeChanged
-import kotlin.math.roundToInt
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import kotlin.math.abs
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.res.stringResource
 import com.newoether.agora.R
-import com.newoether.agora.util.noOpBringIntoView
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.CitationRecord
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
-import com.newoether.agora.model.Participant
-import com.newoether.agora.model.ToolCallDisplayModes
+import com.newoether.agora.ui.components.*
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
-import com.newoether.agora.ui.theme.MonoFamily
 import com.newoether.agora.ui.theme.ChatType
-import com.newoether.agora.ui.components.*
-import com.mikepenz.markdown.m3.Markdown
-import com.mikepenz.markdown.m3.markdownColor
-import com.mikepenz.markdown.m3.markdownTypography
-import com.mikepenz.markdown.model.markdownPadding
-import com.mikepenz.markdown.model.ImageTransformer
-import com.mikepenz.markdown.model.MarkdownColors
-import com.mikepenz.markdown.model.MarkdownPadding
-import com.mikepenz.markdown.model.MarkdownTypography
-import com.mikepenz.markdown.model.ReferenceLinkHandlerImpl
-import com.mikepenz.markdown.model.State
-import com.mikepenz.markdown.model.rememberMarkdownState
-import com.mikepenz.markdown.compose.components.MarkdownComponents
-import com.mikepenz.markdown.compose.components.markdownComponents
-import com.mikepenz.markdown.compose.MarkdownElement
-import com.mikepenz.markdown.compose.elements.MarkdownTable
-import com.mikepenz.markdown.compose.elements.MarkdownTableHeader
-import com.mikepenz.markdown.compose.elements.MarkdownTableRow
-import org.intellij.markdown.ast.ASTNode
-import org.intellij.markdown.flavours.MarkdownFlavourDescriptor
-import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
-import org.intellij.markdown.parser.MarkdownParser
+import com.newoether.agora.util.noOpBringIntoView
 
 // ── Timeline / segment rendering (extracted from MessageItem.kt) ──────────────
 // Pure code-motion. Entry points used by MessageItem.kt are `internal`; the rest
@@ -221,6 +112,7 @@ internal fun CompactSegmentBlock(
     autoExpansionController: GroupedSegmentAutoExpansionController? = null,
     autoExpansionEnabled: Boolean = false,
     autoExpansionActive: Boolean = false,
+    collapseForImageBoundary: Boolean = false,
     modifier: Modifier = Modifier,
     topPaddingExtra: Dp = 0.dp,
     bottomPaddingExtra: Dp = 6.dp,
@@ -244,11 +136,23 @@ internal fun CompactSegmentBlock(
         animate = animateCardAppearance,
         durationMillis = SEGMENT_ENTER_DURATION_MS,
         initialScale = SEGMENT_ENTER_INITIAL_SCALE,
-        forceOpaque = containsToolSummary,
     )
-    val isExpanded by remember(expansionKey) {
-        derivedStateOf { expandedStates[expansionKey] ?: false }
-    }
+    val collapseImageBoundaryOnAppearance =
+        autoExpansionController?.shouldCollapseForImageBoundary(
+            key = expansionKey,
+            hasImageBoundary = collapseForImageBoundary,
+        ) == true
+    val initiallyAutoExpanded =
+        autoExpansionController?.shouldPresentInitiallyExpanded(
+            key = expansionKey,
+            isActive = autoExpansionActive,
+            enabled = autoExpansionEnabled,
+        ) == true
+    val isExpanded = groupedSegmentExpandedState(
+        persistedExpanded = expandedStates[expansionKey],
+        initiallyAutoExpanded = initiallyAutoExpanded,
+        collapseForImageBoundary = collapseImageBoundaryOnAppearance,
+    )
     val currentOnExpansionStarted by rememberUpdatedState(onExpansionStarted)
     val currentOnExpansionSettled by rememberUpdatedState(onExpansionSettled)
     LaunchedEffect(
@@ -256,7 +160,19 @@ internal fun CompactSegmentBlock(
         expansionKey,
         autoExpansionEnabled,
         autoExpansionActive,
+        collapseImageBoundaryOnAppearance,
+        collapseForImageBoundary,
     ) {
+        if (collapseImageBoundaryOnAppearance) {
+            val claimed = autoExpansionController.claimImageBoundaryCollapse(
+                key = expansionKey,
+                hasImageBoundary = collapseForImageBoundary,
+            ) == true
+            if (claimed && expandedStates[expansionKey] != false) {
+                expandedStates[expansionKey] = false
+            }
+            return@LaunchedEffect
+        }
         val targetExpanded = when (
             autoExpansionController?.update(
                 key = expansionKey,
@@ -272,7 +188,11 @@ internal fun CompactSegmentBlock(
             targetExpanded != null &&
             (expandedStates[expansionKey] ?: false) != targetExpanded
         ) {
-            currentOnExpansionStarted(expansionKey)
+            val alreadyPresentedAtTarget =
+                targetExpanded && initiallyAutoExpanded
+            if (!alreadyPresentedAtTarget) {
+                currentOnExpansionStarted(expansionKey)
+            }
             expandedStates[expansionKey] = targetExpanded
         }
     }
@@ -305,12 +225,20 @@ internal fun CompactSegmentBlock(
         targetState = isExpanded,
         label = "compactSegmentExpansion",
     )
-    val mergedBottomPadding = if (allowSpatialTransitions) {
+    val mergedBottomPadding = if (collapseImageBoundaryOnAppearance) {
+        GENERATED_IMAGE_BOUNDARY_GAP_DP.dp
+    } else if (allowSpatialTransitions) {
         val animatedPadding by expansionTransition.animateDp(
             transitionSpec = { tween(400) },
             label = "compactSegmentPad",
         ) { expanded ->
-            if (expanded) 12.dp else 4.dp
+            if (expanded) {
+                12.dp
+            } else if (collapseForImageBoundary) {
+                GENERATED_IMAGE_BOUNDARY_GAP_DP.dp
+            } else {
+                4.dp
+            }
         }
         animatedPadding
     } else if (
@@ -320,6 +248,8 @@ internal fun CompactSegmentBlock(
         )
     ) {
         12.dp
+    } else if (collapseForImageBoundary) {
+        GENERATED_IMAGE_BOUNDARY_GAP_DP.dp
     } else {
         4.dp
     }
@@ -350,10 +280,12 @@ internal fun CompactSegmentBlock(
     )
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
-    val useExpandedHeaderLayout = retainExpandedLayoutDuringFade(
-        currentExpanded = expansionTransition.currentState,
-        targetExpanded = expansionTransition.targetState,
-    )
+    val useExpandedHeaderLayout =
+        !collapseImageBoundaryOnAppearance &&
+            retainExpandedLayoutDuringFade(
+                currentExpanded = expansionTransition.currentState,
+                targetExpanded = expansionTransition.targetState,
+            )
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth(),
         contentAlignment = Alignment.TopStart,
@@ -377,13 +309,13 @@ internal fun CompactSegmentBlock(
         val collapsedCardWidth = minOf(collapsedHeaderWidth, availableWidth)
         val cardWidth by expansionTransition.animateDp(
             transitionSpec = {
-                if (allowSpatialTransitions) {
+                if (collapseImageBoundaryOnAppearance || !allowSpatialTransitions) {
+                    snap()
+                } else {
                     tween(
                         durationMillis = 400,
                         easing = LinearOutSlowInEasing,
                     )
-                } else {
-                    snap()
                 }
             },
             label = "compactSegmentWidth",
@@ -399,7 +331,9 @@ internal fun CompactSegmentBlock(
         }
         val disclosureRotation by animateFloatAsState(
             targetValue = targetDisclosureRotation,
-            animationSpec = if (allowSpatialTransitions) {
+            animationSpec = if (
+                allowSpatialTransitions && !collapseImageBoundaryOnAppearance
+            ) {
                 tween(durationMillis = 400, easing = LinearOutSlowInEasing)
             } else {
                 snap()
@@ -504,12 +438,14 @@ internal fun CompactSegmentBlock(
             expansionTransition.AnimatedVisibility(
                 visible = { it },
                 enter = when {
+                    collapseImageBoundaryOnAppearance -> EnterTransition.None
                     containsToolSummary && allowSpatialTransitions -> expandVertically(tween(400))
                     containsToolSummary -> EnterTransition.None
                     allowSpatialTransitions -> fadeIn(tween(400)) + expandVertically(tween(400))
                     else -> fadeIn(tween(400))
                 },
                 exit = when {
+                    collapseImageBoundaryOnAppearance -> ExitTransition.None
                     containsToolSummary && allowSpatialTransitions -> shrinkVertically(tween(400))
                     containsToolSummary -> ExitTransition.None
                     allowSpatialTransitions -> fadeOut(tween(400)) + shrinkVertically(tween(400))
@@ -644,6 +580,7 @@ internal fun timelineInfoTopPaddingExtra(hasVisibleMessageAbove: Boolean): Dp =
     if (hasVisibleMessageAbove) 8.dp else 0.dp
 
 internal const val SEGMENT_GROUP_GAP_DP = 2
+private const val GENERATED_IMAGE_BOUNDARY_GAP_DP = 8
 
 private fun segmentGroupTopPadding(
     position: SegmentGroupPosition,
@@ -672,11 +609,16 @@ internal fun TimelineSegmentsContent(
     autoExpansionController: GroupedSegmentAutoExpansionController,
     expandedStates: SnapshotStateMap<String, Boolean>,
     renderContext: ChatMarkdownRenderContext,
+    searchHighlight: SearchHighlightSpec?,
     citations: List<CitationRecord>,
     onCitationActivate: (List<CitationRecord>) -> Unit,
     segmentAppearanceRegistry: SegmentAppearanceRegistry,
     onLayoutMutationStarted: (String) -> Unit,
     onLayoutMutationSettled: (String) -> Unit,
+    onMediaClick: (List<String>, Int) -> Unit,
+    opensDetailSheet: Boolean = false,
+    preserveInitialCompactIdentity: Boolean = false,
+    onGroupHeaderClick: ((List<Int>) -> Unit)? = null,
     onSegmentClick: (List<Int>) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -702,6 +644,10 @@ internal fun TimelineSegmentsContent(
                                 sliceText = seg.content,
                             ),
                             isStreaming = answerIsStreaming,
+                        )
+                        val answerSearchHighlight = searchHighlight?.forSourceSlice(
+                            sliceStart = answerOffset,
+                            sliceLength = seg.content.length,
                         )
                         val answerAppearanceKey =
                             "${segmentAppearanceKey(message.id, index, seg)}:timeline"
@@ -731,17 +677,21 @@ internal fun TimelineSegmentsContent(
                                         projection = presentedProjection,
                                         onActivate = onCitationActivate,
                                     ) {
-                                        StreamingMarkdownMessage(
-                                            content = presentedContent,
-                                            isStreaming = presentedIsStreaming,
-                                            renderContext = renderContext,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .noOpBringIntoView(),
-                                            selectionEnabled = !presentedIsStreaming,
-                                            textDeltas = seg.streamingTextDeltas,
-                                            fadeTracker = answerFadeTracker,
-                                        )
+                                        CompositionLocalProvider(
+                                            LocalSearchHighlightSpec provides answerSearchHighlight,
+                                        ) {
+                                            StreamingMarkdownMessage(
+                                                content = presentedContent,
+                                                isStreaming = presentedIsStreaming,
+                                                renderContext = renderContext,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .noOpBringIntoView(),
+                                                selectionEnabled = !presentedIsStreaming,
+                                                textDeltas = seg.streamingTextDeltas,
+                                                fadeTracker = answerFadeTracker,
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -755,20 +705,35 @@ internal fun TimelineSegmentsContent(
                     if (groupAdjacentBlocks) {
                         val blockSegments = mutableListOf<MessageSegment>()
                         val blockDetailIndices = mutableListOf<Int>()
-                        var blockEnd = index
-                        while (blockEnd < segments.size && !segments[blockEnd].isVisibleAnswerSegment()) {
-                            val blockSeg = segments[blockEnd]
+                        val blockEnd = groupedInfoBlockEndExclusive(segments, index)
+                        var blockCursor = index
+                        while (blockCursor < blockEnd) {
+                            val blockSeg = segments[blockCursor]
                             if (blockSeg.isInfoSegment()) {
                                 blockSegments.add(blockSeg)
                                 blockDetailIndices.add(detailIndex)
                                 detailIndex++
                             }
-                            blockEnd++
+                            blockCursor++
                         }
-                        val expansionKey = groupedSegmentBlockAppearanceKey(
-                            message.id,
-                            blockDetailIndices.firstOrNull() ?: index,
-                        )
+                        val imageBoundary =
+                            blockSegments.lastOrNull()?.takeIf { it.isImageGenerationSegment() }
+                        val imageDetailIndex =
+                            blockDetailIndices.lastOrNull().takeIf { imageBoundary != null }
+                        val firstDetailIndex = blockDetailIndices.firstOrNull() ?: index
+                        val useInitialCompactIdentity =
+                            preserveInitialCompactIdentity &&
+                                blockDetailIndices.firstOrNull() == 0
+                        val expansionKey = if (useInitialCompactIdentity) {
+                            message.id
+                        } else {
+                            groupedSegmentBlockAppearanceKey(message.id, firstDetailIndex)
+                        }
+                        val cardAppearanceKey = if (useInitialCompactIdentity) {
+                            "${compactSegmentBlockAppearanceKey(message.id)}:card"
+                        } else {
+                            "$expansionKey:card"
+                        }
                         val blockTopPaddingExtra =
                             timelineInfoTopPaddingExtra(previousVisibleWasAnswer)
                         CompactSegmentBlock(
@@ -783,11 +748,12 @@ internal fun TimelineSegmentsContent(
                             isCurrentCard = blockEnd > lastVisibleSegmentIndex,
                             expandedStates = expandedStates,
                             expansionKey = expansionKey,
-                            cardAppearanceKey = "$expansionKey:card",
+                            cardAppearanceKey = cardAppearanceKey,
                             segmentAppearanceRegistry = segmentAppearanceRegistry,
                             autoExpansionController = autoExpansionController,
                             autoExpansionEnabled = autoExpandActiveGroup,
                             autoExpansionActive = isStreaming && blockEnd == segments.size,
+                            collapseForImageBoundary = imageBoundary != null,
                             topPaddingExtra = blockTopPaddingExtra,
                             bottomPaddingExtra = 0.dp,
                             onExpansionStarted = onLayoutMutationStarted,
@@ -795,7 +761,25 @@ internal fun TimelineSegmentsContent(
                             onSegmentClick = { selectedDetailIndex ->
                                 onSegmentClick(listOf(selectedDetailIndex))
                             },
+                            onHeaderClick = if (opensDetailSheet) {
+                                {
+                                    (onGroupHeaderClick ?: onSegmentClick)(blockDetailIndices)
+                                }
+                            } else {
+                                null
+                            },
+                            opensDetailSheet = opensDetailSheet,
                         )
+                        if (imageBoundary != null && imageDetailIndex != null) {
+                            GeneratedImageThumbnail(
+                                segment = imageBoundary,
+                                messageId = message.id,
+                                detailIndex = imageDetailIndex,
+                                isStreaming = isStreaming,
+                                segmentAppearanceRegistry = segmentAppearanceRegistry,
+                                onMediaClick = onMediaClick,
+                            )
+                        }
                         previousVisibleWasAnswer = false
                         index = blockEnd
                     } else {
@@ -817,11 +801,22 @@ internal fun TimelineSegmentsContent(
                             animateAppearance = isStreaming,
                             topPaddingExtra = cardTopPaddingExtra,
                             groupPosition = timelineSegmentGroupPosition(segments, index),
+                            endsAtGeneratedImageBoundary = seg.isImageGenerationSegment(),
                             extendIntoMessageInsets = true,
                             cardAnimationKey = "$timelineKey:card",
                             segmentAppearanceRegistry = segmentAppearanceRegistry,
                             onClick = { onSegmentClick(listOf(currentDetailIndex)) },
                         )
+                        if (seg.isImageGenerationSegment()) {
+                            GeneratedImageThumbnail(
+                                segment = seg,
+                                messageId = message.id,
+                                detailIndex = currentDetailIndex,
+                                isStreaming = isStreaming,
+                                segmentAppearanceRegistry = segmentAppearanceRegistry,
+                                onMediaClick = onMediaClick,
+                            )
+                        }
                         previousVisibleWasAnswer = false
                         index++
                     }
@@ -843,6 +838,7 @@ internal fun TimelineInfoSegmentCard(
     animateAppearance: Boolean,
     topPaddingExtra: Dp = 0.dp,
     groupPosition: SegmentGroupPosition = SegmentGroupPosition.SINGLE,
+    endsAtGeneratedImageBoundary: Boolean = false,
     neutralPalette: Boolean = false,
     extendIntoMessageInsets: Boolean = false,
     cardAnimationKey: String,
@@ -887,7 +883,9 @@ internal fun TimelineInfoSegmentCard(
                     .width(requestedCardWidth)
             .padding(
                 top = segmentGroupTopPadding(groupPosition, topPaddingExtra),
-                bottom = segmentGroupBottomPadding(groupPosition),
+                bottom = if (endsAtGeneratedImageBoundary) {
+                    GENERATED_IMAGE_BOUNDARY_GAP_DP.dp
+                } else segmentGroupBottomPadding(groupPosition),
             )
             .then(cardAppearanceModifier)
             .clip(groupShape)

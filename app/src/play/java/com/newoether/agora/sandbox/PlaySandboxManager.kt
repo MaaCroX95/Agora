@@ -3,8 +3,10 @@ package com.newoether.agora.sandbox
 import com.newoether.agora.util.ShellFileEditResult
 import com.newoether.agora.util.ShellFileReadResult
 import java.io.File
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * No-op stub for the Play Store flavor — Linux sandbox is not included.
@@ -25,8 +27,7 @@ class PlaySandboxManager : SandboxManager {
     private val _packageList = MutableStateFlow<List<SandboxManager.PackageInfo>>(emptyList())
     override val packageList: StateFlow<List<SandboxManager.PackageInfo>> = _packageList
     override suspend fun refreshPackageList() {}
-    private val _snackbarMessage = MutableStateFlow<String?>(null)
-    override val snackbarMessage: StateFlow<String?> = _snackbarMessage
+    override val snackbarMessage: Flow<String> = emptyFlow()
     override fun installPackage(name: String) {}
     override fun removePackage(name: String) {}
     override fun upgradePackages() {}
@@ -91,5 +92,4 @@ class PlaySandboxManager : SandboxManager {
 
     override fun getSandboxHomeDir(): File? = null
     override suspend fun reset(): Boolean = false
-    override fun close() {}
 }

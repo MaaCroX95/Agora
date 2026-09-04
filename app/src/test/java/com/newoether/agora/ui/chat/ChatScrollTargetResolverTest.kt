@@ -2,6 +2,7 @@ package com.newoether.agora.ui.chat
 
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.Participant
+import com.newoether.agora.util.Constants
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -13,6 +14,18 @@ class ChatScrollTargetResolverTest {
         val assistant = message("assistant", Participant.MODEL, parentId = user.id)
 
         assertEquals(user, resolveScrollTargetMessage(listOf(user, assistant), assistant.id))
+    }
+
+    @Test
+    fun `compact target resolves to the compact itself`() {
+        val user = message("user", Participant.USER)
+        val compact = message(
+            "${Constants.COMPACT_MSG_PREFIX}summary",
+            Participant.MODEL,
+            parentId = user.id,
+        )
+
+        assertEquals(compact, resolveScrollTargetMessage(listOf(user, compact), compact.id))
     }
 
     @Test

@@ -11,6 +11,7 @@ class CompactI18nSourceContractTest {
     fun `compact domain emits semantic failures and both consumers share one localized resolver`() {
         val model = sourceFile("app/src/main/java/com/newoether/agora/viewmodel/ContextCompactor.kt")
         val controller = sourceFile("app/src/main/java/com/newoether/agora/viewmodel/ConversationCompactController.kt")
+        val compactUi = sourceFile("app/src/main/java/com/newoether/agora/viewmodel/ConversationCompactUiCoordinator.kt")
         val chat = sourceFile("app/src/main/java/com/newoether/agora/viewmodel/ChatViewModel.kt")
         val generation = sourceFile("app/src/main/java/com/newoether/agora/viewmodel/MessageGenerationController.kt")
         val presentation = sourceFile("app/src/main/java/com/newoether/agora/viewmodel/CompactFailurePresentation.kt")
@@ -23,7 +24,8 @@ class CompactI18nSourceContractTest {
         assertFalse(controller.contains("CompactResult.Failed(\""))
         assertTrue(presentation.contains("internal fun compactFailureMessage("))
         assertTrue(presentation.contains("failed.externalDetail?.takeIf(String::isNotBlank)"))
-        assertTrue(chat.contains("compactFailureMessage(appContext, result)"))
+        assertTrue(chat.contains("failureMessage = { result -> compactFailureMessage(appContext, result) }"))
+        assertTrue(compactUi.contains("onFailure(failureMessage(result))"))
         assertTrue(generation.contains("compactFailureMessage(appContext, compact)"))
         assertFalse(chat.contains("Context compact failed"))
         assertFalse(generation.contains("Open a conversation first"))

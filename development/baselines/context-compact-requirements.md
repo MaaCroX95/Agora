@@ -48,6 +48,12 @@ No caller may hold a second conversation/automation lock while waiting for the g
 
 When Compact begins while the conversation is attached to the bottom, request the ordinary generation follow-bottom behavior. Do not steal scroll position when the user is reading above the bottom.
 
+Historical note: the earlier rule below treated Compact as assistant output for padding. It is
+superseded by the current authoritative message-generation contract: Compact is the semantic tail
+anchor, while the physical final rendered turn holds only the remaining minimum after measured
+anchor-region content is deducted. This keeps all tail turns adjacent and leaves unused capacity only
+after the complete tail.
+
 For follow-bottom padding, a Compact capsule is treated as assistant output. It must not receive the user-message rule that pads enough space for a full blank viewport.
 
 Deletion does not select or scroll to a target. The shared message-deletion pipeline accepts an explicit `scrollToTarget` Boolean: ordinary message callers may pass `true`; Compact deletion passes `false` and preserves the existing scroll position. The expensive post-overlay sequence of repeated target scrolls, height measurement, and frame stabilization must not run when the flag is false.

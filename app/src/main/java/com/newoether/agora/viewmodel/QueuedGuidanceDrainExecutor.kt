@@ -118,14 +118,6 @@ internal class QueuedGuidanceDrainExecutor(
         val uiToken = claim.uiToken
         val runId = claim.inputEffect.identity.runId
         val modelId = batch.last().modelId
-        requestBuilder.resolveProviderKey(modelId) ?: run {
-            state.settleGuidanceClaim(claim.lease.id, durable = false)
-            state.deferNextQueueDrain()
-            state.scope.launch {
-                releaseUnlaunchedSlotAndDrain(state, uiToken)
-            }
-            return
-        }
         state.loadingChange(uiToken, true)
         val jobBodyStarted = AtomicBoolean(false)
         val generationJob = state.launchGenerationJob(uiToken) {
@@ -146,11 +138,13 @@ internal class QueuedGuidanceDrainExecutor(
                 val queued = mergeQueuedGuidance(batch)
                 val persistId = state.nextPersistId()
                 executionCoordinator.withConversationLock(conversationId) {
-                    val generationSnapshot = requestBuilder.captureAdmissionSnapshot(
-                        conversationId = conversationId,
-                        runId = runId,
-                        modelId = modelId,
-                    )
+                    val generationSnapshot = queued.generationSnapshot
+                        ?.copy(conversationId = conversationId, runId = runId)
+                        ?: requestBuilder.captureAdmissionSnapshot(
+                            conversationId = conversationId,
+                            runId = runId,
+                            modelId = modelId,
+                        )
                     val topology =
                         conversations.getProviderContextTopologySnapshot(conversationId)
                     val leaf = topology?.let { snapshot ->
@@ -208,6 +202,8 @@ internal class QueuedGuidanceDrainExecutor(
                         messages = users + placeholderEntity,
                         messageSelectionUpdates = selectionUpdates,
                         conversationModelId = generationSnapshot.selectedModelId,
+                        at = start,
+                        touchConversationOnAdmission = true,
                     )
                     val committedUsers = graphCommit.messages.dropLast(1)
                     val committedPlaceholder = graphCommit.messages.last()
@@ -270,7 +266,7 @@ internal class QueuedGuidanceDrainExecutor(
                             persistId = persistId,
                             runId = runId,
                             pass = 0,
-                            callerTag = "guidanceBoundary",
+                            requestKind = "queued_guidance",
                         ),
                         state,
                     )

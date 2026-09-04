@@ -1,11 +1,11 @@
 package com.newoether.agora.api.local
 
 import com.newoether.agora.api.*
+import com.newoether.agora.api.util.buildToolCallId
 
 import android.content.Context
 import com.newoether.agora.R
 import com.newoether.agora.util.DebugLog
-import com.newoether.agora.api.util.ThinkingParser
 import com.newoether.agora.data.repository.SettingsRepository
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.Participant
@@ -17,8 +17,32 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import com.newoether.agora.viewmodel.GenerationCancelHandle
 import kotlin.coroutines.coroutineContext
+
+private const val CONTEXT_EXCEEDED_PREFIX = "LOCAL_CONTEXT_EXCEEDED:"
+
+internal fun localGenerationFailure(
+    event: LlamaGenerationEvent.Failed,
+    displayMessage: String,
+): GenerationError.LocalModel = localGenerationFailure(
+    rawMessage = event.message,
+    displayMessage = displayMessage,
+)
+
+private fun localGenerationFailure(
+    rawMessage: String?,
+    displayMessage: String,
+): GenerationError.LocalModel = GenerationError.LocalModel(
+    message = displayMessage,
+    code = if (rawMessage?.startsWith(CONTEXT_EXCEEDED_PREFIX) == true) {
+        LOCAL_CONTEXT_CAPACITY_ERROR_CODE
+    } else {
+        null
+    },
+)
 
 class LocalProvider(
     private val context: Context,
@@ -27,11 +51,15 @@ class LocalProvider(
 
     companion object {
         private const val TAG = "LocalProvider"
-        private const val CONTEXT_EXCEEDED_PREFIX = "LOCAL_CONTEXT_EXCEEDED:"
+        private val TEMPLATE_JSON = Json {
+            encodeDefaults = true
+            explicitNulls = false
+        }
     }
 
     override val name: String = Constants.PROVIDER_LOCAL
     override val defaultBaseUrl: String = ""
+    override val nativeTextParsingAuthoritative: Boolean = true
 
     override fun generateResponse(
         messages: List<ChatMessage>,
@@ -81,18 +109,35 @@ class LocalProvider(
 
         // Template ownership stays with the model. A generic fallback can silently apply the
         // wrong role/control-token protocol, so an incompatible model fails closed.
-        val prompt = engine.applyTemplate(
-            templateMessages,
+        val templateTools = config.tools.orEmpty().map { tool ->
+            ChatTemplateTool(
+                name = tool.function.name,
+                description = tool.function.description,
+                parameters = TEMPLATE_JSON.encodeToString(tool.function.parameters),
+            )
+        }
+        val requiresToolCapableTemplate = templateTools.isNotEmpty() || templateMessages.any { message ->
+            message.toolCalls.isNotEmpty() || message.role == "tool"
+        }
+        val template = engine.applyTemplate(
+            messages = templateMessages,
+            tools = templateTools,
             addAss = true,
             enableThinking = config.thinkingEnabled,
         )
-        if (prompt == null) {
+        if (template == null) {
             emit(StreamEvent.Error(GenerationError.LocalModel(
                 "The local model does not provide a compatible chat template."
             )))
             return@runChat
         }
-        val promptLength = prompt.length
+        if (requiresToolCapableTemplate && !template.supportsTools) {
+            emit(StreamEvent.Error(GenerationError.LocalModel(
+                "The local model chat template does not support tool calling."
+            )))
+            return@runChat
+        }
+        val promptLength = template.prompt.length
         val imageCount = imagePaths.size
         if (hasImages) {
             DebugLog.d(TAG, "Generated multimodal prompt ($promptLength chars, $imageCount images)")
@@ -100,18 +145,15 @@ class LocalProvider(
             DebugLog.d(TAG, "Generated prompt ($promptLength chars)")
         }
 
-        // Generate tokens with unified thinking parsing
+        // Native template parsing produces typed thought and tool events. Shared stream normalization
+        // still recovers reasoning delimiters that the model emits as ordinary text.
         var inputTokenCount = 0
         var outputTokenCount = 0
         var terminalError: GenerationError? = null
-        var stopped = false
-        var rawBuf = ""
-        val STOP_PATTERNS = listOf("<|im_end|>", "<|im_start|>")
-        val thinkParser = ThinkingParser()
         try {
             val tokenFlow = if (hasImages) {
                 engine.generateWithImages(
-                    prompt = prompt,
+                    template = template,
                     imagePaths = imagePaths,
                     temperature = config.temperature ?: modelConfig.temperature,
                     topP = config.topP ?: modelConfig.topP,
@@ -121,7 +163,7 @@ class LocalProvider(
                 )
             } else {
                 engine.generate(
-                    prompt = prompt,
+                    template = template,
                     temperature = config.temperature ?: modelConfig.temperature,
                     topP = config.topP ?: modelConfig.topP,
                     frequencyPenalty = config.frequencyPenalty ?: 0f,
@@ -140,62 +182,69 @@ class LocalProvider(
                         engine.cancel()
                         return@collect
                     }
-                    if (event is LlamaGenerationEvent.Completed) {
-                        inputTokenCount = event.inputTokenCount
-                        outputTokenCount = event.outputTokenCount
-                        terminalError = when (event.reason) {
-                            LlamaGenerationStopReason.EOG -> null
-                            LlamaGenerationStopReason.MAX_TOKENS ->
-                                GenerationError.OutputTruncated(name, "max_tokens")
-                            LlamaGenerationStopReason.CONTEXT_FULL -> GenerationError.LocalModel(
-                                "Local context window was exhausted before generation completed."
-                            )
-                            LlamaGenerationStopReason.CANCELLED ->
-                                if (stopped) null else GenerationError.Cancelled
+                    when (event) {
+                        is LlamaGenerationEvent.Text -> {
+                            if (event.value.isNotEmpty()) emit(StreamEvent.TextChunk(event.value))
                         }
-                        return@collect
-                    }
-                    if (event is LlamaGenerationEvent.Failed) {
-                        inputTokenCount = event.inputTokenCount
-                        outputTokenCount = event.outputTokenCount
-                        terminalError = GenerationError.LocalModel(
-                            formatGenerationError(IllegalStateException(event.message), modelConfig)
-                        )
-                        return@collect
-                    }
-                    if (stopped) return@collect
-                    val token = (event as LlamaGenerationEvent.Text).value
-
-                    // Check for stop patterns in the rolling buffer
-                    rawBuf += token
-                    val hit = STOP_PATTERNS.firstOrNull { p -> rawBuf.contains(p) }
-                    if (hit != null) {
-                        // Strip the stop pattern and anything after it, then stop
-                        val cleanEnd = rawBuf.substringBefore(hit)
-                        if (cleanEnd.isNotEmpty()) {
-                            thinkParser.feed(
-                                content = cleanEnd,
-                                thinkingEnabled = config.thinkingEnabled,
-                                onText = { emit(StreamEvent.TextChunk(it)) },
-                                onThought = { emit(StreamEvent.ThoughtChunk(it)) }
+                        is LlamaGenerationEvent.Thought -> {
+                            if (event.value.isNotEmpty()) emit(StreamEvent.ThoughtChunk(event.value))
+                        }
+                        is LlamaGenerationEvent.ToolCallUpdate -> {
+                            val call = event.call
+                            emit(
+                                StreamEvent.ToolCallUpdate(
+                                    streamKey = "local_tool_${call.index}",
+                                    id = call.id,
+                                    name = call.name,
+                                    arguments = call.arguments,
+                                )
                             )
                         }
-                        engine.cancel()
-                        stopped = true
-                        return@collect
-                    }
-
-                    // Keep buffer bounded — only as much as longest stop pattern
-                    val maxPatLen = STOP_PATTERNS.maxOf { it.length }
-                    if (rawBuf.length > maxPatLen * 2) {
-                        val emitPart = rawBuf.substring(0, rawBuf.length - maxPatLen)
-                        thinkParser.feed(
-                            content = emitPart,
-                            thinkingEnabled = config.thinkingEnabled,
-                            onText = { emit(StreamEvent.TextChunk(it)) },
-                            onThought = { emit(StreamEvent.ThoughtChunk(it)) }
-                        )
-                        rawBuf = rawBuf.substring(rawBuf.length - maxPatLen)
+                        is LlamaGenerationEvent.ToolCallsCompleted -> {
+                            val calls = event.calls.map { call ->
+                                val arguments = call.arguments.ifBlank { "{}" }
+                                StreamEvent.ToolCallRequest(
+                                    id = call.id?.takeIf(String::isNotBlank)
+                                        ?: buildToolCallId(
+                                            "${call.name}:${call.index}",
+                                            arguments,
+                                        ),
+                                    name = call.name,
+                                    arguments = arguments,
+                                    streamKey = "local_tool_${call.index}",
+                                )
+                            }
+                            if (calls.size == 1) {
+                                emit(calls.single())
+                            } else if (calls.isNotEmpty()) {
+                                emit(StreamEvent.ToolCallsRequest(calls))
+                            }
+                        }
+                        is LlamaGenerationEvent.Completed -> {
+                            inputTokenCount = event.inputTokenCount
+                            outputTokenCount = event.outputTokenCount
+                            terminalError = when (event.reason) {
+                                LlamaGenerationStopReason.EOG -> null
+                                LlamaGenerationStopReason.MAX_TOKENS ->
+                                    GenerationError.OutputTruncated(name, "max_tokens")
+                                LlamaGenerationStopReason.CONTEXT_FULL -> GenerationError.LocalModel(
+                                    message = "Local context window was exhausted before generation completed.",
+                                    code = LOCAL_CONTEXT_CAPACITY_ERROR_CODE,
+                                )
+                                LlamaGenerationStopReason.CANCELLED -> GenerationError.Cancelled
+                            }
+                        }
+                        is LlamaGenerationEvent.Failed -> {
+                            inputTokenCount = event.inputTokenCount
+                            outputTokenCount = event.outputTokenCount
+                            terminalError = localGenerationFailure(
+                                event = event,
+                                displayMessage = formatGenerationError(
+                                    IllegalStateException(event.message),
+                                    modelConfig,
+                                ),
+                            )
+                        }
                     }
                 }
             } finally {
@@ -204,25 +253,19 @@ class LocalProvider(
             if (terminalError === GenerationError.Cancelled) {
                 throw kotlinx.coroutines.CancellationException("Native generation cancelled")
             }
-            // Flush remaining buffer (no stop pattern found)
-            if (!stopped && rawBuf.isNotEmpty()) {
-                thinkParser.feed(
-                    content = rawBuf,
-                    thinkingEnabled = config.thinkingEnabled,
-                    onText = { emit(StreamEvent.TextChunk(it)) },
-                    onThought = { emit(StreamEvent.ThoughtChunk(it)) }
-                )
-            }
-            thinkParser.flush(
-                onText = { emit(StreamEvent.TextChunk(it)) },
-                onThought = { emit(StreamEvent.ThoughtChunk(it)) }
-            )
         } catch (e: kotlinx.coroutines.CancellationException) {
             engine.cancel()
             throw e
         } catch (e: Exception) {
             DebugLog.e(TAG, "Generation failed", e)
-            emit(StreamEvent.Error(GenerationError.LocalModel(formatGenerationError(e, modelConfig))))
+            emit(
+                StreamEvent.Error(
+                    localGenerationFailure(
+                        rawMessage = e.message,
+                        displayMessage = formatGenerationError(e, modelConfig),
+                    )
+                )
+            )
             return@runChat
         }
 
@@ -272,40 +315,73 @@ class LocalProvider(
         for (msg in messages) {
             if (msg.participant == Participant.ERROR) continue
 
-            // Tool call messages: treat as assistant
+            // Tool call messages are one assistant turn, including parallel calls.
             if (msg.id.startsWith(Constants.TOOL_MSG_PREFIX)) {
                 val toolSegs = msg.segments?.filter { it.type == "tool" }
-                if (!toolSegs.isNullOrEmpty()) {
-                    for (seg in toolSegs) {
-                        result.add(ChatTemplateMessage(
-                            role = "assistant",
-                            content = "Tool call: ${seg.toolName}\nArguments: ${seg.toolArgs}"
-                        ))
+                val toolCalls = if (!toolSegs.isNullOrEmpty()) {
+                    toolSegs.map { seg ->
+                        val name = seg.toolName.orEmpty()
+                        val arguments = seg.toolArgs ?: "{}"
+                        ChatTemplateToolCall(
+                            id = seg.toolCallId?.takeIf(String::isNotBlank)
+                                ?: buildToolCallId(name, arguments),
+                            name = name,
+                            arguments = arguments,
+                        )
                     }
-                } else if (msg.toolCall != null) {
-                    result.add(ChatTemplateMessage(
-                        role = "assistant",
-                        content = "Tool call: ${msg.toolCall.toolName}\nArguments: ${msg.toolCall.arguments}"
-                    ))
+                } else {
+                    msg.toolCall?.let { toolCall ->
+                        listOf(
+                            ChatTemplateToolCall(
+                                id = toolCall.toolCallId?.takeIf(String::isNotBlank)
+                                    ?: buildToolCallId(toolCall.toolName, toolCall.arguments),
+                                name = toolCall.toolName,
+                                arguments = toolCall.arguments,
+                            )
+                        )
+                    }.orEmpty()
+                }
+                if (toolCalls.isNotEmpty()) {
+                    result.add(
+                        ChatTemplateMessage(
+                            role = "assistant",
+                            content = "",
+                            toolCalls = toolCalls.toTypedArray(),
+                        )
+                    )
                 }
                 continue
             }
 
-            // Tool result messages: treat as user (tool results)
+            // Tool result messages preserve the call identity expected by native templates.
             if (msg.id.startsWith(Constants.RESULT_MSG_PREFIX)) {
                 val toolSegs = msg.segments?.filter { it.type == "tool" }
                 if (!toolSegs.isNullOrEmpty()) {
                     for (seg in toolSegs) {
-                        result.add(ChatTemplateMessage(
-                            role = "user",
-                            content = "Tool result: ${seg.toolResult ?: ""}"
-                        ))
+                        val name = seg.toolName.orEmpty()
+                        val arguments = seg.toolArgs ?: "{}"
+                        result.add(
+                            ChatTemplateMessage(
+                                role = "tool",
+                                content = seg.toolResult.orEmpty(),
+                                toolName = name,
+                                toolCallId = seg.toolCallId?.takeIf(String::isNotBlank)
+                                    ?: buildToolCallId(name, arguments),
+                            )
+                        )
                     }
-                } else if (msg.toolCall != null) {
-                    result.add(ChatTemplateMessage(
-                        role = "user",
-                        content = "Tool result: ${msg.toolCall.result}"
-                    ))
+                } else {
+                    msg.toolCall?.let { toolCall ->
+                        result.add(
+                            ChatTemplateMessage(
+                                role = "tool",
+                                content = toolCall.result,
+                                toolName = toolCall.toolName,
+                                toolCallId = toolCall.toolCallId?.takeIf(String::isNotBlank)
+                                    ?: buildToolCallId(toolCall.toolName, toolCall.arguments),
+                            )
+                        )
+                    }
                 }
                 continue
             }

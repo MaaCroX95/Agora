@@ -13,10 +13,14 @@ object LlamaEngine {
         System.loadLibrary("agora_llama")
     }
 
+    private external fun nativeInitializeBackends(nativeLibraryDir: String): Boolean
     private external fun nativeLoadModel(path: String): Long
     private external fun nativeFreeModel(handle: Long)
     private external fun nativeComputeEmbedding(handle: Long, text: String): FloatArray?
     private external fun nativeGetEmbeddingDim(handle: Long): Int
+
+    internal fun initializeBackends(nativeLibraryDir: String): Boolean =
+        nativeInitializeBackends(nativeLibraryDir)
 
     fun isModelReady(modelPath: String): Boolean {
         return modelPath.isNotBlank() && File(modelPath).exists() && File(modelPath).length() > 0

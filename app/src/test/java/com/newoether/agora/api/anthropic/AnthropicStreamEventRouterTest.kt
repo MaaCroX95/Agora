@@ -115,6 +115,49 @@ class AnthropicStreamEventRouterTest {
     }
 
     @Test
+    fun blankThinkingPlaceholdersDoNotEraseEffectiveSignatureOrEmitContent() {
+        val router = AnthropicStreamEventRouter()
+        val started = router.route(
+            AnthropicStreamEvent(
+                type = "content_block_start",
+                index = 1,
+                contentBlock = AnthropicContentBlock(
+                    type = "thinking",
+                    thinking = " ",
+                    signature = "signature-1",
+                ),
+            )
+        )
+        val blankSignature = router.route(
+            AnthropicStreamEvent(
+                type = "content_block_delta",
+                index = 1,
+                delta = AnthropicDelta(type = "signature_delta", signature = " "),
+            )
+        )
+        val blankThought = router.route(
+            AnthropicStreamEvent(
+                type = "content_block_delta",
+                index = 1,
+                delta = AnthropicDelta(type = "thinking_delta", thinking = " "),
+            )
+        )
+        val thought = router.route(
+            AnthropicStreamEvent(
+                type = "content_block_delta",
+                index = 1,
+                delta = AnthropicDelta(type = "thinking_delta", thinking = "reasoning"),
+            )
+        ).single() as StreamEvent.ThoughtChunk
+
+        assertTrue(started.isEmpty())
+        assertTrue(blankSignature.isEmpty())
+        assertTrue(blankThought.isEmpty())
+        assertEquals("reasoning", thought.thought)
+        assertEquals("signature-1", thought.signature)
+    }
+
+    @Test
     fun usageSeparatesCacheReadFromUncachedInput() {
         val router = AnthropicStreamEventRouter()
         router.route(

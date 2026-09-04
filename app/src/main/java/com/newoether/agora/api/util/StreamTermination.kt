@@ -50,7 +50,9 @@ internal data class StreamTermination(
         get() = !producedContent &&
             !alreadyReportedError &&
             !truncatedByTokenCap &&
-            (timedOut || streamError != null && retryableStreamError ||
+            (timedOut ||
+                streamError != null &&
+                (retryableStreamError || ProviderRetryPolicy.shouldRetryStreamError(streamError)) ||
                 toolCallInFlight || !sawTerminalMarker)
 
     /** Terminal diagnostic to surface, or null when the stream ended cleanly. */
@@ -104,7 +106,32 @@ internal fun Throwable.asRetryableTransportError(): GenerationError? = when (thi
         GenerationError.Network(statusCode = 0, message = localizedMessage ?: "Connection reset")
     is javax.net.ssl.SSLException ->
         GenerationError.Network(statusCode = 0, message = localizedMessage ?: "TLS failure")
-    else -> null
+    is java.net.UnknownHostException -> null
+    else -> matchingFailureMessage(ProviderRetryPolicy::isRetryableUpstreamFailure)?.let { message ->
+        GenerationError.Network(statusCode = 0, message = message)
+    }
+}
+
+/** A matching read failure after response headers re-enters the existing pre-output retry gate. */
+internal fun Throwable.asRetryableResponseBodyReadError(): GenerationError? =
+    matchingFailureMessage(ProviderRetryPolicy::isUnreadableServerResponseFailure)?.let { message ->
+        GenerationError.Network(statusCode = 0, message = message)
+    }
+
+private fun Throwable.matchingFailureMessage(
+    matches: (String?) -> Boolean,
+): String? {
+    val visited = mutableSetOf<Throwable>()
+    var failure: Throwable? = this
+    var matchedMessage: String? = null
+    while (failure != null && visited.add(failure)) {
+        if (failure is java.net.UnknownHostException) return null
+        if (matchedMessage == null && matches(failure.localizedMessage)) {
+            matchedMessage = failure.localizedMessage
+        }
+        failure = failure.cause
+    }
+    return matchedMessage
 }
 
 /**

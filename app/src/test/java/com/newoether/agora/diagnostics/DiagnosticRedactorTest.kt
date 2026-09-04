@@ -11,23 +11,27 @@ class DiagnosticRedactorTest {
         val headers = DiagnosticRedactor.captureHeaders(
             mapOf(
                 "Authorization" to "Bearer top-secret-token",
+                "Cookie" to "session=cookie-secret",
                 "X-Trace" to "api_key=another-secret",
             ),
         )
         val url = DiagnosticRedactor.captureUrl(
-            "https://user:password@example.com/v1/chat?key=query-secret&model=test",
+            "https://user:password@example.com/v1/chat" +
+                "?X-Amz-Credential=signed-user&X-Amz-Signature=signed-secret&model=test",
         )
 
         assertEquals("[REDACTED_SECRET]", headers["Authorization"])
+        assertEquals("[REDACTED_SECRET]", headers["Cookie"])
         assertFalse(headers.getValue("X-Trace").contains("another-secret"))
         assertFalse(url.value.contains("user"))
         assertFalse(url.value.contains("password"))
-        assertFalse(url.value.contains("query-secret"))
+        assertFalse(url.value.contains("signed-user"))
+        assertFalse(url.value.contains("signed-secret"))
         assertTrue(url.value.contains("model=test"))
     }
 
     @Test
-    fun `redacted content mode keeps json structure but removes secrets and content`() {
+    fun `raw capture keeps json content while removing credentials`() {
         val raw = """
             {
               "api_key": "nested-secret",
@@ -37,23 +41,19 @@ class DiagnosticRedactorTest {
             }
         """.trimIndent()
 
-        val captured = DiagnosticRedactor.captureJson(
-            raw,
-            DiagnosticCaptureMode.REDACTED_CONTENT,
-        )
+        val captured = DiagnosticRedactor.captureJson(raw)
 
         assertFalse(captured.value.contains("nested-secret"))
         assertFalse(captured.value.contains("token-secret"))
-        assertFalse(captured.value.contains("private prompt"))
-        assertFalse(captured.value.contains("private text"))
+        assertTrue(captured.value.contains("private prompt"))
+        assertTrue(captured.value.contains("private text"))
         assertTrue(captured.value.contains("[REDACTED_SECRET]"))
-        assertTrue(captured.value.contains("[REDACTED_CONTENT]"))
         assertTrue(captured.value.contains("max_tokens"))
         assertTrue(captured.value.contains("10"))
     }
 
     @Test
-    fun `sensitive mode preserves content but still removes nested and inline credentials`() {
+    fun `captured content keeps semantic text but removes inline credentials`() {
         val raw = """
             {
               "content": "keep this text but remove sk-abcdefghijklmnop",
@@ -62,10 +62,7 @@ class DiagnosticRedactorTest {
             }
         """.trimIndent()
 
-        val captured = DiagnosticRedactor.captureJson(
-            raw,
-            DiagnosticCaptureMode.SENSITIVE_CONTENT,
-        )
+        val captured = DiagnosticRedactor.captureJson(raw)
 
         assertTrue(captured.value.contains("keep this text"))
         assertFalse(captured.value.contains("sk-abcdefghijklmnop"))
@@ -74,14 +71,14 @@ class DiagnosticRedactorTest {
     }
 
     @Test
-    fun `redacted mode sanitizes ndjson wire lines used by local providers`() {
+    fun `raw capture sanitizes ndjson wire lines without removing message content`() {
         val line = DiagnosticRedactor.captureWireLine(
-            rawLine = """{"message":{"content":"private local response"}}""",
-            mode = DiagnosticCaptureMode.REDACTED_CONTENT,
+            """{"message":{"content":"private local response"},"token":"secret-value"}""",
         )
 
-        assertFalse(line.value.contains("private local response"))
-        assertTrue(line.value.contains("[REDACTED_CONTENT]"))
+        assertTrue(line.value.contains("private local response"))
+        assertFalse(line.value.contains("secret-value"))
+        assertTrue(line.value.contains("[REDACTED_SECRET]"))
     }
 
     @Test
@@ -91,41 +88,57 @@ class DiagnosticRedactorTest {
         )
         val content = DiagnosticRedactor.captureContent(
             "token=x password=y Bearer z",
-            DiagnosticCaptureMode.SENSITIVE_CONTENT,
+        )
+        val privateKey = DiagnosticRedactor.captureContent(
+            "visible\n-----BEGIN PRIVATE KEY-----\npartial-secret",
         )
 
         assertEquals("[UNAVAILABLE_INVALID_URL]", url.value)
         assertFalse(content.value.contains("token=x"))
         assertFalse(content.value.contains("password=y"))
         assertFalse(content.value.contains("Bearer z"))
+        assertTrue(privateKey.value.contains("visible"))
+        assertFalse(privateKey.value.contains("partial-secret"))
     }
 
     @Test
-    fun `invalid json and invalid sse data fail closed`() {
-        val json = DiagnosticRedactor.captureJson(
-            "not-json private-secret",
-            DiagnosticCaptureMode.SENSITIVE_CONTENT,
+    fun `invalid json preserves noncredential text while removing labeled secrets`() {
+        val body = DiagnosticRedactor.captureJson(
+            "not-json token=private-secret visible text",
         )
         val line = DiagnosticRedactor.captureWireLine(
-            "data: not-json private-secret",
-            DiagnosticCaptureMode.SENSITIVE_CONTENT,
+            "data: not-json token=private-secret visible text",
         )
 
-        assertEquals("[UNAVAILABLE_INVALID_JSON]", json.value)
+        assertTrue(body.value.contains("visible text"))
+        assertTrue(line.value.contains("visible text"))
+        assertFalse(body.value.contains("private-secret"))
         assertFalse(line.value.contains("private-secret"))
-        assertTrue(line.value.contains("[UNAVAILABLE_INVALID_JSON]"))
     }
 
     @Test
-    fun `large captured values expose truncation and original length`() {
-        val privateContent = "x".repeat(40_000)
+    fun `redacted export projection removes semantic content but keeps structure`() {
         val captured = DiagnosticRedactor.captureJson(
-            """{"content":"$privateContent"}""",
-            DiagnosticCaptureMode.SENSITIVE_CONTENT,
+            """{"messages":[{"role":"user","content":"private prompt"}],"arguments":"tool args","result":"tool result","max_tokens":10}""",
         )
+
+        val redacted = DiagnosticRedactor.redactJsonContent(captured)
+
+        assertFalse(redacted.value.contains("private prompt"))
+        assertFalse(redacted.value.contains("tool args"))
+        assertFalse(redacted.value.contains("tool result"))
+        assertTrue(redacted.value.contains("[REDACTED_CONTENT]"))
+        assertTrue(redacted.value.contains("max_tokens"))
+        assertTrue(redacted.value.contains("10"))
+    }
+
+    @Test
+    fun `large captured values use the two mebibyte utf8 limit`() {
+        val privateContent = "x".repeat(DiagnosticCaptureStore.DEFAULT_MAX_PAYLOAD_BYTES + 1)
+        val captured = DiagnosticRedactor.captureContent(privateContent)
 
         assertTrue(captured.truncated)
         assertTrue(captured.originalLength > captured.value.length)
-        assertEquals(32_768, captured.value.length)
+        assertEquals(DiagnosticCaptureStore.DEFAULT_MAX_PAYLOAD_BYTES, captured.value.length)
     }
 }

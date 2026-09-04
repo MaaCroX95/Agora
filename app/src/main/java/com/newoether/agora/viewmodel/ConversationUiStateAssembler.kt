@@ -99,10 +99,6 @@ internal class ConversationUiStateAssembler(
         .distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
-    val totalTokens: StateFlow<Int> = renderStore.snapshot
-        .map { snapshot -> snapshot.allMessages.sumOf { it.tokenCount } }
-        .stateIn(scope, SharingStarted.Eagerly, 0)
-
     private val _loadedMessagesConversationId = MutableStateFlow<String?>(null)
     val loadedMessagesConversationId: StateFlow<String?> =
         _loadedMessagesConversationId.asStateFlow()
@@ -193,13 +189,10 @@ internal class ConversationUiStateAssembler(
     }
 
     private suspend fun collectConversation(id: String) = coroutineScope {
-        conversations.ensureRunRecovery()
-        val state = registry.getOrCreate(id)
-        val automationRunning =
-            id in executionCoordinator.activeAutomationConversationIds.value
-        if (!state.generating.value && !automationRunning) {
-            conversations.fixStuckMessages(id)
+        executionCoordinator.tryWithConversationLock(id) {
+            conversations.recoverConversationRuntime(id)
         }
+        val state = registry.getOrCreate(id)
 
         val conversation = conversations.getConversation(id)
         val restoredChildren = withContext(projectionDispatcher) {

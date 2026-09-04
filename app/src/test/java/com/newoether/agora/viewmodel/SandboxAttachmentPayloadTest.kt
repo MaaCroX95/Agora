@@ -1,21 +1,14 @@
 package com.newoether.agora.viewmodel
 
-import android.app.Application
 import com.newoether.agora.model.AttachmentStorage
 import com.newoether.agora.model.SelectedAttachment
-import io.mockk.mockk
-import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SandboxAttachmentPayloadTest {
     @Test
-    fun sandboxFilePersistsRuntimeMetadataWithoutDevicePathOrTextRead() = runTest {
-        val builder = MessagePayloadBuilder(
-            generationManager = mockk(),
-            onSnackbar = {},
-        )
+    fun sandboxFilePersistsRuntimeMetadataWithoutDevicePathOrTextRead() {
         val source = SelectedAttachment(
             uri = "content://picker/archive.apk",
             type = "file",
@@ -27,11 +20,7 @@ class SandboxAttachmentPayloadTest {
             sandboxPath = "/home/agora/attachments/id/archive.apk",
         )
 
-        val payload = builder.buildMessagePayload(
-            app = mockk<Application>(),
-            images = emptyList(),
-            attachments = listOf(source),
-        )
+        val payload = MessagePayloadBuilder().buildComposerPayload(listOf(source))
         val item = requireNotNull(payload.attachmentMeta).items.single()
 
         assertEquals(emptyList<String>(), payload.allImages)

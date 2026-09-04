@@ -564,7 +564,7 @@
     <string name="memory_create">作成</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">利用可能なモデルを取得中...</string>
+    <string name="models_syncing">同期中...</string>
     <string name="snackbar_generating_title">タイトルを生成中...</string>
     <string name="snackbar_title_generated">タイトルを生成しました。</string>
     <string name="snackbar_title_error">タイトルの生成中にエラーが発生しました。</string>
@@ -665,6 +665,8 @@
     <string name="auto_cache_title">キャッシュ</string>
     <string name="auto_cache">新しいメッセージを自動キャッシュ</string>
     <string name="auto_cache_desc">選択した埋め込みモデルで新しいメッセージを自動的にインデックス化します。オフの場合、手動で実行するまでメッセージはキャッシュされません。</string>
+    <string name="show_uncached_notification">未キャッシュ通知を表示</string>
+    <string name="show_uncached_notification_desc">自動キャッシュがオフで、未キャッシュのメッセージが残っている場合にリマインダーを表示します。</string>
     <string name="cache_action">キャッシュ</string>
     <string name="recache_action">再キャッシュ</string>
     <string name="recache_confirm_title">すべてのメッセージを再キャッシュ</string>
@@ -825,6 +827,9 @@
     <string name="export_button">エクスポート</string>
     <string name="exporting_label">エクスポート中…</string>
     <string name="export_success">データを正常にエクスポートしました。</string>
+    <string name="attachment_unavailable">添付ファイルを利用できません</string>
+    <string name="export_success_missing_resources">データをエクスポートしましたが、%1$d 件のリソースを利用できませんでした。</string>
+    <string name="auto_backup_missing_resources">バックアップは完了しましたが、%1$d 件のリソースを利用できませんでした。</string>
 
     <string name="export_failed">エクスポートに失敗しました: %1$s</string>
     <string name="import_preview_title">データをインポート</string>
@@ -833,9 +838,13 @@
     <string name="import_strategy_merge">マージ</string>
     <string name="import_strategy_replace">置換</string>
     <string name="import_strategy_skip">スキップ</string>
+    <string name="external_import_replace_confirm_title">既存の会話を置き換えますか？</string>
+    <string name="external_import_replace_confirm_message">既存の会話をすべて削除し、選択したインポート会話のみを残します。</string>
+    <string name="external_import_replace_confirm_button">会話を置き換える</string>
     <string name="import_api_keys_warning">このバックアップには認証情報とシークレットが含まれています。これらは平文でインポートされます。送信元を信頼できる場合のみ続行してください。</string>
     <string name="import_button">インポート</string>
     <string name="importing_label">インポート中…</string>
+    <string name="loading_label">読み込み中…</string>
     <string name="import_success">インポートが完了しました: %1$s</string>
     <string name="import_failed">インポートに失敗しました: %1$s</string>
     <string name="import_invalid_file">無効な .agora ファイルです。有効なエクスポートを選択してください。</string>
@@ -1130,44 +1139,46 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">開発者</string>
     <string name="settings_developer">開発者向けオプション</string>
-    <string name="settings_developer_desc">診断、プロトコル検査、テストツール</string>
+    <string name="settings_developer_desc">診断キャプチャとローカル Debug モデルの制御</string>
     <string name="developer_options_title">開発者向けオプション</string>
-    <string name="developer_options_status_group">状態</string>
-    <string name="developer_options_enabled_desc">このインストールで有効です。オフにすると一時診断を停止して消去します。</string>
+    <string name="developer_options_features_group">機能</string>
+    <string name="developer_options_debug_model">デバッグモデル</string>
+    <string name="developer_options_mode_description">オフにするとキャプチャを停止し、保存済み診断データを削除して Debug モデルを無効にします。</string>
+    <string name="developer_options_capture_description">認証情報を除去したリクエスト、ストリーム、実行時診断を記録してエクスポートします。</string>
+    <string name="developer_options_debug_model_description">ローカルの決定論的 Debug モデルをチャットのモデル選択にのみ追加します。</string>
+    <string name="developer_options_capture_summary">概要</string>
+    <string name="developer_options_capture_raw">生データ</string>
+    <string name="developer_options_capture_play">キャプチャを開始または再開</string>
+    <string name="developer_options_capture_pause">キャプチャを一時停止</string>
+    <string name="developer_options_capture_scroll_to_top">一番上までスクロール</string>
+    <string name="developer_options_capture_scroll_to_bottom">一番下までスクロール</string>
+    <string name="developer_options_capture_more_actions">キャプチャ操作</string>
+    <string name="developer_options_capture_clear_message">キャプチャしたイベントとカウンターを消去しますか？キャプチャ状態とセッションは保持されます。</string>
+    <string name="developer_options_capture_clear_confirm">消去</string>
+    <string name="developer_options_capture_export_redacted_json">編集済み JSON をエクスポート</string>
+    <string name="developer_options_capture_export_summary_text">概要テキストをエクスポート</string>
+    <string name="developer_options_capture_empty">キャプチャ済みイベントはありません</string>
+    <string name="developer_options_capture_state_idle">待機中</string>
+    <string name="developer_options_capture_state_running">実行中</string>
+    <string name="developer_options_capture_state_paused">一時停止中</string>
+    <string name="developer_options_capture_status_summary">%1$s · %2$d 件 · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">キャプチャは不完全です · 64 MiB の上限に達しました</string>
+    <string name="developer_options_capture_counters">破棄 %1$d · 削除 %2$d · 切り詰め %3$d</string>
+    <string name="developer_options_capture_session">セッション %1$s · 次は #%2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · 本文文字数=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">HTTP 応答 · コード=%1$d · 文字数=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">通信行 %1$d · 文字数=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">%1$s を解析</string>
     <string name="developer_options_taps_remaining">あと%1$d回タップすると開発者向けオプションが有効になります。</string>
     <string name="developer_options_enabled_message">開発者向けオプションが有効になりました。</string>
     <string name="developer_options_already_enabled_message">開発者向けオプションはすでに有効です。</string>
-    <string name="developer_options_capture_group">診断</string>
     <string name="developer_options_capture">診断キャプチャ</string>
-    <string name="developer_options_capture_off_desc">アクティブな診断セッションはありません。明示的に開始するまでキャプチャはオフです。</string>
 
-    <string name="developer_options_test_lab_group">テスト</string>
-    <string name="developer_options_test_lab">テストラボ</string>
-    <string name="developer_options_test_lab_desc">プロバイダーに依存しない検査と安全なプロトコルフィクスチャがここに表示されます。</string>
     <string name="developer_options_disable_title">開発者向けオプションをオフにしますか？</string>
-    <string name="developer_options_disable_message">アクティブなキャプチャを停止し、一時診断データを消去します。</string>
+    <string name="developer_options_disable_message">これにより、キャプチャが停止し、診断データが削除され、デバッグモデルがオフになります。</string>
     <string name="developer_options_disable_confirm">オフにする</string>
-    <string name="developer_options_capture_on_desc">メタデータイベント %1$d 件 · 破棄 %2$d 件。メッセージ内容は取得されません。</string>
-    <string name="developer_options_capture_stopped_desc">取得を停止しました。保持 %1$d 件 · 破棄 %2$d 件。</string>
-    <string name="developer_options_clear_diagnostics">診断セッションを消去</string>
-    <string name="developer_options_clear_diagnostics_desc">取得を停止し、メモリ内の診断イベントをすべて消去します。</string>
-    <string name="developer_options_timeline_group">メタデータタイムライン</string>
-    <string name="developer_options_timeline_empty">取得を開始して操作を実行すると、ランタイムとHTTPのメタデータが順番に表示されます。</string>
-    <string name="developer_options_payload_capture">プロトコルペイロードの取得</string>
-    <string name="developer_options_payload_capture_desc">サニタイズされたリクエスト、レスポンス、SSEの構造を取得します。モード変更時は新しいセッションを開始します。</string>
-    <string name="developer_options_sensitive_capture">機密内容</string>
-    <string name="developer_options_sensitive_capture_desc">このセッションにメッセージとツールの内容を含めます。認証情報は常に除去されます。</string>
-    <string name="developer_options_sensitive_capture_title">機密内容を取得しますか？</string>
-    <string name="developer_options_sensitive_capture_message">非公開の会話やツールデータを含む可能性がある新しいメモリ内セッションを開始します。取得の停止時またはアプリプロセスの再起動時にオフになります。認証情報は除去されます。</string>
-    <string name="developer_options_sensitive_capture_confirm">機密内容の取得を開始</string>
-    <string name="developer_options_capture_redacted_desc">%1$d 件 · 破棄 %2$d 件。内容を除去したペイロード構造を取得しています。</string>
-    <string name="developer_options_capture_sensitive_desc">%1$d 件 · 破棄 %2$d 件。機密内容を取得中です。認証情報は除去されます。</string>
-    <string name="developer_options_inspector_group">インスペクター</string>
-    <string name="developer_options_inspector">会話インスペクター</string>
-    <string name="developer_options_inspector_empty">会話が選択されていません。検査する前に会話を開いてください。</string>
-    <string name="developer_options_export_group">エクスポート</string>
-    <string name="developer_options_export">診断バンドルをエクスポート</string>
-    <string name="developer_options_export_desc">サイズ制限付きのJSONバンドルを共有します。機密内容は除去され、ファイルが自動アップロードされることはありません。</string>
+    <string name="developer_options_clear_diagnostics">診断セッションを消去しますか？</string>
+    <string name="developer_options_clear_diagnostics_action">診断セッションを消去</string>
     <string name="developer_options_export_share_title">Agora診断バンドルを共有</string>
     <string name="developer_options_export_failed">診断バンドルを作成できませんでした。</string>
     <string name="responses_api">Responses API</string>
@@ -1219,4 +1230,12 @@
     <string name="tool_edit_skill">スキルを編集</string>
     <string name="tool_delete_skill">スキルを削除</string>
     <string name="tool_read_file_truncated">一部の内容を表示 · バイト %1$d から続行</string>
+    <string name="low_context_mode">低コンテキストモード</string>
+    <string name="low_context_mode_default_desc">低コンテキストモードをデフォルトで有効にする</string>
+    <string name="learn_more">詳細...</string>
+    <string name="local_model_limitations_title">ローカルモデルの制限</string>
+    <string name="local_model_limitations_body">ローカルモデルは、モバイル端末で利用できるメモリによって制限されます。コンテキストサイズは主な制約の一つです。コンテキストには通常、システムプロンプト、ツールまたは関数の定義、スキルが含まれます。初期コンテキストの使用量を減らすには、モデル選択の横にある3点メニューを開き、低コンテキストモードを有効にしてください。</string>
+    <string name="delete_conversation_title">会話を削除しますか？</string>
+    <string name="delete_conversation_from_message_confirm">このメッセージを削除すると、会話全体が削除されます。この操作は元に戻せません。</string>
+    <string name="composer_clear_failed">メッセージは送信されましたが、下書きを消去できませんでした。</string>
 </resources>

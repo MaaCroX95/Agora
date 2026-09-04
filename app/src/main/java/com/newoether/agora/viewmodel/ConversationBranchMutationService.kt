@@ -24,15 +24,23 @@ internal class ConversationBranchMutationService(
     private val onMutationSettling: (Long?, String?) -> Unit,
     private val onMutationFailed: (Long?) -> Unit,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val resultDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) {
     fun delete(
         conversationId: String,
         messageId: String,
         state: ConversationGenerationState,
         snapshot: List<ChatMessage>,
+        onResult: ((Boolean) -> Unit)? = null,
     ): Int {
-        if (state.generating.value) return 0
-        if (snapshot.none { it.id == messageId }) return 0
+        if (state.generating.value) {
+            onResult?.invoke(false)
+            return 0
+        }
+        if (snapshot.none { it.id == messageId }) {
+            onResult?.invoke(false)
+            return 0
+        }
         val compactOnly = messageId.startsWith(Constants.COMPACT_MSG_PREFIX)
         val previewIds = if (compactOnly) {
             setOf(messageId)
@@ -79,9 +87,6 @@ internal class ConversationBranchMutationService(
                             messageSelections = previousSelected,
                             runSelections = previousRunSelections,
                         )
-                        val staleList = conversations.getMessagesByIds(
-                            plan.deletedMessageIds.toList(),
-                        )
                         val remainingMessages = topology
                             .filter { it.id !in plan.deletedMessageIds }
                             .map { message -> message.toUiChatMessageStub() }
@@ -96,8 +101,6 @@ internal class ConversationBranchMutationService(
                             )
                         ) { "Message $messageId disappeared during delete" }
 
-                        // Files are external to Room, so remove them only after graph commit.
-                        conversations.deleteMessageFiles(staleList)
                         val remainingPath = ConversationUiState.resolvePath(
                             allMessages = remainingMessages,
                             streamingMsg = null,
@@ -119,6 +122,9 @@ internal class ConversationBranchMutationService(
                 DebugLog.e("AgoraVM", "Failed to delete message branch $messageId", error)
             } finally {
                 if (!committed) onMutationFailed(switchingRequestId)
+                onResult?.let { callback ->
+                    kotlinx.coroutines.withContext(resultDispatcher) { callback(committed) }
+                }
             }
         }
 

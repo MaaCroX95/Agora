@@ -3,6 +3,7 @@ package com.newoether.agora.viewmodel
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.model.AttachmentMeta
 import com.newoether.agora.model.SelectedAttachment
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import java.io.File
 
@@ -13,10 +14,7 @@ internal class AttachmentOrphanSweeper(
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     suspend fun sweep() {
-        val referenced = HashSet<String>()
-        collectMessageReferences(referenced)
-        collectDraftReferences(referenced)
-
+        val referenced = collectReferences()
         val cutoffNow = now()
         deleteOldUnreferencedRootAttachments(referenced, cutoffNow)
         deleteOldUnreferencedFiles(File(filesDirectory, "images"), "camera_", referenced, cutoffNow)
@@ -28,6 +26,27 @@ internal class AttachmentOrphanSweeper(
         }
     }
 
+    suspend fun deleteExact(path: String) {
+        val normalized = normalizePath(path)
+        val root = filesDirectory.canonicalFile
+        val file = File(normalized).canonicalFile
+        require(file != root && file.path.startsWith(root.path + File.separator)) {
+            "Attachment debt is outside app-private storage"
+        }
+        if (normalized in collectReferences()) return
+        check(!file.exists() || file.delete()) { "Unable to delete attachment file $normalized" }
+        val sandboxRoot = File(root, "sandbox-home").canonicalFile
+        val parent = file.parentFile?.canonicalFile
+        if (parent != null && parent != sandboxRoot && parent.path.startsWith(sandboxRoot.path)) {
+            runCatching { parent.takeIf { it.listFiles().isNullOrEmpty() }?.delete() }
+        }
+    }
+
+    private suspend fun collectReferences(): Set<String> = HashSet<String>().also { referenced ->
+        collectMessageReferences(referenced)
+        collectDraftReferences(referenced)
+    }
+
     private suspend fun collectMessageReferences(referenced: MutableSet<String>) {
         var afterMessageId: String? = null
         while (true) {
@@ -36,17 +55,18 @@ internal class AttachmentOrphanSweeper(
                 limit = DATABASE_SCAN_PAGE_SIZE,
             )
             page.forEach { message ->
-                message.images.forEach { referenced.add(it.removePrefix("file://")) }
+                message.images.forEach { referenced.add(normalizePath(it)) }
                 message.attachmentMeta?.let { json ->
                     runCatching { Json.decodeFromString<AttachmentMeta>(json) }.getOrNull()
                         ?.items?.forEach { item ->
                             item.originalUri?.takeIf { it.startsWith("file://") }
-                                ?.let { referenced.add(it.removePrefix("file://")) }
+                                ?.let { referenced.add(normalizePath(it)) }
                         }
                 }
             }
             afterMessageId = page.lastOrNull()?.id
             if (page.size < DATABASE_SCAN_PAGE_SIZE) break
+            yield()
         }
     }
 
@@ -61,22 +81,23 @@ internal class AttachmentOrphanSweeper(
                 runCatching {
                     Json.decodeFromString<List<SelectedAttachment>>(conversation.draftAttachments)
                 }.getOrNull()?.forEach { attachment ->
-                    attachment.localPath?.let { referenced.add(it) }
-                    attachment.processedFrames?.forEach { referenced.add(it) }
-                    attachment.preRenderedPaths?.forEach { referenced.add(it) }
+                    attachment.localPath?.let { referenced.add(normalizePath(it)) }
+                    attachment.processedFrames?.forEach { referenced.add(normalizePath(it)) }
+                    attachment.preRenderedPaths?.forEach { referenced.add(normalizePath(it)) }
                 }
             }
             afterConversationId = page.lastOrNull()?.id
             if (page.size < DATABASE_SCAN_PAGE_SIZE) break
+            yield()
         }
 
         conversations.getNewChatDraftAttachmentReference()?.let { newChat ->
             runCatching {
                 Json.decodeFromString<List<SelectedAttachment>>(newChat.draftAttachments)
             }.getOrNull()?.forEach { attachment ->
-                attachment.localPath?.let { referenced.add(it) }
-                attachment.processedFrames?.forEach { referenced.add(it) }
-                attachment.preRenderedPaths?.forEach { referenced.add(it) }
+                attachment.localPath?.let { referenced.add(normalizePath(it)) }
+                attachment.processedFrames?.forEach { referenced.add(normalizePath(it)) }
+                attachment.preRenderedPaths?.forEach { referenced.add(normalizePath(it)) }
             }
         }
     }
@@ -106,16 +127,21 @@ internal class AttachmentOrphanSweeper(
         }
     }
 
+    private fun normalizePath(path: String): String {
+        val raw = path.removePrefix("file://")
+        return runCatching { File(raw).canonicalPath }.getOrElse { File(raw).absolutePath }
+    }
+
     private fun deleteIfOldAndUnreferenced(
         file: File,
         referenced: Set<String>,
         cutoffNow: Long,
     ) {
         if (
-            file.absolutePath !in referenced &&
+            normalizePath(file.absolutePath) !in referenced &&
             cutoffNow - file.lastModified() > MINIMUM_FILE_AGE_MS
         ) {
-            runCatching { file.delete() }
+            check(!file.exists() || file.delete()) { "Unable to delete attachment file ${file.path}" }
         }
     }
 

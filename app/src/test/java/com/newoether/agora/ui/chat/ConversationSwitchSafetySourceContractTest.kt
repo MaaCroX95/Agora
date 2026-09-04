@@ -71,34 +71,76 @@ class ConversationSwitchSafetySourceContractTest {
     }
 
     @Test
-    fun `pending attachment send waits for switching and uses the new chat draft owner`() {
+    fun `pending attachment send retains its exact composer owner across switching`() {
         val root = locateMainSourceRoot()
         val sendButton = File(
             root,
             "com/newoether/agora/ui/chat/bottombar/ComposerSendButton.kt",
         ).readText()
-        val viewModel = File(
+        val submission = File(
             root,
-            "com/newoether/agora/viewmodel/ChatViewModel.kt",
+            "com/newoether/agora/viewmodel/ConversationComposerSubmissionController.kt",
+        ).readText()
+        val generation = File(
+            root,
+            "com/newoether/agora/viewmodel/MessageGenerationController.kt",
+        ).readText()
+        val drawer = File(
+            root,
+            "com/newoether/agora/ui/chat/ChatDrawerContent.kt",
         ).readText()
 
         assertTrue(
-            "the pending-send effect must restart when switching settles",
+            "attachment membership must freeze at the tap-time owner snapshot",
             sendButton.contains(
-                "LaunchedEffect(composer.pendingSend, anyProcessing, isSwitching)",
+                "attachmentIds = snapshot.attachments.map(SelectedAttachment::localId)",
             ),
         )
         assertTrue(
-            "attachment auto-submit must stay pending while a conversation switch is covered",
-            sendButton.contains(
-                "composer.pendingSend && !anyProcessing && !isSwitching",
-            ),
+            "the waiting barrier must retain and use the exact tap-time owner",
+            submission.contains("composers.freezeSubmission(") &&
+                submission.contains(
+                    "composers.awaitProcessing(request.ownerId, request.attachmentIds.toSet())",
+                ),
         )
         assertTrue(
-            "new-chat mode must select the singleton draft owner before the old id is cleared",
-            Regex(
-                """if \(isNewChatMode\.value\) NEW_CHAT_WORKSPACE_ID\s*else currentConversationId\.value \?: NEW_CHAT_WORKSPACE_ID""",
-            ).containsMatchIn(viewModel),
+            "the exact owner retain and freeze must always release non-cancellably",
+            submission.contains("withContext(NonCancellable)") &&
+                submission.contains("composers.releaseSubmission(request.ownerId, request.id)") &&
+                submission.contains("composers.release(request.ownerId)"),
+        )
+        assertTrue(
+            "target and admission configuration must be captured before attachment waiting",
+            submission.indexOf("val admission = prepare(request.target, frozen)") in
+                0 until submission.indexOf(
+                    "composers.awaitProcessing(request.ownerId, request.attachmentIds.toSet())",
+                ),
+        )
+        assertTrue(
+            "foreground send must route only through the captured target",
+            generation.contains("internal fun captureForegroundSendTarget(") &&
+                generation.contains("genId = target.conversationId") &&
+                generation.contains("proposedRunId = target.runId"),
+        )
+        assertFalse(
+            "foreground send must not retain an entry point that re-reads selection after tap",
+            generation.contains("private suspend fun sendMessageOffMain("),
+        )
+        assertTrue(
+            "drawer Delete must observe the exact conversation submission freeze",
+            drawer.contains(
+                "viewModel.conversationComposerSubmission\n" +
+                    "            .activeOwnerIds\n" +
+                    "            .collectAsState()",
+            ) &&
+                drawer.contains(
+                    "conversation.id !in submittingConversationIds",
+                ) &&
+                drawer.contains("enabled = deleteEnabled"),
+        )
+        assertFalse(
+            "the removed UI attachment owner must not drive submission through pendingSend",
+            sendButton.contains("pendingSend") || submission.contains("pendingSend"),
         )
     }
 
@@ -134,7 +176,7 @@ class ConversationSwitchSafetySourceContractTest {
         }
         assertTrue(
             "active MODEL rows must bypass rollout coloring",
-            Regex("""messageIsStreaming\s*\|\|\s*\(\s*!isRetainedRegenerationExit""")
+            Regex("""messageIsStreaming\s*\|\|\s*\(\s*!isRetainedBranchReplacementExit""")
                 .containsMatchIn(messageList),
         )
         assertTrue(

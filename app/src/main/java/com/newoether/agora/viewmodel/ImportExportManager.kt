@@ -19,9 +19,10 @@ import com.newoether.agora.data.local.RunEntity
 import com.newoether.agora.data.local.migration.LegacyMessageRecord
 import com.newoether.agora.data.local.migration.LegacyRunBackfillPlanner
 import com.newoether.agora.data.repository.ConversationRepository
+import com.newoether.agora.data.repository.ConversationSettingsTransferCoordinator
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
-import com.newoether.agora.ui.settings.ImportStrategy
+import com.newoether.agora.data.DataImporter.ImportStrategy
 import com.newoether.agora.util.SnackbarEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -120,6 +121,7 @@ class ImportExportManager(
     private val settingsManager: SettingsManager,
     private val memoryManager: MemoryManager,
     private val skillManager: SkillManager,
+    private val conversationSettingsTransfers: ConversationSettingsTransferCoordinator,
     private val scope: CoroutineScope,
     private val emitSnackbar: suspend (SnackbarEvent) -> Unit,
     private val onDataChanged: suspend () -> Unit,
@@ -132,6 +134,9 @@ class ImportExportManager(
 
     private val _importProgress = MutableStateFlow<Float?>(null)
     val importProgress: StateFlow<Float?> = _importProgress.asStateFlow()
+
+    private val _importPreviewLoading = MutableStateFlow(false)
+    val importPreviewLoading: StateFlow<Boolean> = _importPreviewLoading.asStateFlow()
 
     private val _importManifest = MutableStateFlow<DataImporter.ImportManifest?>(null)
     val importManifest: StateFlow<DataImporter.ImportManifest?> = _importManifest.asStateFlow()
@@ -160,14 +165,33 @@ class ImportExportManager(
     val gptImportResult: StateFlow<GptChatImporter.ImportResult?> = _gptImportResult.asStateFlow()
 
     fun exportData(uri: Uri, categories: Set<DataExporter.ExportCategory>, includeApiKeys: Boolean) {
+        _exportProgress.value = 0f
         scope.launch(Dispatchers.IO) {
             try {
-                val exporter = DataExporter(app, chatDao, settingsManager, memoryManager, skillManager)
-                exporter.export(uri, categories, includeApiKeys) { progress ->
+                val exporter = DataExporter(
+                    app,
+                    database,
+                    chatDao,
+                    settingsManager,
+                    memoryManager,
+                    skillManager,
+                )
+                val result = exporter.export(uri, categories, includeApiKeys) { progress ->
                     _exportProgress.value = progress
                 }
                 _exportProgress.value = null
-                emitSnackbar(SnackbarEvent(app.getString(R.string.export_success)))
+                emitSnackbar(
+                    SnackbarEvent(
+                        if (result.missingResourceCount > 0) {
+                            app.getString(
+                                R.string.export_success_missing_resources,
+                                result.missingResourceCount,
+                            )
+                        } else {
+                            app.getString(R.string.export_success)
+                        },
+                    ),
+                )
             } catch (e: Exception) {
                 _exportProgress.value = null
                 emitSnackbar(SnackbarEvent(
@@ -178,17 +202,26 @@ class ImportExportManager(
     }
 
     fun previewImport(uri: Uri) {
+        _importPreviewLoading.value = true
+        clearImportState()
         scope.launch(Dispatchers.IO) {
             try {
-                val importer = DataImporter(app, database, chatDao, settingsManager, memoryManager, skillManager)
+                val importer = DataImporter(
+                    app,
+                    database,
+                    chatDao,
+                    settingsManager,
+                    memoryManager,
+                    skillManager,
+                    conversationSettingsTransfers,
+                )
                 val manifest = importer.readManifest(uri)
                 if (manifest == null) {
                     emitSnackbar(SnackbarEvent(app.getString(R.string.import_invalid_file)))
                     return@launch
                 }
                 val preview = importer.preview(uri)
-                if (!preview.hasConversationGraph && preview.memoryCount == 0 &&
-                    preview.systemPromptCount == 0 && !preview.settingsPresent) {
+                if (!preview.hasImportableData) {
                     emitSnackbar(SnackbarEvent(app.getString(R.string.import_no_data)))
                     return@launch
                 }
@@ -196,6 +229,8 @@ class ImportExportManager(
                 _importPreview.value = preview
             } catch (e: Exception) {
                 emitSnackbar(SnackbarEvent(app.getString(R.string.import_failed, e.localizedMessage ?: "")))
+            } finally {
+                _importPreviewLoading.value = false
             }
         }
     }
@@ -298,10 +333,13 @@ class ImportExportManager(
                     ChatEntity(ce.id, ce.title, ce.lastUpdated, ce.selectedBranchesJson, ce.systemPromptId, ce.modelId)
                 }
                 if (strategy == ImportStrategy.REPLACE) {
-                    conversations.deleteAllConversations()
-                    chatEntities.forEach { conversations.upsertConversation(it) }
                     val graph = planImportedLegacyMessages(importData.messages)
-                    conversations.importRunGraph(graph.runs, graph.messages)
+                    conversations.importExternalConversationGraph(
+                        conversations = chatEntities,
+                        runs = graph.runs,
+                        messages = graph.messages,
+                        replace = true,
+                    )
                     _claudeImportProgress.value = 0.8f
                     _claudeImportResult.value = ClaudeChatImporter.ImportResult(chatEntities.size, graph.messages.size)
                 } else {
@@ -309,9 +347,13 @@ class ImportExportManager(
                     val existingMsgIds = conversations.findExistingMessageIds(importData.messages.map { it.id }).toSet()
                     val newCh = chatEntities.filterNot { it.id in existingConvIds }
                     val newMessageDrafts = importData.messages.filterNot { it.id in existingMsgIds }
-                    newCh.forEach { conversations.upsertConversation(it) }
                     val graph = planImportedLegacyMessages(newMessageDrafts)
-                    conversations.importRunGraph(graph.runs, graph.messages)
+                    conversations.importExternalConversationGraph(
+                        conversations = newCh,
+                        runs = graph.runs,
+                        messages = graph.messages,
+                        replace = false,
+                    )
                     _claudeImportProgress.value = 0.8f
                     _claudeImportResult.value = ClaudeChatImporter.ImportResult(newCh.size, graph.messages.size)
                 }
@@ -395,10 +437,13 @@ class ImportExportManager(
                 }
                 val thoughtsCount = importData.messages.count { it.thoughts != null && it.thoughts.isNotBlank() }
                 if (strategy == ImportStrategy.REPLACE) {
-                    conversations.deleteAllConversations()
-                    chatEntities.forEach { conversations.upsertConversation(it) }
                     val graph = planImportedLegacyMessages(importData.messages)
-                    conversations.importRunGraph(graph.runs, graph.messages)
+                    conversations.importExternalConversationGraph(
+                        conversations = chatEntities,
+                        runs = graph.runs,
+                        messages = graph.messages,
+                        replace = true,
+                    )
                     _gptImportProgress.value = 0.8f
                     _gptImportResult.value = GptChatImporter.ImportResult(chatEntities.size, graph.messages.size, thoughtsCount)
                 } else {
@@ -407,9 +452,13 @@ class ImportExportManager(
                     val newCh = chatEntities.filterNot { it.id in existingConvIds }
                     val newMessageDrafts = importData.messages.filterNot { it.id in existingMsgIds }
                     val newThoughtsCount = newMessageDrafts.count { it.thoughts != null && it.thoughts.isNotBlank() }
-                    newCh.forEach { conversations.upsertConversation(it) }
                     val graph = planImportedLegacyMessages(newMessageDrafts)
-                    conversations.importRunGraph(graph.runs, graph.messages)
+                    conversations.importExternalConversationGraph(
+                        conversations = newCh,
+                        runs = graph.runs,
+                        messages = graph.messages,
+                        replace = false,
+                    )
                     _gptImportProgress.value = 0.8f
                     _gptImportResult.value = GptChatImporter.ImportResult(newCh.size, graph.messages.size, newThoughtsCount)
                 }
@@ -426,9 +475,18 @@ class ImportExportManager(
     }
 
     fun importData(uri: Uri, decisions: Map<DataExporter.ExportCategory, DataImporter.ImportStrategy>) {
+        _importProgress.value = 0f
         scope.launch(Dispatchers.IO) {
             try {
-                val importer = DataImporter(app, database, chatDao, settingsManager, memoryManager, skillManager)
+                val importer = DataImporter(
+                    app,
+                    database,
+                    chatDao,
+                    settingsManager,
+                    memoryManager,
+                    skillManager,
+                    conversationSettingsTransfers,
+                )
                 suspend fun performImport() = importer.import(uri, decisions) { progress ->
                     _importProgress.value = progress
                 }

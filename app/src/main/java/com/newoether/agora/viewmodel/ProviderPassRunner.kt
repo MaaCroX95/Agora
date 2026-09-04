@@ -4,6 +4,7 @@ import com.newoether.agora.api.GenerationError
 import com.newoether.agora.api.LlmProvider
 import com.newoether.agora.api.ProviderConfig
 import com.newoether.agora.api.StreamEvent
+import com.newoether.agora.api.util.ProviderStreamNormalizer
 import com.newoether.agora.api.util.safeWireToolCallId
 import com.newoether.agora.api.util.safeWireToolName
 import com.newoether.agora.model.ChatMessage
@@ -65,7 +66,11 @@ internal class ProviderPassRunner(
         val openToolStreams = linkedSetOf<String>()
         var providerError: GenerationError? = null
         var sawEmptyToolBatch = false
-        val thoughtBoundaryNormalizer = ProviderThoughtBoundaryNormalizer()
+        val streamNormalizer = ProviderStreamNormalizer(
+            tools = config.tools,
+            json = json,
+            nativeTextParsingAuthoritative = provider.nativeTextParsingAuthoritative,
+        )
 
         suspend fun acceptEvent(event: StreamEvent) {
             when (event) {
@@ -106,9 +111,9 @@ internal class ProviderPassRunner(
 
         try {
             provider.generateResponse(messages, config).collect { event ->
-                thoughtBoundaryNormalizer.emit(event, ::acceptEvent)
+                streamNormalizer.emit(event, ::acceptEvent)
             }
-            thoughtBoundaryNormalizer.finish(::acceptEvent)
+            streamNormalizer.finish(::acceptEvent)
         } catch (cancelled: CancellationException) {
             return ProviderPassOutcome.Cancelled(identity)
         } catch (consumerFailure: EventConsumerException) {
@@ -120,7 +125,7 @@ internal class ProviderPassRunner(
                 return errorOutcome(identity, error)
             }
             try {
-                thoughtBoundaryNormalizer.finish(::acceptEvent)
+                streamNormalizer.finish(::acceptEvent, releaseTextTools = false)
             } catch (cancelled: CancellationException) {
                 return ProviderPassOutcome.Cancelled(identity)
             } catch (consumerFailure: EventConsumerException) {
@@ -135,7 +140,12 @@ internal class ProviderPassRunner(
             return errorOutcome(identity, error)
         }
 
-        validateCompletedTools(completedCalls, openToolStreams, sawEmptyToolBatch)?.let { error ->
+        validateCompletedTools(
+            completedCalls,
+            openToolStreams,
+            sawEmptyToolBatch,
+            config.tools.orEmpty().map { it.function.name }.toSet(),
+        )?.let { error ->
             onEvent(StreamEvent.Error(error))
             return ProviderPassOutcome.Failed(identity, error)
         }
@@ -151,6 +161,7 @@ internal class ProviderPassRunner(
         calls: List<StreamEvent.ToolCallRequest>,
         openToolStreams: Set<String>,
         sawEmptyToolBatch: Boolean,
+        offeredToolNames: Set<String>,
     ): GenerationError? {
         val invalidCause = when {
             sawEmptyToolBatch -> "Provider returned an empty tool call batch"
@@ -165,6 +176,8 @@ internal class ProviderPassRunner(
                 "Provider returned an invalid tool call id"
             calls.any { !it.name.matches(safeWireToolName) } ->
                 "Provider returned an invalid or incomplete tool name"
+            calls.any { it.name !in offeredToolNames } ->
+                "Provider returned a tool that was not offered in this request"
             calls.any { call ->
                 runCatching {
                     json.parseToJsonElement(call.arguments.ifBlank { "{}" }) is JsonObject

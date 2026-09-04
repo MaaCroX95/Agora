@@ -3,8 +3,10 @@ package com.newoether.agora
 import android.app.Application
 import com.newoether.agora.data.local.ChatDatabase
 import com.newoether.agora.di.AppContainer
+import com.newoether.agora.diagnostics.DeveloperDiagnostics
 import com.newoether.agora.util.CrashReporter
 import com.newoether.agora.util.DebugLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,7 +44,6 @@ class AgoraApplication : Application() {
                     this@AgoraApplication.deleteDatabase(ChatDatabase.DB_NAME)
             }
         },
-        startProcessServices = AppContainer::startProcessServices,
         reportFailure = { error ->
             DebugLog.e(
                 "AgoraApplication",
@@ -59,6 +60,17 @@ class AgoraApplication : Application() {
         super.onCreate()
         CrashReporter.install(this)
         startupScope.launch {
+            try {
+                DeveloperDiagnostics.initialize(noBackupFilesDir, startupScope)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                DebugLog.e(
+                    "AgoraApplication",
+                    "Diagnostic capture initialization failed closed",
+                    error,
+                )
+            }
             startupGate.initialize()
         }
     }

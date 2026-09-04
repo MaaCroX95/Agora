@@ -564,7 +564,7 @@
     <string name="memory_create">Créer</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">Récupération des modèles disponibles...</string>
+    <string name="models_syncing">Synchronisation...</string>
     <string name="snackbar_generating_title">Génération du titre...</string>
     <string name="snackbar_title_generated">Titre généré.</string>
     <string name="snackbar_title_error">Erreur lors de la génération du titre.</string>
@@ -665,6 +665,8 @@
     <string name="auto_cache_title">Mise en cache</string>
     <string name="auto_cache">Mettre en cache automatiquement les nouveaux messages</string>
     <string name="auto_cache_desc">Indexe automatiquement les nouveaux messages avec le modèle d\'embedding sélectionné. Désactivé, les messages ne sont jamais mis en cache jusqu\'à une action manuelle.</string>
+    <string name="show_uncached_notification">Afficher la notification des messages non mis en cache</string>
+    <string name="show_uncached_notification_desc">Affiche un rappel lorsque la mise en cache automatique est désactivée et que des messages ne sont pas mis en cache</string>
     <string name="cache_action">Cache</string>
     <string name="recache_action">Remettre en cache</string>
     <string name="recache_confirm_title">Remettre en cache tous les messages</string>
@@ -825,6 +827,9 @@
     <string name="export_button">Exporter</string>
     <string name="exporting_label">Exportation…</string>
     <string name="export_success">Données exportées avec succès.</string>
+    <string name="attachment_unavailable">Pièce jointe indisponible</string>
+    <string name="export_success_missing_resources">Les données ont été exportées, mais %1$d ressources étaient indisponibles.</string>
+    <string name="auto_backup_missing_resources">La sauvegarde est terminée, mais %1$d ressources étaient indisponibles.</string>
 
     <string name="export_failed">Échec de l\'export : %1$s</string>
     <string name="import_preview_title">Importer les données</string>
@@ -833,9 +838,13 @@
     <string name="import_strategy_merge">Fusionner</string>
     <string name="import_strategy_replace">Remplacer</string>
     <string name="import_strategy_skip">Ignorer</string>
+    <string name="external_import_replace_confirm_title">Remplacer les conversations existantes ?</string>
+    <string name="external_import_replace_confirm_message">Cette action supprime toutes les conversations existantes et conserve uniquement les conversations importées sélectionnées.</string>
+    <string name="external_import_replace_confirm_button">Remplacer les conversations</string>
     <string name="import_api_keys_warning">Cette sauvegarde contient des identifiants et des secrets. Ils seront importés en texte clair. Ne continuez que si vous avez confiance en la source.</string>
     <string name="import_button">Importer</string>
     <string name="importing_label">Importation…</string>
+    <string name="loading_label">Chargement…</string>
     <string name="import_success">Importation terminée : %1$s</string>
     <string name="import_failed">Échec de l\'import : %1$s</string>
     <string name="import_invalid_file">Fichier .agora non valide. Veuillez sélectionner un export valide.</string>
@@ -1130,44 +1139,46 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">Développeur</string>
     <string name="settings_developer">Options pour les développeurs</string>
-    <string name="settings_developer_desc">Diagnostics, inspecteurs de protocole et outils de test</string>
+    <string name="settings_developer_desc">Capture de diagnostic et commandes du modèle Debug local</string>
     <string name="developer_options_title">Options pour les développeurs</string>
-    <string name="developer_options_status_group">État</string>
-    <string name="developer_options_enabled_desc">Activées pour cette installation. Désactivez-les pour arrêter et effacer les diagnostics temporaires.</string>
+    <string name="developer_options_features_group">Fonctionnalités</string>
+    <string name="developer_options_debug_model">Modèle de débogage</string>
+    <string name="developer_options_mode_description">La désactivation arrête la capture, supprime les diagnostics conservés et désactive le modèle Debug.</string>
+    <string name="developer_options_capture_description">Enregistrez les diagnostics de requête, de flux et d\'exécution sans identifiants, puis exportez-les.</string>
+    <string name="developer_options_debug_model_description">Ajoutez le modèle Debug local et déterministe uniquement au sélecteur de modèle du chat.</string>
+    <string name="developer_options_capture_summary">Résumé</string>
+    <string name="developer_options_capture_raw">Brut</string>
+    <string name="developer_options_capture_play">Démarrer ou reprendre la capture</string>
+    <string name="developer_options_capture_pause">Suspendre la capture</string>
+    <string name="developer_options_capture_scroll_to_top">Faire défiler vers le haut</string>
+    <string name="developer_options_capture_scroll_to_bottom">Faire défiler vers le bas</string>
+    <string name="developer_options_capture_more_actions">Actions de capture</string>
+    <string name="developer_options_capture_clear_message">Effacer les événements et compteurs capturés ? L\'état de capture et la session seront conservés.</string>
+    <string name="developer_options_capture_clear_confirm">Effacer</string>
+    <string name="developer_options_capture_export_redacted_json">Exporter le JSON expurgé</string>
+    <string name="developer_options_capture_export_summary_text">Exporter le résumé texte</string>
+    <string name="developer_options_capture_empty">Aucun événement capturé</string>
+    <string name="developer_options_capture_state_idle">Inactive</string>
+    <string name="developer_options_capture_state_running">En cours</string>
+    <string name="developer_options_capture_state_paused">En pause</string>
+    <string name="developer_options_capture_status_summary">%1$s · %2$d événements · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">Capture incomplète · limite de 64 Mio atteinte</string>
+    <string name="developer_options_capture_counters">Ignorés %1$d · Évincés %2$d · Tronqués %3$d</string>
+    <string name="developer_options_capture_session">Session %1$s · prochain nº %2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · caractères du corps=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">Réponse HTTP · code=%1$d · caractères=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">Ligne réseau %1$d · caractères=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">%1$s analysé</string>
     <string name="developer_options_taps_remaining">Appuyez encore %1$d fois pour activer les options pour les développeurs.</string>
     <string name="developer_options_enabled_message">Les options pour les développeurs sont activées.</string>
     <string name="developer_options_already_enabled_message">Les options pour les développeurs sont déjà activées.</string>
-    <string name="developer_options_capture_group">Diagnostics</string>
     <string name="developer_options_capture">Capture des diagnostics</string>
-    <string name="developer_options_capture_off_desc">Aucune session de diagnostic n’est active. La capture reste désactivée jusqu’à son démarrage explicite.</string>
 
-    <string name="developer_options_test_lab_group">Tests</string>
-    <string name="developer_options_test_lab">Laboratoire de test</string>
-    <string name="developer_options_test_lab_desc">Les vérifications indépendantes du fournisseur et les scénarios de protocole sûrs apparaîtront ici.</string>
     <string name="developer_options_disable_title">Désactiver les options pour les développeurs ?</string>
-    <string name="developer_options_disable_message">Cela arrête la capture active et efface les données de diagnostic temporaires.</string>
+    <string name="developer_options_disable_message">Cela arrête la capture, supprime les données de diagnostic et désactive le modèle de débogage.</string>
     <string name="developer_options_disable_confirm">Désactiver</string>
-    <string name="developer_options_capture_on_desc">%1$d événements de métadonnées · %2$d ignorés. Le contenu des messages n’est pas capturé.</string>
-    <string name="developer_options_capture_stopped_desc">Capture arrêtée. %1$d événements conservés · %2$d ignorés.</string>
-    <string name="developer_options_clear_diagnostics">Effacer la session de diagnostic</string>
-    <string name="developer_options_clear_diagnostics_desc">Arrête la capture et efface tous les événements de diagnostic en mémoire.</string>
-    <string name="developer_options_timeline_group">Chronologie des métadonnées</string>
-    <string name="developer_options_timeline_empty">Démarrez la capture, puis exécutez une opération pour afficher les métadonnées d’exécution et HTTP dans l’ordre.</string>
-    <string name="developer_options_payload_capture">Capture des charges du protocole</string>
-    <string name="developer_options_payload_capture_desc">Capture les structures assainies des requêtes, réponses et SSE. Changer de mode démarre une nouvelle session.</string>
-    <string name="developer_options_sensitive_capture">Contenu sensible</string>
-    <string name="developer_options_sensitive_capture_desc">Inclut le contenu des messages et des outils dans cette session. Les identifiants restent toujours masqués.</string>
-    <string name="developer_options_sensitive_capture_title">Capturer le contenu sensible ?</string>
-    <string name="developer_options_sensitive_capture_message">Cela démarre une nouvelle session en mémoire pouvant contenir des données privées de conversation et d’outil. Elle est désactivée à l’arrêt de la capture ou au redémarrage du processus de l’application. Les identifiants restent masqués.</string>
-    <string name="developer_options_sensitive_capture_confirm">Démarrer la capture sensible</string>
-    <string name="developer_options_capture_redacted_desc">%1$d événements · %2$d ignorés. La structure des charges est capturée avec le contenu masqué.</string>
-    <string name="developer_options_capture_sensitive_desc">%1$d événements · %2$d ignorés. Le contenu sensible est capturé ; les identifiants restent masqués.</string>
-    <string name="developer_options_inspector_group">Inspecteurs</string>
-    <string name="developer_options_inspector">Inspecteur de conversation</string>
-    <string name="developer_options_inspector_empty">Aucune conversation n’est sélectionnée. Ouvrez-en une avant de l’inspecter.</string>
-    <string name="developer_options_export_group">Exportation</string>
-    <string name="developer_options_export">Exporter le paquet de diagnostic</string>
-    <string name="developer_options_export_desc">Partage un paquet JSON limité. Le contenu sensible est masqué et le fichier n’est jamais téléversé automatiquement.</string>
+    <string name="developer_options_clear_diagnostics">Effacer la session de diagnostic ?</string>
+    <string name="developer_options_clear_diagnostics_action">Effacer la session de diagnostic</string>
     <string name="developer_options_export_share_title">Partager le paquet de diagnostic Agora</string>
     <string name="developer_options_export_failed">Impossible de créer le paquet de diagnostic.</string>
     <string name="responses_api">Responses API</string>
@@ -1219,4 +1230,12 @@
     <string name="tool_edit_skill">Modifier la compétence</string>
     <string name="tool_delete_skill">Supprimer la compétence</string>
     <string name="tool_read_file_truncated">Contenu partiel affiché · continuer à l’octet %1$d</string>
+    <string name="low_context_mode">Mode à faible contexte</string>
+    <string name="low_context_mode_default_desc">Activer le mode à faible contexte par défaut</string>
+    <string name="learn_more">En savoir plus...</string>
+    <string name="local_model_limitations_title">Limites des modèles locaux</string>
+    <string name="local_model_limitations_body">Les modèles locaux sont limités par la mémoire disponible sur les appareils mobiles. La taille du contexte est l’une des principales contraintes. Le contexte comprend souvent le prompt système, les définitions d’outils ou de fonctions et les compétences. Pour réduire l’utilisation initiale du contexte, ouvrez le menu à trois points près du sélecteur de modèle et activez le mode à faible contexte.</string>
+    <string name="delete_conversation_title">Supprimer la conversation ?</string>
+    <string name="delete_conversation_from_message_confirm">La suppression de ce message supprimera toute la conversation. Cette action est irréversible.</string>
+    <string name="composer_clear_failed">Le message a été envoyé, mais le brouillon n’a pas pu être effacé.</string>
 </resources>

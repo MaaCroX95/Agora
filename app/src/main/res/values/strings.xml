@@ -608,7 +608,7 @@
     <string name="memory_create">Create</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">Fetching available models...</string>
+    <string name="models_syncing">Syncing...</string>
     <string name="snackbar_generating_title">Generating title...</string>
     <string name="snackbar_title_generated">Title generated.</string>
     <string name="snackbar_title_error">Error encountered when generating title.</string>
@@ -718,6 +718,8 @@
     <string name="auto_cache_title">Caching</string>
     <string name="auto_cache">Auto-Cache New Messages</string>
     <string name="auto_cache_desc">Automatically index new messages with the selected embedding model. When off, messages are never cached until manually triggered.</string>
+    <string name="show_uncached_notification">Show Uncached Notification</string>
+    <string name="show_uncached_notification_desc">Show a reminder when automatic caching is off and messages remain uncached</string>
     <string name="cache_action">Cache</string>
     <string name="recache_action">Re-cache</string>
     <string name="recache_confirm_title">Re-cache All Messages</string>
@@ -779,6 +781,8 @@
     <string name="delete_chat_confirm">Are you sure you want to delete this conversation? This action cannot be undone.</string>
     <string name="delete_message_title">Delete Message?</string>
     <string name="delete_message_confirm">This message and all follow-up replies will be permanently removed.</string>
+    <string name="delete_conversation_title">Delete Conversation?</string>
+    <string name="delete_conversation_from_message_confirm">Deleting this message will remove the entire conversation. This action cannot be undone.</string>
     <string name="delete_compact_message_title">Delete compact message?</string>
     <string name="delete_compact_message_confirm">Only this compact message will be deleted.</string>
     <string name="recompact">Recompact</string>
@@ -789,6 +793,8 @@
     <!-- Local Chat Provider -->
     <string name="local_chat_models">Local Chat Models</string>
     <string name="local_models_title">Local Models</string>
+    <string name="low_context_mode">Low Context Mode</string>
+    <string name="low_context_mode_default_desc">Enable Low Context Mode by default</string>
     <string name="local_model_idle_retention">Model Idle Retention</string>
     <string name="local_model_idle_retention_desc">How long to keep an idle local model in memory before unloading it</string>
     <string name="local_model_idle_retention_immediate">Immediate</string>
@@ -880,6 +886,9 @@
     <string name="export_button">Export</string>
     <string name="exporting_label">Exporting…</string>
     <string name="export_success">Data exported successfully.</string>
+    <string name="attachment_unavailable">Attachment unavailable</string>
+    <string name="export_success_missing_resources">Data exported successfully, but %1$d resources were unavailable.</string>
+    <string name="auto_backup_missing_resources">Backup completed, but %1$d resources were unavailable.</string>
 
     <string name="export_failed">Export failed: %1$s</string>
     <string name="import_preview_title">Import Data</string>
@@ -888,9 +897,13 @@
     <string name="import_strategy_merge">Merge</string>
     <string name="import_strategy_replace">Replace</string>
     <string name="import_strategy_skip">Skip</string>
+    <string name="external_import_replace_confirm_title">Replace Existing Conversations?</string>
+    <string name="external_import_replace_confirm_message">This deletes all existing conversations and keeps only the selected imported conversations.</string>
+    <string name="external_import_replace_confirm_button">Replace Conversations</string>
     <string name="import_api_keys_warning">This export contains credentials and secrets in plain text. Only proceed if you trust the source.</string>
     <string name="import_button">Import</string>
     <string name="importing_label">Importing…</string>
+    <string name="loading_label">Loading…</string>
     <string name="import_success">Import complete: %1$s</string>
     <string name="import_failed">Import failed: %1$s</string>
     <string name="import_invalid_file">Invalid .agora file. Please select a valid export.</string>
@@ -964,6 +977,7 @@
     <string name="all_messages_cached">All %1$d messages cached.</string>
     <string name="cached_partial_failed">Cached %1$d of %2$d. %3$d failed.</string>
     <string name="retry">Retry</string>
+    <string name="composer_clear_failed">Message sent, but the draft could not be cleared.</string>
     <string name="parse_error">Parse error</string>
     <string name="unknown_error">Unknown error</string>
     <string name="could_not_read_file">Could not read file</string>
@@ -1132,44 +1146,46 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">Developer</string>
     <string name="settings_developer">Developer Options</string>
-    <string name="settings_developer_desc">Diagnostics, protocol inspectors, and test tools</string>
+    <string name="settings_developer_desc">Diagnostic capture and local Debug Model controls</string>
     <string name="developer_options_title">Developer Options</string>
-    <string name="developer_options_status_group">Status</string>
-    <string name="developer_options_enabled_desc">Enabled for this installation. Turn it off to stop and clear temporary diagnostics.</string>
+    <string name="developer_options_features_group">Features</string>
+    <string name="developer_options_debug_model">Debug Model</string>
+    <string name="developer_options_mode_description">Turning this off stops capture, deletes retained diagnostics, and disables Debug Model.</string>
+    <string name="developer_options_capture_description">Record credential-sanitized request, stream, and runtime diagnostics, then export them.</string>
+    <string name="developer_options_debug_model_description">Add the local deterministic Debug model only to the Chat model picker.</string>
+    <string name="developer_options_capture_summary">Summary</string>
+    <string name="developer_options_capture_raw">Raw</string>
+    <string name="developer_options_capture_play">Start or resume capture</string>
+    <string name="developer_options_capture_pause">Pause capture</string>
+    <string name="developer_options_capture_scroll_to_top">Scroll to Top</string>
+    <string name="developer_options_capture_scroll_to_bottom">Scroll to Bottom</string>
+    <string name="developer_options_capture_more_actions">Capture actions</string>
+    <string name="developer_options_capture_clear_message">Clear captured events and counters? Capture state and session will be preserved.</string>
+    <string name="developer_options_capture_clear_confirm">Clear</string>
+    <string name="developer_options_capture_export_redacted_json">Export Redacted JSON</string>
+    <string name="developer_options_capture_export_summary_text">Export Summary Text</string>
+    <string name="developer_options_capture_empty">No captured events</string>
+    <string name="developer_options_capture_state_idle">Idle</string>
+    <string name="developer_options_capture_state_running">Running</string>
+    <string name="developer_options_capture_state_paused">Paused</string>
+    <string name="developer_options_capture_status_summary">%1$s · %2$d events · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">Capture incomplete · 64 MiB limit reached</string>
+    <string name="developer_options_capture_counters">Dropped %1$d · Evicted %2$d · Truncated %3$d</string>
+    <string name="developer_options_capture_session">Session %1$s · next #%2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · body chars=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">HTTP response · code=%1$d · chars=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">Wire line %1$d · chars=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">Parsed %1$s</string>
     <string name="developer_options_taps_remaining">%1$d more taps to enable developer options.</string>
     <string name="developer_options_enabled_message">Developer options are now enabled.</string>
     <string name="developer_options_already_enabled_message">Developer options are already enabled.</string>
-    <string name="developer_options_capture_group">Diagnostics</string>
     <string name="developer_options_capture">Diagnostic Capture</string>
-    <string name="developer_options_capture_off_desc">No diagnostic session is active. Capture remains off until explicitly started.</string>
 
-    <string name="developer_options_test_lab_group">Testing</string>
-    <string name="developer_options_test_lab">Test Lab</string>
-    <string name="developer_options_test_lab_desc">Provider-agnostic checks and safe protocol fixtures will appear here.</string>
     <string name="developer_options_disable_title">Turn Off Developer Options?</string>
-    <string name="developer_options_disable_message">This stops active capture and clears temporary diagnostic data.</string>
+    <string name="developer_options_disable_message">This stops capture, deletes diagnostic data, and turns off Debug Model.</string>
     <string name="developer_options_disable_confirm">Turn off</string>
-    <string name="developer_options_capture_on_desc">%1$d metadata events · %2$d dropped. Message content is not captured.</string>
-    <string name="developer_options_capture_stopped_desc">Capture stopped. %1$d events retained · %2$d dropped.</string>
-    <string name="developer_options_clear_diagnostics">Clear Diagnostic Session</string>
-    <string name="developer_options_clear_diagnostics_desc">Stops capture and clears all in-memory diagnostic events.</string>
-    <string name="developer_options_timeline_group">Metadata Timeline</string>
-    <string name="developer_options_timeline_empty">Start capture, then run an operation to see ordered runtime and HTTP metadata.</string>
-    <string name="developer_options_payload_capture">Protocol Payload Capture</string>
-    <string name="developer_options_payload_capture_desc">Capture sanitized request, response, and SSE payload structures. Changing mode starts a new session.</string>
-    <string name="developer_options_sensitive_capture">Sensitive Content</string>
-    <string name="developer_options_sensitive_capture_desc">Include message and tool content in this session. Credentials are still always redacted.</string>
-    <string name="developer_options_sensitive_capture_title">Capture Sensitive Content?</string>
-    <string name="developer_options_sensitive_capture_message">This starts a new in-memory session that may contain private conversation and tool data. It resets to off when capture stops or the app process restarts. Credentials remain redacted.</string>
-    <string name="developer_options_sensitive_capture_confirm">Start sensitive capture</string>
-    <string name="developer_options_capture_redacted_desc">%1$d events · %2$d dropped. Payload structure is captured with content redacted.</string>
-    <string name="developer_options_capture_sensitive_desc">%1$d events · %2$d dropped. Sensitive content is being captured; credentials remain redacted.</string>
-    <string name="developer_options_inspector_group">Inspectors</string>
-    <string name="developer_options_inspector">Conversation Inspector</string>
-    <string name="developer_options_inspector_empty">No conversation is selected. Open a conversation before inspecting it.</string>
-    <string name="developer_options_export_group">Export</string>
-    <string name="developer_options_export">Export Diagnostic Bundle</string>
-    <string name="developer_options_export_desc">Share a bounded JSON bundle. Sensitive content is redacted, and the file is never uploaded automatically.</string>
+    <string name="developer_options_clear_diagnostics">Clear Diagnostic Session?</string>
+    <string name="developer_options_clear_diagnostics_action">Clear Diagnostic Session</string>
     <string name="developer_options_export_share_title">Share Agora Diagnostic Bundle</string>
     <string name="developer_options_export_failed">Could not create the diagnostic bundle.</string>
     <string name="responses_api">Responses API</string>
@@ -1220,4 +1236,7 @@
     <string name="tool_create_skill">Create skill</string>
     <string name="tool_edit_skill">Edit skill</string>
     <string name="tool_delete_skill">Delete skill</string>
+    <string name="learn_more">Learn more...</string>
+    <string name="local_model_limitations_title">Limitations of Local Models</string>
+    <string name="local_model_limitations_body">Local models are limited by the memory available on mobile devices. Context size is one of the main constraints. Context often includes the system prompt, tool or function definitions, and skills. To reduce initial context use, open the three-dot menu beside the model selector and enable Low Context Mode.</string>
 </resources>

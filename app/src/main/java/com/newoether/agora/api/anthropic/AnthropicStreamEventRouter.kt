@@ -73,10 +73,12 @@ internal class AnthropicStreamEventRouter {
             "message_start" -> {
                 event.message?.usage?.let { usage ->
                     inputTokens = usage.inputTokens?.coerceAtLeast(0) ?: inputTokens
-                    cacheCreationInputTokens =
-                        usage.cacheCreationInputTokens?.coerceAtLeast(0) ?: 0
-                    cacheReadInputTokens =
-                        usage.cacheReadInputTokens?.coerceAtLeast(0) ?: 0
+                    cacheCreationInputTokens = usage.cacheCreationInputTokens
+                        ?.coerceAtLeast(0)
+                        ?: cacheCreationInputTokens
+                    cacheReadInputTokens = usage.cacheReadInputTokens
+                        ?.coerceAtLeast(0)
+                        ?: cacheReadInputTokens
                 }
             }
 
@@ -96,9 +98,10 @@ internal class AnthropicStreamEventRouter {
                     }
 
                     "thinking" -> {
-                        thinkingSignatures[index] = block.signature
-                        block.thinking?.takeIf(String::isNotEmpty)?.let {
-                            add(StreamEvent.ThoughtChunk(it, signature = block.signature))
+                        val signature = block.signature?.takeIf(String::isNotBlank)
+                        signature?.let { thinkingSignatures[index] = it }
+                        block.thinking?.takeIf(String::isNotBlank)?.let {
+                            add(StreamEvent.ThoughtChunk(it, signature = signature))
                         }
                     }
 
@@ -108,10 +111,11 @@ internal class AnthropicStreamEventRouter {
                             ?.takeUnless { it.isEmpty() }
                             ?.toString()
                             .orEmpty()
+                        val id = block.id?.takeIf(String::isNotBlank)
                         val tool = ToolBlock(
-                            streamKey = block.id ?: "call_stream_${java.util.UUID.randomUUID()}",
-                            id = block.id,
-                            name = block.name.orEmpty(),
+                            streamKey = id ?: "call_stream_${java.util.UUID.randomUUID()}",
+                            id = id,
+                            name = block.name?.takeIf(String::isNotBlank).orEmpty(),
                             arguments = ToolArgumentAccumulator(initialArguments),
                         )
                         toolBlocks[index] = tool
@@ -140,7 +144,7 @@ internal class AnthropicStreamEventRouter {
                     }
 
                     "thinking_delta" -> {
-                        delta.thinking?.takeIf(String::isNotEmpty)?.let {
+                        delta.thinking?.takeIf(String::isNotBlank)?.let {
                             add(
                                 StreamEvent.ThoughtChunk(
                                     thought = it,

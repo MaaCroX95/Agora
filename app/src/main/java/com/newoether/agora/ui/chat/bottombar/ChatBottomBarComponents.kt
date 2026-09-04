@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -51,6 +52,7 @@ fun Modifier.verticalScrollbar(
 internal fun NativeSearchMenuItem(
     checked: Boolean,
     provider: String,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     DropdownMenuItem(
@@ -59,7 +61,7 @@ internal fun NativeSearchMenuItem(
                 Icon(
                     painter = painterResource(R.drawable.provider_openai),
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = LocalContentColor.current,
                     modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp),
                 )
                 Spacer(modifier = Modifier.width(12.dp))
@@ -72,9 +74,11 @@ internal fun NativeSearchMenuItem(
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
+                enabled = enabled,
                 modifier = Modifier.scale(0.7f),
             )
         },
+        enabled = enabled,
         onClick = { onCheckedChange(!checked) },
     )
 }

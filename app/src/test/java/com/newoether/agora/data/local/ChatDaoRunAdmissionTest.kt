@@ -8,13 +8,57 @@ import io.mockk.coEvery
 import io.mockk.coVerifyOrder
 import io.mockk.just
 import io.mockk.mockk
+import java.io.File
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatDaoRunAdmissionTest {
     @Test
-    fun runGraphAdmissionWritesSelectedModelInTheSameTransactionBoundary() = runTest {
+    fun selectionOnlyQueriesNeverWriteConversationRecency() {
+        val dao = sourceFile("app/src/main/java/com/newoether/agora/data/local/ChatContextCompactDao.kt")
+            .replace("\r\n", "\n")
+        listOf(
+            "suspend fun updateMessageBranchSelections(",
+            "suspend fun updateRunBranchSelections(",
+            "suspend fun updateBranchSelections(",
+        ).forEach { declaration ->
+            val query = dao.substringBefore(declaration).substringAfterLast("@Query(")
+            assertFalse(query.contains("lastUpdated"))
+        }
+        val deletionQuery = dao.substringBefore("suspend fun updateSelectionsForRunDeletion(")
+            .substringAfterLast("@Query(")
+        assertTrue(deletionQuery.contains("lastUpdated = :at"))
+    }
+
+    @Test
+    fun automationAdmissionsNeverTouchConversationRecency() {
+        val taskEngine = sourceFile(
+            "app/src/main/java/com/newoether/agora/automation/TaskExecutionEngine.kt",
+        ).replace("\r\n", "\n")
+        val generationController = sourceFile(
+            "app/src/main/java/com/newoether/agora/viewmodel/MessageGenerationController.kt",
+        ).replace("\r\n", "\n")
+        val automationSend = generationController
+            .substringAfter("internal suspend fun sendMessageFromAutomationAwaitingCompletion(")
+            .substringBefore("private fun scheduleAutomaticCompactContinuation(")
+        val automaticContinuation = generationController
+            .substringAfter("private fun scheduleAutomaticCompactContinuation(")
+            .substringBefore("fun generateTitle(")
+
+        assertEquals(
+            2,
+            Regex("touchConversationOnAdmission = false").findAll(taskEngine).count(),
+        )
+        assertFalse(taskEngine.contains("touchConversationOnAdmission = true"))
+        assertTrue(automationSend.contains("touchConversationOnAdmission = false"))
+        assertTrue(automaticContinuation.contains("touchConversationOnAdmission = false"))
+    }
+
+    @Test
+    fun runGraphAdmissionWritesSelectedModelAndHonorsTimestampTouchPolicy() = runTest {
         val dao = mockk<ChatDao>()
         val conversation = ChatEntity(
             id = "conversation",
@@ -41,8 +85,9 @@ class ChatDaoRunAdmissionTest {
             runId = run.id,
             runSequence = 0,
         )
+        val touchPolicies = mutableListOf<Boolean>()
         coEvery {
-            dao.createRunWithMessages(any(), any(), any(), any(), any())
+            dao.createRunWithMessages(any(), any(), any(), any(), any(), any())
         } coAnswers { callOriginal() }
         coEvery { dao.getConversation(conversation.id) } returns conversation
         coEvery { dao.getLiveRun(conversation.id) } returns null
@@ -54,7 +99,8 @@ class ChatDaoRunAdmissionTest {
                 selectedBranchesJson = any(),
                 selectedRunBranchesJson = any(),
                 modelId = "provider:new",
-                at = 10L,
+                at = any(),
+                touchConversationOnAdmission = capture(touchPolicies),
             )
         } returns 1
 
@@ -64,9 +110,20 @@ class ChatDaoRunAdmissionTest {
             messageSelectionUpdates = mapOf(null to message.id),
             conversationModelId = "provider:new",
             at = 10L,
+            touchConversationOnAdmission = true,
+        )
+        val preserved = dao.createRunWithMessages(
+            run = run,
+            messages = listOf(message),
+            messageSelectionUpdates = mapOf(null to message.id),
+            conversationModelId = "provider:new",
+            at = 11L,
+            touchConversationOnAdmission = false,
         )
 
         assertEquals(listOf(message), result.messages)
+        assertEquals(listOf(message), preserved.messages)
+        assertEquals(listOf(true, false), touchPolicies)
         coVerifyOrder {
             dao.insertRun(run)
             dao.insertMessage(message)
@@ -76,7 +133,27 @@ class ChatDaoRunAdmissionTest {
                 selectedRunBranchesJson = any(),
                 modelId = "provider:new",
                 at = 10L,
+                touchConversationOnAdmission = true,
+            )
+            dao.insertRun(run)
+            dao.insertMessage(message)
+            dao.updateConversationForRunAdmission(
+                conversationId = conversation.id,
+                selectedBranchesJson = any(),
+                selectedRunBranchesJson = any(),
+                modelId = "provider:new",
+                at = 11L,
+                touchConversationOnAdmission = false,
             )
         }
+    }
+
+    private fun sourceFile(relativePath: String): String {
+        var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
+        repeat(8) {
+            File(directory, relativePath).takeIf(File::isFile)?.let { return it.readText() }
+            directory = directory.parentFile ?: error("Reached filesystem root")
+        }
+        error("Unable to locate $relativePath")
     }
 }

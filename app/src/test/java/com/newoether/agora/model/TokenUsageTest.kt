@@ -43,6 +43,62 @@ class TokenUsageTest {
     }
 
     @Test
+    fun everyReportedCategoryAddsAcrossToolCallProviderRequests() {
+        val accumulator = RequestTokenUsageAccumulator()
+
+        accumulator.beginRequest()
+        accumulator.observeRequestSnapshot(
+            TokenUsage(
+                totalTokenCount = 30,
+                inputTokenCount = 20,
+                cachedInputTokenCount = 8,
+                cacheWriteInputTokenCount = 3,
+                uncachedInputTokenCount = 12,
+                outputTokenCount = 10,
+                reasoningTokenCount = 4,
+            ),
+        )
+        accumulator.observeRequestSnapshot(
+            TokenUsage(
+                totalTokenCount = 36,
+                inputTokenCount = 24,
+                cachedInputTokenCount = 10,
+                cacheWriteInputTokenCount = 4,
+                uncachedInputTokenCount = 14,
+                outputTokenCount = 12,
+                reasoningTokenCount = 5,
+            ),
+        )
+        accumulator.finishRequest()
+        accumulator.beginRequest()
+        accumulator.observeRequestSnapshot(
+            TokenUsage(
+                totalTokenCount = 18,
+                inputTokenCount = 13,
+                cachedInputTokenCount = 6,
+                cacheWriteInputTokenCount = 2,
+                uncachedInputTokenCount = 7,
+                outputTokenCount = 5,
+                reasoningTokenCount = 1,
+            ),
+        )
+        accumulator.finishRequest()
+
+        assertEquals(
+            TokenUsage(
+                totalTokenCount = 54,
+                inputTokenCount = 37,
+                cachedInputTokenCount = 16,
+                cacheWriteInputTokenCount = 6,
+                uncachedInputTokenCount = 21,
+                outputTokenCount = 17,
+                reasoningTokenCount = 6,
+            ),
+            accumulator.snapshot(),
+        )
+    }
+
+    @Test
     fun cacheWriteTokensAddAcrossCompletedRequests() {
         val accumulator = RequestTokenUsageAccumulator()
 

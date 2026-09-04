@@ -8,7 +8,7 @@ import org.junit.Test
 
 class ApprovedFeatureSourceContractTest {
     @Test
-    fun cacheCountsAreEagerCoalescedAndAggregated() {
+    fun cacheCountsAreRetainedPresentationAndLedgerOwnsActions() {
         val root = sourceRoot()
         val rag = source(root, "com/newoether/agora/viewmodel/RagManager.kt")
         val settings = source(root, "com/newoether/agora/ui/settings/SettingsSearchPage.kt")
@@ -16,54 +16,44 @@ class ApprovedFeatureSourceContractTest {
         val entities = source(root, "com/newoether/agora/data/local/ChatEntities.kt")
         val database = source(root, "com/newoether/agora/data/local/ChatDatabase.kt")
 
-        assertTrue(rag.contains("init {\n        loadCacheCounts()"))
-        assertTrue(rag.contains("cacheCountRefreshJob?.isActive == true"))
-        assertTrue(rag.contains("getEmbeddingCountsByModels(modelIds)"))
-        assertFalse(
-            rag.substringAfter("private suspend fun refreshCacheCounts")
-                .substringBefore("// ── Embedding-model CRUD")
-                .contains("getEmbeddingCountByModel"),
-        )
-        val cacheLoader = rag.substringAfter("fun loadCacheCounts()")
-            .substringBefore("@Synchronized\n    private fun clearCacheCountRefreshJob")
+        assertFalse(rag.contains("init {\n        loadCacheCounts()"))
+        assertTrue(rag.contains("fun startPostList()"))
+        assertTrue(rag.contains("pendingRefreshModels = models"))
+        assertTrue(rag.contains("getEmbeddingCountsByModels(configuredIds.toList())"))
+        assertTrue(rag.contains("getSemanticLedgers(configuredIds.toList())"))
+        assertTrue(rag.contains("getOrAdmitSemanticLedgerState"))
+        assertTrue(rag.contains("getWorkInfosForUniqueWorkFlow("))
+        assertTrue(rag.contains("EmbeddingCacheWorker.schedule(modelId, workManager)"))
+        assertFalse(rag.contains("cacheJobs"))
+        assertFalse(rag.contains("runCacheLoop"))
+        assertFalse(rag.contains("ExistingWorkPolicy.REPLACE"))
+        assertFalse(rag.contains("_cachingProgress"))
+
+        assertTrue(settings.contains("viewModel.ragManager.cachingModels.collectAsState()"))
+        assertTrue(settings.contains("viewModel.ragManager.cacheCountLoading.collectAsState()"))
+        assertTrue(settings.contains("viewModel.ragManager.cacheCountFailures.collectAsState()"))
+        assertTrue(settings.contains("viewModel.ragManager.ledgerStates.collectAsState()"))
         assertTrue(settings.contains("LaunchedEffect(Unit) { viewModel.ragManager.loadCacheCounts() }"))
-        assertTrue(cacheLoader.contains("getWorkInfosForUniqueWorkFlow(workName).first"))
-        assertTrue(cacheLoader.contains("observedActiveWorker"))
-        assertTrue(cacheLoader.contains("cacheJobs[model.id]?.isActive != true"))
-        assertTrue(cacheLoader.contains("EmbeddingCacheWorker.KEY_CACHED"))
-        assertTrue(cacheLoader.contains("EmbeddingCacheWorker.KEY_TOTAL"))
-        assertTrue(cacheLoader.contains("_cachingProgress.update { it - model.id }"))
-        assertTrue(cacheLoader.contains("refreshCacheCounts()"))
-        val cacheRunner = rag.substringAfter("fun cacheMessagesForModel")
-            .substringBefore("/** The cache loop proper")
-        assertTrue(cacheRunner.contains("_cachingProgress.value.containsKey(modelId)"))
-        assertTrue(
-            cacheRunner.indexOf("refreshCacheCounts()") <
-                cacheRunner.indexOf("_cachingProgress.update { it - modelId }"),
-        )
-        val cacheLoop = rag.substringAfter("private suspend fun runCacheLoop")
-            .substringBefore("// ── Single-message indexing")
-        assertTrue(
-            cacheLoop.contains("_cacheCounts.update { it + (modelId to (cached to total)) }"),
-        )
-        assertFalse(cacheLoop.contains("_cachingProgress.update { it - modelId }"))
-        val modelRow = settings.substringAfter("val allCached =")
-            .substringBefore("modifier = Modifier.clickable { viewModel.ragManager.setActiveEmbeddingModel")
-        assertTrue(modelRow.contains("if (isCaching)"))
-        assertFalse(modelRow.contains("if (!isCaching)"))
-        assertTrue(modelRow.contains("} else {\n                                                TextButton"))
-        assertTrue(modelRow.contains("strokeWidth = 3.dp"))
-        assertFalse(modelRow.contains("strokeWidth = 2.dp"))
-        assertTrue(settings.contains(
-            "CircularProgressIndicator(modifier = Modifier.size(24.dp).padding(start = 16.dp), strokeWidth = 2.dp)",
-        ))
+        assertTrue(settings.contains("SemanticIndexLedgerEntity.STATE_CURRENT"))
+        assertTrue(settings.contains("stringResource(R.string.loading_label)"))
+        assertTrue(settings.contains("stringResource(R.string.tool_state_failed)"))
+        assertTrue(settings.contains("onClick = viewModel.ragManager::loadCacheCounts"))
+        assertTrue(settings.split("animationSpec = tween(250)").size - 1 >= 2)
+        assertTrue(settings.contains("modifier = Modifier.size(24.dp)"))
+        assertTrue(settings.contains("viewModel.ragManager.setAutoCacheEnabled"))
+        assertFalse(settings.contains("cachingProgress"))
+        assertFalse(settings.contains("val allCached ="))
+
         assertTrue(dao.contains("GROUP BY e.modelId"))
         assertTrue(dao.contains("getEmbeddingCountsByModels"))
         assertTrue(entities.contains("Index(value = [\"modelId\"])"))
-        assertTrue(database.contains("CURRENT_VERSION = 26"))
+        assertTrue(database.contains("CURRENT_VERSION = 29"))
         assertTrue(database.contains("MIGRATION_23_24"))
         assertTrue(database.contains("MIGRATION_24_25"))
         assertTrue(database.contains("MIGRATION_25_26"))
+        assertTrue(database.contains("MIGRATION_26_27"))
+        assertTrue(database.contains("MIGRATION_27_28"))
+        assertTrue(database.contains("MIGRATION_28_29"))
     }
 
     @Test
@@ -102,13 +92,41 @@ class ApprovedFeatureSourceContractTest {
             root,
             "com/newoether/agora/ui/chat/bottombar/ChatComposerState.kt",
         )
+        val preview = source(
+            root,
+            "com/newoether/agora/ui/chat/bottombar/AttachmentPreviewRow.kt",
+        )
+        val storedMessage = source(
+            root,
+            "com/newoether/agora/ui/chat/message/UserMessageBubble.kt",
+        )
+        val viewer = source(
+            root,
+            "com/newoether/agora/ui/chat/FullScreenMediaViewer.kt",
+        )
         val payload = source(
             root,
             "com/newoether/agora/viewmodel/MessagePayloadBuilder.kt",
         )
+        val generationManager = source(
+            root,
+            "com/newoether/agora/viewmodel/GenerationManager.kt",
+        )
+        val imageProcessor = source(
+            root,
+            "com/newoether/agora/viewmodel/ImageProcessor.kt",
+        )
         val sendButton = source(
             root,
             "com/newoether/agora/ui/chat/bottombar/ComposerSendButton.kt",
+        )
+        val submission = source(
+            root,
+            "com/newoether/agora/viewmodel/ConversationComposerSubmissionController.kt",
+        )
+        val chatApp = source(
+            root,
+            "com/newoether/agora/ui/chat/ChatApp.kt",
         )
         val imageActions = source(
             root,
@@ -126,47 +144,97 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(composer.contains(".contentReceiver(clipboardImageReceiver)"))
         assertTrue(composer.contains("transferableContent.consume"))
         assertTrue(composer.contains("hasMediaType(MediaType.Image)"))
-        assertTrue(composer.contains("composer.onPickImages(imageUris)"))
+        assertTrue(composer.contains("importUris(composerOwnerId, imageUris, \"image\")"))
+        assertTrue(composer.contains("inspectAttachmentIngress("))
+        assertTrue(composer.contains(
+            "composerController.importAttachment(ownerId, attachment) || imported",
+        ))
         assertTrue(composer.contains("return remaining"))
 
-        val imageIngress = composerState.substringAfter("fun onPickImages")
-            .substringBefore("fun onPickVideos")
-        val fileIngress = composerState.substringAfter("fun onPickFiles")
-            .substringBefore("fun addSlicedVideo")
-        val pdfIngress = composerState.substringAfter("fun confirmPendingPdfSelection")
-            .substringBefore("fun dismissPendingPdf")
-        val videoIngress = composerState.substringAfter("fun addSlicedVideo")
-            .substringBefore("\n}")
-        val privateImageUri = "uri = Uri.fromFile(java.io.File(copy.path)).toString()"
-        assertTrue(
-            imageIngress.indexOf("when (val copy = copyToPrivate(uriObj, \"img\"))") <
-                imageIngress.indexOf(privateImageUri),
-        )
-        assertTrue(
-            imageIngress.indexOf(privateImageUri) <
-                imageIngress.indexOf("selectedAttachments = selectedAttachments + copiedAttachments"),
-        )
-        assertFalse(imageIngress.contains("uri = uriObj.toString()"))
-        assertTrue(
-            fileIngress.indexOf("copyToPrivate(uri, ext, attachment.fileSize)") <
-                fileIngress.indexOf("selectedAttachments = selectedAttachments + copiedAttachments"),
-        )
-        assertTrue(
-            pdfIngress.indexOf("copyToPrivate(Uri.parse(uri), \"pdf\")") <
-                pdfIngress.indexOf("selectedAttachments = selectedAttachments + SelectedAttachment"),
-        )
-        assertTrue(
-            videoIngress.indexOf("copyToPrivate(sourceUri, ext)") <
-                videoIngress.indexOf("selectedAttachments = selectedAttachments + attachment"),
-        )
-        assertTrue(videoIngress.contains("progressKey = vidUri"))
+        listOf(
+            "selectedAttachments",
+            "processingStates",
+            "pendingSend",
+            "attachmentCopyJobs",
+            "videoExtractionJobs",
+            "fun onPickImages",
+            "fun onPickVideos",
+            "fun onPickFiles",
+            "fun confirmPendingPdfSelection",
+            "fun addSlicedVideo",
+        ).forEach { legacyOwner ->
+            assertFalse(composerState.contains(legacyOwner))
+        }
+        assertTrue(composerState.contains("controller.importAttachment(ownerId, attachment)"))
         assertTrue(composerState.contains("localPath = file.absolutePath"))
-        assertFalse(payload.contains("vid_original_"))
-        assertTrue(payload.contains("val source = att.localPath ?: att.uri"))
-        assertTrue(payload.contains("PdfPageRenderer.renderAsImages(app, sourceUri"))
-        assertTrue(sendButton.contains(
-            "it.localPath == null && (it.type == \"image\" || it.type == \"file\")",
+        assertTrue(preview.contains(
+            "mediaAttachments.mapIndexed { index, attachment -> attachment.localId to index }.toMap()",
         ))
+        assertFalse(preview.contains("indexOf("))
+        assertTrue(sendButton.contains("submissionController.submit("))
+        assertTrue(sendButton.contains("text = textFieldState.text.toString()"))
+        assertTrue(sendButton.contains("snapshot.attachments.map(SelectedAttachment::localId)"))
+        assertTrue(sendButton.contains("strokeWidth = 3.dp"))
+        assertTrue(sendButton.contains("targetState = icon"))
+        assertTrue(sendButton.contains("ComposerActionIcon.BUSY"))
+        assertTrue(sendButton.contains("enabled = isActionable"))
+        assertTrue(sendButton.contains("val containerColor by animateColorAsState("))
+        assertTrue(sendButton.contains("val contentColor by animateColorAsState("))
+        assertEquals(
+            2,
+            sendButton.split("animationSpec = tween(durationMillis = 400)").size - 1,
+        )
+        assertTrue(sendButton.contains("label = \"fabContainer\""))
+        assertTrue(sendButton.contains("label = \"fabContent\""))
+        assertTrue(sendButton.contains("durationMillis = COMPOSER_ICON_CROSSFADE_DURATION_MS"))
+        assertTrue(sendButton.contains("easing = LinearEasing"))
+        assertFalse(sendButton.contains("LocalSoftwareKeyboardController"))
+        assertFalse(chatApp.contains("BindDirectAcceptedComposerEffects"))
+        assertFalse(
+            File(root, "com/newoether/agora/ui/chat/DirectAcceptedComposerEffect.kt").exists(),
+        )
+        assertFalse(submission.contains("DirectAcceptedComposerEffect"))
+        assertFalse(submission.contains("directAcceptedEffects"))
+        assertFalse(submission.contains("publishDirectAcceptedEffect"))
+        assertFalse(submission.contains("presentationDispatcher"))
+        assertTrue(
+            submission.contains(
+                "request.accepted = acceptance\n" +
+                    "                clearAccepted(owner, request)",
+            ),
+        )
+        assertTrue(submission.contains("directAcceptedVersion = current.directAcceptedVersion +"))
+        assertTrue(submission.contains("if (request.accepted is SendAcceptance.Direct) 1L else 0L"))
+        assertTrue(composer.contains("submissionController.observeState(composerOwnerId)"))
+        assertTrue(composer.contains("submissionController.releaseState(composerOwnerId)"))
+        val textFieldBlock = composer.substringAfter("TextField(")
+            .substringBefore("placeholder =")
+        assertFalse(textFieldBlock.contains("enabled ="))
+        assertTrue(submission.contains("composers.freezeSubmission("))
+        assertTrue(submission.contains("composers.awaitProcessing("))
+        assertTrue(submission.contains("SelectedAttachment::hasCanonicalReadyArtifact"))
+        assertTrue(submission.contains("attachment.storage.transferForSend()"))
+        assertTrue(submission.contains("submissionId = request.id"))
+        assertTrue(payload.contains("fun buildComposerPayload("))
+        assertTrue(payload.contains("AttachmentImportState.READY"))
+        assertTrue(payload.contains("val imageIndex = allImages.size"))
+        listOf(
+            "processImages(",
+            "extractVideoFrames(",
+            "PdfPageRenderer",
+            "AttachmentSourceReader",
+            "preparedOwnedPaths",
+            "localPath ?:",
+            ".uri",
+        ).forEach { sendTimeFallback ->
+            assertFalse(payload.contains(sendTimeFallback))
+        }
+        assertFalse(generationManager.contains("suspend fun processImages("))
+        assertFalse(imageProcessor.contains("processImagesAndVideos("))
+        assertTrue(storedMessage.contains("projectStoredMediaOccurrences("))
+        assertFalse(storedMessage.contains("allMediaUrls.indexOf("))
+        assertTrue(viewer.contains("initialIndex.coerceIn(0, pdfPages.size - 1)"))
+        assertFalse(viewer.contains("pdfPages.indexOf("))
     }
 
     @Test
@@ -234,10 +302,16 @@ class ApprovedFeatureSourceContractTest {
         assertFalse(mutedText.contains("targetState = summary"))
         assertTrue(mutedText.contains("text = renderedSummary"))
         assertTrue(mutedText.contains("!transition.isRunning"))
+        val compactBlock = timeline
+            .substringAfter("internal fun CompactSegmentBlock(")
+            .substringBefore("internal fun retainExpandedLayoutDuringFade(")
         assertTrue(timeline.contains("targetState = collapsedTitle"))
         assertTrue(timeline.contains("compactSegmentTitle:\$expansionKey"))
         assertTrue(timeline.contains("val containsToolSummary = segs.any { it.type == \"tool\" }"))
-        assertTrue(timeline.contains("forceOpaque = containsToolSummary"))
+        assertTrue(compactBlock.contains("shouldPresentInitiallyExpanded("))
+        assertTrue(compactBlock.contains("groupedSegmentExpandedState("))
+        assertTrue(compactBlock.contains("targetExpanded && initiallyAutoExpanded"))
+        assertFalse(compactBlock.contains("forceOpaque = containsToolSummary"))
         assertTrue(Regex("forceOpaque = seg.type == \"tool\"").findAll(timeline).count() == 2)
         assertTrue(timeline.contains("containsToolSummary && allowSpatialTransitions ->"))
         assertTrue(timeline.contains("EnterTransition.None"))
@@ -298,6 +372,33 @@ class ApprovedFeatureSourceContractTest {
         // results would display in the UI but never reach the model).
         assertTrue(toolMessages.contains("id = \"image_context_\$digest\""))
         assertFalse(toolMessages.contains("tool_image_context_"))
+    }
+
+    @Test
+    fun providerCollectorsBindStableDiagnosticRequestKinds() {
+        val root = sourceRoot()
+        val title = source(root, "com/newoether/agora/viewmodel/ConversationTitleGenerator.kt")
+        val transcription = source(root, "com/newoether/agora/viewmodel/TranscriptionManager.kt")
+        val generation = source(root, "com/newoether/agora/viewmodel/GenerationManager.kt")
+        val providerPass = source(
+            root,
+            "com/newoether/agora/viewmodel/ProviderPassEffectExecutor.kt",
+        )
+
+        assertTrue(title.contains("requestKind = \"title\""))
+        assertTrue(title.contains("HttpClient.withStreamScope(scope = null, requestTrace = requestTrace)"))
+        assertTrue(title.contains("requestTrace.recordParsedEvent(event)"))
+        assertEquals(
+            2,
+            Regex("requestKind = \"transcription\"").findAll(transcription).count(),
+        )
+        assertEquals(
+            2,
+            Regex("requestTrace\\.recordParsedEvent\\(event\\)")
+                .findAll(transcription).count(),
+        )
+        assertTrue(generation.contains("requestKind = \"tool_continuation\""))
+        assertTrue(providerPass.contains("request.requestTrace?.recordParsedEvent(event)"))
     }
 
     @Test
@@ -420,6 +521,427 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(batchBranch.contains("upsertStreamingToolSegment("))
         assertTrue(publishIndex > upsertIndex)
         assertEquals(1, Regex("publishStreamUpdate\\(").findAll(batchBranch).count())
+    }
+
+    @Test
+    fun developerCapturePageKeepsApprovedUiAndCanonicalOwners() {
+        val capture = source(
+            sourceRoot(),
+            "com/newoether/agora/ui/settings/SettingsDeveloperCapturePage.kt",
+        )
+        val modes = capture
+            .substringAfter("private enum class CaptureViewMode {")
+            .substringBefore("}")
+            .lineSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toList()
+        val eventCard = capture
+            .substringAfter("private fun CaptureEventCard(")
+            .substringBefore("private fun CaptureEventContent(")
+
+        assertEquals(listOf("SUMMARY,", "RAW,"), modes)
+        assertTrue(capture.contains("PillTabSwitcher("))
+        assertFalse(capture.contains("SingleChoiceSegmentedButtonRow"))
+        assertFalse(capture.contains("SegmentedButton("))
+        assertTrue(capture.contains("actions = {"))
+        assertTrue(capture.contains("Icons.Default.MoreVert"))
+        assertTrue(capture.contains("containerColor = MaterialTheme.colorScheme.surfaceContainer"))
+        assertTrue(capture.contains("tonalElevation = 16.dp"))
+        assertTrue(capture.contains("shape = RoundedCornerShape(12.dp)"))
+        assertTrue(
+            capture.contains("R.string.developer_options_clear_diagnostics_action"),
+        )
+        assertTrue(capture.contains("R.string.developer_options_clear_diagnostics)"))
+        assertEquals(3, Regex("\\bCaptureExportMenuItem\\(").findAll(capture).count())
+        assertFalse(capture.contains("DiagnosticExportFormat.RAW_JSON"))
+        assertTrue(capture.contains("DiagnosticExportFormat.REDACTED_JSON"))
+        assertTrue(capture.contains("DiagnosticExportFormat.SUMMARY_TEXT"))
+        assertTrue(capture.contains("FloatingActionButton("))
+        assertEquals(2, Regex("\\bSmallFloatingActionButton\\(").findAll(capture).count())
+        assertEquals(3, Regex("shape = CircleShape").findAll(capture).count())
+        assertTrue(capture.contains("horizontalArrangement = Arrangement.End"))
+        assertTrue(capture.contains(".padding(end = 24.dp, bottom = 24.dp)"))
+        assertFalse(capture.contains(".padding(horizontal = 16.dp)"))
+        assertFalse(capture.contains("verticalArrangement = Arrangement.spacedBy(12.dp)"))
+        assertEquals(2, Regex("Modifier\\.padding\\(bottom = 12\\.dp\\)").findAll(capture).count())
+        assertTrue(capture.contains("targetState = captureRunning"))
+        assertTrue(capture.contains("DeveloperDiagnostics.startCapture()"))
+        assertTrue(capture.contains("DeveloperDiagnostics.pauseCapture()"))
+        assertTrue(capture.contains("captureActionEnabled = !snapshot.capacityLimitReached"))
+        assertTrue(capture.contains("onClick = { requestDirectionalScroll(toTop = true) }"))
+        assertTrue(capture.contains("onClick = { requestDirectionalScroll(toTop = false) }"))
+        assertTrue(capture.contains("R.string.developer_options_capture_capacity_incomplete"))
+        assertEquals(1, Regex("Modifier\\.semantics \\{ disabled\\(\\) \\}").findAll(capture).count())
+        assertTrue(capture.contains("MaterialTheme.colorScheme.surfaceVariant"))
+        assertTrue(capture.contains("MaterialTheme.colorScheme.onSurfaceVariant"))
+        assertTrue(capture.contains("CaptureCrossfadeDurationMillis = 250"))
+        assertEquals(2, Regex("\\bCrossfade\\(").findAll(capture).count())
+        assertEquals(1, Regex("\\bAnimatedContent\\(").findAll(capture).count())
+        assertEquals(2, Regex("\\bAnimatedVisibility\\(").findAll(capture).count())
+        assertEquals(2, Regex("expandVertically\\(").findAll(capture).count())
+        assertEquals(2, Regex("shrinkVertically\\(").findAll(capture).count())
+        assertEquals(2, Regex("targetState = viewMode").findAll(capture).count())
+        assertTrue(capture.contains("items(snapshot.events, key = DiagnosticEvent::sequence)"))
+        assertFalse(capture.contains("snapshot.events.reversed"))
+        assertFalse(capture.contains("snapshot.events.asReversed"))
+        assertTrue(eventCard.contains("Surface("))
+        assertTrue(eventCard.contains("shape = RoundedCornerShape(24.dp)"))
+        assertTrue(
+            eventCard.contains(
+                "LocalAgoraMotionPolicy.current.allowSpatialTransitions",
+            ),
+        )
+        assertTrue(eventCard.contains("AnimatedContent("))
+        assertTrue(eventCard.contains("targetState = viewMode"))
+        assertTrue(eventCard.contains("fadeIn("))
+        assertTrue(eventCard.contains("fadeOut("))
+        assertTrue(eventCard.contains("SizeTransform("))
+        assertTrue(eventCard.contains("clip = false"))
+        assertTrue(eventCard.contains("if (allowSpatialTransitions)"))
+        assertTrue(
+            eventCard.contains("tween(CaptureCrossfadeDurationMillis)"),
+        )
+        assertTrue(eventCard.contains("snap()"))
+        assertFalse(eventCard.contains("Modifier.animateContentSize("))
+        assertTrue(eventCard.contains("SettingsItem("))
+        assertFalse(eventCard.contains("leadingContent"))
+        assertFalse(capture.contains("FontFamily"))
+        assertFalse(capture.contains("fontFamily ="))
+        assertFalse(capture.contains("collectIsDraggedAsState()"))
+        assertFalse(capture.contains("directionalScrollJob"))
+        assertFalse(capture.contains("directionalScrollRequestId"))
+        assertFalse(capture.contains("directionalScrollActive"))
+        assertFalse(capture.contains("scrollUpEnabled"))
+        assertFalse(capture.contains("scrollDownEnabled"))
+        assertFalse(capture.contains("allowProgrammaticScrollMotion"))
+        assertFalse(capture.contains("animateToAbsoluteTop"))
+        assertFalse(capture.contains("animateToAbsoluteBottom"))
+        assertTrue(capture.contains("CaptureEdgeTolerance = 2.dp"))
+        listOf(
+            "val edgeTolerancePx = with(density) { CaptureEdgeTolerance.roundToPx() }",
+            "listState.firstVisibleItemIndex == 0",
+            "listState.firstVisibleItemScrollOffset <= edgeTolerancePx.coerceAtLeast(0)",
+            "val lastVisibleItem = layoutInfo.visibleItemsInfo.maxByOrNull { it.index }",
+            "lastVisibleItem?.index == layoutInfo.totalItemsCount - 1",
+            "lastVisibleItem.offset + lastVisibleItem.size <=",
+            "layoutInfo.viewportEndOffset + edgeTolerancePx.coerceAtLeast(0)",
+            "val canScrollUp = !atTop",
+            "val canScrollDown = !atBottom",
+        ).forEach { edgeContract ->
+            assertTrue(capture.contains(edgeContract))
+        }
+        assertFalse(capture.contains("listState.canScrollBackward"))
+        assertFalse(capture.contains("listState.canScrollForward"))
+        assertTrue(capture.contains("listState.scrollToItem(0)"))
+        assertTrue(capture.contains("listState.scrollToItem(lastIndex)"))
+        assertFalse(capture.contains("estimatedItemSizePx"))
+        assertFalse(capture.contains("remainingItems * averageVisibleSizePx"))
+        assertTrue(capture.contains("visible = hasNavigableEvents && canScrollUp"))
+        assertTrue(capture.contains("visible = hasNavigableEvents && canScrollDown"))
+        assertFalse(capture.contains("followLatest"))
+        assertFalse(capture.contains("scrollToLatestCaptureEvent"))
+        assertFalse(capture.contains("animateScrollToItem"))
+        assertFalse(capture.contains("R.string.developer_options_capture_jump_latest"))
+        assertFalse(capture.contains("R.string.developer_options_capture_export_raw_json"))
+        assertTrue(capture.contains("item(key = \"capture-fab-spacer\")"))
+        assertTrue(capture.contains("Spacer(Modifier.height(80.dp))"))
+        assertTrue(capture.contains("val rawEventDetails = remember(event) { event.rawDetails() }"))
+        assertTrue(capture.contains("CaptureViewMode.RAW -> rawEventDetails"))
+        assertTrue(capture.contains("captureEventJson.encodeToString(DiagnosticEvent.serializer(), this)"))
+        assertTrue(capture.contains("DeveloperDiagnostics.snapshots.collectAsState()"))
+        assertTrue(capture.contains("DeveloperDiagnostics.clear()"))
+        assertTrue(capture.contains("DeveloperDiagnostics.flush()"))
+        assertFalse(capture.contains("CaptureToolbar("))
+        assertFalse(capture.contains("CaptureIconAction("))
+        listOf(
+            "\"Start\"",
+            "\"Pause\"",
+            "\"Clear\"",
+            "\"Export\"",
+            "\"Summary\"",
+            "\"Raw\"",
+            "\"Scroll to Top\"",
+            "\"Scroll to Bottom\"",
+            "\"No captured events.\"",
+        ).forEach { hardCodedLabel ->
+            assertFalse("Capture page still contains $hardCodedLabel", capture.contains(hardCodedLabel))
+        }
+        assertFalse(capture.contains("DiagnosticCaptureStore"))
+        assertFalse(capture.contains("DiagnosticEventBuffer"))
+        assertFalse(capture.contains("noBackupFilesDir"))
+    }
+
+    @Test
+    fun developerPageContainsOnlyApprovedHierarchyAndLocalCaptureRoute() {
+        val page = source(
+            sourceRoot(),
+            "com/newoether/agora/ui/settings/SettingsDeveloperPage.kt",
+        )
+        val developerIndex = page.indexOf("R.string.settings_developer")
+        val captureIndex = page.indexOf("R.string.developer_options_capture")
+        val debugIndex = page.indexOf("R.string.developer_options_debug_model")
+
+        assertTrue(developerIndex >= 0)
+        assertTrue(captureIndex > developerIndex)
+        assertTrue(debugIndex > captureIndex)
+        assertTrue(
+            page.contains(
+                "title = stringResource(R.string.developer_options_features_group)",
+            ),
+        )
+        assertTrue(page.contains("R.string.developer_options_debug_model,"))
+        assertFalse(page.contains("Text(\"Debug Model\")"))
+        assertEquals(3, Regex("\\bSettingsItem\\(").findAll(page).count())
+        assertEquals(3, Regex("supportingContent =").findAll(page).count())
+        assertEquals(2, Regex("\\bSwitch\\(").findAll(page).count())
+        assertEquals(1, Regex("\\bSettingsGroup\\(").findAll(page).count())
+        assertTrue(page.contains("var showCapturePage by rememberSaveable"))
+        assertTrue(page.contains("BackHandler(enabled = showCapturePage)"))
+        assertTrue(page.contains("GuardedAnimatedContent("))
+        assertTrue(page.contains("targetState = showCapturePage"))
+        assertTrue(page.contains("forward = showCapturePage"))
+        assertTrue(page.contains("SettingsDeveloperCapturePage("))
+        assertTrue(page.contains("onBack = { showCapturePage = false }"))
+        assertTrue(page.contains("R.string.developer_options_mode_description"))
+        assertTrue(page.contains("R.string.developer_options_capture_description"))
+        assertTrue(page.contains("R.string.developer_options_debug_model_description"))
+        assertFalse(page.contains("KeyboardArrowRight"))
+        assertFalse(page.contains("ChevronRight"))
+        assertFalse(page.contains("if (showCapturePage)"))
+        assertTrue(page.contains("viewModel.settings.debugModelEnabled.collectAsState()"))
+        assertTrue(page.contains("viewModel.settings::setDebugModelEnabled"))
+
+        val disableBody = page
+            .substringAfter("DeveloperDiagnostics.disableAndClear()")
+            .substringBefore("onDisabled()")
+        assertTrue(disableBody.contains("setDeveloperOptionsEnabled(false)"))
+        assertTrue(disableBody.contains(".join()"))
+
+        listOf(
+            "DeveloperConversationInspector",
+            "DeveloperTestLab",
+            "DiagnosticBundleExporter",
+            "FileProvider",
+            "DiagnosticTimelineItem",
+            "shareDiagnosticBundle",
+            "developer_options_timeline_group",
+            "developer_options_inspector",
+            "developer_options_test_lab",
+            "DeveloperDiagnostics.startCapture()",
+            "DeveloperDiagnostics.pauseCapture()",
+            "DeveloperDiagnostics.clear()",
+        ).forEach { obsolete ->
+            assertFalse("Developer page still contains $obsolete", page.contains(obsolete))
+        }
+    }
+
+    @Test
+    fun developerResourcesExposeOnlyFinalLocalizedKeySet() {
+        val resourceRoot = File(sourceRoot().parentFile, "res")
+        val localeFiles = resourceRoot.listFiles()
+            ?.filter { directory ->
+                directory.isDirectory &&
+                    (directory.name == "values" || directory.name.startsWith("values-"))
+            }
+            ?.map { directory -> File(directory, "strings.xml") }
+            ?.filter(File::isFile)
+            ?.sortedBy { file -> file.parentFile.name }
+            .orEmpty()
+        val expectedKeys = setOf(
+            "developer_options_already_enabled_message",
+            "developer_options_capture",
+            "developer_options_capture_clear_confirm",
+            "developer_options_capture_clear_message",
+            "developer_options_capture_counters",
+            "developer_options_capture_capacity_incomplete",
+            "developer_options_capture_description",
+            "developer_options_capture_empty",
+            "developer_options_capture_export_redacted_json",
+            "developer_options_capture_export_summary_text",
+            "developer_options_capture_http_request_summary",
+            "developer_options_capture_http_response_summary",
+            "developer_options_capture_more_actions",
+            "developer_options_capture_parsed_event_summary",
+            "developer_options_capture_pause",
+            "developer_options_capture_play",
+            "developer_options_capture_raw",
+            "developer_options_capture_scroll_to_bottom",
+            "developer_options_capture_scroll_to_top",
+            "developer_options_capture_session",
+            "developer_options_capture_state_idle",
+            "developer_options_capture_state_paused",
+            "developer_options_capture_state_running",
+            "developer_options_capture_status_summary",
+            "developer_options_capture_summary",
+            "developer_options_capture_wire_line_summary",
+            "developer_options_clear_diagnostics",
+            "developer_options_clear_diagnostics_action",
+            "developer_options_debug_model",
+            "developer_options_debug_model_description",
+            "developer_options_disable_confirm",
+            "developer_options_disable_message",
+            "developer_options_disable_title",
+            "developer_options_enabled_message",
+            "developer_options_export_failed",
+            "developer_options_export_share_title",
+            "developer_options_features_group",
+            "developer_options_mode_description",
+            "developer_options_taps_remaining",
+            "developer_options_title",
+        )
+        val developerKey = Regex("""<string name="(developer_options_[^"]+)"""")
+
+        assertEquals(12, localeFiles.size)
+        localeFiles.forEach { file ->
+            val keys = developerKey.findAll(file.readText())
+                .map { match -> match.groupValues[1] }
+                .toList()
+            assertEquals(
+                "${file.parentFile.name} contains duplicate Developer keys",
+                keys.size,
+                keys.toSet().size,
+            )
+            assertEquals(
+                "${file.parentFile.name} has an unexpected Developer key set",
+                expectedKeys,
+                keys.toSet(),
+            )
+        }
+    }
+
+    @Test
+    fun generationAdmissionWaitsForProviderLifecycle() {
+        val root = sourceRoot()
+        val builder = source(root, "com/newoether/agora/viewmodel/GenerationRequestBuilder.kt")
+        val generation = source(root, "com/newoether/agora/viewmodel/MessageGenerationController.kt")
+        val queuedDrain = source(root, "com/newoether/agora/viewmodel/QueuedGuidanceDrainExecutor.kt")
+
+        val admission = builder
+            .substringAfter("internal suspend fun captureAdmissionSnapshot(")
+            .substringBefore("internal suspend fun captureContextProjectionSnapshot(")
+        assertTrue(
+            admission.indexOf("providerRegistry.awaitInitialSync()") in
+                0 until admission.indexOf("providerRegistry.canonicalModelId(modelId)"),
+        )
+        assertTrue(builder.contains("internal suspend fun awaitProviderKey(modelId: String)"))
+        assertTrue(builder.contains("providerRegistry.awaitInitialSync()\n        return resolveProviderKey(modelId)"))
+        assertEquals(3, Regex("requestBuilder\\.awaitProviderKey\\(").findAll(generation).count())
+        assertFalse(generation.contains("requestBuilder.resolveProviderKey("))
+        val queuedLaunch = queuedDrain.substringAfter("fun launchClaim(")
+        assertFalse(
+            queuedLaunch.substringBefore("state.launchGenerationJob(uiToken)")
+                .contains("resolveProviderKey("),
+        )
+        assertTrue(queuedLaunch.contains("requestBuilder.captureAdmissionSnapshot("))
+    }
+
+    @Test
+    fun debugProviderUsesHiddenExactGenerationBoundary() {
+        val root = sourceRoot()
+        val provider = source(root, "com/newoether/agora/api/DebugProvider.kt")
+        val registry = source(root, "com/newoether/agora/viewmodel/ProviderRegistry.kt")
+        val builder = source(root, "com/newoether/agora/viewmodel/GenerationRequestBuilder.kt")
+
+        assertTrue(provider.contains("class DebugProvider : LlmProvider"))
+        assertTrue(provider.contains("StreamEvent.HostedToolCallUpdate("))
+        assertTrue(provider.contains("delay(STEP_DELAY_MILLIS)"))
+        assertFalse(provider.contains("HttpClient"))
+        assertFalse(provider.contains("requestResolver"))
+        assertFalse(provider.contains("StreamEvent.ToolCallUpdate"))
+        assertFalse(provider.contains("StreamEvent.ToolCallRequest"))
+        assertFalse(provider.contains("StreamEvent.ToolCallsRequest"))
+
+        val builtIns = registry
+            .substringAfter("private val builtInProviders")
+            .substringBefore("private val debugProvider")
+        assertFalse(builtIns.contains("DebugProvider"))
+        assertTrue(registry.contains("private val debugProvider = DebugProvider()"))
+        assertTrue(registry.contains("val all: Map<String, LlmProvider> get() = providers"))
+        assertTrue(registry.contains("fun generationSnapshot(): Map<String, LlmProvider>"))
+        assertTrue(registry.contains("providers.toMap() + (DebugProvider.PROVIDER_NAME to debugProvider)"))
+        assertTrue(registry.contains("settings.developerOptionsEnabled.value && settings.debugModelEnabled.value"))
+        assertTrue(registry.contains("registered = getInstanceOrNull(providerName) != null"))
+        assertTrue(registry.contains("if (providerName == DebugProvider.PROVIDER_NAME) return null"))
+
+        val resolution = registry
+            .substringAfter("fun providerForModel(modelId: String): String")
+            .substringBefore("/** Canonicalizes legacy name-prefixed IDs")
+        val exactDebugIndex = resolution.indexOf("modelId == DebugProvider.MODEL_ID")
+        val prefixedIndex = resolution.indexOf("modelId.contains(\":\")")
+        val availableModelsIndex = resolution.indexOf("settings.availableModels.value")
+        assertTrue(exactDebugIndex >= 0)
+        assertTrue(prefixedIndex > exactDebugIndex)
+        assertTrue(availableModelsIndex > prefixedIndex)
+
+        assertTrue(builder.contains("providerRegistry.generationSnapshot()"))
+        assertFalse(builder.contains("providerRegistry.all.toMap()"))
+    }
+
+    @Test
+    fun debugVisibilityAndModelFallbackStayOnTheCanonicalChatBoundary() {
+        val root = sourceRoot()
+        val chatApp = source(root, "com/newoether/agora/ui/chat/ChatApp.kt")
+        val selection = source(
+            root,
+            "com/newoether/agora/viewmodel/ConversationSelectionController.kt",
+        )
+        val generation = source(
+            root,
+            "com/newoether/agora/viewmodel/MessageGenerationController.kt",
+        )
+        val workspace = source(
+            root,
+            "com/newoether/agora/viewmodel/ConversationWorkspaceStore.kt",
+        )
+
+        assertTrue(chatApp.contains("viewModel.settings.developerOptionsEnabled.collectAsState()"))
+        assertTrue(chatApp.contains("viewModel.settings.debugModelEnabled.collectAsState()"))
+        assertTrue(chatApp.contains("validChatModels("))
+        assertEquals(2, Regex("enabledModels = chatEnabledModels").findAll(chatApp).count())
+        assertFalse(chatApp.contains("enabledModels = enabledModels"))
+        assertTrue(chatApp.contains("DebugProvider.MODEL_ID to DebugProvider.PROVIDER_NAME"))
+        assertEquals(2, Regex("modelAliases = chatModelAliases").findAll(chatApp).count())
+
+        listOf(
+            "com/newoether/agora/ui/settings/SettingsModelsPage.kt",
+            "com/newoether/agora/ui/settings/SettingsContextPage.kt",
+            "com/newoether/agora/ui/settings/SettingsTitleGenPage.kt",
+            "com/newoether/agora/ui/settings/SettingsTranscriptionPage.kt",
+            "com/newoether/agora/ui/tasks/TaskEditorPage.kt",
+        ).forEach { path ->
+            val surface = source(root, path)
+            assertFalse("Debug leaked into $path", surface.contains("DebugProvider"))
+            assertFalse("Chat model policy leaked into $path", surface.contains("validChatModels"))
+        }
+
+        assertTrue(selection.contains("awaitInitialLoad()"))
+        assertTrue(selection.contains("StateFlow<Set<String>?>"))
+        assertTrue(selection.contains("resolveValidModel("))
+        assertTrue(selection.contains("workspaces.setModel(\n            NEW_CHAT_WORKSPACE_ID"))
+        assertTrue(selection.contains("workspaces.setModel(conversationId, resolvedModel)"))
+        assertTrue(selection.contains(".stateIn(scope, SharingStarted.Eagerly, \"\")"))
+
+        val foregroundTargetCapture = generation
+            .substringAfter("internal fun captureForegroundSendTarget(")
+            .substringBefore("internal suspend fun prepareForegroundSend(")
+        assertTrue(foregroundTargetCapture.contains("val wasNewChat ="))
+        assertTrue(foregroundTargetCapture.contains("modelId = currentActiveModel.value"))
+
+        val foregroundAdmission = generation
+            .substringAfter("internal suspend fun prepareForegroundSend(")
+            .substringBefore("internal suspend fun sendMessage(")
+        assertTrue(foregroundTargetCapture.contains("captureNewChatWorkspace()"))
+        assertTrue(foregroundAdmission.contains("target.newChatWorkspace?.awaitCaptured()"))
+        assertTrue(workspace.contains("fun captureNewChatSnapshot()"))
+        assertTrue(workspace.contains("newChatCommands.trySend(NewChatCommand.Read(completion))"))
+        assertTrue(foregroundAdmission.contains("draftText = composer.text"))
+        assertTrue(foregroundAdmission.contains("modelId = target.modelId"))
+        assertTrue(foregroundAdmission.contains("captureAdmissionSnapshot("))
+        assertFalse(foregroundAdmission.contains("toSendAdmission"))
+        assertFalse(generation.contains("globalDefaultModel"))
+        assertFalse(workspace.contains("NewChatSendAdmission"))
+        assertFalse(workspace.contains("toSendAdmission("))
     }
 
     @Test

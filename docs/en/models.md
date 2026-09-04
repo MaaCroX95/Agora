@@ -1,19 +1,27 @@
 # Models
 
-Open **Settings → Models** to control which models Agora can use.
+Open **Settings → Models** to choose the default model and control which configured models Agora can use.
 
-## Default model
+## Default Model
 
-Choose the global default used when a conversation does not have its own selection. A conversation can still select another enabled model from the chat picker.
+Choose the global default used when a conversation has no model override. Only enabled models appear in this selector and in the chat model picker.
 
-## Fetched models
+## Custom Models
 
-Sync models from configured providers, search the results, and enable or disable individual models with their checkboxes. Synchronization and available metadata are provider-dependent.
+Add a model manually when provider discovery does not return the required identifier. Each entry stores a provider, the provider's raw model ID, and an optional display alias. The editor keeps provider and raw ID separate; where no explicit alias is stored, Agora can show an inferred friendly alias.
 
-## Custom models
+Custom models are grouped by provider. Enable or disable them with their checkboxes, or open an entry to edit or delete it.
 
-Add, edit, alias, and delete custom model entries when a provider does not list the desired identifier. Each model belongs to a provider so Agora can resolve the correct protocol, base URL, and credentials.
+## Fetched Models
 
-Disabling or deleting an entry removes it from selection; it does not delete remote provider data. Imported GGUF files have their own deletion behavior under [Local Models](local-model.md).
+**Sync from All Providers** retrieves model catalogs from configured providers. Unconfigured providers are skipped, and synchronization support depends on the provider.
+
+When the page opens, Agora starts a sync only if the current provider-configuration fingerprint differs from the last attempted full sync. A completed attempt records that captured fingerprint even when one or more providers fail; cancellation does not record it. Use the sync row to retry manually without changing provider configuration.
+
+During synchronization, the row crossfades over 250 ms to **Syncing...** with a 24 dp circular indicator. Agora does not show a start snackbar; it reports the completed result afterward.
+
+Fetched models are grouped by provider and can be searched by provider, raw model ID, stored alias, or inferred alias. The row presents the friendly name separately from its provider/API identity. Use the checkbox to make a model available, and open its alias action to rename the display label.
+
+Disabling any model removes it from selection. Deleting a manually added model removes that local configuration entry; neither action deletes remote provider data. Imported chat GGUF files are managed under the Local provider in [Providers](provider.md).
 
 See [Providers](provider.md) and [Generation](generation.md).

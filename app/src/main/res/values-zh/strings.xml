@@ -135,7 +135,10 @@
     <string name="settings_automation_desc">任务、会话循环与调度精度</string>
     <string name="automation_ai_tools">访问任务与循环</string>
     <string name="automation_ai_tools_desc">允许模型创建和管理任务，或启动、停止会话循环。默认关闭。</string>
-    <string name="automation_scheduling">调度</string>
+    <string name="automation_background_execution">后台运行</string>
+    <string name="automation_battery_optimization">电池优化</string>
+    <string name="automation_battery_optimization_ignored_desc">未优化；Android 允许 Agora 不受电池优化限制地运行</string>
+    <string name="automation_battery_optimization_active_desc">已优化；Android 可能限制后台运行</string>
     <string name="automation_exact_execution">精确执行</string>
     <string name="automation_exact_execution_on_desc">为任务和循环使用精确闹钟；Android 仍可能施加系统限制。</string>
     <string name="automation_exact_execution_off_desc">使用更省电的非精确闹钟；开启后需授予“闹钟和提醒”权限。</string>
@@ -569,7 +572,7 @@
     <string name="memory_create">创建</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">正在获取可用模型...</string>
+    <string name="models_syncing">正在同步...</string>
     <string name="snackbar_generating_title">正在生成标题...</string>
     <string name="snackbar_title_generated">标题已生成。</string>
     <string name="snackbar_title_error">生成标题时遇到错误。</string>
@@ -689,6 +692,8 @@
     <string name="auto_cache_title">缓存</string>
     <string name="auto_cache">自动缓存新消息</string>
     <string name="auto_cache_desc">使用选定的嵌入模型自动索引新消息。关闭后，消息仅在手动触发时才会被缓存。</string>
+    <string name="show_uncached_notification">显示未缓存通知</string>
+    <string name="show_uncached_notification_desc">当自动缓存关闭且仍有消息未缓存时显示提醒</string>
     <string name="cache_action">缓存</string>
     <string name="recache_action">重新缓存</string>
     <string name="recache_confirm_title">重新缓存所有消息</string>
@@ -1002,12 +1007,16 @@
     <string name="export_button">导出</string>
     <string name="exporting_label">导出中…</string>
     <string name="export_success">数据导出成功。</string>
+    <string name="attachment_unavailable">附件不可用</string>
+    <string name="export_success_missing_resources">数据已导出，但有 %1$d 个资源不可用。</string>
+    <string name="auto_backup_missing_resources">备份已完成，但有 %1$d 个资源不可用。</string>
     <string name="export_failed">导出失败: %1$s</string>
     <string name="import_preview_title">导入数据</string>
     <string name="import_from">导出时间 %1$s\n来自 Agora v%2$s</string>
     <string name="import_unsupported_backup_version">不支持备份格式 v%1$d；当前应用最高支持 v%2$d。</string>
     <string name="import_button">导入</string>
     <string name="importing_label">导入中…</string>
+    <string name="loading_label">加载中…</string>
     <string name="import_success">导入完成: %1$s</string>
     <string name="import_failed">导入失败: %1$s</string>
     <string name="import_invalid_file">无效的 .agora 文件。请选择有效的导出文件。</string>
@@ -1015,6 +1024,9 @@
     <string name="import_strategy_merge">合并</string>
     <string name="import_strategy_replace">替换</string>
     <string name="import_strategy_skip">跳过</string>
+    <string name="external_import_replace_confirm_title">替换现有对话？</string>
+    <string name="external_import_replace_confirm_message">这会删除所有现有对话，并且只保留选中的导入对话。</string>
+    <string name="external_import_replace_confirm_button">替换对话</string>
     <string name="import_api_keys_warning">此导出包含明文凭据与秘密。仅在信任来源时继续。</string>
     <string name="third_party_import">第三方</string>
     <string name="claude_import_title">从 Claude 导入</string>
@@ -1230,44 +1242,46 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">开发者</string>
     <string name="settings_developer">开发者选项</string>
-    <string name="settings_developer_desc">诊断、协议检查器和测试工具</string>
+    <string name="settings_developer_desc">诊断采集与本地调试模型控制</string>
     <string name="developer_options_title">开发者选项</string>
-    <string name="developer_options_status_group">状态</string>
-    <string name="developer_options_enabled_desc">已为此安装启用。关闭后将停止并清除临时诊断数据。</string>
+    <string name="developer_options_features_group">功能</string>
+    <string name="developer_options_debug_model">调试模型</string>
+    <string name="developer_options_mode_description">关闭后将停止采集、删除保留的诊断数据，并关闭调试模型。</string>
+    <string name="developer_options_capture_description">记录已清除凭据的请求、流式与运行时诊断，并可导出。</string>
+    <string name="developer_options_debug_model_description">仅在聊天模型选择器中加入本地确定性调试模型。</string>
+    <string name="developer_options_capture_summary">摘要</string>
+    <string name="developer_options_capture_raw">原始</string>
+    <string name="developer_options_capture_play">开始或继续采集</string>
+    <string name="developer_options_capture_pause">暂停采集</string>
+    <string name="developer_options_capture_scroll_to_top">滚动到顶部</string>
+    <string name="developer_options_capture_scroll_to_bottom">滚动到底部</string>
+    <string name="developer_options_capture_more_actions">采集操作</string>
+    <string name="developer_options_capture_clear_message">清除已采集的事件和计数器？采集状态和会话将保留。</string>
+    <string name="developer_options_capture_clear_confirm">清除</string>
+    <string name="developer_options_capture_export_redacted_json">导出脱敏 JSON</string>
+    <string name="developer_options_capture_export_summary_text">导出摘要文本</string>
+    <string name="developer_options_capture_empty">暂无采集事件</string>
+    <string name="developer_options_capture_state_idle">空闲</string>
+    <string name="developer_options_capture_state_running">采集中</string>
+    <string name="developer_options_capture_state_paused">已暂停</string>
+    <string name="developer_options_capture_status_summary">%1$s · %2$d 个事件 · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">采集不完整 · 已达到 64 MiB 上限</string>
+    <string name="developer_options_capture_counters">丢弃 %1$d · 淘汰 %2$d · 截断 %3$d</string>
+    <string name="developer_options_capture_session">会话 %1$s · 下一个 #%2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · 正文字符=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">HTTP 响应 · 状态码=%1$d · 字符=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">传输行 %1$d · 字符=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">已解析 %1$s</string>
     <string name="developer_options_taps_remaining">再点按 %1$d 次即可启用开发者选项。</string>
     <string name="developer_options_enabled_message">开发者选项现已启用。</string>
     <string name="developer_options_already_enabled_message">开发者选项已经启用。</string>
-    <string name="developer_options_capture_group">诊断</string>
     <string name="developer_options_capture">诊断采集</string>
-    <string name="developer_options_capture_off_desc">当前没有活动的诊断会话。只有明确启动后才会开始采集。</string>
 
-    <string name="developer_options_test_lab_group">测试</string>
-    <string name="developer_options_test_lab">测试实验室</string>
-    <string name="developer_options_test_lab_desc">与供应商无关的检查和安全协议样例将在这里提供。</string>
     <string name="developer_options_disable_title">关闭开发者选项？</string>
-    <string name="developer_options_disable_message">这会停止当前采集并清除临时诊断数据。</string>
+    <string name="developer_options_disable_message">这会停止采集、删除诊断数据并关闭调试模型。</string>
     <string name="developer_options_disable_confirm">关闭</string>
-    <string name="developer_options_capture_on_desc">%1$d 个元数据事件 · 丢弃 %2$d 个。不会采集消息内容。</string>
-    <string name="developer_options_capture_stopped_desc">采集已停止。保留 %1$d 个事件 · 丢弃 %2$d 个。</string>
-    <string name="developer_options_clear_diagnostics">清除诊断会话</string>
-    <string name="developer_options_clear_diagnostics_desc">停止采集并清除内存中的全部诊断事件。</string>
-    <string name="developer_options_timeline_group">元数据时间线</string>
-    <string name="developer_options_timeline_empty">开始采集后执行一项操作，即可查看按顺序记录的运行时和 HTTP 元数据。</string>
-    <string name="developer_options_payload_capture">协议载荷采集</string>
-    <string name="developer_options_payload_capture_desc">采集经过清理的请求、响应和 SSE 载荷结构。切换模式会开始新会话。</string>
-    <string name="developer_options_sensitive_capture">敏感内容</string>
-    <string name="developer_options_sensitive_capture_desc">在本次会话中包含消息和工具内容。凭据仍会始终脱敏。</string>
-    <string name="developer_options_sensitive_capture_title">采集敏感内容？</string>
-    <string name="developer_options_sensitive_capture_message">这会开始一个新的内存会话，其中可能包含私密对话和工具数据。停止采集或应用进程重启时会自动关闭。凭据仍会脱敏。</string>
-    <string name="developer_options_sensitive_capture_confirm">开始敏感内容采集</string>
-    <string name="developer_options_capture_redacted_desc">%1$d 个事件 · 丢弃 %2$d 个。正在采集载荷结构，内容已脱敏。</string>
-    <string name="developer_options_capture_sensitive_desc">%1$d 个事件 · 丢弃 %2$d 个。正在采集敏感内容；凭据仍会脱敏。</string>
-    <string name="developer_options_inspector_group">检查器</string>
-    <string name="developer_options_inspector">对话检查器</string>
-    <string name="developer_options_inspector_empty">当前未选择对话。请先打开一个对话再进行检查。</string>
-    <string name="developer_options_export_group">导出</string>
-    <string name="developer_options_export">导出诊断包</string>
-    <string name="developer_options_export_desc">分享有大小限制的 JSON 诊断包。敏感内容会被脱敏，文件绝不会自动上传。</string>
+    <string name="developer_options_clear_diagnostics">清除诊断会话？</string>
+    <string name="developer_options_clear_diagnostics_action">清除诊断会话</string>
     <string name="developer_options_export_share_title">分享 Agora 诊断包</string>
     <string name="developer_options_export_failed">无法创建诊断包。</string>
     <string name="responses_api">Responses API</string>
@@ -1319,4 +1333,12 @@
     <string name="tool_edit_skill">编辑技能</string>
     <string name="tool_delete_skill">删除技能</string>
     <string name="tool_read_file_truncated">已显示部分内容 · 从字节 %1$d 继续</string>
+    <string name="low_context_mode">低上下文模式</string>
+    <string name="low_context_mode_default_desc">默认启用低上下文模式</string>
+    <string name="learn_more">了解更多...</string>
+    <string name="local_model_limitations_title">本地模型的限制</string>
+    <string name="local_model_limitations_body">本地模型受移动设备可用内存限制，上下文大小是主要限制之一。上下文通常包含系统提示词、工具或函数定义以及技能。要减少初始上下文占用，请打开模型选择器旁的三点菜单并启用低上下文模式。</string>
+    <string name="delete_conversation_title">删除对话？</string>
+    <string name="delete_conversation_from_message_confirm">删除此消息将移除整个对话。此操作无法撤销。</string>
+    <string name="composer_clear_failed">消息已发送，但无法清除草稿。</string>
 </resources>

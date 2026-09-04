@@ -7,11 +7,10 @@ class FdroidSandboxManagerFactory(
     private val context: Context,
     private val settings: SettingsRepository,
 ) : SandboxManagerFactory {
-    // Return the SAME ProotSandboxManager on every create(). All three creation sites
-    // (ChatViewModel, GenerationManager.shellToolProvider, TaskExecutionEngine) previously
-    // got distinct instances sharing the same on-disk Alpine rootfs, so concurrent shell/file
-    // operations across conversations could corrupt lib/apk/db/installed and /etc/apk/world.
-    // A single shared instance lets ProotSandboxManager's internal mutex serialize mutations.
+    // The AppContainer-owned factory keeps one ProotSandboxManager for the process. ChatViewModel,
+    // GenerationManager, and TaskExecutionEngine borrow it; their shorter lifecycles must not stop
+    // the shared scope. One instance also lets the internal mutex serialize every mutation of the
+    // process-global Alpine rootfs and prevent cross-conversation package database corruption.
     private val shared by lazy { ProotSandboxManager(context, settings) }
     override fun create(): SandboxManager = shared
     override fun isAvailable(): Boolean = true

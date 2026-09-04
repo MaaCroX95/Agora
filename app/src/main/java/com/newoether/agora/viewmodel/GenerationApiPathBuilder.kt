@@ -37,14 +37,19 @@ internal fun interface GenerationToolDefinitionSource {
  */
 internal class GenerationApiPathBuilder(
     private val conversations: ConversationRepository,
+    private val generationErrorFormatter: (String) -> String,
     private val contextLoader: DurableSelectedContextLoader =
-        DurableSelectedContextLoader(conversations),
+        DurableSelectedContextLoader(conversations, generationErrorFormatter),
     private val toolDefinitions: GenerationToolDefinitionSource,
 ) {
     suspend fun build(request: GenerationApiPathRequest): GenerationApiPath =
         withContext(Dispatchers.Default) {
             val config = request.config
-            val definitions = toolDefinitions.definitions(request.context)
+            val definitions = if (config.lowContextModeEnabled) {
+                emptyList()
+            } else {
+                toolDefinitions.definitions(request.context)
+            }
             val fixedTokenCost = if (config.requestResolver == null) {
                 ContextTokenEstimator.estimateFixed(
                     systemPrompt = config.effectiveSystemPrompt,
@@ -136,6 +141,8 @@ internal class GenerationApiPathBuilder(
         return projectProviderMessages(
             entities = ApiPathAssembler.assemble(pathEntities, loadedMessages),
             includeStoredTranscriptions = includeStoredTranscriptions,
-        ).let(::projectGenerationStatusesForApi)
+        ).let { messages ->
+            projectGenerationStatusesForApi(messages, generationErrorFormatter)
+        }
     }
 }

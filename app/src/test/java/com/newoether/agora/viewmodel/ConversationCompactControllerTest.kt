@@ -1,6 +1,7 @@
 package com.newoether.agora.viewmodel
 
 import com.newoether.agora.api.ProviderConfig
+import com.newoether.agora.data.BuiltInPrompts
 import com.newoether.agora.data.local.MessageContextTopology
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.data.local.ProviderContextTopologySnapshot
@@ -30,7 +31,10 @@ class ConversationCompactControllerTest {
     @Test
     fun disabledSettingShortCircuitsBeforeReadingDurableGraph() = runBlocking {
         val conversations = mockk<ConversationRepository>()
-        val compactor = ContextCompactor(conversations = conversations)
+        val compactor = ContextCompactor(
+            conversations = conversations,
+            generationErrorFormatter = { it },
+        )
 
         assertFalse(
             compactor.automaticNeeded(
@@ -93,10 +97,11 @@ class ConversationCompactControllerTest {
         assertEquals(source.id, launchRequest.captured.parentMessageId)
         assertTrue(launchRequest.captured.modelMessageId!!.startsWith("compact_"))
         assertEquals(null, launchRequest.captured.replacementMessageId)
-        assertEquals("compact", launchRequest.captured.callerTag)
+        assertEquals("compact", launchRequest.captured.requestKind)
+        assertFalse(launchRequest.captured.touchConversationOnAdmission)
         assertEquals("compact prompt", launchRequest.captured.snapshot.config.effectiveSystemPrompt)
         assertEquals(
-            "Create the compact context summary now.",
+            BuiltInPrompts.CONTEXT_COMPACT_USER,
             launchRequest.captured.snapshot.config.initialUserPrompt,
         )
         assertTrue(launchRequest.captured.queueDrainRequiresSuccess)
@@ -189,10 +194,11 @@ class ConversationCompactControllerTest {
         assertEquals(target.id, launchRequest.captured.replacementMessageId)
         assertEquals(source.id, launchRequest.captured.parentMessageId)
         assertEquals("compact-preflight-run", launchRequest.captured.snapshot.runId)
-        assertEquals("recompact", launchRequest.captured.callerTag)
+        assertEquals("compact", launchRequest.captured.requestKind)
+        assertTrue(launchRequest.captured.touchConversationOnAdmission)
         assertEquals(suffix, before.single { it.id == suffix.id })
         coVerify(exactly = 0) {
-            conversations.createRunWithMessages(any(), any(), any(), any(), any())
+            conversations.createRunWithMessages(any(), any(), any(), any(), any(), any())
         }
         state.dispose()
         Unit

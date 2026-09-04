@@ -21,7 +21,7 @@ internal data class BoundRunGenerationRequest(
     val persistId: Long,
     val runId: String,
     val pass: Int,
-    val callerTag: String,
+    val requestKind: String,
     val transformFinalText: (String, MessageStatus) -> String = { text, _ -> text },
 ) {
     init {
@@ -65,7 +65,7 @@ internal class BoundRunGenerationLauncher(
     ) {
         val requestTrace = HttpClient.RequestTrace(
             requestId = request.modelMessageId,
-            origin = request.callerTag,
+            origin = request.requestKind,
             diagnosticContext = DeveloperDiagnostics.newRequestContext(
                 requestId = request.modelMessageId,
                 conversationId = request.conversationId,
@@ -73,7 +73,7 @@ internal class BoundRunGenerationLauncher(
                 pass = request.pass,
                 provider = request.snapshot.config.providerName,
                 model = request.snapshot.selectedModelId,
-                requestKind = request.callerTag,
+                requestKind = request.requestKind,
             ),
         )
         requestTrace.mark(
@@ -139,7 +139,7 @@ internal class BoundRunGenerationLauncher(
         } catch (e: Exception) {
             DebugLog.e(
                 "AgoraVM",
-                "Generation failed in ${request.callerTag} " +
+                "Generation failed in ${request.requestKind} " +
                     "errorType=${e.javaClass.simpleName}",
             )
             // A pre-stream failure would otherwise strand the SENDING placeholder and overlay.

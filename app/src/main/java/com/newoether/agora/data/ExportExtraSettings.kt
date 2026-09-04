@@ -69,7 +69,8 @@ object ExportExtraSettings {
                     ?.contentOrNull
                     ?.let(OpenAiServiceTiers::normalize),
                 webSearchEnabled = s["webSearchEnabled"]?.jsonPrimitive?.boolean,
-                shellEnabled = s["shellEnabled"]?.jsonPrimitive?.boolean
+                shellEnabled = s["shellEnabled"]?.jsonPrimitive?.boolean,
+                lowContextModeEnabled = s["lowContextModeEnabled"]?.jsonPrimitive?.boolean,
             )
             if (!cs.isAllNull()) sm.saveConversationSettings(convId, cs)
         }

@@ -108,18 +108,36 @@ class SettingsResourceContractTest {
             "settings_developer" to "Developer Options",
             "developer_options_capture" to "Diagnostic Capture",
             "developer_options_disable_title" to "Turn Off Developer Options?",
-            "developer_options_clear_diagnostics" to "Clear Diagnostic Session",
-            "developer_options_timeline_group" to "Metadata Timeline",
-            "developer_options_payload_capture" to "Protocol Payload Capture",
-            "developer_options_sensitive_capture" to "Sensitive Content",
-            "developer_options_sensitive_capture_title" to "Capture Sensitive Content?",
-            "developer_options_export" to "Export Diagnostic Bundle",
+            "developer_options_clear_diagnostics" to "Clear Diagnostic Session?",
+            "developer_options_clear_diagnostics_action" to "Clear Diagnostic Session",
+            "developer_options_capture_scroll_to_top" to "Scroll to Top",
+            "developer_options_capture_scroll_to_bottom" to "Scroll to Bottom",
             "developer_options_export_share_title" to "Share Agora Diagnostic Bundle",
             "skills_empty" to "No Skills Yet",
         )
         expected.forEach { (key, title) ->
             assertEquals("English settings surface resource $key", title, values[key])
         }
+    }
+
+    @Test
+    fun englishDiagnosticCaptureCopyUsesFinalPrivacyAndCapacityContract() {
+        val values = readStringValues(File(locateResourceDirectory(), "values"))
+
+        assertEquals(
+            "Capture incomplete · 64 MiB limit reached",
+            values["developer_options_capture_capacity_incomplete"],
+        )
+        assertEquals(
+            "Export Redacted JSON",
+            values["developer_options_capture_export_redacted_json"],
+        )
+        assertEquals(
+            "Export Summary Text",
+            values["developer_options_capture_export_summary_text"],
+        )
+        assertFalse(values.containsKey("developer_options_capture_export_raw_json"))
+        assertFalse(values.containsKey("developer_options_capture_jump_latest"))
     }
 
     @Test
@@ -190,6 +208,24 @@ class SettingsResourceContractTest {
                         .map { it.value }.toSet(),
                 )
             }
+    }
+
+    @Test
+    fun providerDocumentationEntryBelongsToTheDetailEditor() {
+        val providerList = readSettingsSource("SettingsProviderPage.kt")
+        val providerDetail = readSettingsSource("SettingsProviderDetailPage.kt")
+
+        assertFalse(providerList.contains("DocumentationFab(\"provider.md\")"))
+        assertFalse(providerList.contains("showDocumentationFab.collectAsState()"))
+        assertTrue(providerDetail.contains(
+            "val showDocFab by viewModel.settings.showDocumentationFab.collectAsState()",
+        ))
+        assertTrue(providerDetail.contains(
+            "floatingActionButton = { if (showDocFab) DocumentationFab(\"provider.md\") }",
+        ))
+        assertTrue(providerDetail.contains(
+            "if (showDocFab) Spacer(modifier = Modifier.height(80.dp))",
+        ))
     }
 
     @Test
@@ -321,6 +357,15 @@ class SettingsResourceContractTest {
             .apply { isNamespaceAware = true }
             .newDocumentBuilder()
             .parse(file)
+
+    private fun readSettingsSource(fileName: String): String {
+        val file = File(
+            locateResourceDirectory().parentFile,
+            "java/com/newoether/agora/ui/settings/$fileName",
+        )
+        assertTrue("Missing Settings source: ${file.path}", file.isFile)
+        return file.readText()
+    }
 
     private fun locateResourceDirectory(): File {
         var cursor: File? = File(System.getProperty("user.dir")).canonicalFile

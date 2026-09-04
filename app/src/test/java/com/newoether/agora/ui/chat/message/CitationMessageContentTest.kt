@@ -242,6 +242,192 @@ class CitationMessageContentTest {
     }
 
     @Test
+    fun labelOnlyAnchorReplacesTheContainingSameSourceWrapper() {
+        val url = "https://youtube.com/watch?v=source"
+        val label = "youtube.com"
+        val wrapper = "([$label]($url))"
+        val answer = "Grounded claim $wrapper"
+        val labelStart = answer.indexOf(label)
+        val source = requireNotNull(
+            CitationPolicy.create(
+                provider = "openai",
+                kind = "url",
+                title = "YouTube",
+                url = url,
+                anchors = listOf(
+                    CitationAnchor(labelStart, labelStart + label.length, label),
+                ),
+                answerText = answer,
+            ),
+        )
+
+        val projection = projectCitationMarkdown(answer, listOf(source))
+        val marker = projection.markers.single()
+
+        assertEquals("Grounded claim ${marker.token}", projection.markdown)
+    }
+
+    @Test
+    fun markdownLinkAnchorReplacesTheContainingSameSourceWrapper() {
+        val url = "https://youtube.com/watch?v=source"
+        val link = "[youtube.com]($url)"
+        val wrapper = "($link)"
+        val answer = "Grounded claim $wrapper"
+        val linkStart = answer.indexOf(link)
+        val source = requireNotNull(
+            CitationPolicy.create(
+                provider = "openai",
+                kind = "url",
+                title = "YouTube",
+                url = url,
+                anchors = listOf(
+                    CitationAnchor(linkStart, linkStart + link.length, link),
+                ),
+                answerText = answer,
+            ),
+        )
+
+        val projection = projectCitationMarkdown(answer, listOf(source))
+        val marker = projection.markers.single()
+
+        assertEquals("Grounded claim ${marker.token}", projection.markdown)
+    }
+
+    @Test
+    fun uniqueSameSourceWrapperWithoutAnAnchorBecomesOneCapsule() {
+        val url = "https://youtube.com/watch?v=source"
+        val wrapper = "([youtube.com]($url))"
+        val answer = "Grounded claim $wrapper"
+        val source = requireNotNull(
+            CitationPolicy.create(
+                provider = "openai",
+                kind = "url",
+                title = "YouTube",
+                url = url,
+            ),
+        )
+
+        val projection = projectCitationMarkdown(answer, listOf(source))
+        val marker = projection.markers.single()
+
+        assertEquals("Grounded claim ${marker.token}", projection.markdown)
+    }
+
+    @Test
+    fun ordinaryMarkdownLinkWithoutCitationWrapperRemainsMarkdown() {
+        val url = "https://youtube.com/watch?v=source"
+        val link = "[youtube.com]($url)"
+        val answer = "Open $link"
+        val source = requireNotNull(
+            CitationPolicy.create(
+                provider = "openai",
+                kind = "url",
+                title = "YouTube",
+                url = url,
+            ),
+        )
+
+        val projection = projectCitationMarkdown(answer, listOf(source))
+
+        assertEquals(answer, projection.markdown)
+        assertTrue(projection.markers.isEmpty())
+    }
+
+    @Test
+    fun repeatedSameSourceWrappersWithoutAnchorsRemainAmbiguous() {
+        val url = "https://youtube.com/watch?v=source"
+        val wrapper = "([youtube.com]($url))"
+        val answer = "$wrapper and $wrapper"
+        val source = requireNotNull(
+            CitationPolicy.create(
+                provider = "openai",
+                kind = "url",
+                title = "YouTube",
+                url = url,
+            ),
+        )
+
+        val projection = projectCitationMarkdown(answer, listOf(source))
+
+        assertEquals(answer, projection.markdown)
+        assertTrue(projection.markers.isEmpty())
+    }
+
+    @Test
+    fun separatelyAnchoredSameSourceWrappersAreBothReplaced() {
+        val url = "https://youtube.com/watch?v=source"
+        val label = "youtube.com"
+        val wrapper = "([$label]($url))"
+        val answer = "$wrapper and $wrapper"
+        val firstLabelStart = answer.indexOf(label)
+        val secondLabelStart = answer.lastIndexOf(label)
+        val source = requireNotNull(
+            CitationPolicy.create(
+                provider = "openai",
+                kind = "url",
+                title = "YouTube",
+                url = url,
+                anchors = listOf(
+                    CitationAnchor(
+                        firstLabelStart,
+                        firstLabelStart + label.length,
+                        label,
+                    ),
+                    CitationAnchor(
+                        secondLabelStart,
+                        secondLabelStart + label.length,
+                        label,
+                    ),
+                ),
+                answerText = answer,
+            ),
+        )
+
+        val projection = projectCitationMarkdown(answer, listOf(source))
+        val marker = projection.markers.single()
+
+        assertEquals("${marker.token} and ${marker.token}", projection.markdown)
+    }
+
+    @Test
+    fun wrapperUrlContainingParenthesesUsesTheAstRange() {
+        val url = "https://en.wikipedia.org/wiki/Function_(mathematics)"
+        val wrapper = "([wikipedia.org]($url))"
+        val answer = "Grounded claim $wrapper"
+        val source = requireNotNull(
+            CitationPolicy.create(
+                provider = "openai",
+                kind = "url",
+                title = "Wikipedia",
+                url = url,
+            ),
+        )
+
+        val projection = projectCitationMarkdown(answer, listOf(source))
+        val marker = projection.markers.single()
+
+        assertEquals("Grounded claim ${marker.token}", projection.markdown)
+    }
+
+    @Test
+    fun unsafeParenthesizedLinkIsNotReclassified() {
+        val wrapper = "([example](javascript:alert(1)))"
+        val source = requireNotNull(
+            CitationPolicy.create(
+                provider = "openai",
+                kind = "url",
+                title = "Example",
+                url = "javascript:alert(1)",
+            ),
+        )
+
+        val projection = projectCitationMarkdown(wrapper, listOf(source))
+
+        assertEquals(wrapper, projection.markdown)
+        assertTrue(projection.markers.isEmpty())
+    }
+
+    @Test
     fun parenthesizedLinkToAnotherTargetIsNotReplaced() {
         val cited = "([example.com](https://example.com/not-the-source))"
         val source = requireNotNull(
@@ -542,11 +728,13 @@ class CitationMessageContentTest {
     }
 
     @Test
-    fun sourceSummaryVisibilityMatchesBottomActionLifecycle() {
+    fun sourceSummaryVisibilityUsesBottomInformationActionBoundary() {
         assertTrue(citationSummaryVisible(showActions = true, informationVisible = true, sourceCount = 54))
         assertFalse(citationSummaryVisible(showActions = false, informationVisible = true, sourceCount = 54))
         assertFalse(citationSummaryVisible(showActions = true, informationVisible = false, sourceCount = 54))
         assertFalse(citationSummaryVisible(showActions = true, informationVisible = true, sourceCount = 0))
+        assertEquals(320, ACTIONS_ENTER_DURATION_MS)
+        assertEquals(220, ACTIONS_EXIT_DURATION_MS)
     }
 
     @Test
@@ -606,7 +794,7 @@ class CitationMessageContentTest {
     }
 
     @Test
-    fun chatLinksProvidePressedFeedbackWithoutUnderline() {
+    fun chatLinksDelegatePressedFeedbackToTimedColorAnimation() {
         val color = Color(0xFF3367D6)
         val styles = chatLinkTextStyles(color)
 
@@ -619,7 +807,9 @@ class CitationMessageContentTest {
             assertEquals(TextDecoration.None, style?.textDecoration)
         }
         assertEquals(TextDecoration.None, styles.pressedStyle?.textDecoration)
-        assertNotEquals(color, styles.pressedStyle?.color)
+        assertEquals(color, styles.pressedStyle?.color)
+        assertEquals(180, MarkdownLinkPressAnimationMillis)
+        assertEquals(0.72f, MarkdownLinkPressedAlpha)
     }
 
     @Test

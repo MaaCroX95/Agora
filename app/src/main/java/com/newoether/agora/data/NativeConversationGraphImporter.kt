@@ -2,17 +2,20 @@ package com.newoether.agora.data
 
 import android.util.JsonReader
 import android.util.JsonToken
-import androidx.room.withTransaction
 import com.newoether.agora.automation.LoopPolicy
 import com.newoether.agora.data.DataImporter.ImportStrategy
 import com.newoether.agora.data.NativeConversationMediaRestorer.RestoredMedia
 import com.newoether.agora.data.local.ChatDao
 import com.newoether.agora.data.local.ChatDatabase
 import com.newoether.agora.data.local.ChatEntity
+import com.newoether.agora.data.local.ConversationSettingsImportTransferEntity
 import com.newoether.agora.data.local.LoopEntity
+import com.newoether.agora.data.local.MaintenanceDebtEntity
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.data.local.RunEntity
+import com.newoether.agora.data.local.SemanticModelSnapshot
 import com.newoether.agora.data.local.TaskEntity
+import com.newoether.agora.data.local.withSemanticGraphMutation
 import com.newoether.agora.data.local.migration.LegacyMessageRecord
 import com.newoether.agora.data.local.migration.LegacyRunBackfillPlanner
 import com.newoether.agora.data.local.migration.PlannedMessageAssignment
@@ -23,8 +26,9 @@ import com.newoether.agora.data.local.migration.regenerationInputFingerprint
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.RunEndReason
-import kotlinx.coroutines.flow.first
+import com.newoether.agora.service.MaintenanceDebtWorker
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -34,6 +38,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 import java.io.InputStream
 import java.io.InputStreamReader
+import java.util.UUID
 
 internal fun decodeStoredSelections(raw: String?): Map<String?, String> {
     if (raw.isNullOrBlank()) return emptyMap()
@@ -49,9 +54,9 @@ internal fun encodeStoredSelections(selections: Map<String?, String>): String =
 internal class NativeConversationGraphImporter(
     private val database: ChatDatabase,
     private val chatDao: ChatDao,
-    private val settingsManager: SettingsManager,
     private val importJson: Json,
     private val mediaRestorer: NativeConversationMediaRestorer,
+    private val scheduleMaintenance: () -> Unit = { MaintenanceDebtWorker.schedule() },
 ) {
     private companion object {
         const val IMPORT_MESSAGE_BATCH_SIZE = 64
@@ -282,10 +287,26 @@ internal class NativeConversationGraphImporter(
         } catch (_: Exception) {
             MessageStatus.SUCCESS
         }
+        val oldToNewImageIndex = mutableMapOf<Int, Int>()
         val restoredImages = if (archiveVersion >= 4) {
-            images.mapNotNull { restoredMedia.archiveFiles[it]?.uri }
+            buildList {
+                images.forEachIndexed { oldIndex, entry ->
+                    restoredMedia.archiveFiles[entry]?.uri?.let { uri ->
+                        oldToNewImageIndex[oldIndex] = size
+                        add(uri)
+                    }
+                }
+            }
         } else {
-            restoredMedia.legacyImagesByMessage[id].orEmpty()
+            buildList {
+                restoredMedia.legacyImagesByMessage[id]
+                    .orEmpty()
+                    .toSortedMap()
+                    .forEach { (oldIndex, uri) ->
+                        oldToNewImageIndex[oldIndex] = size
+                        add(uri)
+                    }
+            }
         }
         return MessageEntity(
             id = id,
@@ -326,6 +347,7 @@ internal class NativeConversationGraphImporter(
             attachmentMeta = NativeBackupMediaPolicy.restoreAttachmentMeta(
                 raw = attachmentMeta,
                 archiveVersion = archiveVersion,
+                oldToNewImageIndex = oldToNewImageIndex,
                 legacyVideoUris = restoredMedia.legacyVideosByMessage[id].orEmpty(),
                 restoredUriForArchiveEntry = { entry ->
                     restoredMedia.archiveFiles[entry]?.uri
@@ -605,16 +627,33 @@ internal class NativeConversationGraphImporter(
         headers: ConversationGraphHeaders,
         restoredMedia: RestoredMedia,
         archiveVersion: Int,
-    ) {
+        semanticSnapshot: SemanticModelSnapshot,
+    ): String {
         val plannedRunGraph = archive.stream(NativeBackupFormat.CONVERSATIONS_ENTRY)?.use { stream ->
             planNativeRunGraph(stream, headers)
         } ?: error("${NativeBackupFormat.CONVERSATIONS_ENTRY} is missing")
-        database.withTransaction {
+        val importedConversationIds = headers.conversations.mapTo(mutableSetOf()) { it.id }
+        val importedSettings = headers.conversationSettings.filterKeys(importedConversationIds::contains)
+        val settingsTransfer = ConversationSettingsImportTransferEntity(
+            transferId = UUID.randomUUID().toString(),
+            settingsJson = importJson.encodeToString(importedSettings),
+            mode = if (strategy == ImportStrategy.REPLACE) {
+                ConversationSettingsImportTransferEntity.MODE_REPLACE
+            } else {
+                ConversationSettingsImportTransferEntity.MODE_MERGE
+            },
+        )
+        val at = System.currentTimeMillis()
+        database.withSemanticGraphMutation(
+            snapshot = semanticSnapshot,
+            clearMessageIds = plannedRunGraph.assignments.keys,
+            clearAllEmbeddings = strategy == ImportStrategy.REPLACE,
+            updatedAt = at,
+        ) {
             if (strategy == ImportStrategy.REPLACE) {
                 chatDao.deleteAllLoops()
                 chatDao.deleteAllConversations()
                 chatDao.deleteAllTasks()
-                chatDao.deleteOrphanedEmbeddings()
             }
             headers.tasks.forEach { chatDao.upsertTask(it) }
             headers.conversations.forEach { conversation ->
@@ -649,18 +688,20 @@ internal class NativeConversationGraphImporter(
                 )
             } ?: error("${NativeBackupFormat.CONVERSATIONS_ENTRY} is missing")
             headers.loops.forEach { chatDao.upsertLoop(it) }
+            importedSettings.keys.forEach { conversationId ->
+                chatDao.deleteConversationSettingsTransfer(conversationId)
+            }
+            chatDao.upsertConversationSettingsImportTransfer(settingsTransfer)
+            MaintenanceDebtEntity.RECONCILE_KINDS.forEach { kind ->
+                database.maintenanceDebtDao().enqueue(
+                    kind,
+                    MaintenanceDebtEntity.RECONCILE_IDENTITY,
+                    at,
+                )
+            }
         }
-
-        val currentSettings = settingsManager.conversationSettings.first()
-        val importedSettings = headers.conversationSettings
-            .filterKeys(headers.conversations.mapTo(mutableSetOf()) { it.id }::contains)
-        settingsManager.saveConversationSettingsMap(
-            if (strategy == ImportStrategy.REPLACE) {
-                importedSettings
-            } else {
-                currentSettings + importedSettings
-            },
-        )
+        scheduleMaintenance()
+        return settingsTransfer.transferId
     }
 
     // Internal data classes for parsing export files
