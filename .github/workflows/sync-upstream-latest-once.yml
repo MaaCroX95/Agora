@@ -1,0 +1,62 @@
+name: Sync latest upstream once
+
+on:
+  push:
+    branches:
+      - automation/upstream-sync-2026-09-04-latest
+
+permissions:
+  contents: write
+
+jobs:
+  sync-test-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sync/upstream-2026-09-04-latest
+          fetch-depth: 0
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Merge latest upstream master
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/newo-ether/Agora.git
+          git fetch upstream master
+          echo "Upstream head: $(git rev-parse upstream/master)"
+          echo "Local pre-merge head: $(git rev-parse HEAD)"
+          if ! git merge --no-ff --no-edit upstream/master; then
+            echo "::error::Upstream merge has conflicts."
+            echo "Conflicted files:"
+            git diff --name-only --diff-filter=U
+            exit 1
+          fi
+          echo "Merged head: $(git rev-parse HEAD)"
+          git diff --check HEAD^1..HEAD
+
+      - name: Run full verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew -p build-logic test --stacktrace
+          ./gradlew :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest verifyKotlinFileSize --stacktrace
+
+      - name: Push synced branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin HEAD:sync/upstream-2026-09-04-latest
