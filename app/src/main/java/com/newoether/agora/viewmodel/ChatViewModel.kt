@@ -162,6 +162,13 @@ class ChatViewModel(
             stopVisibleGeneration = generationStopAdapter::stopVisibleConversation,
             settleDeletedSelectedConversation =
                 selectionController::settleDeletedSelectedConversation,
+            beginSelectedDeleteTransition = { conversationId ->
+                selectionController.beginTreeMutation(
+                    conversationId = conversationId,
+                    scrollToTarget = false,
+                )
+            },
+            abortSelectedDeleteTransition = selectionController::failTreeMutation,
             isDeleteLocked = { conversationId ->
                 conversationComposerSubmission.isFrozen(conversationId)
             },
@@ -746,8 +753,8 @@ class ChatViewModel(
                 }
             },
             onUserMessagePersisted = ragManager::indexMessageForRag,
-            onTreeMutationStart = { scrollToTarget ->
-                selectionController.beginTreeMutation(scrollToTarget)
+            onTreeMutationStart = { conversationId, scrollToTarget ->
+                selectionController.beginTreeMutation(conversationId, scrollToTarget)
             },
             onTreeMutationSettling = selectionController::markTreeMutationReady,
             onTreeMutationFailed = selectionController::failTreeMutation,

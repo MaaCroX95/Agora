@@ -38,6 +38,17 @@ internal fun isEmbeddingMessageIdEligible(messageId: String): Boolean =
         !messageId.startsWith(Constants.TOOL_MSG_PREFIX) &&
         !messageId.startsWith(Constants.RESULT_MSG_PREFIX)
 
+internal data class CacheWorkProgress(
+    val processed: Int,
+    val workTotal: Int,
+    val cached: Int,
+    val total: Int,
+    val progressPermille: Int,
+) {
+    val fraction: Float
+        get() = (progressPermille.coerceIn(0, 1000) / 1000f)
+}
+
 /**
  * Owns embedding-model settings, semantic-ledger admission, durable worker scheduling,
  * and the retained aggregate presentation used by Conversation Search settings.
@@ -58,6 +69,10 @@ class RagManager(
     private val workManager = WorkManager.getInstance(appContext)
     private val _cachingModels = MutableStateFlow<Set<String>>(emptySet())
     val cachingModels: StateFlow<Set<String>> = _cachingModels.asStateFlow()
+    private val _cacheWorkProgress =
+        MutableStateFlow<Map<String, CacheWorkProgress>>(emptyMap())
+    internal val cacheWorkProgress: StateFlow<Map<String, CacheWorkProgress>> =
+        _cacheWorkProgress.asStateFlow()
     private val _cacheCounts = MutableStateFlow<Map<String, Pair<Int, Int>>>(emptyMap())
     val cacheCounts: StateFlow<Map<String, Pair<Int, Int>>> = _cacheCounts.asStateFlow()
     private val _cacheCountLoading = MutableStateFlow<Set<String>>(emptySet())
@@ -93,6 +108,17 @@ class RagManager(
             val models = settings.embeddingModels.value
             observeCacheWork(models.mapTo(linkedSetOf(), EmbeddingModelConfig::id))
             requestCacheCountRefresh(models = models)
+            models.forEach { model ->
+                runCatching {
+                    EmbeddingCacheWorker.repairLegacyChain(model.id, workManager)
+                }.onFailure { error ->
+                    DebugLog.e(
+                        "RagManager",
+                        "Failed to repair legacy cache work for ${model.id}",
+                        error,
+                    )
+                }
+            }
         }
     }
 
@@ -202,6 +228,7 @@ class RagManager(
         _cacheCountFailures.update { failures -> failures intersect modelIds }
         _ledgerStates.update { states -> states.filterKeys { it in modelIds } }
         _cachingModels.update { active -> active intersect modelIds }
+        _cacheWorkProgress.update { progress -> progress.filterKeys { it in modelIds } }
     }
 
     @Synchronized
@@ -210,6 +237,7 @@ class RagManager(
         cacheWorkObservationJob?.cancel()
         observedModelIds = modelIds
         _cachingModels.update { it intersect modelIds }
+        _cacheWorkProgress.update { it.filterKeys(modelIds::contains) }
         if (modelIds.isEmpty()) {
             cacheWorkObservationJob = null
             return
@@ -223,7 +251,8 @@ class RagManager(
                         workManager.getWorkInfosForUniqueWorkFlow(
                             EmbeddingCacheWorker.workNameFor(modelId),
                         ).collect { infos ->
-                            val active = infos.any { !it.state.isFinished }
+                            val unfinished = infos.filter { !it.state.isFinished }
+                            val active = unfinished.isNotEmpty()
                             val finishedIds = infos.asSequence()
                                 .filter { it.state.isFinished }
                                 .mapTo(linkedSetOf()) { it.id.toString() }
@@ -231,6 +260,54 @@ class RagManager(
                                 settings.embeddingModels.value.any { it.id == modelId }
                             _cachingModels.update { current ->
                                 if (configured && active) current + modelId else current - modelId
+                            }
+
+                            val reportingWork = unfinished.firstOrNull {
+                                it.state == androidx.work.WorkInfo.State.RUNNING
+                            } ?: unfinished.firstOrNull()
+                            val data = reportingWork?.progress
+                            val progress = data
+                                ?.takeIf {
+                                    it.keyValueMap.containsKey(
+                                        EmbeddingCacheWorker.KEY_PROGRESS_PERMILLE,
+                                    )
+                                }
+                                ?.let {
+                                    CacheWorkProgress(
+                                        processed = it.getInt(
+                                            EmbeddingCacheWorker.KEY_PROCESSED,
+                                            0,
+                                        ),
+                                        workTotal = it.getInt(
+                                            EmbeddingCacheWorker.KEY_WORK_TOTAL,
+                                            0,
+                                        ),
+                                        cached = it.getInt(
+                                            EmbeddingCacheWorker.KEY_CACHED,
+                                            0,
+                                        ),
+                                        total = it.getInt(
+                                            EmbeddingCacheWorker.KEY_TOTAL,
+                                            0,
+                                        ),
+                                        progressPermille = it.getInt(
+                                            EmbeddingCacheWorker.KEY_PROGRESS_PERMILLE,
+                                            0,
+                                        ),
+                                    )
+                                }
+                            _cacheWorkProgress.update { current ->
+                                if (configured && active && progress != null) {
+                                    current + (modelId to progress)
+                                } else {
+                                    current - modelId
+                                }
+                            }
+                            if (
+                                configured && !active &&
+                                infos.any { it.state == androidx.work.WorkInfo.State.FAILED }
+                            ) {
+                                _cacheCountFailures.update { it + modelId }
                             }
                             val refresh = configured && (
                                 (wasActive && !active) ||

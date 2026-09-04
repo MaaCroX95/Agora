@@ -343,10 +343,20 @@ private fun AttachmentPresentationContent(
                     )
                 }
             }
-            AttachmentPreviewPresentation.MEDIA_LOADING -> CircularProgressIndicator(
-                modifier = Modifier.size(24.dp),
-                strokeWidth = 2.dp,
-            )
+            AttachmentPreviewPresentation.MEDIA_LOADING -> {
+                // AsyncImagePainter must stay attached to an Image while its request is running.
+                // Rendering only the spinner can leave size-sensitive requests permanently Loading.
+                Image(
+                    painter = mediaPainter,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp,
+                )
+            }
             AttachmentPreviewPresentation.MEDIA_SUCCESS -> {
                 Image(
                     painter = mediaPainter,

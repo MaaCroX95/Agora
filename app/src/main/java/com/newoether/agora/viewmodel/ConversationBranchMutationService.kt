@@ -20,7 +20,7 @@ internal class ConversationBranchMutationService(
     private val toUiMessage: (MessageEntity) -> ChatMessage,
     private val isConversationOpen: (String) -> Boolean,
     private val projectGraph: (List<ChatMessage>, Map<String?, String>) -> Unit,
-    private val onMutationStart: suspend (scrollToTarget: Boolean) -> Long?,
+    private val onMutationStart: suspend (conversationId: String, scrollToTarget: Boolean) -> Long?,
     private val onMutationSettling: (Long?, String?) -> Unit,
     private val onMutationFailed: (Long?) -> Unit,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -49,7 +49,7 @@ internal class ConversationBranchMutationService(
         }
 
         scope.launch(ioDispatcher) {
-            val switchingRequestId = onMutationStart(!compactOnly)
+            val switchingRequestId = onMutationStart(conversationId, !compactOnly)
             var committed = false
             try {
                 state.queueMutationMutex.withLock {

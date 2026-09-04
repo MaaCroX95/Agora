@@ -41,6 +41,29 @@ import java.io.File
 
 private data class SearchMethodOption(val key: String, @androidx.annotation.StringRes val labelRes: Int)
 
+internal enum class EmbeddingCacheActionState {
+    LOADING,
+    CACHING,
+    RETRY,
+    CACHE,
+    RECACHE,
+}
+
+internal fun embeddingCacheActionState(
+    hasSnapshot: Boolean,
+    countLoading: Boolean,
+    countFailed: Boolean,
+    workerActive: Boolean,
+    ledgerCurrent: Boolean,
+): EmbeddingCacheActionState = when {
+    workerActive -> EmbeddingCacheActionState.CACHING
+    !hasSnapshot && countLoading -> EmbeddingCacheActionState.LOADING
+    !hasSnapshot && countFailed -> EmbeddingCacheActionState.RETRY
+    !hasSnapshot -> EmbeddingCacheActionState.LOADING
+    ledgerCurrent -> EmbeddingCacheActionState.RECACHE
+    else -> EmbeddingCacheActionState.CACHE
+}
+
 private val searchMethods = listOf(
     SearchMethodOption("keyword", R.string.search_method_keyword),
     SearchMethodOption(Constants.SEARCH_METHOD_RAG, R.string.search_method_rag)
@@ -57,6 +80,7 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     val embeddingModels by viewModel.settings.embeddingModels.collectAsState()
     val activeEmbeddingModelId by viewModel.settings.activeEmbeddingModelId.collectAsState()
     val cachingModels by viewModel.ragManager.cachingModels.collectAsState()
+    val cacheWorkProgress by viewModel.ragManager.cacheWorkProgress.collectAsState()
     val cacheCounts by viewModel.ragManager.cacheCounts.collectAsState()
     val cacheCountLoading by viewModel.ragManager.cacheCountLoading.collectAsState()
     val cacheCountFailures by viewModel.ragManager.cacheCountFailures.collectAsState()
@@ -65,7 +89,10 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     val searchMatchLimit by viewModel.settings.searchMatchLimit.collectAsState()
     val ragThreshold by viewModel.settings.ragThreshold.collectAsState()
 
-    LaunchedEffect(Unit) { viewModel.ragManager.loadCacheCounts() }
+    val embeddingModelIds = remember(embeddingModels) {
+        embeddingModels.map(com.newoether.agora.data.EmbeddingModelConfig::id)
+    }
+    LaunchedEffect(embeddingModelIds) { viewModel.ragManager.loadCacheCounts() }
     var showRemoteDialog by remember { mutableStateOf(false) }
     var showLocalDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf<String?>(null) }
@@ -289,7 +316,11 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                             add {
                                 val isActive = model.id == activeEmbeddingModelId
                                 val isCaching = model.id in cachingModels
+                                val workProgress = cacheWorkProgress[model.id]
                                 val counts = cacheCounts[model.id]
+                                val displayCounts = workProgress
+                                    ?.let { it.cached to it.total }
+                                    ?: counts
                                 val isCountLoading = model.id in cacheCountLoading
                                 val initialFailure = counts == null && !isCountLoading &&
                                     model.id in cacheCountFailures
@@ -301,21 +332,29 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                         val typeLabel = if (model.type == com.newoether.agora.data.EmbeddingModelType.REMOTE)
                                             stringResource(R.string.embedding_type_remote)
                                         else stringResource(R.string.embedding_type_local)
+                                        val statusState = when {
+                                            displayCounts != null && ledgerCurrent && !isCaching ->
+                                                "cached"
+                                            displayCounts != null -> "counts"
+                                            initialFailure -> "failed"
+                                            else -> "loading"
+                                        }
                                         Crossfade(
-                                            targetState = counts to initialFailure,
+                                            targetState = statusState,
                                             animationSpec = tween(250),
                                             label = "embeddingCacheStatus-${model.id}",
-                                        ) { (snapshot, failed) ->
-                                            val cacheLabel = when {
-                                                snapshot != null && ledgerCurrent ->
-                                                    stringResource(R.string.cached)
-                                                snapshot != null -> {
-                                                    val notCached = (snapshot.second - snapshot.first)
-                                                        .coerceAtLeast(0)
+                                        ) { state ->
+                                            val cacheLabel = when (state) {
+                                                "cached" -> stringResource(R.string.cached)
+                                                "counts" -> {
+                                                    val snapshot = displayCounts
+                                                    val notCached = snapshot?.let {
+                                                        (it.second - it.first).coerceAtLeast(0)
+                                                    } ?: 0
                                                     "$notCached ${stringResource(R.string.not_cached)} " +
-                                                        "(${snapshot.first}/${snapshot.second})"
+                                                        "(${snapshot?.first ?: 0}/${snapshot?.second ?: 0})"
                                                 }
-                                                failed -> stringResource(R.string.tool_state_failed)
+                                                "failed" -> stringResource(R.string.tool_state_failed)
                                                 else -> stringResource(R.string.loading_label)
                                             }
                                             Text("$typeLabel · $cacheLabel")
@@ -329,32 +368,49 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                     },
                                     trailingContent = {
                                         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                            val actionState = when {
-                                                isCaching -> "caching"
-                                                initialFailure -> "failed"
-                                                counts == null -> "loading"
-                                                ledgerCurrent -> "recache"
-                                                else -> "cache"
-                                            }
+                                            val actionState = embeddingCacheActionState(
+                                                hasSnapshot = counts != null,
+                                                countLoading = isCountLoading,
+                                                countFailed = initialFailure,
+                                                workerActive = isCaching,
+                                                ledgerCurrent = ledgerCurrent,
+                                            )
                                             Crossfade(
                                                 targetState = actionState,
                                                 animationSpec = tween(250),
                                                 label = "embeddingCacheAction-${model.id}",
                                             ) { state ->
                                                 when (state) {
-                                                    "caching", "loading" -> CircularProgressIndicator(
-                                                        modifier = Modifier.size(24.dp),
-                                                        strokeWidth = 3.dp,
-                                                    )
-                                                    "failed" -> TextButton(
+                                                    EmbeddingCacheActionState.CACHING -> {
+                                                        if (workProgress != null) {
+                                                            CircularProgressIndicator(
+                                                                progress = { workProgress.fraction },
+                                                                modifier = Modifier.size(24.dp),
+                                                                strokeWidth = 3.dp,
+                                                            )
+                                                        } else {
+                                                            CircularProgressIndicator(
+                                                                modifier = Modifier.size(24.dp),
+                                                                strokeWidth = 3.dp,
+                                                            )
+                                                        }
+                                                    }
+                                                    EmbeddingCacheActionState.LOADING ->
+                                                        CircularProgressIndicator(
+                                                            modifier = Modifier.size(24.dp),
+                                                            strokeWidth = 3.dp,
+                                                        )
+                                                    EmbeddingCacheActionState.RETRY -> TextButton(
                                                         onClick = viewModel.ragManager::loadCacheCounts,
                                                     ) { Text(stringResource(R.string.retry)) }
-                                                    "recache" -> TextButton(
+                                                    EmbeddingCacheActionState.RECACHE -> TextButton(
                                                         onClick = { showRecacheConfirm = model.id },
                                                     ) { Text(stringResource(R.string.recache_action)) }
-                                                    else -> TextButton(
+                                                    EmbeddingCacheActionState.CACHE -> TextButton(
                                                         onClick = {
-                                                            viewModel.ragManager.cacheMessagesForModel(model.id)
+                                                            viewModel.ragManager.cacheMessagesForModel(
+                                                                model.id,
+                                                            )
                                                         },
                                                     ) { Text(stringResource(R.string.cache_action)) }
                                                 }

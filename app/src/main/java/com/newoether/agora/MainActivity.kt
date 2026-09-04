@@ -73,6 +73,9 @@ import com.newoether.agora.util.CrashReporter
 import com.newoether.agora.viewmodel.ChatViewModel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
+
+private data class MediaPreviewTarget(val urls: List<String>, val index: Int)
+
 private fun fullScreenPreviewEnterTransition(allowSpatialTransitions: Boolean): EnterTransition = fadeIn(tween(durationMillis = 220)) + (if (allowSpatialTransitions) scaleIn(tween(durationMillis = 300, easing = FastOutSlowInEasing), initialScale = 0.96f) else EnterTransition.None)
 private fun fullScreenPreviewExitTransition(allowSpatialTransitions: Boolean): ExitTransition = fadeOut(tween(durationMillis = 180)) + (if (allowSpatialTransitions) scaleOut(tween(durationMillis = 220, easing = FastOutLinearInEasing), targetScale = 0.96f) else ExitTransition.None)
 class MainActivity : ComponentActivity() {
@@ -360,8 +363,7 @@ fun MainNavigation(
             onNotificationConversationConsumed(id)
         }
     }
-    var fullScreenMediaUrls by remember { mutableStateOf<List<String>?>(null) }
-    var fullScreenMediaIndex by remember { mutableIntStateOf(0) }
+    var mediaPreviewTarget by remember { mutableStateOf<MediaPreviewTarget?>(null) }
     var pdfViewerSelection by remember { mutableStateOf(setOf<Int>()) }
     val onTogglePdfSelection: (Int) -> Unit = { page ->
         pdfViewerSelection = if (page in pdfViewerSelection) pdfViewerSelection - page else pdfViewerSelection + page
@@ -383,7 +385,7 @@ fun MainNavigation(
     // Full-screen media viewer (and settings) drop the snackbar to the bottom (nav-bar inset only);
     // in chat it floats above the bottom bar. The animateDpAsState below turns the change into a
     // rise/fall animation as the viewer opens/closes.
-    val targetSnackbarPadding = if (showSettings || fullScreenMediaUrls != null) navBarPadding else chatSnackbarOffset
+    val targetSnackbarPadding = if (showSettings || mediaPreviewTarget != null) navBarPadding else chatSnackbarOffset
     val snackbarBottomPadding by animateDpAsState(
         targetValue = targetSnackbarPadding,
         animationSpec = if (motionPolicy.allowSpatialTransitions) {
@@ -768,9 +770,8 @@ fun MainNavigation(
                 },
                 onMediaClick = { urls, index ->
                     focusManager.clearFocus()
+                    mediaPreviewTarget = MediaPreviewTarget(urls, index)
                     topLevelPresentation.present(TopLevelPresentation.MEDIA_PREVIEW)
-                    fullScreenMediaUrls = urls
-                    fullScreenMediaIndex = index
                 },
                 onFileContentClick = { name, content ->
                     focusManager.clearFocus()
@@ -779,24 +780,22 @@ fun MainNavigation(
                 },
                 onPdfPagesClick = { pages, idx ->
                     focusManager.clearFocus()
-                    topLevelPresentation.present(TopLevelPresentation.MEDIA_PREVIEW)
                     viewModel.showPdfPreview(pages, idx)
-                    fullScreenMediaUrls = pages
-                    fullScreenMediaIndex = idx
+                    mediaPreviewTarget = MediaPreviewTarget(pages, idx)
                     pdfPreviewFromDialog = false
+                    topLevelPresentation.present(TopLevelPresentation.MEDIA_PREVIEW)
                 },
                 onPdfPreviewSelect = { pages, idx ->
                     focusManager.clearFocus()
-                    topLevelPresentation.present(TopLevelPresentation.MEDIA_PREVIEW)
                     viewModel.showPdfPreview(pages, idx)
-                    fullScreenMediaUrls = pages
-                    fullScreenMediaIndex = idx
+                    mediaPreviewTarget = MediaPreviewTarget(pages, idx)
                     pdfPreviewFromDialog = true
+                    topLevelPresentation.present(TopLevelPresentation.MEDIA_PREVIEW)
                 },
                 pdfViewerSelection = pdfViewerSelection,
                 onTogglePdfSelection = onTogglePdfSelection,
                 onInitPdfSelection = onInitPdfSelection,
-                fullScreenViewerUrls = fullScreenMediaUrls,
+                fullScreenViewerUrls = mediaPreviewTarget?.urls,
                 topLevelPresentation = topLevelPresentation.owner,
                 onSnackbarOffsetChanged = { chatSnackbarOffset = it }
             )
@@ -857,8 +856,8 @@ fun MainNavigation(
 
             // A dedicated dialog gives the media viewer its own window above source sheets.
             FullScreenMediaPreviewDialog(
-                currentUrls = fullScreenMediaUrls,
-                currentIndex = fullScreenMediaIndex,
+                currentUrls = mediaPreviewTarget?.urls,
+                currentIndex = mediaPreviewTarget?.index ?: 0,
                 currentPdfPages = savedPdfPages,
                 currentPdfSelectedPages = pdfViewerSelection,
                 currentPdfSelectionEnabled = pdfPreviewFromDialog,
@@ -870,10 +869,12 @@ fun MainNavigation(
                 },
                 onClose = {
                     viewModel.clearPreviews()
-                    fullScreenMediaUrls = null
+                    mediaPreviewTarget = null
                     pdfPreviewFromDialog = false
                 },
-                onNavigate = { idx -> fullScreenMediaIndex = idx },
+                onNavigate = { idx ->
+                    mediaPreviewTarget = mediaPreviewTarget?.copy(index = idx)
+                },
                 onMessage = { viewModel.emitSnackbar(it) },
                 hapticsEnabled = hapticsEnabled,
             )

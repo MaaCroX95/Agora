@@ -142,7 +142,10 @@ internal class MessageGenerationController(
     // ever entered the cache through a manual full re-cache. Enqueues background work only.
     private val onUserMessagePersisted: (messageId: String, text: String) -> Unit = { _, _ -> },
     /** Covers destructive tree mutation until ChatApp has settled the resulting path. */
-    private val onTreeMutationStart: suspend (scrollToTarget: Boolean) -> Long? = { null },
+    private val onTreeMutationStart: suspend (
+        conversationId: String,
+        scrollToTarget: Boolean,
+    ) -> Long? = { _, _ -> null },
     private val onTreeMutationSettling: (requestId: Long?, targetMessageId: String?) -> Unit =
         { _, _ -> },
     private val onTreeMutationFailed: (requestId: Long?) -> Unit = {},

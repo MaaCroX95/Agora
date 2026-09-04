@@ -133,11 +133,11 @@ internal fun ChatAppDialogHost(
     state.deleteConversationId?.let { id ->
         ChatDeleteConfirmDialog(
             onConfirm = {
+                // Remove the dialog in the tap's snapshot. For the selected conversation,
+                // deletion then waits behind ConversationSelectionController's loading overlay.
+                state.dismissDelete()
                 viewModel.deleteConversation(id) { deleted ->
-                    if (deleted) {
-                        haptics.destructiveConfirmed()
-                        state.dismissDelete()
-                    }
+                    if (deleted) haptics.destructiveConfirmed()
                 }
             },
             onDismiss = state::dismissDelete,

@@ -18,6 +18,7 @@ import com.newoether.agora.data.local.migration.MIGRATION_25_26
 import com.newoether.agora.data.local.migration.MIGRATION_26_27
 import com.newoether.agora.data.local.migration.MIGRATION_27_28
 import com.newoether.agora.data.local.migration.MIGRATION_28_29
+import com.newoether.agora.data.local.migration.MIGRATION_29_30
 
 @Database(
     entities = [
@@ -43,7 +44,7 @@ abstract class ChatDatabase : RoomDatabase() {
     abstract fun semanticIndexDao(): SemanticIndexDao
 
     companion object {
-        const val CURRENT_VERSION = 29
+        const val CURRENT_VERSION = 30
         const val DB_NAME = "agora_db"
 
         val ALL_MIGRATIONS = listOf(
@@ -185,6 +186,7 @@ abstract class ChatDatabase : RoomDatabase() {
             MIGRATION_26_27,
             MIGRATION_27_28,
             MIGRATION_28_29,
+            MIGRATION_29_30,
         )
 
         fun inspectCompatibility(context: Context): DatabaseCompatibility {

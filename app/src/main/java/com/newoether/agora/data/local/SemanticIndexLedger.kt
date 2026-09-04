@@ -20,6 +20,8 @@ data class SemanticIndexLedgerEntity(
     val state: String = STATE_NEEDS_RECONCILE,
     val sourceRevision: Long = 0L,
     val completedRevision: Long = 0L,
+    /** Revision of the newest full-reconcile request; exact work does not advance it. */
+    val reconcileRevision: Long = 0L,
     val updatedAt: Long,
 ) {
     init {
@@ -27,6 +29,7 @@ data class SemanticIndexLedgerEntity(
         require(state == STATE_NEEDS_RECONCILE || state == STATE_PENDING || state == STATE_CURRENT)
         require(sourceRevision >= 0L)
         require(completedRevision in 0L..sourceRevision)
+        require(reconcileRevision in 0L..sourceRevision)
         require(state != STATE_CURRENT || completedRevision == sourceRevision)
     }
 
@@ -65,6 +68,17 @@ data class SemanticIndexWorkEntity(
         require(sourceRevision > 0L)
     }
 }
+
+/** One reconcile page row plus the existing embedding metadata needed for safe reuse. */
+data class ReconcileIndexableMessage(
+    val id: String,
+    val text: String,
+    val embeddingId: Long?,
+    val embeddingFingerprint: String?,
+    val chunkText: String?,
+    val dimension: Int?,
+    val embeddingBytes: Int?,
+)
 
 private fun requireSemanticModelId(modelId: String) {
     require(modelId.isNotBlank())
@@ -115,6 +129,7 @@ interface SemanticIndexDao {
         UPDATE semantic_index_ledger
         SET state = 'NEEDS_RECONCILE',
             sourceRevision = sourceRevision + 1,
+            reconcileRevision = sourceRevision + 1,
             updatedAt = :updatedAt
         WHERE modelId = :modelId
         """,
@@ -146,6 +161,37 @@ interface SemanticIndexDao {
         limit: Int,
     ): List<SemanticIndexWorkEntity>
 
+    @Query("SELECT COUNT(*) FROM semantic_index_work WHERE modelId = :modelId")
+    suspend fun getWorkCount(modelId: String): Int
+
+    @Query(
+        """
+        SELECT m.id, m.text,
+               e.id AS embeddingId,
+               e.sourceFingerprint AS embeddingFingerprint,
+               e.chunkText AS chunkText,
+               e.dimension AS dimension,
+               LENGTH(e.embedding) AS embeddingBytes
+        FROM messages m
+        INNER JOIN conversations c ON m.conversationId = c.id
+        LEFT JOIN embeddings e ON e.messageId = m.id AND e.modelId = :modelId
+        WHERE c.taskId IS NULL
+          AND m.participant IN ('USER', 'MODEL')
+          AND m.text != ''
+          AND m.id NOT LIKE 'tool_%'
+          AND m.id NOT LIKE 'result_%'
+          AND m.id NOT LIKE 'compact_%'
+          AND (:afterId IS NULL OR m.id > :afterId)
+        ORDER BY m.id
+        LIMIT :limit
+        """,
+    )
+    suspend fun getReconcileMessagesPage(
+        modelId: String,
+        afterId: String?,
+        limit: Int,
+    ): List<ReconcileIndexableMessage>
+
     @Query(
         """
         SELECT m.text
@@ -164,6 +210,20 @@ interface SemanticIndexDao {
 
     @Upsert
     suspend fun upsertEmbedding(embedding: EmbeddingEntity)
+
+    @Query(
+        """
+        UPDATE embeddings
+        SET sourceFingerprint = :sourceFingerprint
+        WHERE id = :embeddingId AND modelId = :modelId AND messageId = :messageId
+        """,
+    )
+    suspend fun updateEmbeddingFingerprint(
+        embeddingId: Long,
+        modelId: String,
+        messageId: String,
+        sourceFingerprint: String,
+    ): Int
 
     @Query("DELETE FROM embeddings WHERE messageId IN (:messageIds)")
     suspend fun deleteEmbeddingsForMessages(messageIds: List<String>): Int
@@ -215,17 +275,23 @@ interface SemanticIndexDao {
     @Query(
         """
         UPDATE semantic_index_ledger
-        SET state = 'CURRENT', completedRevision = :expectedRevision, updatedAt = :updatedAt
+        SET state = CASE
+                WHEN sourceRevision = :expectedReconcileRevision
+                  AND NOT EXISTS (
+                      SELECT 1 FROM semantic_index_work WHERE modelId = :modelId
+                  )
+                THEN 'CURRENT'
+                ELSE 'PENDING'
+            END,
+            completedRevision = :expectedReconcileRevision,
+            updatedAt = :updatedAt
         WHERE modelId = :modelId AND state = 'NEEDS_RECONCILE'
-          AND sourceRevision = :expectedRevision
-          AND NOT EXISTS (
-              SELECT 1 FROM semantic_index_work WHERE modelId = :modelId
-          )
+          AND reconcileRevision = :expectedReconcileRevision
         """,
     )
-    suspend fun markCurrentAfterReconcile(
+    suspend fun markAfterReconcile(
         modelId: String,
-        expectedRevision: Long,
+        expectedReconcileRevision: Long,
         updatedAt: Long,
     ): Int
 
@@ -275,17 +341,15 @@ interface SemanticIndexDao {
         val ledger = checkNotNull(getLedger(modelId)) {
             "Semantic index ledger was not readable after exact invalidation"
         }
-        if (ledger.state != SemanticIndexLedgerEntity.STATE_NEEDS_RECONCILE) {
-            upsertWork(
-                SemanticIndexWorkEntity(
-                    modelId = modelId,
-                    messageId = messageId,
-                    sourceFingerprint = sourceFingerprint,
-                    sourceRevision = ledger.sourceRevision,
-                    updatedAt = updatedAt,
-                ),
-            )
-        }
+        upsertWork(
+            SemanticIndexWorkEntity(
+                modelId = modelId,
+                messageId = messageId,
+                sourceFingerprint = sourceFingerprint,
+                sourceRevision = ledger.sourceRevision,
+                updatedAt = updatedAt,
+            ),
+        )
         return ledger
     }
 
@@ -313,12 +377,12 @@ interface SemanticIndexDao {
     @Transaction
     suspend fun completeReconcile(
         modelId: String,
-        expectedRevision: Long,
+        expectedReconcileRevision: Long,
         updatedAt: Long,
     ): Boolean {
         requireSemanticModelId(modelId)
-        require(expectedRevision >= 0L)
-        return markCurrentAfterReconcile(modelId, expectedRevision, updatedAt) == 1
+        require(expectedReconcileRevision >= 0L)
+        return markAfterReconcile(modelId, expectedReconcileRevision, updatedAt) == 1
     }
 }
 
@@ -404,17 +468,41 @@ internal suspend fun <T> ChatDatabase.withSemanticEligibilityMutation(
     result
 }
 
+internal suspend fun ChatDatabase.markSemanticEmbeddingReused(
+    embeddingId: Long,
+    modelId: String,
+    messageId: String,
+    expectedFingerprint: String,
+    expectedReconcileRevision: Long,
+): Boolean = withTransaction {
+    val semanticDao = semanticIndexDao()
+    val ledger = semanticDao.getLedger(modelId) ?: return@withTransaction false
+    if (ledger.reconcileRevision != expectedReconcileRevision) return@withTransaction false
+    val currentFingerprint = semanticDao.getSearchableMessageText(messageId)
+        ?.let(::semanticSourceFingerprint)
+    if (currentFingerprint != expectedFingerprint) return@withTransaction false
+    semanticDao.updateEmbeddingFingerprint(
+        embeddingId = embeddingId,
+        modelId = modelId,
+        messageId = messageId,
+        sourceFingerprint = expectedFingerprint,
+    ) == 1
+}
+
 internal suspend fun ChatDatabase.commitSemanticEmbedding(
     embedding: EmbeddingEntity,
     expectedFingerprint: String,
     updatedAt: Long,
     expectedWorkRevision: Long? = null,
-    expectedLedgerRevision: Long? = null,
+    expectedReconcileRevision: Long? = null,
     completePendingWork: Boolean = true,
 ): Boolean = withTransaction {
     val semanticDao = semanticIndexDao()
     val ledger = semanticDao.getLedger(embedding.modelId) ?: return@withTransaction false
-    if (expectedLedgerRevision != null && ledger.sourceRevision != expectedLedgerRevision) {
+    if (
+        expectedReconcileRevision != null &&
+        ledger.reconcileRevision != expectedReconcileRevision
+    ) {
         return@withTransaction false
     }
     val currentFingerprint = semanticDao.getSearchableMessageText(embedding.messageId)

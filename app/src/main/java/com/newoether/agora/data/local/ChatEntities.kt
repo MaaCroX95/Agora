@@ -190,13 +190,16 @@ data class EmbeddingEntity(
     val modelId: String,
     val embedding: ByteArray,
     val chunkText: String,
-    val dimension: Int
+    val dimension: Int,
+    /** Canonical embedded-source fingerprint; null only for embeddings created before schema v30. */
+    val sourceFingerprint: String? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is EmbeddingEntity) return false
         return id == other.id && messageId == other.messageId && modelId == other.modelId
-            && embedding.contentEquals(other.embedding) && chunkText == other.chunkText && dimension == other.dimension
+            && embedding.contentEquals(other.embedding) && chunkText == other.chunkText &&
+            dimension == other.dimension && sourceFingerprint == other.sourceFingerprint
     }
 
     override fun hashCode(): Int {
@@ -206,6 +209,7 @@ data class EmbeddingEntity(
         result = 31 * result + embedding.contentHashCode()
         result = 31 * result + chunkText.hashCode()
         result = 31 * result + dimension
+        result = 31 * result + (sourceFingerprint?.hashCode() ?: 0)
         return result
     }
 }

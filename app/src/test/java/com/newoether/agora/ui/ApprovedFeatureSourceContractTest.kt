@@ -33,7 +33,7 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(settings.contains("viewModel.ragManager.cacheCountLoading.collectAsState()"))
         assertTrue(settings.contains("viewModel.ragManager.cacheCountFailures.collectAsState()"))
         assertTrue(settings.contains("viewModel.ragManager.ledgerStates.collectAsState()"))
-        assertTrue(settings.contains("LaunchedEffect(Unit) { viewModel.ragManager.loadCacheCounts() }"))
+        assertTrue(settings.contains("LaunchedEffect(embeddingModelIds) { viewModel.ragManager.loadCacheCounts() }"))
         assertTrue(settings.contains("SemanticIndexLedgerEntity.STATE_CURRENT"))
         assertTrue(settings.contains("stringResource(R.string.loading_label)"))
         assertTrue(settings.contains("stringResource(R.string.tool_state_failed)"))
@@ -47,13 +47,14 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(dao.contains("GROUP BY e.modelId"))
         assertTrue(dao.contains("getEmbeddingCountsByModels"))
         assertTrue(entities.contains("Index(value = [\"modelId\"])"))
-        assertTrue(database.contains("CURRENT_VERSION = 29"))
+        assertTrue(database.contains("CURRENT_VERSION = 30"))
         assertTrue(database.contains("MIGRATION_23_24"))
         assertTrue(database.contains("MIGRATION_24_25"))
         assertTrue(database.contains("MIGRATION_25_26"))
         assertTrue(database.contains("MIGRATION_26_27"))
         assertTrue(database.contains("MIGRATION_27_28"))
         assertTrue(database.contains("MIGRATION_28_29"))
+        assertTrue(database.contains("MIGRATION_29_30"))
     }
 
     @Test

@@ -164,7 +164,7 @@ class ConversationBranchMutationServiceTest {
         },
         isConversationOpen = { true },
         projectGraph = { messages, _ -> events += "project:${messages.joinToString { it.id }}" },
-        onMutationStart = { scrollToTarget ->
+        onMutationStart = { _, scrollToTarget ->
             events += "start:$scrollToTarget"
             7L
         },

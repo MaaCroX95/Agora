@@ -19,6 +19,8 @@ internal class ConversationLifecycleController(
     private val removeRuntime: (String) -> Unit,
     private val stopVisibleGeneration: () -> Unit,
     private val settleDeletedSelectedConversation: (String) -> Unit,
+    private val beginSelectedDeleteTransition: suspend (String) -> Long? = { null },
+    private val abortSelectedDeleteTransition: (Long?) -> Unit = {},
     private val isDeleteLocked: (String) -> Boolean = { false },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
@@ -38,7 +40,14 @@ internal class ConversationLifecycleController(
         scope.launch(ioDispatcher) {
             var deleted = false
             var selectedAtCommit = false
+            val selectedAtDispatch = currentConversationId.value == conversationId
+            var transitionRequestId: Long? = null
             try {
+                if (selectedAtDispatch) {
+                    // This suspends for the overlay fade, so no destructive storage work can begin
+                    // until the confirmation dialog is gone and the loading surface is visible.
+                    transitionRequestId = beginSelectedDeleteTransition(conversationId)
+                }
                 withConversationLock(conversationId) {
                     // Send admission uses this same lock. Only the winner may stop live work.
                     if (isDeleteLocked(conversationId)) return@withConversationLock
@@ -57,6 +66,7 @@ internal class ConversationLifecycleController(
                     removeRuntime(conversationId)
                     if (selectedAtCommit) {
                         withContext(mainDispatcher) {
+                            // Hand the already-visible overlay to the New Chat transition.
                             settleDeletedSelectedConversation(conversationId)
                         }
                     }
@@ -70,7 +80,12 @@ internal class ConversationLifecycleController(
                     )
                 }
             } finally {
-                withContext(mainDispatcher) { onResult(deleted) }
+                withContext(mainDispatcher) {
+                    if (selectedAtDispatch && (!deleted || !selectedAtCommit)) {
+                        abortSelectedDeleteTransition(transitionRequestId)
+                    }
+                    onResult(deleted)
+                }
             }
         }
         return true

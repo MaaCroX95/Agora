@@ -426,11 +426,22 @@ internal class ConversationSelectionController(
 
     /** Begins the same UI transition for edit/delete services without exposing the coordinator. */
     suspend fun beginTreeMutation(scrollToTarget: Boolean = true): Long? {
-        val request = _currentConversationId.value?.let { conversationId ->
-            switching.beginTreeMutation(conversationId, scrollToTarget)
-        }
+        val conversationId = _currentConversationId.value ?: return null
+        return beginTreeMutation(conversationId, scrollToTarget)
+    }
+
+    /**
+     * Starts a mutation overlay only while [conversationId] is still the published destination.
+     * This prevents a delayed delete coroutine from covering a newer, rapidly selected chat.
+     */
+    suspend fun beginTreeMutation(
+        conversationId: String,
+        scrollToTarget: Boolean = true,
+    ): Long? {
+        if (_currentConversationId.value != conversationId || _isNewChatMode.value) return null
+        val request = switching.beginTreeMutation(conversationId, scrollToTarget)
         fadeDelay()
-        return request?.id
+        return request.id
     }
 
     fun markTreeMutationReady(requestId: Long?, targetMessageId: String?) {

@@ -405,6 +405,23 @@ class ConversationSelectionControllerTest {
     }
 
     @Test
+    fun staleConversationMutationCannotCoverTheCurrentConversation() = runTest {
+        var fadeCount = 0
+        val fixture = Fixture(backgroundScope, fadeDelay = { fadeCount += 1 })
+        fixture.controller.publishAcceptedConversation("current", "provider:model")
+
+        val requestId = fixture.controller.beginTreeMutation(
+            conversationId = "stale",
+            scrollToTarget = false,
+        )
+
+        assertNull(requestId)
+        assertEquals(0, fadeCount)
+        assertFalse(fixture.controller.isSwitching.value)
+        assertEquals("current", fixture.controller.currentConversationId.value)
+    }
+
+    @Test
     fun deletedSelectedConversationEntersNewChatAfterSettlement() = runTest {
         val fixture = Fixture(backgroundScope)
         fixture.controller.publishAcceptedConversation("deleted", "old-model")

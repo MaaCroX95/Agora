@@ -99,7 +99,7 @@ class SemanticIndexMutationSourceContractTest {
         assertOrdered(
             commit,
             "val ledger = semanticDao.getLedger(embedding.modelId)",
-            "expectedLedgerRevision != null",
+            "expectedReconcileRevision != null",
             "val currentFingerprint =",
             "if (currentFingerprint != expectedFingerprint) return@withTransaction false",
             "val work = if (completePendingWork)",
@@ -262,12 +262,10 @@ class SemanticIndexMutationSourceContractTest {
         val ledger = source(
             "app/src/main/java/com/newoether/agora/data/local/SemanticIndexLedger.kt",
         )
-        val chatDao = source(
-            "app/src/main/java/com/newoether/agora/data/local/ChatDao.kt",
-        )
 
-        assertFalse(worker.contains("getIndexableMessageCount("))
-        assertFalse(worker.contains("getEmbeddingCountByModel("))
+        assertTrue(worker.contains("getIndexableMessageCount("))
+        assertTrue(worker.contains("getEmbeddingCountByModel("))
+        assertTrue(worker.contains("PROGRESS_COUNT_REFRESH_INTERVAL"))
         assertFalse(worker.contains("getUnembeddedMessagesPage("))
         assertFalse(worker.contains("EmbeddingCacheLocks.forModel(modelId).withLock"))
         assertTrue(worker.contains("SemanticIndexLedgerEntity.STATE_PENDING"))
@@ -294,11 +292,11 @@ class SemanticIndexMutationSourceContractTest {
         )
         assertOrdered(
             reconcile,
-            "chatDao.getSearchableMessagesPage(",
-            "semanticSourceFingerprint(message.text)",
-            "expectedLedgerRevision = expectedRevision",
-            "completeReconcile(",
-            "expectedRevision = expectedRevision",
+            "semanticDao.getReconcileMessagesPage(",
+            "semanticSourceFingerprint(row.text)",
+            "expectedReconcileRevision = expectedReconcileRevision",
+            "return semanticDao.completeReconcile(",
+            "updatedAt = System.currentTimeMillis()",
         )
         val commit = worker.section(
             "private suspend fun embedCandidates(",
@@ -307,10 +305,10 @@ class SemanticIndexMutationSourceContractTest {
         assertOrdered(
             commit,
             "database.commitSemanticEmbedding(",
-            "expectedFingerprint = fingerprint",
-            "expectedWorkRevision = workRevision",
-            "expectedLedgerRevision = expectedLedgerRevision",
-            "completePendingWork = workRevision != null",
+            "expectedFingerprint = candidate.fingerprint",
+            "expectedWorkRevision = candidate.workRevision",
+            "expectedReconcileRevision = expectedReconcileRevision",
+            "completePendingWork = candidate.workRevision != null",
         )
         assertTrue(worker.contains("ExistingWorkPolicy.APPEND_OR_REPLACE"))
         assertTrue(worker.contains("workNameFor(modelId)"))
@@ -323,11 +321,13 @@ class SemanticIndexMutationSourceContractTest {
         assertTrue(workPage.contains("ORDER BY sourceRevision, messageId"))
         assertTrue(workPage.contains("LIMIT :limit"))
 
-        val searchablePage = chatDao.substringBefore("suspend fun getSearchableMessagesPage(")
+        val searchablePage = ledger.substringBefore("suspend fun getReconcileMessagesPage(")
             .substringAfterLast("@Query(")
         assertTrue(searchablePage.contains("SELECT m.id, m.text"))
+        assertTrue(searchablePage.contains("LEFT JOIN embeddings"))
         assertTrue(searchablePage.contains(":afterId IS NULL OR m.id > :afterId"))
-        assertTrue(searchablePage.contains("ORDER BY m.id LIMIT :limit"))
+        assertTrue(searchablePage.contains("ORDER BY m.id"))
+        assertTrue(searchablePage.contains("LIMIT :limit"))
         assertFalse(searchablePage.contains("NOT EXISTS"))
     }
 

@@ -44,6 +44,7 @@ class ConversationLifecycleControllerTest {
 
         assertEquals(
             listOf(
+                "overlay:conversation",
                 "lock-start",
                 "stop",
                 "stop-loop",
@@ -131,6 +132,7 @@ class ConversationLifecycleControllerTest {
         assertTrue(failures.isEmpty())
         assertTrue("remove" !in fixture.events)
         assertTrue(fixture.events.none { it.startsWith("settle:") })
+        assertTrue("abort:7" in fixture.events)
     }
 
     private class Fixture(
@@ -163,6 +165,13 @@ class ConversationLifecycleControllerTest {
             stopVisibleGeneration = { events += "stop" },
             settleDeletedSelectedConversation = { conversationId ->
                 events += "settle:$conversationId"
+            },
+            beginSelectedDeleteTransition = { conversationId ->
+                events += "overlay:$conversationId"
+                7L
+            },
+            abortSelectedDeleteTransition = { requestId ->
+                events += "abort:$requestId"
             },
             isDeleteLocked = { deleteLocked },
             ioDispatcher = dispatcher,

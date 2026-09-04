@@ -79,7 +79,7 @@ internal fun FullScreenMediaPreviewDialog(
     var retainedPdfPages by remember { mutableStateOf<List<String>>(emptyList()) }
     var retainedPdfSelectionEnabled by remember { mutableStateOf(false) }
     var retainedPdfTogglePage by remember { mutableStateOf<((Int) -> Unit)?>(null) }
-    LaunchedEffect(currentUrls) {
+    LaunchedEffect(currentUrls, currentIndex) {
         currentUrls?.let { urls ->
             retainedUrls = urls
             retainedIndex = currentIndex

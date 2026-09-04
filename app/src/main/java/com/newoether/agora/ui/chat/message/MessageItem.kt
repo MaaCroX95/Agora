@@ -158,7 +158,7 @@ internal fun MessageItem(
     var showInfoDialog by remember { mutableStateOf(false) }
     var showUserTextSelection by remember(message.id) { mutableStateOf(false) }
     var pendingDelete by remember(message.id) { mutableStateOf<PendingMessageDeletion?>(null) }
-    var deleteInProgress by remember(message.id) { mutableStateOf(false) }
+    var confirmedDelete by remember(message.id) { mutableStateOf<PendingMessageDeletion?>(null) }
     var showCompactDetail by remember(message.id) { mutableStateOf(false) }
     val haptics = LocalAgoraHaptics.current
     val motionPolicy = LocalAgoraMotionPolicy.current
@@ -176,49 +176,51 @@ internal fun MessageItem(
         )
     }
 
+    LaunchedEffect(confirmedDelete) {
+        val confirmed = confirmedDelete ?: return@LaunchedEffect
+        // The confirmation dialog must leave its window before the destructive transition starts.
+        // Waiting for the next frame also prevents the loading overlay from being composed behind it.
+        withFrameNanos { }
+        val onResult: (Boolean) -> Unit = { deleted ->
+            if (deleted) haptics.destructiveConfirmed()
+            confirmedDelete = null
+        }
+        val accepted = if (confirmed.deletesConversation) {
+            onDeleteConversation(confirmed.expectedConversationMessageIds, onResult)
+        } else {
+            onDelete(confirmed.targetMessageId, onResult)
+        }
+        if (!accepted) confirmedDelete = null
+    }
+
     pendingDelete?.let { pending ->
         val onConfirmDelete = {
-            if (!deleteInProgress) {
-                deleteInProgress = true
-                val accepted = if (pending.deletesConversation) {
-                    onDeleteConversation(pending.expectedConversationMessageIds) { deleted ->
-                        deleteInProgress = false
-                        if (deleted) {
-                            pendingDelete = null
-                            haptics.destructiveConfirmed()
-                        }
-                    }
-                } else {
-                    onDelete(pending.targetMessageId) { deleted ->
-                        deleteInProgress = false
-                        if (deleted) {
-                            pendingDelete = null
-                            haptics.destructiveConfirmed()
-                        }
-                    }
-                }
-                if (!accepted) deleteInProgress = false
+            if (confirmedDelete == null) {
+                // Close the dialog in this snapshot. Deletion is dispatched by LaunchedEffect only
+                // after Compose has committed and drawn a frame without the dialog.
+                pendingDelete = null
+                confirmedDelete = pending
             }
             Unit
         }
         if (pending.deletesConversation) {
             MessageDeleteDialog(
                 deletesConversation = true,
-                enabled = !deleteInProgress,
+                enabled = true,
                 onConfirm = onConfirmDelete,
-                onDismiss = { if (!deleteInProgress) pendingDelete = null },
+                onDismiss = { pendingDelete = null },
             )
         } else if (message.isContextCompact()) {
             ContextCompactDeleteDialog(
-                enabled = !deleteInProgress,
+                enabled = true,
                 onConfirm = onConfirmDelete,
-                onDismiss = { if (!deleteInProgress) pendingDelete = null },
+                onDismiss = { pendingDelete = null },
             )
         } else {
             MessageDeleteDialog(
-                enabled = !deleteInProgress,
+                enabled = true,
                 onConfirm = onConfirmDelete,
-                onDismiss = { if (!deleteInProgress) pendingDelete = null },
+                onDismiss = { pendingDelete = null },
             )
         }
     }
