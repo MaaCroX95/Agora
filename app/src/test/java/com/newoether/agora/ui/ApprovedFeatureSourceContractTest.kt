@@ -186,6 +186,14 @@ class ApprovedFeatureSourceContractTest {
                 "viewModel.newChatEntryId.value == accepted.newChatEntryId",
             ),
         )
+        assertTrue(
+            submission.contains(
+                "request.accepted = acceptance\n" +
+                    "                publishDirectAcceptedEffect(request, acceptance)\n" +
+                    "                clearAccepted(owner, request)",
+            ),
+        )
+        assertTrue(submission.contains("if (acceptance !is SendAcceptance.Direct) return"))
         assertTrue(submission.contains("directAcceptedVersion = current.directAcceptedVersion +"))
         assertTrue(submission.contains("if (request.accepted is SendAcceptance.Direct) 1L else 0L"))
         assertTrue(composer.contains("submissionController.observeState(composerOwnerId)"))

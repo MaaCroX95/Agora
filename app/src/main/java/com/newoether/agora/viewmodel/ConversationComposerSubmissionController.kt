@@ -271,6 +271,7 @@ internal class ConversationComposerSubmissionController(
             send(acceptedAdmission, request.text, readyAttachments) { acceptance ->
                 if (!request.acceptanceStarted.compareAndSet(false, true)) return@send
                 request.accepted = acceptance
+                publishDirectAcceptedEffect(request, acceptance)
                 clearAccepted(owner, request)
             }
         } catch (cancelled: CancellationException) {
@@ -318,22 +319,27 @@ internal class ConversationComposerSubmissionController(
             return
         }
         request.acceptedAndCleared.set(true)
-        if (acceptance is SendAcceptance.Direct) {
-            withContext(presentationDispatcher) {
-                _directAcceptedEffects.emit(
-                    DirectAcceptedComposerEffect(
-                        ownerId = request.ownerId,
-                        conversationId = acceptance.conversationId,
-                        newChatEntryId = request.target.newChatEntryId,
-                    ),
-                )
-            }
-        }
         val reclaimable = clearResult.attachments.filterNot { attachment ->
             attachment.localId in request.runtimeAttachmentIds
         }
         if (reclaimable.isNotEmpty() && acceptance.hasDurableAttachmentOwner()) {
             scope.launch(ioDispatcher) { drafts.reclaimAttachments(reclaimable) }
+        }
+    }
+
+    private suspend fun publishDirectAcceptedEffect(
+        request: FrozenRequest,
+        acceptance: SendAcceptance,
+    ) {
+        if (acceptance !is SendAcceptance.Direct) return
+        withContext(presentationDispatcher) {
+            _directAcceptedEffects.emit(
+                DirectAcceptedComposerEffect(
+                    ownerId = request.ownerId,
+                    conversationId = acceptance.conversationId,
+                    newChatEntryId = request.target.newChatEntryId,
+                ),
+            )
         }
     }
 

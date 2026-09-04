@@ -208,10 +208,11 @@ class ConversationComposerSubmissionControllerTest {
     }
 
     @Test
-    fun directAcceptancePublishesOneStableComposerEffectAfterClear() = runTest {
+    fun directAcceptancePublishesComposerEffectBeforeClearSettlement() = runTest {
         val fixture = Fixture(
             this,
             acceptance = SendAcceptance.Direct("message", "conversation"),
+            clearSucceeded = false,
         )
         val effect = async { fixture.controller.directAcceptedEffects.first() }
         runCurrent()
@@ -227,6 +228,11 @@ class ConversationComposerSubmissionControllerTest {
             ),
             effect.await(),
         )
+        assertEquals(
+            ComposerSubmissionPhase.ACCEPTED_PENDING_CLEAR,
+            fixture.controller.state("conversation").value.phase,
+        )
+        assertEquals(0L, fixture.controller.state("conversation").value.acceptedVersion)
     }
 
     @Test

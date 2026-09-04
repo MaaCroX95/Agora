@@ -402,9 +402,10 @@ Authoritative acceptance clears only the frozen text and attachment membership. 
 settlement preserves text typed after the tap, including a TextField edit that becomes visible before
 its asynchronous draft observer reaches the controller. A durable acceptance whose draft clear fails
 enters a non-resendable accepted-clear state and exposes a clear-only Retry; it never resubmits the
-already durable input. Only a directly accepted foreground Send for the exact still-visible origin
-clears focus, hides the IME, and collapses the Composer. Queue placement, later queue drain, and stale
-New Chat acceptance do none of those presentation effects.
+already durable input. At the instant a foreground Send receives durable Direct acceptance, the exact
+still-visible origin clears focus, hides the IME, and collapses the Composer without waiting for the
+following revision-aware draft-clear settlement. Queue placement, later queue drain, and stale New
+Chat acceptance do none of those presentation effects.
 
 Switching conversations cannot cancel, redirect, duplicate, or clear the frozen request. From Send
 tap through authoritative acceptance and exact-owner clearing, Delete Conversation is disabled for
