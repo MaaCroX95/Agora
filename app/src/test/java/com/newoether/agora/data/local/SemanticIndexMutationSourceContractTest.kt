@@ -263,9 +263,9 @@ class SemanticIndexMutationSourceContractTest {
             "app/src/main/java/com/newoether/agora/data/local/SemanticIndexLedger.kt",
         )
 
-        assertTrue(worker.contains("getIndexableMessageCount("))
-        assertTrue(worker.contains("getEmbeddingCountByModel("))
-        assertTrue(worker.contains("PROGRESS_COUNT_REFRESH_INTERVAL"))
+        assertFalse(worker.contains("getIndexableMessageCount("))
+        assertFalse(worker.contains("getEmbeddingCountByModel("))
+        assertFalse(worker.contains("lastProgressPermille"))
         assertFalse(worker.contains("getUnembeddedMessagesPage("))
         assertFalse(worker.contains("EmbeddingCacheLocks.forModel(modelId).withLock"))
         assertTrue(worker.contains("SemanticIndexLedgerEntity.STATE_PENDING"))
@@ -283,6 +283,8 @@ class SemanticIndexMutationSourceContractTest {
         )
         assertOrdered(
             exact,
+            "semanticDao.getWorkCountThroughRevision(",
+            "publishProgress(",
             "semanticDao.getWorkPage(",
             "work.sourceFingerprint == null",
             "semanticDao.completeExactWork(work",
@@ -296,11 +298,17 @@ class SemanticIndexMutationSourceContractTest {
         )
         assertOrdered(
             reconcile,
+            "semanticDao.getReconcileMessageCount(",
+            "publishProgress(",
+            "while (processed < workTotal)",
             "semanticDao.getReconcileMessagesPage(",
             "semanticSourceFingerprint(row.text)",
-            "expectedReconcileRevision = expectedReconcileRevision",
-            "return semanticDao.completeReconcile(",
-            "updatedAt = System.currentTimeMillis()",
+            "!embedCandidates(",
+            "processed += page.size",
+        )
+        assertTrue(
+            reconcile.substringAfter("while (processed < workTotal)")
+                .contains("return semanticDao.completeReconcile("),
         )
         val commit = worker.section(
             "private suspend fun embedCandidates(",
@@ -319,6 +327,7 @@ class SemanticIndexMutationSourceContractTest {
 
         val workPage = ledger.substringBefore("suspend fun getWorkPage(")
             .substringAfterLast("@Query(")
+        assertTrue(workPage.contains("sourceRevision <= :maxSourceRevision"))
         assertTrue(workPage.contains("sourceRevision > :afterSourceRevision"))
         assertTrue(workPage.contains("sourceRevision = :afterSourceRevision"))
         assertTrue(workPage.contains("messageId > :afterMessageId"))
@@ -329,6 +338,12 @@ class SemanticIndexMutationSourceContractTest {
             .substringAfterLast("@Query(")
         assertTrue(searchablePage.contains("SELECT m.id, m.text"))
         assertTrue(searchablePage.contains("LEFT JOIN embeddings"))
+        assertTrue(searchablePage.contains("LEFT JOIN semantic_index_work"))
+        assertTrue(
+            searchablePage.contains(
+                "w.sourceRevision IS NULL OR w.sourceRevision <= :maxWorkRevision",
+            ),
+        )
         assertTrue(searchablePage.contains(":afterId IS NULL OR m.id > :afterId"))
         assertTrue(searchablePage.contains("ORDER BY m.id"))
         assertTrue(searchablePage.contains("LIMIT :limit"))

@@ -145,6 +145,7 @@ interface SemanticIndexDao {
         """
         SELECT * FROM semantic_index_work
         WHERE modelId = :modelId
+          AND sourceRevision <= :maxSourceRevision
           AND (
               sourceRevision > :afterSourceRevision
               OR (sourceRevision = :afterSourceRevision AND messageId > :afterMessageId)
@@ -155,13 +156,22 @@ interface SemanticIndexDao {
     )
     suspend fun getWorkPage(
         modelId: String,
+        maxSourceRevision: Long,
         afterSourceRevision: Long,
         afterMessageId: String,
         limit: Int,
     ): List<SemanticIndexWorkEntity>
 
-    @Query("SELECT COUNT(*) FROM semantic_index_work WHERE modelId = :modelId")
-    suspend fun getWorkCount(modelId: String): Int
+    @Query(
+        """
+        SELECT COUNT(*) FROM semantic_index_work
+        WHERE modelId = :modelId AND sourceRevision <= :maxSourceRevision
+        """,
+    )
+    suspend fun getWorkCountThroughRevision(
+        modelId: String,
+        maxSourceRevision: Long,
+    ): Int
 
     @Query(
         """
@@ -173,12 +183,14 @@ interface SemanticIndexDao {
         FROM messages m
         INNER JOIN conversations c ON m.conversationId = c.id
         LEFT JOIN embeddings e ON e.messageId = m.id AND e.modelId = :modelId
+        LEFT JOIN semantic_index_work w ON w.messageId = m.id AND w.modelId = :modelId
         WHERE c.taskId IS NULL
           AND m.participant IN ('USER', 'MODEL')
           AND m.text != ''
           AND m.id NOT LIKE 'tool_%'
           AND m.id NOT LIKE 'result_%'
           AND m.id NOT LIKE 'compact_%'
+          AND (w.sourceRevision IS NULL OR w.sourceRevision <= :maxWorkRevision)
           AND (:afterId IS NULL OR m.id > :afterId)
         ORDER BY m.id
         LIMIT :limit
@@ -186,9 +198,30 @@ interface SemanticIndexDao {
     )
     suspend fun getReconcileMessagesPage(
         modelId: String,
+        maxWorkRevision: Long,
         afterId: String?,
         limit: Int,
     ): List<ReconcileIndexableMessage>
+
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM messages m
+        INNER JOIN conversations c ON m.conversationId = c.id
+        LEFT JOIN semantic_index_work w ON w.messageId = m.id AND w.modelId = :modelId
+        WHERE c.taskId IS NULL
+          AND m.participant IN ('USER', 'MODEL')
+          AND m.text != ''
+          AND m.id NOT LIKE 'tool_%'
+          AND m.id NOT LIKE 'result_%'
+          AND m.id NOT LIKE 'compact_%'
+          AND (w.sourceRevision IS NULL OR w.sourceRevision <= :maxWorkRevision)
+        """,
+    )
+    suspend fun getReconcileMessageCount(
+        modelId: String,
+        maxWorkRevision: Long,
+    ): Int
 
     @Query(
         """

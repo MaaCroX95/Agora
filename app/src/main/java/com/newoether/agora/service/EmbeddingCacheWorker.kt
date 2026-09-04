@@ -34,7 +34,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
-import kotlin.math.max
 
 internal enum class EmbeddingCacheScheduleDecision {
     KEEP_NEW,
@@ -96,11 +95,6 @@ class EmbeddingCacheWorker(
         cacheModel(modelId, container.database, container.settingsManager)
     }
 
-    private var lastProgressPermille = 0
-    private var lastProgressCached: Int? = null
-    private var lastProgressTotal: Int? = null
-    private var progressPublishCount = 0
-
     internal suspend fun cacheModel(
         modelId: String,
         database: ChatDatabase,
@@ -111,46 +105,44 @@ class EmbeddingCacheWorker(
         val semanticDao = database.semanticIndexDao()
 
         return try {
-            while (true) {
-                val ledger = semanticDao.getLedger(modelId) ?: return Result.success()
-                if (ledger.state == SemanticIndexLedgerEntity.STATE_CURRENT) {
-                    publishProgress(
+            val ledger = semanticDao.getLedger(modelId) ?: return Result.success()
+            val completed = when (ledger.state) {
+                SemanticIndexLedgerEntity.STATE_CURRENT -> true
+                SemanticIndexLedgerEntity.STATE_PENDING ->
+                    consumeExactWork(
+                        model = model,
+                        settingsManager = settingsManager,
+                        admittedRevision = ledger.sourceRevision,
                         database = database,
-                        modelId = modelId,
-                        processed = 1,
-                        workTotal = 1,
-                        terminal = true,
                     )
-                    return Result.success(workDataOf(KEY_FAILED to 0))
-                }
 
-                val completed = when (ledger.state) {
-                    SemanticIndexLedgerEntity.STATE_PENDING ->
-                        consumeExactWork(model, settingsManager, database)
+                SemanticIndexLedgerEntity.STATE_NEEDS_RECONCILE ->
+                    reconcileModel(
+                        model = model,
+                        settingsManager = settingsManager,
+                        expectedReconcileRevision = ledger.reconcileRevision,
+                        database = database,
+                    )
 
-                    SemanticIndexLedgerEntity.STATE_NEEDS_RECONCILE ->
-                        reconcileModel(
-                            model = model,
-                            settingsManager = settingsManager,
-                            expectedReconcileRevision = ledger.reconcileRevision,
-                            database = database,
-                        )
-
-                    else -> true
-                }
-                if (!completed) {
-                    val latest = semanticDao.getLedger(modelId)
-                    val reconcileWasSuperseded =
-                        ledger.state == SemanticIndexLedgerEntity.STATE_NEEDS_RECONCILE &&
-                            latest?.reconcileRevision != ledger.reconcileRevision
-                    if (!reconcileWasSuperseded) return Result.retry()
-                }
-                // Reconcile can hand off directly to exact work that arrived during the scan.
-                // Stay in this worker so frequent messages do not create or wait behind a chain.
-                yield()
+                else -> true
             }
-            @Suppress("UNREACHABLE_CODE")
-            Result.retry()
+            if (completed) {
+                Result.success(workDataOf(KEY_FAILED to 0))
+            } else {
+                val latest = semanticDao.getLedger(modelId)
+                val generationWasSuperseded = when (ledger.state) {
+                    SemanticIndexLedgerEntity.STATE_PENDING ->
+                        latest?.sourceRevision != ledger.sourceRevision
+                    SemanticIndexLedgerEntity.STATE_NEEDS_RECONCILE ->
+                        latest?.reconcileRevision != ledger.reconcileRevision
+                    else -> false
+                }
+                if (generationWasSuperseded) {
+                    Result.success(workDataOf(KEY_FAILED to 0))
+                } else {
+                    Result.retry()
+                }
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -166,20 +158,30 @@ class EmbeddingCacheWorker(
     private suspend fun consumeExactWork(
         model: EmbeddingModelConfig,
         settingsManager: SettingsManager,
+        admittedRevision: Long,
         database: ChatDatabase,
     ): Boolean {
         val semanticDao = database.semanticIndexDao()
-        val workTotal = semanticDao.getWorkCount(model.id).coerceAtLeast(1)
+        val workTotal = semanticDao.getWorkCountThroughRevision(model.id, admittedRevision)
+        if (workTotal == 0) return true
         var processed = 0
         var afterRevision = 0L
         var afterMessageId = ""
         var embeddingConfigResolved = false
         var remoteConfig: Pair<String, String>? = null
         var complete = true
-        publishProgress(database, model.id, processed, workTotal)
-        while (true) {
+        publishProgress(
+            EmbeddingCacheProgress(
+                generationRevision = admittedRevision,
+                kind = EmbeddingCacheWorkKind.EXACT,
+                processed = processed,
+                total = workTotal,
+            ),
+        )
+        while (processed < workTotal) {
             val page = semanticDao.getWorkPage(
                 modelId = model.id,
+                maxSourceRevision = admittedRevision,
                 afterSourceRevision = afterRevision,
                 afterMessageId = afterMessageId,
                 limit = model.batchSize.coerceIn(1, MAX_BATCH_SIZE),
@@ -212,7 +214,14 @@ class EmbeddingCacheWorker(
             }
             if (!embedCandidates(model, remoteConfig, candidates, database)) complete = false
             processed += page.size
-            publishProgress(database, model.id, processed, max(workTotal, processed))
+            publishProgress(
+                EmbeddingCacheProgress(
+                    generationRevision = admittedRevision,
+                    kind = EmbeddingCacheWorkKind.EXACT,
+                    processed = processed.coerceAtMost(workTotal),
+                    total = workTotal,
+                ),
+            )
             yield()
         }
         val latest = semanticDao.getLedger(model.id) ?: return true
@@ -223,7 +232,7 @@ class EmbeddingCacheWorker(
                 updatedAt = System.currentTimeMillis(),
             )
         }
-        return complete
+        return complete && processed == workTotal
     }
 
     private suspend fun reconcileModel(
@@ -232,19 +241,36 @@ class EmbeddingCacheWorker(
         expectedReconcileRevision: Long,
         database: ChatDatabase,
     ): Boolean {
-        val chatDao = database.chatDao()
         val semanticDao = database.semanticIndexDao()
-        val workTotal = chatDao.getIndexableMessageCount().coerceAtLeast(1)
+        val workTotal = semanticDao.getReconcileMessageCount(
+            modelId = model.id,
+            maxWorkRevision = expectedReconcileRevision,
+        )
+        if (workTotal == 0) {
+            return semanticDao.completeReconcile(
+                modelId = model.id,
+                expectedReconcileRevision = expectedReconcileRevision,
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
         var processed = 0
         var afterMessageId: String? = null
         var embeddingConfigResolved = false
         var remoteConfig: Pair<String, String>? = null
         var complete = true
         val embeddingBatchSize = model.batchSize.coerceIn(1, MAX_BATCH_SIZE)
-        publishProgress(database, model.id, processed, workTotal)
-        while (true) {
+        publishProgress(
+            EmbeddingCacheProgress(
+                generationRevision = expectedReconcileRevision,
+                kind = EmbeddingCacheWorkKind.RECONCILE,
+                processed = processed,
+                total = workTotal,
+            ),
+        )
+        while (processed < workTotal) {
             val page = semanticDao.getReconcileMessagesPage(
                 modelId = model.id,
+                maxWorkRevision = expectedReconcileRevision,
                 afterId = afterMessageId,
                 limit = RECONCILE_SCAN_PAGE_SIZE,
             )
@@ -283,10 +309,17 @@ class EmbeddingCacheWorker(
                 }
             }
             processed += page.size
-            publishProgress(database, model.id, processed, max(workTotal, processed))
+            publishProgress(
+                EmbeddingCacheProgress(
+                    generationRevision = expectedReconcileRevision,
+                    kind = EmbeddingCacheWorkKind.RECONCILE,
+                    processed = processed.coerceAtMost(workTotal),
+                    total = workTotal,
+                ),
+            )
             yield()
         }
-        if (!complete) return false
+        if (!complete || processed != workTotal) return false
         return semanticDao.completeReconcile(
             modelId = model.id,
             expectedReconcileRevision = expectedReconcileRevision,
@@ -350,41 +383,15 @@ class EmbeddingCacheWorker(
         existingEmbeddingId = embeddingId,
     )
 
-    private suspend fun publishProgress(
-        database: ChatDatabase,
-        modelId: String,
-        processed: Int,
-        workTotal: Int,
-        terminal: Boolean = false,
-    ) {
-        progressPublishCount += 1
-        val refreshCounts =
-            terminal ||
-                lastProgressCached == null ||
-                lastProgressTotal == null ||
-                progressPublishCount % PROGRESS_COUNT_REFRESH_INTERVAL == 0
-        if (refreshCounts) {
-            val chatDao = database.chatDao()
-            val total = chatDao.getIndexableMessageCount()
-            lastProgressTotal = total
-            lastProgressCached = chatDao.getEmbeddingCountByModel(modelId).coerceAtMost(total)
-        }
-        val total = checkNotNull(lastProgressTotal)
-        val cached = checkNotNull(lastProgressCached)
-        val rawPermille = if (terminal) {
-            1000
-        } else {
-            ((processed.toLong() * 990L) / workTotal.coerceAtLeast(1)).toInt()
-                .coerceIn(0, 990)
-        }
-        lastProgressPermille = max(lastProgressPermille, rawPermille)
+    private suspend fun publishProgress(progress: EmbeddingCacheProgress) {
         setProgress(
             workDataOf(
-                KEY_PROCESSED to processed,
-                KEY_WORK_TOTAL to workTotal,
-                KEY_CACHED to cached,
-                KEY_TOTAL to total,
-                KEY_PROGRESS_PERMILLE to lastProgressPermille,
+                KEY_GENERATION_REVISION to progress.generationRevision,
+                KEY_GENERATION_KIND to progress.kind.name,
+                KEY_PROCESSED to progress.processed,
+                KEY_WORK_TOTAL to progress.total,
+                KEY_REMAINING to progress.remaining,
+                KEY_PROGRESS_PERMILLE to progress.progressPermille,
             ),
         )
     }
@@ -413,8 +420,12 @@ class EmbeddingCacheWorker(
 
     companion object {
         const val KEY_MODEL_ID = "model_id"
+        const val KEY_GENERATION_REVISION = "generation_revision"
+        const val KEY_GENERATION_KIND = "generation_kind"
         const val KEY_PROCESSED = "processed"
         const val KEY_WORK_TOTAL = "work_total"
+        const val KEY_REMAINING = "remaining"
+        // Removed with the atomic presentation-state migration in Checkpoint B.
         const val KEY_CACHED = "cached"
         const val KEY_TOTAL = "total"
         const val KEY_PROGRESS_PERMILLE = "progress_permille"
@@ -423,7 +434,6 @@ class EmbeddingCacheWorker(
         const val TAG = "EmbeddingCache"
         private const val MAX_BATCH_SIZE = 32
         private const val RECONCILE_SCAN_PAGE_SIZE = 128
-        private const val PROGRESS_COUNT_REFRESH_INTERVAL = 16
         private val schedulingLock = Mutex()
 
         fun workNameFor(modelId: String) = "embedding_cache_$modelId"
