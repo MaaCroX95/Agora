@@ -15,6 +15,37 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(keystorePropertiesFile.reader())
 }
 
+val ciVersionCode = providers.environmentVariable("AGORA_VERSION_CODE").orNull?.let { rawValue ->
+    rawValue.toIntOrNull()?.takeIf { it > 0 }
+        ?: throw GradleException("AGORA_VERSION_CODE must be a positive integer, got '$rawValue'.")
+}
+
+val releaseStoreFile = keystoreProperties.getProperty("storeFile")?.takeIf { it.isNotBlank() }
+val releaseStorePassword = keystoreProperties.getProperty("storePassword")?.takeIf { it.isNotBlank() }
+val releaseKeyAlias = keystoreProperties.getProperty("keyAlias")?.takeIf { it.isNotBlank() }
+val releaseKeyPassword = keystoreProperties.getProperty("keyPassword")?.takeIf { it.isNotBlank() }
+val releaseSigningConfigured = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { it != null }
+
+val releaseTaskRequested = gradle.startParameter.taskNames.any { taskName ->
+    taskName.substringAfterLast(':').contains("Release", ignoreCase = true)
+}
+
+if (releaseTaskRequested && !releaseSigningConfigured) {
+    throw GradleException(
+        "Release signing is not fully configured. Configure storeFile, storePassword, keyAlias, and " +
+            "keyPassword in local.properties; debug-signing fallback is intentionally disabled.",
+    )
+}
+
+if (releaseTaskRequested && releaseStoreFile != null && !file(releaseStoreFile).isFile) {
+    throw GradleException("Configured release keystore does not exist: $releaseStoreFile")
+}
+
 android {
     namespace = "com.newoether.agora"
     compileSdk {
@@ -27,9 +58,8 @@ android {
         applicationId = "com.newoether.agora"
         minSdk = 24
         targetSdk = 36
-        versionCode = 30
+        versionCode = ciVersionCode ?: 30
         versionName = "2.0.0"
-
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -49,20 +79,21 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            storeFile = file(keystoreProperties.getProperty("storeFile", "."))
-            storePassword = keystoreProperties.getProperty("storePassword", "")
-            keyAlias = keystoreProperties.getProperty("keyAlias", "")
-            keyPassword = keystoreProperties.getProperty("keyPassword", "")
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = file(checkNotNull(releaseStoreFile))
+                storePassword = checkNotNull(releaseStorePassword)
+                keyAlias = checkNotNull(releaseKeyAlias)
+                keyPassword = checkNotNull(releaseKeyPassword)
+            }
         }
     }
 
-    val hasKeystore = keystoreProperties.getProperty("storeFile", ".").let { it != "." }
-    val releaseSigning = if (hasKeystore) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
-
     buildTypes {
         release {
-            signingConfig = releaseSigning
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
