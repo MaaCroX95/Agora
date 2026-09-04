@@ -27,6 +27,47 @@ class SettingsContractsTest {
         val prompt = BuiltInPrompts.CONTEXT_COMPACT_SYSTEM.lowercase()
         assertTrue(prompt.contains("same language"))
         assertTrue(prompt.contains("do not translate"))
+        assertTrue(prompt.contains("explicitly state the current substantive conversation language or languages"))
+        assertTrue(prompt.contains("subsequent conversation must continue in the same language or languages"))
+        assertTrue(prompt.contains("later human-authored request explicitly changes that preference"))
+    }
+
+    @Test
+    fun defaultContextCompactPromptExcludesSyntheticControlFromUserIntent() {
+        val prompt = BuiltInPrompts.CONTEXT_COMPACT_SYSTEM.lowercase()
+        assertTrue(prompt.contains("application-generated transport and control text"))
+        assertTrue(prompt.contains("not conversation content"))
+        assertTrue(prompt.contains("never describe the current compaction operation as a user request"))
+        assertTrue(prompt.contains("please continue."))
+    }
+
+    @Test
+    fun defaultContextCompactPromptReconcilesPriorHandoffState() {
+        val prompt = BuiltInPrompts.CONTEXT_COMPACT_SYSTEM.lowercase()
+        assertTrue(prompt.contains("substantive content inside an earlier <context_summary>"))
+        assertTrue(prompt.contains("reconcile its still-valid content with later messages"))
+        assertTrue(prompt.contains("omit its wrapper"))
+    }
+
+    @Test
+    fun defaultContextCompactPromptPreservesTaskStateWithoutRevivingOldWork() {
+        val prompt = BuiltInPrompts.CONTEXT_COMPACT_SYSTEM.lowercase()
+        assertTrue(prompt.contains("current human-authored objective"))
+        assertTrue(prompt.contains("completed, cancelled, rejected, or superseded work"))
+        assertTrue(prompt.contains("do not infer or invent user intent"))
+        assertTrue(prompt.contains("never instruct the next assistant to generate"))
+    }
+
+    @Test
+    fun compactInvocationDeclaresApplicationControlProvenance() {
+        assertEquals(
+            "<agora_compact_control>\n" +
+                "Produce the compact state handoff specified by the system prompt.\n" +
+                "This is application-generated control input, not a human-authored request.\n" +
+                "Exclude this message and the current compaction operation from the handoff.\n" +
+                "</agora_compact_control>",
+            BuiltInPrompts.CONTEXT_COMPACT_USER,
+        )
     }
 
     @Test
@@ -146,6 +187,14 @@ class SettingsContractsTest {
         assertFalse(ConversationSettings(openAiWebSearchEnabled = false).isAllNull())
         assertFalse(ConversationSettings(shellEnabled = false).isAllNull())
     }
+    @Test
+    fun lowContextModeDefaultsOffAndCountsAsConversationOverride() {
+        assertFalse(DEFAULT_LOCAL_LOW_CONTEXT_MODE_ENABLED)
+        assertEquals(null, ConversationSettings().lowContextModeEnabled)
+        assertFalse(ConversationSettings(lowContextModeEnabled = false).isAllNull())
+        assertFalse(ConversationSettings(lowContextModeEnabled = true).isAllNull())
+    }
+
     @Test
     fun removedOpenAiGenericSearchProviderFallsBackToDuckDuckGo() {
         assertEquals("duckduckgo", normalizeWebSearchProvider(" OpenAI "))

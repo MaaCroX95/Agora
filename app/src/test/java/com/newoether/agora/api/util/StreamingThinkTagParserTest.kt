@@ -204,17 +204,21 @@ class StreamingThinkTagParserTest {
     @Test
     fun everyTwoChunkBoundaryProducesTheSameResult() = runTest {
         val sources = listOf(
-            "<think>reason</think>answer",
-            "<thinking>reason</thinking>answer",
-            "<reasoning>reason</reasoning>answer",
-            "<analysis>reason</analysis>answer",
-            "<thought>reason</thought>answer",
-            "<|channel|>analysis<|message|>reason<|end|>answer",
-            "<|start|>assistant<|channel|>reasoning<|message|>reason" +
-                "<|channel|>final<|message|>answer",
+            "<think>reason</think>answer" to "reason",
+            "<thinking>reason</thinking>answer" to "reason",
+            "<reasoning>reason</reasoning>answer" to "reason",
+            "<analysis>reason</analysis>answer" to "reason",
+            "<thought>reason</thought>answer" to "reason",
+            "<|channel|>analysis<|message|>reason<|end|>answer" to "reason",
+            (
+                "<|start|>assistant<|channel|>reasoning<|message|>reason" +
+                    "<|channel|>final<|message|>answer"
+            ) to "reason",
+            "<|channel>thought Thinking Process:reason<channel|>answer" to
+                "Thinking Process:reason",
         )
 
-        sources.forEach { source ->
+        sources.forEach { (source, expectedThought) ->
             for (split in 0..source.length) {
                 val parser = StreamingThinkTagParser()
                 val (text, thought) = collectFeeds(
@@ -223,7 +227,7 @@ class StreamingThinkTagParserTest {
                     true,
                 )
                 assertEquals("split=$split source=$source", "answer", text)
-                assertEquals("split=$split source=$source", "reason", thought)
+                assertEquals("split=$split source=$source", expectedThought, thought)
             }
         }
     }

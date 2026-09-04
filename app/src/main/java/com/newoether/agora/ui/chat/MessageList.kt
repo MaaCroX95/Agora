@@ -60,12 +60,13 @@ import com.newoether.agora.ui.chat.message.REGENERATION_ABORT_RESTORE_DURATION_M
 import com.newoether.agora.ui.chat.message.REGENERATION_EXIT_DURATION_MS
 import com.newoether.agora.ui.chat.message.SegmentAppearanceRegistry
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
-import com.newoether.agora.viewmodel.RegenerationTransitionRequest
+import com.newoether.agora.viewmodel.BranchReplacementTransitionRequest
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
@@ -93,13 +94,12 @@ internal fun MessageList(
     streamingTailWithinAttachThreshold: Boolean = false,
     programmaticScrollActive: Boolean = false,
     streamingTailController: StreamingTailController = rememberStreamingTailController(),
-    regenerationTransition: RegenerationTransitionRequest? = null,
+    regenerationTransition: BranchReplacementTransitionRequest? = null,
     onRegenerationFadeOutFinished: (Long) -> Unit = {},
     visualizeContextRollout: Boolean = false,
     toolCallDisplayMode: String = ToolCallDisplayModes.DEFAULT,
     thinkingSegmentDisplayMode: String = ThinkingSegmentDisplayModes.DEFAULT,
     autoExpandActiveGroup: Boolean = true,
-
     parseInlineDollarMath: Boolean = false,
     contextRetainedMessageIds: Set<String> = emptySet(),
     modelAliases: StableModelAliases = StableModelAliases(),
@@ -115,10 +115,12 @@ internal fun MessageList(
     onFork: (String) -> Unit = {},
     onShare: (String) -> Unit = {},
     onRecompact: (String) -> Unit = {},
-    onDelete: (String) -> Unit = {},
+    onDelete: (String, (Boolean) -> Unit) -> Boolean = { _, _ -> false },
+    onDeleteConversation: (Set<String>, (Boolean) -> Unit) -> Boolean = { _, _ -> false },
     searchQuery: String = "",
     activeSearchMatch: ConversationSearchMatch? = null,
     onSearchMatchDistance: (key: String, distanceToViewportCenter: Float) -> Unit = { _, _ -> },
+    onSearchTurnsChanged: (List<MessageListTurn>) -> Unit = {},
     selectionMode: Boolean = false,
     selectedMessageIds: Set<String> = emptySet(),
     onToggleMessageSelection: (String) -> Unit = {},
@@ -139,27 +141,26 @@ internal fun MessageList(
     }
     var editingMessageId by remember(conversationId) { mutableStateOf<String?>(null) }
     var pendingEditMessageId by remember { mutableStateOf<String?>(null) }
-    var pendingEditVisualReplacement by remember(conversationId) {
-        mutableStateOf<PendingEditVisualReplacement?>(null)
-    }
     val editVisualKeyAliases = remember(conversationId) {
         mutableStateMapOf<String, String>()
     }
-    var regenerationExitIds by remember(conversationId) {
+    var branchReplacementExitIds by remember(conversationId) {
         mutableStateOf<Set<String>>(emptySet())
     }
-    var retainedRegenerationExitMessages by remember(conversationId) {
+    var retainedBranchReplacementExitMessages by remember(conversationId) {
         mutableStateOf<List<ChatMessage>>(emptyList())
     }
-    var retainedRegenerationPresentations by remember(conversationId) {
+    var retainedBranchReplacementPresentations by remember(conversationId) {
         mutableStateOf<Map<String, RunMessagePresentation>>(emptyMap())
     }
-    val regenerationExitAlpha = remember(conversationId) { Animatable(1f) }
-    val latestRegenerationFadeFinished by rememberUpdatedState(onRegenerationFadeOutFinished)
+    val branchReplacementExitAlpha = remember(conversationId) { Animatable(1f) }
+    val latestBranchReplacementFadeFinished by rememberUpdatedState(onRegenerationFadeOutFinished)
     val mutationAnchorLock = remember(state) { MessageListMutationAnchorLock() }
     val mutationScope = rememberCoroutineScope()
     val pendingMutationSettles = remember(state) { mutableMapOf<String, Job>() }
-    val searchMatchCentersInTurn = remember(state) { mutableStateMapOf<String, Float>() }
+    val searchMatchCentersInTurn = remember(state, activeSearchMatch?.key) {
+        mutableStateMapOf<String, Float>()
+    }
     val hydratedPayloads = remember(conversationId) { HydratedMessagePayloadLru() }
     var listRootY by remember(state) { mutableFloatStateOf(0f) }
     var streamingTailFollowMode by remember(state, conversationId) {
@@ -172,21 +173,17 @@ internal fun MessageList(
     val latestAutoFollowEnabled by rememberUpdatedState(streamingAutoFollowEnabled)
     val density = androidx.compose.ui.platform.LocalDensity.current
     val tailTolerancePx = with(density) { 2.dp.toPx() }
-
     fun cacheHydratedPayload(message: ChatMessage) {
         hydratedPayloads.put(message)
     }
-
     fun cancelMutationAnchoring() {
         pendingMutationSettles.values.forEach { it.cancel() }
         pendingMutationSettles.clear()
         mutationAnchorLock.cancel()
     }
-
     LaunchedEffect(programmaticScrollActive) {
         if (programmaticScrollActive) cancelMutationAnchoring()
     }
-
     fun setStreamingTailFollowMode(nextMode: StreamingTailFollowMode) {
         streamingTailFollowMode = nextMode
         val attached =
@@ -195,13 +192,11 @@ internal fun MessageList(
         streamingTailController.isAttached = attached
         if (!attached) streamingTailController.isAutoFollowing = false
     }
-
     SideEffect {
         streamingTailController.isAttached =
             streamingTailFollowMode == StreamingTailFollowMode.ATTACHED ||
                 streamingTailFollowMode == StreamingTailFollowMode.SETTLING
     }
-
     LaunchedEffect(isSwitching) {
         if (isSwitching) cancelMutationAnchoring()
     }
@@ -244,14 +239,17 @@ internal fun MessageList(
     val activeMessageIds = remember(messages) {
         messages.list.mapTo(hashSetOf()) { message -> message.id }
     }
-    val presentationMessages = remember(messages, retainedRegenerationExitMessages) {
-        mergeRegenerationPresentationMessages(
+    val presentationMessages = remember(messages, retainedBranchReplacementExitMessages) {
+        mergeBranchReplacementPresentationMessages(
             activeMessages = messages.list,
-            retainedExitMessages = retainedRegenerationExitMessages,
+            retainedExitMessages = retainedBranchReplacementExitMessages,
         )
     }
     val turnCache = remember { MessageListTurnCache() }
     val turns = remember(presentationMessages) { turnCache.update(presentationMessages) }
+    val tailAnchorKey = messageListTailAnchorKey(turns)
+    val tailHolderKey = messageListTailHolderKey(turns)
+    LaunchedEffect(conversationId, turns, searchQuery) { onSearchTurnsChanged(turns) }
 
     LaunchedEffect(
         conversationId,
@@ -309,42 +307,31 @@ internal fun MessageList(
 
     val lastUserMessage =
         messages.list.lastOrNull(MessageGenerationBoundaryResolver::isRealUser)
-    val resolvedEditReplacement = remember(messages, pendingEditVisualReplacement) {
-        resolvePendingEditReplacement(
-            messages = messages.list,
-            pending = pendingEditVisualReplacement,
-        )
-    }
-    val pendingReplacementVisualKey =
-        pendingEditVisualReplacement
-            ?.takeIf { resolvedEditReplacement != null }
-            ?.stableVisualKey
 
-    fun stableVisualKey(messageId: String): String =
-        editVisualKeyAliases[messageId]
-            ?: if (resolvedEditReplacement?.id == messageId) {
-                pendingReplacementVisualKey ?: messageId
-            } else {
-                messageId
-            }
+    fun stableVisualKey(messageId: String): String = branchReplacementVisualKey(
+        messageId = messageId,
+        sourceUserMessageId = regenerationTransition?.sourceUserMessageId,
+        targetUserMessageId = regenerationTransition?.targetUserMessageId,
+        aliases = editVisualKeyAliases,
+    )
 
     SideEffect {
-        val replacement = resolvedEditReplacement
-        val stableKey = pendingReplacementVisualKey
-        if (replacement != null && stableKey != null) {
-            editVisualKeyAliases[replacement.id] = stableKey
-            pendingEditVisualReplacement = null
+        val sourceUserMessageId = regenerationTransition?.sourceUserMessageId
+        val targetUserMessageId = regenerationTransition?.targetUserMessageId
+        if (sourceUserMessageId != null && targetUserMessageId != null) {
+            editVisualKeyAliases[targetUserMessageId] =
+                editVisualKeyAliases[sourceUserMessageId] ?: sourceUserMessageId
         }
     }
 
     LaunchedEffect(regenerationTransition?.id) {
         val transition = regenerationTransition
         if (transition == null) {
-            if (regenerationExitIds.any { exitId ->
+            if (branchReplacementExitIds.any { exitId ->
                     messages.list.any { message -> message.id == exitId }
                 }
             ) {
-                regenerationExitAlpha.animateTo(
+                branchReplacementExitAlpha.animateTo(
                     targetValue = 1f,
                     animationSpec = tween(
                         durationMillis = REGENERATION_ABORT_RESTORE_DURATION_MS,
@@ -352,36 +339,41 @@ internal fun MessageList(
                     ),
                 )
             } else {
-                regenerationExitAlpha.snapTo(1f)
+                branchReplacementExitAlpha.snapTo(1f)
             }
-            retainedRegenerationExitMessages = emptyList()
-            retainedRegenerationPresentations = emptyMap()
-            regenerationExitIds = emptySet()
+            retainedBranchReplacementExitMessages = emptyList()
+            retainedBranchReplacementPresentations = emptyMap()
+            branchReplacementExitIds = emptySet()
             return@LaunchedEffect
         }
 
-        retainedRegenerationExitMessages = regenerationExitMessages(
+        retainedBranchReplacementExitMessages = branchReplacementExitMessages(
             messages = messages.list.map { message -> hydratedPayloads[message.id] ?: message },
             oldMessageId = transition.oldMessageId,
         )
-        regenerationExitIds =
-            retainedRegenerationExitMessages.mapTo(linkedSetOf()) { message -> message.id }
-        retainedRegenerationPresentations =
+        branchReplacementExitIds =
+            retainedBranchReplacementExitMessages.mapTo(linkedSetOf()) { message -> message.id }
+        retainedBranchReplacementPresentations =
             RunUiProjection.project(messages.list, allMessages.list)
-                .filterKeys(regenerationExitIds::contains)
-        if (transition.stage != com.newoether.agora.viewmodel.RegenerationTransitionStage.ANIMATING) {
-            regenerationExitAlpha.snapTo(0f)
+                .filterKeys(branchReplacementExitIds::contains)
+        if (retainedBranchReplacementExitMessages.isEmpty()) {
+            branchReplacementExitAlpha.snapTo(1f)
+            latestBranchReplacementFadeFinished(transition.id)
             return@LaunchedEffect
         }
-        regenerationExitAlpha.snapTo(1f)
-        regenerationExitAlpha.animateTo(
+        if (transition.stage != com.newoether.agora.viewmodel.BranchReplacementTransitionStage.ANIMATING) {
+            branchReplacementExitAlpha.snapTo(0f)
+            return@LaunchedEffect
+        }
+        branchReplacementExitAlpha.snapTo(1f)
+        branchReplacementExitAlpha.animateTo(
             targetValue = 0f,
             animationSpec = tween(
                 durationMillis = REGENERATION_EXIT_DURATION_MS,
                 easing = LinearEasing,
             ),
         )
-        latestRegenerationFadeFinished(transition.id)
+        latestBranchReplacementFadeFinished(transition.id)
     }
 
     LaunchedEffect(
@@ -565,15 +557,20 @@ internal fun MessageList(
         RunUiProjection.project(messages.list, allMessages.list)
     }
 
-    val tailMinHeightPx = if (lastUserMessage == null || viewportHeight == 0) {
+    val tailMinHeightPx = if (tailAnchorKey == null || viewportHeight == 0) {
         0
     } else {
-        calculateTailMinHeightPx(
-            viewportHeightPx = viewportHeight,
-            targetTopPx = with(density) { 140.dp.roundToPx() },
-            bottomObstructionPx = with(density) {
-                (bottomBarHeight + 8.dp).roundToPx()
-            },
+        calculateTailHolderMinHeightPx(
+            turns = turns,
+            semanticAnchorKey = tailAnchorKey,
+            baseMinimumHeightPx = calculateTailMinHeightPx(
+                viewportHeightPx = viewportHeight,
+                targetTopPx = with(density) { 140.dp.roundToPx() },
+                bottomObstructionPx = with(density) {
+                    (bottomBarHeight + 8.dp).roundToPx()
+                },
+            ),
+            messageHeights = messageHeights,
         )
     }
     val tailMinHeight = with(density) { tailMinHeightPx.toDp() }
@@ -614,11 +611,21 @@ internal fun MessageList(
         if (!motionPolicy.allowProgrammaticScrollMotion) {
             state.scrollToItem(
                 index = turnIndex,
-                scrollOffset = (
-                    listRootY +
-                        estimatedAnchorInTurn -
-                        targetCenterY
-                    ).roundToInt(),
+                scrollOffset = searchMatchScrollOffsetPx(
+                    matchCenterInTurnPx = estimatedAnchorInTurn,
+                    viewportCenterInListPx = targetCenterY,
+                ),
+            )
+            val exactCenterInTurn = snapshotFlow {
+                searchMatchCentersInTurn[match.key]
+            }
+                .first { it != null }!!
+            state.scrollToItem(
+                index = turnIndex,
+                scrollOffset = searchMatchScrollOffsetPx(
+                    matchCenterInTurnPx = exactCenterInTurn,
+                    viewportCenterInListPx = targetCenterY,
+                ),
             )
             return@LaunchedEffect
         }
@@ -626,10 +633,12 @@ internal fun MessageList(
         state.smoothSeekToItem(
             targetIndex = { turnIndex },
             targetErrorPx = { visibleTarget ->
-                val anchorInRootCoordinates =
-                    searchMatchCentersInTurn[match.key]
-                        ?: (listRootY + estimatedAnchorInTurn)
-                visibleTarget.offset + anchorInRootCoordinates - targetCenterY
+                searchMatchScrollErrorPx(
+                    turnOffsetInListPx = visibleTarget.offset.toFloat(),
+                    matchCenterInTurnPx =
+                        searchMatchCentersInTurn[match.key] ?: estimatedAnchorInTurn,
+                    viewportCenterInListPx = targetCenterY,
+                )
             },
             estimatedErrorPx = {
                 val firstVisible = state.layoutInfo.visibleItemsInfo
@@ -638,8 +647,7 @@ internal fun MessageList(
                 val firstIndex = firstVisible.index.coerceIn(0, turns.size)
                 val distanceFromFirstToTarget =
                     heightPrefix[turnIndex] - heightPrefix[firstIndex]
-                listRootY +
-                    firstVisible.offset +
+                firstVisible.offset +
                     distanceFromFirstToTarget +
                     estimatedAnchorInTurn -
                     targetCenterY
@@ -697,8 +705,8 @@ internal fun MessageList(
             onDispose { mutationAnchorLock.finish(hydrationMutationKey) }
         }
 
-        val isRetainedRegenerationExit =
-            message.id in regenerationExitIds && message.id !in activeMessageIds
+        val isRetainedBranchReplacementExit =
+            message.id in branchReplacementExitIds && message.id !in activeMessageIds
         val messageIsStreaming = isStreamingOverlay &&
             message.participant == Participant.MODEL &&
             message.status in setOf(
@@ -709,16 +717,16 @@ internal fun MessageList(
             )
         val isInContext =
             messageIsStreaming ||
-                (!isRetainedRegenerationExit && message.id in inContextIds)
+                (!isRetainedBranchReplacementExit && message.id in inContextIds)
         // Once the new branch commits, the active Run projection no longer contains the
-        // transparent old answer. Retain its exact presentation until the regeneration handoff
-        // releases that composition, otherwise the action row is conditionally removed instead
+        // transparent old answer. Retain its exact presentation until the branch-replacement
+        // handoff releases that composition, otherwise the action row is conditionally removed instead
         // of participating in the fade.
         val presentation =
-            runPresentation[message.id] ?: retainedRegenerationPresentations[message.id]
+            runPresentation[message.id] ?: retainedBranchReplacementPresentations[message.id]
         val animateLifecycleEntrance =
-            !isRetainedRegenerationExit &&
-            message.id != resolvedEditReplacement?.id &&
+            !isRetainedBranchReplacementExit &&
+            message.id != regenerationTransition?.targetUserMessageId &&
                 shouldAnimateMessageLifecycleEntrance(
                     message = message,
                     isKnown = lifecycleAppearanceRegistry.isKnown(message.id),
@@ -742,28 +750,22 @@ internal fun MessageList(
             ?.let { height -> Modifier.heightIn(min = height) }
             ?: Modifier
 
+        val deleteTargetMessageId = presentation?.deleteTargetMessageId ?: message.id
+        val conversationMessageIds = allMessages.list.mapTo(linkedSetOf()) { it.id }
+        val deletesConversation = deletionRemovesEntireConversation(allMessages.list, deleteTargetMessageId, message.isContextCompact())
         MessageItem(
             message = message,
             segmentAppearanceRegistry = segmentAppearanceRegistry,
-            modifier = (if (message.id in regenerationExitIds) {
+            modifier = (if (message.id in branchReplacementExitIds) {
                 Modifier.graphicsLayer {
-                    alpha = regenerationExitAlpha.value
+                    alpha = branchReplacementExitAlpha.value
                 }
             } else {
                 Modifier
             }).then(hydrationHeightModifier),
             animateEntrance = animateLifecycleEntrance,
             onEdit = { id, text ->
-                if (!isRetainedRegenerationExit && pendingEditMessageId == null) {
-                    val source = messages.list.firstOrNull { message -> message.id == id }
-                    pendingEditVisualReplacement = source?.let { message ->
-                        PendingEditVisualReplacement(
-                            sourceMessageId = message.id,
-                            sourceParentId = message.parentId,
-                            submittedText = text,
-                            stableVisualKey = stableVisualKey(message.id),
-                        )
-                    }
+                if (!isRetainedBranchReplacementExit && pendingEditMessageId == null) {
                     pendingEditMessageId = id
                     mutationScope.launch {
                         val accepted = try {
@@ -778,11 +780,6 @@ internal fun MessageList(
                         }
                         if (pendingEditMessageId == id) {
                             pendingEditMessageId = null
-                        }
-                        if (!accepted &&
-                            pendingEditVisualReplacement?.sourceMessageId == id
-                        ) {
-                            pendingEditVisualReplacement = null
                         }
                     }
                 }
@@ -802,8 +799,8 @@ internal fun MessageList(
                 isStopping = isStopping,
                 isCompacting = isCompacting,
             ),
-            isRegenerationExiting = message.id in regenerationExitIds,
-            isEditingAllowed = !isRetainedRegenerationExit &&
+            isRegenerationExiting = message.id in branchReplacementExitIds,
+            isEditingAllowed = !isRetainedBranchReplacementExit &&
                 !selectionMode &&
                 (editingMessageId == null || editingMessageId == message.id) &&
                 !isLoading,
@@ -822,7 +819,7 @@ internal fun MessageList(
             groupedSegmentAutoExpansionController =
                 groupedSegmentAutoExpansionController,
             onStartEdit = {
-                if (!isRetainedRegenerationExit) editingMessageId = message.id
+                if (!isRetainedBranchReplacementExit) editingMessageId = message.id
             },
             onCancelEdit = { editingMessageId = null },
             showActions = !selectionMode && presentation?.showActions == true,
@@ -853,20 +850,31 @@ internal fun MessageList(
             onFork = onFork,
             onShare = onShare,
             onRecompact = onRecompact,
-            deleteTargetMessageId = presentation?.deleteTargetMessageId ?: message.id,
+            deleteTargetMessageId = deleteTargetMessageId,
+            deletesConversation = deletesConversation,
             onDelete = onDelete,
+            conversationMessageIds = conversationMessageIds,
+            onDeleteConversation = onDeleteConversation,
             onMediaClick = onMediaClick,
             onFileContentClick = onFileContentClick,
             onPdfPagesClick = onPdfPagesClick,
             onSegmentDetailRequest = requestSegmentDetail,
             searchQuery = searchQuery,
             activeSearchMatch = activeSearchMatch,
-            onSearchMatchPosition = { key, centerY ->
+            onSearchMatchPosition = { key, measurementEpoch, centerY ->
+                val activeKey = activeSearchMatch?.key
+                if (!acceptsSearchMatchMeasurement(activeKey, key, measurementEpoch)) {
+                    return@MessageItem
+                }
                 val turnIndex = messageListTurnIndex(turns, message.id)
                 val visibleTurn = state.layoutInfo.visibleItemsInfo
                     .firstOrNull { it.index == turnIndex }
-                if (visibleTurn != null) {
-                    searchMatchCentersInTurn[key] = centerY - visibleTurn.offset
+                if (activeKey != null && visibleTurn != null) {
+                    searchMatchCentersInTurn[key] = searchMatchCenterInTurnPx(
+                        glyphCenterInRootPx = centerY,
+                        listRootInRootPx = listRootY,
+                        turnOffsetInListPx = visibleTurn.offset.toFloat(),
+                    )
                 }
                 val topInsetPx = with(density) { 140.dp.toPx() }
                 val bottomInsetPx = with(density) { bottomBarHeight.toPx() }
@@ -874,13 +882,13 @@ internal fun MessageList(
                     ((viewportHeight - bottomInsetPx - topInsetPx).coerceAtLeast(0f) / 2f)
                 onSearchMatchDistance(
                     key,
-                    kotlin.math.abs(centerY - viewportCenterY),
+                    kotlin.math.abs(centerY - listRootY - viewportCenterY),
                 )
             },
             selectionMode = selectionMode,
-            selected = !isRetainedRegenerationExit && message.id in selectedMessageIds,
+            selected = !isRetainedBranchReplacementExit && message.id in selectedMessageIds,
             onToggleSelection = {
-                if (!isRetainedRegenerationExit) onToggleMessageSelection(message.id)
+                if (!isRetainedBranchReplacementExit) onToggleMessageSelection(message.id)
             },
             onHeightChanged = { height ->
                 if (height > 0 && messageHeights[message.id] != height) {
@@ -947,8 +955,6 @@ internal fun MessageList(
         authoritativeMessages = authoritativeMessages.list,
         streamingMessage = streamingMessage,
         observeMessage = observeMessage,
-        searchQuery = searchQuery,
-        activeSearchMatch = activeSearchMatch,
         parseInlineDollarMath = parseInlineDollarMath,
         onMediaClick = onMediaClick,
         modifier = modifier,
@@ -965,18 +971,13 @@ internal fun MessageList(
             userScrollEnabled = userScrollEnabled
         ) {
             items(turns, key = { turn -> stableVisualKey(turn.key) }) { turn ->
-                val isLastTurn = turn.key == lastUserMessage?.id
-                // A turn's key and composition survive when the next USER is appended. Only the
-                // new turn enters; the previous assistant never moves to a different Lazy item.
+                val holdsTailMinimum = turn.key == tailHolderKey
                 Box(modifier = Modifier) {
-                    // The last turn atomically absorbs bottom space. Earlier turns keep the same
-                    // Column call site with a zero minimum, so losing tail status cannot dispose
-                    // or recreate any child message.
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(
-                                min = if (isLastTurn) tailMinHeight else 0.dp,
+                                min = if (holdsTailMinimum) tailMinHeight else 0.dp,
                             ),
                     ) {
                         turn.messages.forEach { message ->

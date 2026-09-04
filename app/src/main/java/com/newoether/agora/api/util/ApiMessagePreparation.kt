@@ -7,7 +7,6 @@ import com.newoether.agora.model.isSuccessfulContextCompact
 
 private const val CONTEXT_SUMMARY_ID_PREFIX = "context_summary_"
 private const val API_INITIAL_USER_ID_PREFIX = "api_initial_user_"
-private const val API_COMPACT_CONTINUATION_ID_PREFIX = "api_compact_continuation_"
 private const val API_COMPACT_CONTINUATION_TEXT = "Please continue."
 internal const val CONTEXT_SUMMARY_OPEN_TAG = "<context_summary>"
 internal const val CONTEXT_SUMMARY_CLOSE_TAG = "</context_summary>"
@@ -22,6 +21,7 @@ fun applyNearestContextCompact(messages: List<ChatMessage>): List<ChatMessage> =
 private fun projectNearestContextCompact(
     messages: List<ChatMessage>,
     markSummaryForApi: Boolean,
+    appendContinuationForApi: Boolean = false,
 ): List<ChatMessage> {
     // A failed, stopped, or in-flight Compact is durable UI history, but it never summarizes
     // anything and therefore has no Provider-context meaning. Keeping it in the wire history can
@@ -38,7 +38,17 @@ private fun projectNearestContextCompact(
     if (index < 0) return providerVisible
     val compact = providerVisible[index]
     val projectedText = if (markSummaryForApi) {
-        "$CONTEXT_SUMMARY_OPEN_TAG\n${compact.text.trim()}\n$CONTEXT_SUMMARY_CLOSE_TAG"
+        buildString {
+            append(CONTEXT_SUMMARY_OPEN_TAG)
+            append('\n')
+            append(compact.text.trim())
+            append('\n')
+            append(CONTEXT_SUMMARY_CLOSE_TAG)
+            if (appendContinuationForApi) {
+                append("\n\n")
+                append(API_COMPACT_CONTINUATION_TEXT)
+            }
+        }
     } else {
         compact.text
     }
@@ -64,12 +74,15 @@ fun canonicalContextMessages(messages: List<ChatMessage>): List<ChatMessage> =
 private fun canonicalContextMessages(
     messages: List<ChatMessage>,
     markSummaryForApi: Boolean,
+    appendContinuationForApi: Boolean = false,
 ): List<ChatMessage> {
-    val compacted = projectNearestContextCompact(messages, markSummaryForApi)
+    val compacted = projectNearestContextCompact(
+        messages = messages,
+        markSummaryForApi = markSummaryForApi,
+        appendContinuationForApi = appendContinuationForApi,
+    )
     val canonical = validateToolMessages(
-        stripEmptyTurns(
-            projectGenerationStatusesForApi(compacted.distinctBy(ChatMessage::id))
-        )
+        stripEmptyTurns(compacted.distinctBy(ChatMessage::id))
     )
     return stripEmptyTurns(mergeConsecutiveSameRole(canonical))
 }
@@ -83,43 +96,26 @@ fun prepareMessages(messages: List<ChatMessage>, contextTokenBudget: Int): List<
             it.participant == Participant.USER
     }
     val history = if (prompt == null) messages else messages.dropLast(1)
-    val requestHistory = if (prompt == null) {
-        appendCompactContinuationIfNeeded(history)
-    } else {
-        history
-    }
+    val appendContinuationForApi = shouldAppendCompactContinuation(messages)
     return stripEmptyTurns(
         mergeConsecutiveSameRole(
             limitContext(
-                canonicalContextMessages(requestHistory, markSummaryForApi = true),
+                canonicalContextMessages(
+                    messages = history,
+                    markSummaryForApi = true,
+                    appendContinuationForApi = appendContinuationForApi,
+                ),
                 contextTokenBudget,
             )
         )
     ) + listOfNotNull(prompt)
 }
 
-private fun appendCompactContinuationIfNeeded(
-    messages: List<ChatMessage>,
-): List<ChatMessage> {
+private fun shouldAppendCompactContinuation(messages: List<ChatMessage>): Boolean {
     val compactIndex = messages.indexOfLast(ChatMessage::isSuccessfulContextCompact)
-    if (compactIndex < 0) return messages
-    val hasLaterOrdinaryUser = messages
-        .asSequence()
-        .drop(compactIndex + 1)
-        .any { message ->
-            message.participant == Participant.USER &&
-                !message.isToolProtocolMessage() &&
-                !message.isContextCompact() &&
-                !message.id.startsWith(API_INITIAL_USER_ID_PREFIX)
-        }
-    if (hasLaterOrdinaryUser) return messages
-    val compact = messages[compactIndex]
-    val parent = messages.lastOrNull()
-    return messages + ChatMessage(
-        id = "$API_COMPACT_CONTINUATION_ID_PREFIX${compact.id}",
-        parentId = parent?.id,
-        text = API_COMPACT_CONTINUATION_TEXT,
-        participant = Participant.USER,
-        timestamp = parent?.timestamp?.let { if (it == Long.MAX_VALUE) it else it + 1L } ?: 0L,
-    )
+    if (compactIndex < 0) return false
+    val adjacentMessage = messages.getOrNull(compactIndex + 1) ?: return true
+    return adjacentMessage.participant != Participant.USER ||
+        adjacentMessage.isToolProtocolMessage() ||
+        adjacentMessage.isContextCompact()
 }

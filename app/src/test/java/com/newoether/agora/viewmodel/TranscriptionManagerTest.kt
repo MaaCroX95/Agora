@@ -46,6 +46,10 @@ class TranscriptionManagerTest {
             image = image,
             ctx = context(providerName = "transcriber"),
             generationJob = null,
+            conversationId = "conversation",
+            runId = "run",
+            pass = 2,
+            modelMessageId = "assistant",
             onProgress = { progress += it },
         )
 
@@ -73,6 +77,10 @@ class TranscriptionManagerTest {
             image = image,
             ctx = context(providerName = "transcriber"),
             generationJob = null,
+            conversationId = "conversation",
+            runId = "run",
+            pass = 2,
+            modelMessageId = "assistant",
             onProgress = { progress += it },
         )
 
@@ -92,6 +100,10 @@ class TranscriptionManagerTest {
             image = image,
             ctx = context(providerName = "absent"),
             generationJob = null,
+            conversationId = "conversation",
+            runId = "run",
+            pass = 2,
+            modelMessageId = "assistant",
             onProgress = { progress += it },
         )
 

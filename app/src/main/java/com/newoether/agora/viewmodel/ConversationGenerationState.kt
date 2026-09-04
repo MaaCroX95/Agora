@@ -75,7 +75,7 @@ class ConversationGenerationState(
     val generating = resources.generating
     val stopping = resources.stopping
     val generationSnapshot = resources.generationSnapshot
-    val queuedSends = guidanceLeases.queuedSends
+    internal val queuedSends = guidanceLeases.queuedSends
 
     /** Serializes durable intervention acceptance against slot release/queue drain. */
     val queueMutationMutex = Mutex()
@@ -525,7 +525,7 @@ class ConversationGenerationState(
     }
 
     /** Append a queued send (generation in progress → enqueue instead of launching). */
-    fun enqueueSend(send: QueuedSend) = guidanceLeases.enqueue(send)
+    internal fun enqueueSend(send: QueuedSend) = guidanceLeases.enqueue(send)
 
     /** Stable evidence for orchestration that a queued batch already crossed into generation. */
     fun guidanceClaimRevision(): Long = guidanceLeases.currentClaimRevision()
@@ -538,10 +538,10 @@ class ConversationGenerationState(
      * delete its now-orphaned attachment files — the composer already cleared its own reference on
      * enqueue, so the QueuedSend holds the only handle to those copied files.
      */
-    fun removeQueuedSend(id: String): QueuedSend? = guidanceLeases.remove(id)
+    internal fun removeQueuedSend(id: String): QueuedSend? = guidanceLeases.remove(id)
 
     /** Transfer the pending batch to one explicit in-flight owner before leaving memory-only state. */
-    fun claimQueuedSends(): GuidanceBatchLease? = guidanceLeases.claim()
+    internal fun claimQueuedSends(): GuidanceBatchLease? = guidanceLeases.claim()
 
     /**
      * End one in-flight ownership lease. A durable commit transfers file ownership to Room;

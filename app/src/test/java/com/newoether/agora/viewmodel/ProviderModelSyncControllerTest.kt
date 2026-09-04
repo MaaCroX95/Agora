@@ -66,16 +66,18 @@ class ProviderModelSyncControllerTest {
             coVerify(exactly = 1) {
                 settings.saveLastModelsFetchFingerprint("fingerprint")
             }
+            verify(exactly = 1) { providers.computeFingerprint() }
         }
 
     @Test
-    fun `provider failure is typed and keeps fingerprint eligible for retry`() = runTest {
+    fun `provider failure is typed and records the attempted fingerprint`() = runTest {
         val providers = mockk<ProviderRegistry>()
         val settings = settings()
         every { providers.all } returns mapOf("Cloud" to mockk<LlmProvider>())
         every { providers.ensureCustomProvidersRegistered() } just Runs
         every { settings.resolveActiveKey("Cloud") } returns "key"
         every { providers.isConfigured("Cloud", "key") } returns true
+        every { providers.computeFingerprint() } returns "attempted-fingerprint"
         coEvery { providers.fetchModelsForProvider("Cloud") } throws ModelFetchTimeoutException()
         val completed = CompletableDeferred<ProviderModelSyncOutcome>()
         val controller = ProviderModelSyncController(providers, settings, this)
@@ -90,7 +92,32 @@ class ProviderModelSyncControllerTest {
             outcome.failures,
         )
         assertFalse(controller.isSyncing.value)
-        coVerify(exactly = 0) { settings.saveLastModelsFetchFingerprint(any()) }
+        coVerify(exactly = 1) {
+            settings.saveLastModelsFetchFingerprint("attempted-fingerprint")
+        }
+    }
+
+    @Test
+    fun `global failure records the attempted fingerprint`() = runTest {
+        val providers = mockk<ProviderRegistry>()
+        val settings = settings()
+        every { providers.computeFingerprint() } returns "attempted-fingerprint"
+        every { providers.ensureCustomProvidersRegistered() } throws IllegalStateException("broken")
+        val completed = CompletableDeferred<ProviderModelSyncOutcome>()
+        val controller = ProviderModelSyncController(providers, settings, this)
+
+        controller.start(request()) { completed.complete(it) }
+        val outcome = completed.await()
+
+        assertEquals(
+            listOf(ProviderModelSyncFailure("Models", "broken")),
+            outcome.failures,
+        )
+        assertFalse(controller.isSyncing.value)
+        coVerify(exactly = 1) {
+            settings.saveLastModelsFetchFingerprint("attempted-fingerprint")
+        }
+        verify(exactly = 1) { providers.computeFingerprint() }
     }
 
     @Test
@@ -131,6 +158,7 @@ class ProviderModelSyncControllerTest {
         every { providers.ensureCustomProvidersRegistered() } just Runs
         every { settings.resolveActiveKey("Cloud") } returns "key"
         every { providers.isConfigured("Cloud", "key") } returns true
+        every { providers.computeFingerprint() } returns "cancelled-fingerprint"
         coEvery { providers.fetchModelsForProvider("Cloud") } coAnswers { awaitCancellation() }
         val owner = SupervisorJob()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + owner)
@@ -145,6 +173,7 @@ class ProviderModelSyncControllerTest {
 
         assertFalse(controller.isSyncing.value)
         assertEquals(0, completionCount)
+        coVerify(exactly = 0) { settings.saveLastModelsFetchFingerprint(any()) }
     }
 
     private fun settings(

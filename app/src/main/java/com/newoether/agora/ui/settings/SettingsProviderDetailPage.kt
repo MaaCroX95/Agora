@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
@@ -71,6 +72,9 @@ fun SettingsProviderDetailPage(
     val localChatModels by viewModel.settings.localChatModels.collectAsState()
     val localModelIdleRetentionMinutes by
         viewModel.settings.localModelIdleRetentionMinutes.collectAsState()
+    val localLowContextModeEnabled by
+        viewModel.settings.localLowContextModeEnabled.collectAsState()
+    val showDocFab by viewModel.settings.showDocumentationFab.collectAsState()
 
     var currentName by rememberSaveable(providerName) { mutableStateOf(providerName) }
 
@@ -182,7 +186,8 @@ fun SettingsProviderDetailPage(
                     }
                 }
             }
-        }
+        },
+        floatingActionButton = { if (showDocFab) DocumentationFab("provider.md") },
     ) {
             SettingsGroupColumn {
                 // Base URL (non-Local only)
@@ -431,13 +436,43 @@ fun SettingsProviderDetailPage(
                 )
                 SettingsGroup(
                     title = stringResource(R.string.advanced_title),
-                    items = listOf {
-                        LocalModelIdleRetentionSlider(
-                            value = localModelIdleRetentionMinutes,
-                            onValueChange =
-                                viewModel.settings::setLocalModelIdleRetentionMinutes,
-                        )
-                    },
+                    items = listOf(
+                        {
+                            SettingsItem(
+                                modifier = Modifier.toggleable(
+                                    value = localLowContextModeEnabled,
+                                    onValueChange =
+                                        viewModel.settings::setLocalLowContextModeEnabled,
+                                ),
+                                headlineContent = {
+                                    Text(stringResource(R.string.low_context_mode))
+                                },
+                                supportingContent = {
+                                    Text(stringResource(R.string.low_context_mode_default_desc))
+                                },
+                                leadingContent = {
+                                    Icon(
+                                        Icons.Default.Memory,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = localLowContextModeEnabled,
+                                        onCheckedChange = null,
+                                    )
+                                },
+                            )
+                        },
+                        {
+                            LocalModelIdleRetentionSlider(
+                                value = localModelIdleRetentionMinutes,
+                                onValueChange =
+                                    viewModel.settings::setLocalModelIdleRetentionMinutes,
+                            )
+                        },
+                    ),
                 )
             }
 
@@ -512,6 +547,7 @@ fun SettingsProviderDetailPage(
                 }
             }
             }
+            if (showDocFab) Spacer(modifier = Modifier.height(80.dp))
     }
 
     // --- Dialogs ---
@@ -523,7 +559,7 @@ fun SettingsProviderDetailPage(
     if (showAddModelDialog && copiedFilePath != null) {
         var modelId by remember { mutableStateOf("") }; var modelAlias by remember { mutableStateOf("") }
         var addMmprojPath by remember { mutableStateOf("") }
-        var nCtx by remember { mutableStateOf("4096") }; var temperature by remember { mutableStateOf("0.7") }; var topP by remember { mutableStateOf("0.9") }; var maxTokens by remember { mutableStateOf("1024") }
+        var nCtx by remember { mutableStateOf("16384") }; var temperature by remember { mutableStateOf("0.7") }; var topP by remember { mutableStateOf("0.9") }; var maxTokens by remember { mutableStateOf("1024") }
         var idError by remember { mutableStateOf<String?>(null) }; var formError by remember { mutableStateOf<String?>(null) }
         val idRegex = remember { Regex("^[a-z0-9._-]+\$") }
         LaunchedEffect(mmprojPickedUri) {

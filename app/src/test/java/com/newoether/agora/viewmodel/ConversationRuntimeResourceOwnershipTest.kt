@@ -6,6 +6,7 @@ import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.RuntimeRunIdentity
 import com.newoether.agora.model.RunState
+import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.model.ToolExecutionStates
 import kotlinx.coroutines.Job
 import org.junit.Assert.assertEquals
@@ -220,9 +221,17 @@ class ConversationRuntimeResourceOwnershipTest {
         id = id,
         text = text,
         modelId = "model",
-        attachments = emptyList(),
+        attachments = ownedPath?.let { path ->
+            listOf(
+                SelectedAttachment(
+                    localId = id,
+                    uri = path,
+                    type = "image",
+                    localPath = path,
+                ),
+            )
+        }.orEmpty(),
         runId = "old-run",
-        preparedOwnedPaths = listOfNotNull(ownedPath),
     )
 
     private companion object {

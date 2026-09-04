@@ -13,28 +13,131 @@ import com.newoether.agora.ui.chat.message.segmentSheetBackAction
 import com.newoether.agora.ui.chat.message.usesVirtualizedSegmentDetail
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CompactMessagePresentationTest {
     @Test
-    fun compactMessagesRemainInTurnsEvenWhenTheirSummaryIsBlank() {
+    fun compactIsAStandaloneItemAfterAnOrdinaryTurnEvenWhenItsSummaryIsBlank() {
         val compact = message("compact_boundary", Participant.MODEL).copy(text = "")
 
-        val leading = buildMessageListTurns(listOf(compact))
-        val insideTurn = buildMessageListTurns(
-            listOf(message("user", Participant.USER), compact)
+        val turns = buildMessageListTurns(
+            listOf(
+                message("user", Participant.USER),
+                message("assistant", Participant.MODEL),
+                compact,
+            ),
         )
 
-        assertEquals(listOf("compact_boundary"), leading.single().messages.map { it.id })
         assertEquals(
-            listOf("user", "compact_boundary"),
-            insideTurn.single().messages.map { it.id },
+            listOf(
+                listOf("user", "assistant"),
+                listOf("compact_boundary"),
+            ),
+            turns.map { turn -> turn.messages.map { it.id } },
+        )
+        assertEquals("compact_boundary", turns.last().key)
+    }
+
+    @Test
+    fun tailAnchorAndPhysicalHolderRemainSeparateAfterCompact() {
+        val ordinaryTurns = buildMessageListTurns(
+            listOf(
+                message("user", Participant.USER),
+                message("assistant", Participant.MODEL),
+            ),
+        )
+        val turnsEndingWithCompact = buildMessageListTurns(
+            listOf(
+                message("user", Participant.USER),
+                message("assistant", Participant.MODEL),
+                message("compact_boundary", Participant.MODEL),
+            ),
+        )
+        val turnsWithAssistantAfterCompact = buildMessageListTurns(
+            listOf(
+                message("user", Participant.USER),
+                message("assistant", Participant.MODEL),
+                message("compact_boundary", Participant.MODEL),
+                message("later-assistant", Participant.MODEL),
+                message("later-error", Participant.ERROR),
+            ),
+        )
+
+        assertEquals("user", messageListTailAnchorKey(ordinaryTurns))
+        assertEquals("user", messageListTailHolderKey(ordinaryTurns))
+        assertEquals("compact_boundary", messageListTailAnchorKey(turnsEndingWithCompact))
+        assertEquals("compact_boundary", messageListTailHolderKey(turnsEndingWithCompact))
+        assertEquals("compact_boundary", messageListTailAnchorKey(turnsWithAssistantAfterCompact))
+        assertEquals("later-error", messageListTailHolderKey(turnsWithAssistantAfterCompact))
+        assertEquals(
+            null,
+            messageListTailAnchorKey(
+                buildMessageListTurns(listOf(message("assistant", Participant.MODEL))),
+            ),
         )
     }
 
     @Test
-    fun legacyUserCompactDoesNotCreateAUserFullPageTurn() {
+    fun postCompactTurnsConsumeTheAnchorRegionBeforeTrailingSpace() {
+        val turns = buildMessageListTurns(
+            listOf(
+                message("user", Participant.USER),
+                message("assistant", Participant.MODEL),
+                message("compact_boundary", Participant.MODEL),
+                message("later-assistant", Participant.MODEL),
+                message("later-error", Participant.ERROR),
+            ),
+        )
+        val heights = mapOf(
+            "compact_boundary" to 80,
+            "later-assistant" to 180,
+            "later-error" to 40,
+        )
+        val holderMinimum = calculateTailHolderMinHeightPx(
+            turns = turns,
+            semanticAnchorKey = messageListTailAnchorKey(turns),
+            baseMinimumHeightPx = 680,
+            messageHeights = heights,
+        )
+
+        assertEquals(420, holderMinimum)
+        assertEquals(680, 80 + 180 + calculateTailLayoutHeightPx(holderMinimum, 40))
+        assertEquals(
+            0,
+            calculateTailHolderMinHeightPx(
+                turns = turns,
+                semanticAnchorKey = messageListTailAnchorKey(turns),
+                baseMinimumHeightPx = 680,
+                messageHeights = heights +
+                    ("compact_boundary" to 300) +
+                    ("later-assistant" to 500),
+            ),
+        )
+    }
+
+    @Test
+    fun leadingAndConsecutiveCompactsRemainStandaloneForEveryStatus() {
+        val compacts = MessageStatus.entries.map { status ->
+            message("compact_${status.name.lowercase()}", Participant.MODEL).copy(
+                status = status,
+                text = "",
+            )
+        }
+
+        val turns = buildMessageListTurns(compacts)
+
+        assertEquals(
+            compacts.map { compact -> listOf(compact.id) },
+            turns.map { turn -> turn.messages.map { message -> message.id } },
+        )
+        assertEquals(compacts.map { it.id }, turns.map { it.key })
+    }
+
+    @Test
+    fun legacyUserCompactIsStandaloneAndFollowingMessagesCannotJoinIt() {
         val legacyCompact = message("compact_boundary", Participant.USER)
 
         val turns = buildMessageListTurns(
@@ -47,11 +150,44 @@ class CompactMessagePresentationTest {
         )
 
         assertFalse(MessageGenerationBoundaryResolver.isRealUser(legacyCompact))
-        assertEquals(1, turns.size)
         assertEquals(
-            listOf("user", "assistant", "compact_boundary", "later-assistant"),
-            turns.single().messages.map { it.id },
+            listOf(
+                listOf("user", "assistant"),
+                listOf("compact_boundary"),
+                listOf("later-assistant"),
+            ),
+            turns.map { turn -> turn.messages.map { it.id } },
         )
+    }
+
+    @Test
+    fun compactOwnsAnIndependentIndexAndCacheIdentity() {
+        val cache = MessageListTurnCache()
+        val user = message("user", Participant.USER)
+        val assistant = message("assistant", Participant.MODEL)
+        val compact = message("compact_boundary", Participant.MODEL).copy(
+            status = MessageStatus.SENDING,
+            text = "",
+        )
+        val laterAssistant = message("later-assistant", Participant.MODEL)
+        val before = cache.update(listOf(user, assistant, compact, laterAssistant))
+
+        val after = cache.update(
+            listOf(
+                user,
+                assistant,
+                compact.copy(status = MessageStatus.SUCCESS, text = "summary"),
+                laterAssistant,
+            ),
+        )
+
+        assertEquals(listOf("user", "compact_boundary", "later-assistant"), after.map { it.key })
+        assertEquals(0, messageListTurnIndex(after, "assistant"))
+        assertEquals(1, messageListTurnIndex(after, "compact_boundary"))
+        assertEquals(2, messageListTurnIndex(after, "later-assistant"))
+        assertSame(before.first(), after.first())
+        assertNotSame(before[1], after[1])
+        assertSame(before.last(), after.last())
     }
 
     @Test

@@ -16,6 +16,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
@@ -109,9 +110,11 @@ internal class ConversationEditService(
     private val conversations: ConversationRepository,
     private val requestBuilder: GenerationRequestBuilder,
     private val executionCoordinator: ConversationExecutionCoordinator,
+    private val transitions: BranchReplacementTransitionCoordinator,
     private val inputCloner: EditedRunInputCloner,
     private val terminalSettlement: GenerationTerminalSettlementController,
     private val boundRunGenerationLauncher: BoundRunGenerationLauncher,
+    private val guidanceDrain: QueuedGuidanceDrainExecutor,
     private val toUiMessage: (MessageEntity) -> ChatMessage,
     private val isConversationOpen: (String) -> Boolean,
     private val projectGraph: (
@@ -122,7 +125,6 @@ internal class ConversationEditService(
     ) -> Unit,
     private val awaitProjectedPath: suspend (conversationId: String, messageId: String) -> Unit,
     private val onUserMessagePersisted: (messageId: String, text: String) -> Unit,
-    private val onScrollToMessage: (String) -> Unit,
     private val idFactory: () -> String = { UUID.randomUUID().toString() },
 ) {
     suspend fun edit(
@@ -137,16 +139,34 @@ internal class ConversationEditService(
         if (boundary.input?.id != request.messageId) return false
 
         val uiToken = state.tryAcquireForReplacement() ?: return false
+        val transition = transitions.begin(
+            conversationId = request.conversationId,
+            oldMessageId = boundary.firstAssistant?.id,
+            sourceUserMessageId = request.messageId,
+        ) ?: run {
+            state.scope.launch {
+                guidanceDrain.releaseUnlaunchedSlotAndDrain(state, uiToken)
+            }
+            return false
+        }
         val runId = idFactory()
         val committed = CompletableDeferred<Boolean>()
-        val job = state.launchGenerationJob(uiToken) {
-            val persistId = state.nextPersistId()
+        val job = state.launchGenerationJob(uiToken) generation@{
+            var setupUserMessageId: String? = null
             var setupModelMessageId: String? = null
             var graphCommitted = false
             var runBound = false
             var stopFinalizationClaimed = false
             try {
+                if (!transitions.awaitFade(transition.id)) return@generation
+                if (!state.isCurrentToken(uiToken) || !transitions.isAnimating(transition.id)) {
+                    return@generation
+                }
+                val persistId = state.nextPersistId()
                 executionCoordinator.withConversationLock(request.conversationId) lock@{
+                    if (!state.isCurrentToken(uiToken) || !transitions.isAnimating(transition.id)) {
+                        return@lock
+                    }
                     val persistedSource = conversations.getMessage(request.messageId)
                         ?: return@lock
                     if (!MessageGenerationBoundaryResolver.isRealUser(toUiMessage(persistedSource))) {
@@ -169,6 +189,7 @@ internal class ConversationEditService(
                         destinationRunId = runId,
                         textOverrides = mapOf(persistedSource.id to request.newText),
                     ).single()
+                    setupUserMessageId = newUser.id
                     val modelMessageId = idFactory()
                     setupModelMessageId = modelMessageId
                     val startTime = newUser.timestamp + 1
@@ -201,8 +222,13 @@ internal class ConversationEditService(
                             newUser.id to modelEntity.id,
                         ),
                         conversationModelId = generationSnapshot.selectedModelId,
+                        touchConversationOnAdmission = true,
                     )
                     graphCommitted = true
+                    transitions.markCommitted(
+                        transition.id,
+                        targetUserMessageId = newUser.id,
+                    )
                     val binding = state.bindPersistedRun(uiToken, runId)
                     runBound = binding is ConversationGenerationState.RunBindingOutcome.Active
                     if (!runBound) {
@@ -235,7 +261,6 @@ internal class ConversationEditService(
                             graphCommit.messageSelections,
                             placeholder,
                         )
-                        onScrollToMessage(newUser.id)
                     }
                     if (isConversationOpen(request.conversationId)) {
                         awaitProjectedPath(request.conversationId, newUser.id)
@@ -251,7 +276,7 @@ internal class ConversationEditService(
                             persistId = persistId,
                             runId = runId,
                             pass = 0,
-                            callerTag = "editMessage",
+                            requestKind = "chat",
                         ),
                         state,
                     )
@@ -261,6 +286,10 @@ internal class ConversationEditService(
                     withContext(kotlinx.coroutines.NonCancellable) {
                         if (conversations.getRun(runId) != null) {
                             graphCommitted = true
+                            transitions.markCommitted(
+                                transition.id,
+                                targetUserMessageId = setupUserMessageId,
+                            )
                             val binding = state.bindPersistedRun(uiToken, runId)
                             stopFinalizationClaimed =
                                 terminalSettlement.settleCancelledDurableRun(state, binding)
@@ -276,6 +305,10 @@ internal class ConversationEditService(
                     withContext(kotlinx.coroutines.NonCancellable) {
                         if (conversations.getRun(runId) != null) {
                             graphCommitted = true
+                            transitions.markCommitted(
+                                transition.id,
+                                targetUserMessageId = setupUserMessageId,
+                            )
                             val binding = state.bindPersistedRun(uiToken, runId)
                             runBound = binding is
                                 ConversationGenerationState.RunBindingOutcome.Active
@@ -295,10 +328,14 @@ internal class ConversationEditService(
                     error = error,
                 )
             } finally {
+                if (!graphCommitted) transitions.abort(transition.id)
                 if (!committed.isCompleted) committed.complete(graphCommitted)
             }
         }
-        if (job == null) return false
+        if (job == null) {
+            transitions.abort(transition.id)
+            return false
+        }
         return committed.await()
     }
 }

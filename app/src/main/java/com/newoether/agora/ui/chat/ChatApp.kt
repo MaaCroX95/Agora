@@ -46,12 +46,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
 import com.newoether.agora.TopLevelPresentation
+import com.newoether.agora.api.DebugProvider
 import com.newoether.agora.data.forDisplay
 import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
-import com.newoether.agora.data.resolveOpenAiWebSearchEnabled
 import com.newoether.agora.util.gradientBlur
 import com.newoether.agora.util.verticalBottomOverlayFade
-import com.newoether.agora.model.ContextBudget
 import com.newoether.agora.ui.chat.bottombar.CHAT_BOTTOM_BAR_OUTER_SHAPE
 import com.newoether.agora.ui.chat.bottombar.ChatBottomBar
 import com.newoether.agora.ui.chat.bottombar.LoopStatusBackdrop
@@ -62,12 +61,11 @@ import com.newoether.agora.ui.components.TypewriterText
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.ui.common.rememberAgoraHaptics
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
-import com.newoether.agora.ui.motion.openWithMotionPolicy
 import com.newoether.agora.model.StableMessageList
 import com.newoether.agora.model.StableModelAliases
 import com.newoether.agora.viewmodel.AnimatedScrollDestination
 import com.newoether.agora.viewmodel.ChatViewModel
-import kotlinx.coroutines.delay
+import com.newoether.agora.viewmodel.validChatModels
 import kotlinx.coroutines.launch
 
 @OptIn(
@@ -77,6 +75,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ChatApp(
     viewModel: ChatViewModel,
+    initialComposerFocusReady: Boolean = true,
     onNavigateBack: (() -> Unit)? = null,
     drawerEnabled: Boolean = true,
     onOpenSettings: () -> Unit,
@@ -98,18 +97,7 @@ fun ChatApp(
     val context = LocalContext.current
     val motionPolicy = LocalAgoraMotionPolicy.current
     ConversationShareEffect(viewModel, context)
-    val latestDrawerEnabled by rememberUpdatedState(drawerEnabled)
-    val drawerState = rememberDrawerState(
-        initialValue = DrawerValue.Closed,
-        confirmStateChange = { newValue ->
-            val allowed = newValue == DrawerValue.Closed || latestDrawerEnabled
-            if (allowed && newValue != DrawerValue.Closed) {
-                focusManager.clearFocus()
-            }
-            allowed
-        }
-    )
-    DrawerAvailabilityEffect(drawerEnabled, motionPolicy, drawerState)
+    val drawerState = rememberChatDrawerState()
     val conversations by viewModel.conversations.collectAsState()
     // Defer value reads to the narrow composition regions that actually render messages. The
     // State objects themselves are stable, so stream snapshots no longer recompose all ChatApp.
@@ -133,70 +121,65 @@ fun ChatApp(
     val currentLoop by viewModel.currentLoop.collectAsState()
     val runningLoopIds by viewModel.runningLoopConversationIds.collectAsState()
     val generationSnapshot by viewModel.generationSnapshot.collectAsState()
+    val selectedConversationGenerationSnapshot by
+        viewModel.selectedConversationGenerationSnapshot.collectAsState()
     val selectedModel by viewModel.currentActiveModel.collectAsState()
     val enabledModels by viewModel.settings.enabledModels.collectAsState()
+    val developerOptionsEnabled by viewModel.settings.developerOptionsEnabled.collectAsState()
+    val debugModelEnabled by viewModel.settings.debugModelEnabled.collectAsState()
     val modelAliases by viewModel.settings.modelAliases.collectAsState()
+    val chatEnabledModels = validChatModels(
+        enabledModels,
+        developerOptionsEnabled,
+        debugModelEnabled,
+    )
+    val chatModelAliases = if (DebugProvider.MODEL_ID in chatEnabledModels) {
+        modelAliases + (DebugProvider.MODEL_ID to DebugProvider.PROVIDER_NAME)
+    } else {
+        modelAliases
+    }
     val thoughtExpandedStates = remember(currentConversationId) { mutableStateMapOf<String, Boolean>() }
     val isNewChatMode by viewModel.isNewChatMode.collectAsState()
     val newChatEntryId by viewModel.newChatEntryId.collectAsState()
     val isSwitching by viewModel.isSwitching.collectAsState()
     val regenerationTransition by viewModel.regenerationTransition.collectAsState()
     val isTransitioningToNewChat by viewModel.isTransitioningToNewChat.collectAsState()
-    val totalTokens by viewModel.totalTokens.collectAsState()
     val visualizeContextRollout by viewModel.settings.visualizeContextRollout.collectAsState()
-    val maxContextWindow by viewModel.settings.maxContextWindow.collectAsState()
-    val globalCodeExecution by viewModel.settings.codeExecutionEnabled.collectAsState()
-    val globalGoogleSearch by viewModel.settings.googleSearchEnabled.collectAsState()
-    val globalThinkingEnabled by viewModel.settings.thinkingEnabled.collectAsState()
-    val globalThinkingLevel by viewModel.settings.thinkingLevel.collectAsState()
-    val globalThinkingBudgetEnabled by viewModel.settings.thinkingBudgetEnabled.collectAsState()
-    val globalThinkingBudgetTokens by viewModel.settings.thinkingBudgetTokens.collectAsState()
     val customProviders by viewModel.settings.customProviders.collectAsState()
     val displayConversations = remember(conversations, customProviders) { conversations.orEmpty().map { it.forDisplay(customProviders) } }
     val displayMessagesState = remember(messagesState, customProviders) { derivedStateOf { messagesState.value.map { it.forDisplay(customProviders) } } }
-    val openAiResponsesApiEnabled by viewModel.settings.openAiResponsesApiEnabled.collectAsState()
-    val globalOpenAiWebSearch by viewModel.settings.openAiWebSearchEnabled.collectAsState()
-    val globalWebSearch by viewModel.settings.webSearchEnabled.collectAsState()
     val webSearchApiKeys by viewModel.settings.webSearchApiKeys.collectAsState()
-    val globalShell by viewModel.settings.shellEnabled.collectAsState()
     val shellDevices by viewModel.settings.shellDevices.collectAsState()
     val toolCallDisplayMode by viewModel.settings.toolCallDisplayMode.collectAsState()
     val thinkingSegmentDisplayMode by viewModel.settings.thinkingSegmentDisplayMode.collectAsState()
     val autoExpandActiveGroup by viewModel.settings.autoExpandActiveGroup.collectAsState()
+
     val parseInlineDollarMath by viewModel.settings.parseInlineDollarMath.collectAsState()
-    val conversationSettings by viewModel.settings.conversationSettings.collectAsState()
-    val pendingSettings by viewModel.pendingConversationSettings.collectAsState()
-    // Resolved per-conversation values: override → global default
-    val settingsOwnerId = conversationSettingsOwnerId(isNewChatMode, currentConversationId)
-    val convOverride = if (isNewChatMode) pendingSettings else settingsOwnerId?.let(conversationSettings::get)
-    val codeExecutionEnabled = convOverride?.codeExecutionEnabled ?: globalCodeExecution
-    val googleSearchEnabled = convOverride?.googleSearchEnabled ?: globalGoogleSearch
-    val thinkingEnabled = convOverride?.thinkingEnabled ?: globalThinkingEnabled
-    val thinkingLevel = convOverride?.thinkingLevel ?: globalThinkingLevel
-    val thinkingBudgetEnabled = convOverride?.thinkingBudgetEnabled ?: globalThinkingBudgetEnabled
-    val thinkingBudgetTokens = convOverride?.thinkingBudgetTokens ?: globalThinkingBudgetTokens
-    val selectedProviderName = viewModel.getProviderForModel(selectedModel)
-    val openAiServiceTierState = openAiConversationServiceTierState(
-        viewModel, convOverride, selectedProviderName, openAiResponsesApiEnabled, customProviders,
+    val conversationControls = effectiveConversationControls(
+        viewModel = viewModel,
+        isNewChatMode = isNewChatMode,
+        currentConversationId = currentConversationId,
+        selectedModel = selectedModel,
+        customProviders = customProviders,
     )
-    val openAiWebSearchAvailable = globalOpenAiWebSearch && resolveOpenAiNativeSearchAvailability(
-        selectedProviderName, openAiResponsesApiEnabled, customProviders,
+    val contextProjectionKey = rememberContextProjectionInvalidationKey(
+        viewModel,
+        listOf(
+            conversationControls.codeExecutionEnabled,
+            conversationControls.googleSearchEnabled,
+            conversationControls.webSearchEnabled,
+            conversationControls.shellEnabled,
+            shellDevices,
+            currentConversation?.systemPromptId,
+            conversationControls.lowContextModeEnabled,
+        ),
     )
-    val openAiWebSearchEnabled = resolveOpenAiWebSearchEnabled(
-        globalEnabled = globalOpenAiWebSearch,
-        conversationOverride = convOverride?.openAiWebSearchEnabled,
-    )
-    // Web Search and Shell: global switch OFF → always false, regardless of override
-    val webSearchEnabled = globalWebSearch && (convOverride?.webSearchEnabled ?: true)
-    val shellEnabled = globalShell && (convOverride?.shellEnabled ?: true)
-    val contextWindow = ContextBudget.normalize(convOverride?.contextWindow ?: maxContextWindow)
-    val contextProjectionKey = rememberContextProjectionInvalidationKey(viewModel, listOf(codeExecutionEnabled, googleSearchEnabled, openAiWebSearchEnabled, webSearchEnabled, shellEnabled, shellDevices, currentConversation?.systemPromptId))
     val contextProjection by viewModel.conversationContextProjection.collectAsState()
-    LaunchedEffect(currentConversationId, currentConversation?.selectedBranchesJson, selectedModel, contextWindow, allMessagesState.value, contextProjectionKey) {
-        viewModel.requestConversationContext(currentConversationId, currentConversation?.selectedBranchesJson, selectedModel, contextWindow)
+    LaunchedEffect(currentConversationId, currentConversation?.selectedBranchesJson, selectedModel, conversationControls.contextWindow, allMessagesState.value, contextProjectionKey) {
+        viewModel.requestConversationContext(currentConversationId, currentConversation?.selectedBranchesJson, selectedModel, conversationControls.contextWindow)
     }
     val contextProjectionReady = contextProjection.completed && !contextProjection.loading && !contextProjection.failed && contextProjection.conversationId == currentConversationId && contextProjection.selectedBranchesJson == currentConversation?.selectedBranchesJson
-    val contextUsage = contextProjection.usage ?: com.newoether.agora.api.util.ContextWindowUsage(0, contextWindow, 0, false)
+    val contextUsage = contextProjection.usage ?: com.newoether.agora.api.util.ContextWindowUsage(0, conversationControls.contextWindow, 0, false)
     val blurEffectsEnabled by viewModel.settings.blurEffectsEnabled.collectAsState()
     val stickToBottom by viewModel.settings.stickToBottom.collectAsState()
     val reduceMotion = motionPolicy.reduceMotion
@@ -207,6 +190,7 @@ fun ChatApp(
     // haptics there gives every accepted send exactly one confirm(), independent of which path
     // triggered it or which scroll policy applies.
     SendAcceptedHapticBindingEffect(viewModel, haptics)
+
     var isExpanded by remember { mutableStateOf(false) }
     // Composer-expand spacer collapse (44dp → 0). An Animatable driven from an effect replaces the
     // former hand-rolled clock, which wrote animation state DURING composition (Compose forbids
@@ -219,14 +203,13 @@ fun ChatApp(
     )
     val isExpandAnimating = composerSpacerAnimation.isRunning
     val outerSpacerHeightPx = composerSpacerAnimation.outerHeightPx
+
     val windowSize = LocalWindowInfo.current.containerSize
     val windowHeightDp = with(density) {
         windowSize.height.toDp().value.coerceAtLeast(1f)
     }
-    val drawerWidth = with(density) { windowSize.width.toDp() } * 0.8f
     var bottomBarHeightPx by rememberSaveable { mutableFloatStateOf(0f) }
     val bottomBarHeight = with(density) { bottomBarHeightPx.toDp() }
-    val drawerWidthPx = with(density) { drawerWidth.toPx() }
     var drawerProgress by remember { mutableFloatStateOf(0f) }
     // Bottom offset to clear the Settings button in the drawer.
     var settingsButtonTopDp by remember { mutableFloatStateOf(80f) }
@@ -289,14 +272,17 @@ fun ChatApp(
     val conversationSearchMatches = conversationInteraction.searchMatches
     val textFieldState = rememberSaveable(saver = androidx.compose.foundation.text.input.TextFieldState.Saver) { androidx.compose.foundation.text.input.TextFieldState() }
     val sandboxEnabled by viewModel.settings.sandboxEnabled.collectAsState()
-    val composer = com.newoether.agora.ui.chat.bottombar.rememberChatComposerState(viewModel.sandboxManager, sandboxEnabled, viewModel.isSandboxFlavor)
+    val composer = com.newoether.agora.ui.chat.bottombar.rememberChatComposerState(
+        sandboxEnabled,
+        viewModel.isSandboxFlavor,
+    )
     val inputFocusRequester = remember { FocusRequester() }
     var showLaunchContent by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(50)
-        showLaunchContent = true
-        inputFocusRequester.requestFocus()
-    }
+    ChatLaunchInteractionEffects(
+        initialComposerFocusReady = initialComposerFocusReady,
+        inputFocusRequester = inputFocusRequester,
+        onShowLaunchContent = { showLaunchContent = true },
+    )
 
     scrollCoordinator.BindTransitionEffects(
         currentConversationId = currentConversationId,
@@ -312,10 +298,11 @@ fun ChatApp(
         haptics = haptics,
     )
 
-    ComposerDraftLifecycleEffect(
-        currentConversationId = currentConversationId,
+    val composerOwnerId = if (isNewChatMode) com.newoether.agora.viewmodel.NEW_CHAT_WORKSPACE_ID else currentConversationId ?: com.newoether.agora.viewmodel.NEW_CHAT_WORKSPACE_ID
+    val composerSnapshot by rememberComposerDraftSnapshot(
+        ownerId = composerOwnerId,
+        controller = viewModel.conversationComposer,
         viewModel = viewModel,
-        composer = composer,
         textFieldState = textFieldState,
     )
 
@@ -349,33 +336,36 @@ fun ChatApp(
     )
 
     AnsweringHapticEffect(
-        generationSnapshot = generationSnapshot,
-        currentConversationId = currentConversationId,
+        generationSnapshot = selectedConversationGenerationSnapshot,
         topLevelPresentation = topLevelPresentation,
         hapticsEnabled = hapticsEnabled,
         haptics = haptics,
     )
 
     CompositionLocalProvider(LocalAgoraHaptics provides haptics) {
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = drawerEnabled,
-        scrimColor = DrawerDefaults.scrimColor,
-        drawerContent = {
+    ChatDrawerHost(
+        state = drawerState,
+        drawerEnabled = drawerEnabled,
+        motionPolicy = motionPolicy,
+        onDrawerProgress = { drawerProgress = it },
+        drawerContent = { drawerWidth, onRequestClose ->
             ChatDrawerContent(
                 viewModel = viewModel,
                 drawerWidth = drawerWidth,
-                drawerState = drawerState,
                 scope = scope,
                 inputFocusRequester = inputFocusRequester,
-                onDrawerProgress = { drawerProgress = it },
+                onRequestClose = onRequestClose,
                 onSettingsButtonTop = { settingsButtonTopDp = it },
                 onOpenSettings = onOpenSettings,
                 onOpenTasks = { onOpenTasks(null) },
                 onRequestRename = dialogState::requestRename,
-                onRequestDelete = dialogState::requestDelete,
+                onRequestDelete = { conversationId ->
+                    if (!viewModel.isConversationDeleteLocked(conversationId)) {
+                        dialogState.requestDelete(conversationId)
+                    }
+                },
             )
-        }
+        },
     ) {
         Box(
             modifier = Modifier
@@ -420,7 +410,7 @@ fun ChatApp(
                         currentConversationTitle = currentConversation?.title?.let {
                             replaceCustomProviderIdsForDisplay(it, customProviders)
                         },
-                        totalTokens = totalTokens,
+                        totalTokens = contextUsage.estimatedTokenCount,
                         searchActive = conversationSearchActive,
                         searchQuery = conversationSearchQuery,
                         searchMatchIndex = conversationSearchMatchIndex,
@@ -428,11 +418,11 @@ fun ChatApp(
                         conversationActionsEnabled =
                             !isNewChatMode && currentConversationId != null && !isLoading &&
                                 !shareSelectionActive,
+                        systemPromptEnabled = !conversationControls.lowContextModeEnabled,
                         onNavigateBack = onNavigateBack,
                         onOpenDrawer = {
                             if (drawerEnabled) {
-                                focusManager.clearFocus()
-                                scope.launch { drawerState.openWithMotionPolicy(motionPolicy) }
+                                scope.launch { drawerState.toggle(motionPolicy) }
                             }
                         },
                         onSearchQueryChange = { query ->
@@ -609,7 +599,14 @@ fun ChatApp(
                                 onRecompact = { id ->
                                     viewModel.startContextRecompact(id)
                                 },
-                                onDelete = { id -> viewModel.deleteMessage(id) },
+                                onDelete = { id, result ->
+                                    viewModel.deleteMessage(id, result) > 0
+                                },
+                                onDeleteConversation = { expectedIds, result ->
+                                    currentConversationId?.let { id ->
+                                        viewModel.deleteConversation(id, expectedIds, result)
+                                    } ?: false
+                                },
                                 searchQuery = if (conversationSearchActive) {
                                     conversationSearchQuery
                                 } else {
@@ -617,9 +614,9 @@ fun ChatApp(
                                 },
                                 activeSearchMatch = conversationSearchMatches
                                     .getOrNull(conversationSearchMatchIndex),
-                                onSearchMatchDistance = { key, distance ->
-                                    conversationInteraction.recordSearchMatchDistance(key, distance)
-                                },
+                                onSearchMatchDistance =
+                                    conversationInteraction::recordSearchMatchDistance,
+                                onSearchTurnsChanged = conversationInteraction::recordSearchTurns,
                                 selectionMode = shareSelectionActive,
                                 selectedMessageIds = selectedShareMessageIds,
                                 onToggleMessageSelection = { messageId ->
@@ -724,7 +721,6 @@ fun ChatApp(
                             )
                         }
                     }
-
                     val fabElevation by animateDpAsState(
                         targetValue = if (showButton) 4.dp else 0.dp,
                         animationSpec = if (motionPolicy.allowSpatialTransitions) {
@@ -733,7 +729,6 @@ fun ChatApp(
                             snap()
                         }
                     )
-
                     AnimatedVisibility(
                         visible = showButton,
                         enter = if (motionPolicy.allowSpatialTransitions) {
@@ -890,13 +885,10 @@ fun ChatApp(
                                 contentAlignment = Alignment.BottomCenter,
                             ) {
                                 ChatBottomBar(
-                        onSendMessage = { text, attachments, onAccepted ->
-                            viewModel.sendMessage(
-                                text = text,
-                                attachments = attachments,
-                                onAccepted = onAccepted,
-                            )
-                        },
+                        submissionController = viewModel.conversationComposerSubmission,
+                        composerOwnerId = composerOwnerId,
+                        composerController = viewModel.conversationComposer,
+                        composerSnapshot = composerSnapshot,
                         onStopGeneration = {
                             haptics.interrupt()
                             viewModel.stopGeneration()
@@ -904,38 +896,45 @@ fun ChatApp(
                         isLoading = isLoading,
                         isCompacting = isCompacting,
                         isSwitching = isSwitching,
-                        enabledModels = enabledModels,
+                        enabledModels = chatEnabledModels,
                         selectedModel = selectedModel,
-                        modelAliases = modelAliases,
+                        modelAliases = chatModelAliases,
                         customProviders = customProviders,
-                        codeExecutionEnabled = codeExecutionEnabled,
-                        googleSearchEnabled = googleSearchEnabled,
-                        thinkingEnabled = thinkingEnabled,
-                        thinkingLevel = thinkingLevel,
-                        thinkingBudgetEnabled = thinkingBudgetEnabled,
-                        thinkingBudgetTokens = thinkingBudgetTokens,
-                        openAiWebSearchAvailable = openAiWebSearchAvailable,
-                        openAiWebSearchEnabled = openAiWebSearchEnabled,
-                        onOpenAiWebSearchToggle = { enabled -> updateOpenAiNativeSearch(viewModel, settingsOwnerId, haptics, enabled) },
-                        openAiServiceTierAvailable = openAiServiceTierState.available,
-                        openAiServiceTierEnabled = openAiServiceTierState.enabled,
-                        openAiServiceTier = openAiServiceTierState.tier,
-                        onOpenAiServiceTierToggle = { enabled -> updateOpenAiConversationServiceTierEnabled(viewModel, settingsOwnerId, haptics, enabled) },
-                        onOpenAiServiceTierChange = { tier -> updateOpenAiConversationServiceTier(viewModel, settingsOwnerId, haptics, tier) },
-                        onCodeExecutionToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(settingsOwnerId) { it.copy(codeExecutionEnabled = enabled) } },
-                        onGoogleSearchToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(settingsOwnerId) { it.copy(googleSearchEnabled = enabled) } },
-                        onThinkingToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(settingsOwnerId) { it.copy(thinkingEnabled = enabled) } },
-                        onThinkingLevelChange = { level -> viewModel.updateConversationSetting(settingsOwnerId) { it.copy(thinkingLevel = level) } },
-                        onThinkingBudgetEnabledChange = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(settingsOwnerId) { it.copy(thinkingBudgetEnabled = enabled) } },
-                        onThinkingBudgetTokensChange = { tokens -> viewModel.updateConversationSetting(settingsOwnerId) { it.copy(thinkingBudgetTokens = tokens) } },
-                        webSearchEnabled = webSearchEnabled,
-                        onWebSearchToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(settingsOwnerId) { it.copy(webSearchEnabled = enabled) } },
-                        shellEnabled = shellEnabled,
-                        onShellToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(settingsOwnerId) { it.copy(shellEnabled = enabled) } },
+                        codeExecutionEnabled = conversationControls.codeExecutionEnabled,
+                        googleSearchEnabled = conversationControls.googleSearchEnabled,
+                        thinkingEnabled = conversationControls.thinkingEnabled,
+                        thinkingLevel = conversationControls.thinkingLevel,
+                        thinkingBudgetEnabled = conversationControls.thinkingBudgetEnabled,
+                        thinkingBudgetTokens = conversationControls.thinkingBudgetTokens,
+                        openAiWebSearchAvailable = conversationControls.openAiWebSearchAvailable,
+                        openAiWebSearchEnabled = conversationControls.openAiWebSearchEnabled,
+                        onOpenAiWebSearchToggle = { enabled -> updateOpenAiNativeSearch(viewModel, conversationControls.settingsOwnerId, haptics, enabled) },
+                        openAiServiceTierAvailable = conversationControls.openAiServiceTierState.available,
+                        openAiServiceTierEnabled = conversationControls.openAiServiceTierState.enabled,
+                        openAiServiceTier = conversationControls.openAiServiceTierState.tier,
+                        onOpenAiServiceTierToggle = { enabled -> updateOpenAiConversationServiceTierEnabled(viewModel, conversationControls.settingsOwnerId, haptics, enabled) },
+                        onOpenAiServiceTierChange = { tier -> updateOpenAiConversationServiceTier(viewModel, conversationControls.settingsOwnerId, haptics, tier) },
+                        onCodeExecutionToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(codeExecutionEnabled = enabled) } },
+                        onGoogleSearchToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(googleSearchEnabled = enabled) } },
+                        onThinkingToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(thinkingEnabled = enabled) } },
+                        onThinkingLevelChange = { level -> viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(thinkingLevel = level) } },
+                        onThinkingBudgetEnabledChange = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(thinkingBudgetEnabled = enabled) } },
+                        onThinkingBudgetTokensChange = { tokens -> viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(thinkingBudgetTokens = tokens) } },
+                        webSearchEnabled = conversationControls.webSearchEnabled,
+                        onWebSearchToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(webSearchEnabled = enabled) } },
+                        shellEnabled = conversationControls.shellEnabled,
+                        onShellToggle = { enabled -> haptics.toggle(enabled); viewModel.updateConversationSetting(conversationControls.settingsOwnerId) { it.copy(shellEnabled = enabled) } },
+                        showLowContextMode = conversationControls.showLowContextMode,
+                        lowContextModeEnabled = conversationControls.lowContextModeEnabled,
+                        onLowContextModeToggle = { enabled ->
+                            haptics.toggle(enabled)
+                            viewModel.updateConversationSetting(conversationControls.settingsOwnerId) {
+                                it.copy(lowContextModeEnabled = enabled)
+                            }
+                        },
                         // The model row owns its selection tick. Repeating it here produced the
                         // previous double buzz for one physical tap.
                         onModelSelect = { viewModel.setActiveModel(it) },
-                        onImageClick = { url -> onMediaClick(listOf(url), 0) },
                         onAllMediaClick = { urls, idx -> onMediaClick(urls, idx) },
                         onFileContentClick = { name, content -> viewModel.showFilePreview(name, content) },
                         modifier = Modifier,
@@ -949,8 +948,8 @@ fun ChatApp(
                         isExpandAnimating = isExpandAnimating,
                         onCollapse = { isExpanded = false },
                         onExpand = { isExpanded = true },
-                        showWebSearch = globalWebSearch,
-                        showShell = shellDevices.isNotEmpty() && globalShell,
+                        showWebSearch = conversationControls.webSearchAvailable,
+                        showShell = shellDevices.isNotEmpty() && conversationControls.shellAvailable,
                         onPdfPagesClick = { pages, idx -> onPdfPagesClick?.invoke(pages, idx) },
                         onPdfPreviewSelect = { pages, idx -> onPdfPreviewSelect?.invoke(pages, idx) },
                         pdfViewerSelection = pdfViewerSelection,
@@ -989,8 +988,8 @@ fun ChatApp(
         selectedModel = selectedModel,
         compactPrompt = compactPrompt,
         compactRetainCount = compactRetainCount,
-        enabledModels = enabledModels,
-        modelAliases = modelAliases, customProviders = customProviders,
+        enabledModels = chatEnabledModels,
+        modelAliases = chatModelAliases, customProviders = customProviders,
         isCompacting = isCompacting,
     )
 

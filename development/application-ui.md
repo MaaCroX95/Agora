@@ -63,6 +63,11 @@ icons/images in every menu row, matching the Material default size used by the u
 long-press dropdown. Their 16 dp trigger icons remain unchanged. Menu shape, row geometry, 12 dp
 icon-label gap, labels, badges, switches, ordering, enablement, and click behavior remain unchanged.
 
+The monochrome Google Search and OpenAI Search provider icons inherit the dropdown's current Compose
+content color. They therefore remain legible across light and dark themes and retain inherited
+disabled-state alpha; neither row hard-codes a light or dark tint. Provider artwork, icon size,
+spacing, labels, badges, switches, availability, ordering, and interaction remain unchanged.
+
 ## 5. Chat bottom-bar answer fade
 
 In normal, non-expanded composer mode, the existing 40 dp vertical fade is an alpha mask on the
@@ -113,6 +118,13 @@ Appearance does not expose the obsolete Detailed token usage toggle. ChatApp, Me
 MessageItem, and AssistantMessageContent do not collect or thread that unused UI value. The existing
 stored preference key and settings import/export compatibility remain readable and writable so the UI
 cleanup creates no migration or archive incompatibility.
+
+Message Info reports Provider usage for the complete Run. Every completed Provider request in a
+multi-round tool loop contributes its reported input, cached-input, cache-write-input,
+uncached-input, output, reasoning, and total counts. Multiple cumulative usage snapshots emitted by
+one request replace that request's prior snapshot instead of being added twice. If any constituent
+request omits a breakdown category, the aggregate category remains unknown rather than becoming a
+fabricated zero.
 
 ## 8. Image-transcription model chooser
 
@@ -223,6 +235,23 @@ Conversation search exposes a separate in-flight state from the moment a nonblan
 
 The drawer's first-list state is not a second conversation authority or a new search architecture; Room remains the durable source and the existing search methods remain authoritative.
 
+The conversation and search-result lists share one edge-fade state rule. The top edge is treated as reached while item `0` is first visible and its scroll offset is at most `2 dp`. The bottom edge is treated as reached for an empty list, or while the final visible item's end is no more than `2 dp` beyond the viewport end. The corresponding fade remains hidden inside that tolerance and appears only after content crosses it. This tolerance changes state judgment only; it does not add or modify list content padding, outer Drawer padding, list geometry, or programmatic scroll targets.
+
+Ordinary conversation rows animate ordering changes with a `400 ms` placement tween when the shared motion policy allows spatial transitions, and use a `180 ms` deletion-only fade-out. Reduced Motion disables placement travel. Stable conversation keys and the search-result branch's whole-list transition remain unchanged. Each ordinary row Crossfades only its resolved visible title over `200 ms` with `FastOutSlowInEasing`; the row identity, weighted title geometry, ellipsis, selection colors, trailing indicator, and menu values do not participate. Initial title composition is stable, rapid title updates retarget the latest value without queuing, and Reduced Motion retains this opacity-only transition.
+
+Every ordinary-list reorder preserves the numeric `firstVisibleItemIndex` and `firstVisibleItemScrollOffset` captured from the existing Drawer list state. Rows therefore exchange within fixed viewport slots instead of Compose retaining the previous first-visible conversation key at that screen offset. The correction runs only while ordinary conversations are shown, the emitted item count still matches the measured list, the measured anchor still exists, and another key now occupies its numeric index. Initial or empty loading, a count-changing insertion or deletion, and the search-result list retain their existing behavior. If an ordinary reorder arrives during drag, fling, or another programmatic scroll, the numeric request captures that moment's index and offset and cancels the in-progress scroll without delay, retry, resumption, or a second list-state owner.
+
+A New Chat first Send is the sole automatic-top exception. Only after the accepted conversation and first message graph are durable and that conversation is published, the bounded `firstMessageCommitted` event waits until the same still-selected conversation occupies item `0` in the measured ordinary list. It then uses the existing Drawer `LazyListState` and the canonical `animateToAbsoluteTop` feedback controller with `SendFeedbackScrollSpec`, matching Send's scroll-to-bottom startup envelope, adaptive long-distance motion, ease-out, and user-input cancellation. Reduced Motion directly calls `scrollToItem(0)`. A later explicit conversation selection rejects the stale event. No other reorder, title change, insertion, delay, retry, fallback, or second scroll owner may reveal item `0`.
+
+After durable deletion and runtime cleanup of the conversation that was selected when deletion was admitted, the canonical selection owner enters New Chat unless a newer explicit selection targets another conversation. A pending or completed newer conversation selection remains authoritative. Deleting a nonselected conversation or a deletion that fails before cleanup does not change the visible page.
+
+If a message action would remove every durable message in the current tree, including the
+single-Compact case, its action is presented as `Delete Conversation` and the confirmation explicitly
+warns that the whole conversation will be removed. The dialog freezes the exact message-id topology
+visible when it opens; confirmation uses canonical conversation deletion only if Room still matches
+that topology. A later graph change rejects the stale confirmation, keeps the dialog open, and emits
+no destructive-success haptic.
+
 ## 17. Model alias display fallback
 
 A model alias is presentation text, never a model identity. An explicit nonblank alias stored under
@@ -257,12 +286,222 @@ exists. Saving that seed unchanged does not materialize it in DataStore; editing
 explicit alias, while clearing an explicit alias restores fallback behavior. The new-custom-model
 form remains blank until the user enters an alias.
 
+## 18. Models sync progress and attempt fingerprint
+
+The Models page starts automatic full-provider model sync only when the current provider fingerprint
+differs from the last persisted attempted fingerprint. A full sync presents no in-progress snackbar.
+Its existing sync card owns progress feedback in place: the 24 dp refresh icon crossfades to a 24 dp
+circular progress indicator and the idle headline crossfades to localized `Syncing...`, both over
+250 ms without shifting the row. The existing result snackbar remains the only snackbar and appears
+after a completed sync with the success, no-provider, completed, or failure outcome.
+
+The full-sync controller captures the provider fingerprint when it admits the attempt and persists
+that exact fingerprint after every non-cancelled attempt, including attempts with provider-specific
+or global errors. It does not recompute the fingerprint after provider work. Cancellation clears the
+single in-flight flag, emits no result, and does not persist the attempted fingerprint. Onboarding's
+single-provider fetch remains outside this full-sync presentation and fingerprint lifecycle.
+
+## 19. Notification permission and background-execution settings
+
+Android 13+ notification permission is requested only after onboarding has completed and the main
+Chat navigation has entered composition. Immediately before that request, the existing notification
+owner creates both app channels. When that entry will show the system notification-permission dialog,
+the Chat composer withholds only its initial automatic focus until the activity-result callback
+reports that the dialog has closed, whether permission was granted or denied. Chat launch content
+still appears on its existing schedule while the dialog is present. Already-authorized devices and
+Android 12 or earlier retain the ordinary initial-focus timing; no timeout or fixed delay guesses when
+the permission dialog disappeared. The ongoing generation-status channel remains low importance,
+unbadged, and explicitly silent. The response-completion channel is created at high importance with
+the system default notification sound and vibration so a newly created channel is eligible for
+audible heads-up presentation. Existing channel IDs and user/device channel choices are never
+deleted, recreated, migrated, or overridden; builder priority remains the pre-Android-8 counterpart.
+
+Automation Settings places Exact Execution and Battery Optimization together in one localized
+Background Execution category. Battery Optimization is a status-bearing action row, not an app-owned
+switch: it reads `PowerManager.isIgnoringBatteryOptimizations` on entry and resume and opens the
+general Android battery-optimization management screen. Agora does not request direct exemption or
+declare `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` through this entry.
+
+## 20. Local Sandbox outcome feedback
+
+Local Sandbox install, remove, upgrade, and reset outcomes are process-local buffered one-shot events.
+An outcome produced while no UI collector exists remains queued for the next collector. Pending
+outcomes retain production order, and each outcome is consumed by one collector exactly once. An
+Activity recreation must not replay an outcome that the previous collector already consumed.
+
+The Sandbox manager and its transient queue share the process lifetime owned by `AppContainer`'s
+flavor factory. Foreground ViewModels, generation tools, and headless Task/Loop execution borrow the
+same F-Droid manager and must not cancel or close it when a consumer lifecycle ends. Package
+install, remove, and upgrade work therefore remains available to later consumers in the same process.
+Only an explicit Sandbox reset may cancel the manager scope, and reset must replace that scope before
+continuing. The queue is not persisted or restored after process death, mirrored through a durable
+flag, or represented as retained UI state. The Play flavor exposes an empty outcome stream.
+
+## 21. Tasks Once date-picker mode transition
+
+The Tasks Once date picker uses Material3's modal `DatePickerDialog` at its stable 568 dp container
+height. Material3 remains the sole owner of `DatePickerState.displayMode`, selected-date state,
+calendar/input `AnimatedContent`, focus, keyboard interaction, and the mode-toggle transition. Agora
+does not mirror the mode, delay or retry keyboard handoff, or animate the Dialog window's
+wrap-content height. Confirmation, cancellation, selectable-date validation, formatting, colors, and
+schedule persistence remain unchanged.
+
+## 22. Debug test-model visibility
+
+When Developer Options and Debug Model are enabled, the existing `debug` model participates in the
+canonical Chat-enabled model set and uses the display alias `Debug`. Every ordinary Chat model
+chooser consuming that set, including manual Compact, receives the same model and alias collection;
+manual Compact has no private injection or separate policy. The hidden Debug Provider remains a
+generation-only implementation detail and never appears in Provider Settings, provider editors,
+Models Settings, Tasks, Context Settings, title generation, transcription settings, or another
+configuration surface. No new UI, Provider configuration, API-key field, or model-list architecture
+is introduced for this test model.
+
+## 23. Conversation-owned attachment import and pre-acceptance Send
+
+Every Composer attachment enters one durable, conversation-owned import lifecycle at selection
+time. The attachment tile appears immediately, Agora copies the source into app-private staging,
+and all required image normalization, video frame extraction, PDF rendering, ordinary-file text
+reading, or Local Sandbox copying begins before Send. `PROCESSING`, `READY`, and `FAILED` are
+persisted with the draft for both ordinary conversations and the New Chat workspace. Navigating to
+another conversation does not cancel or transfer work; returning shows the same live state. After
+process death, a conversation that has not been explicitly opened remains dormant. When the user
+opens that owner, `PROCESSING` restarts from its immutable private staged source, `FAILED` remains
+retryable, and an unavailable staged source becomes `FAILED`. A legacy draft without import state
+remains `READY` only when it already names a complete canonical private artifact; an incomplete
+legacy row is upgraded to `PROCESSING` and re-enters staging/import instead of being silently
+omitted by Send. The existing `unavailable` value remains reserved for backup/import restoration
+when the attachment resource cannot be restored and never represents import failure.
+
+An image's `READY` private path is its final normalized artifact. The immutable staged image remains
+separate until the `READY` draft write succeeds, then becomes reclaimable. A crash after output
+creation but before that write therefore restarts from the original staged bytes rather than
+compressing the output again. `READY` video frames, selected PDF page images, bounded ordinary-file
+text, and Local Sandbox paths are likewise complete import results. Send performs no decoding,
+scaling, compression, frame extraction, PDF rendering, file text read, or additional ownership copy.
+Provider file reads, Base64, JSON serialization, and upload remain request encoding after accepted
+input and are not attachment import work.
+
+A `PROCESSING` tile shows its overlay and freely rotating indeterminate circular progress indicator
+through independent Crossfades. A `FAILED` tile remains in place with a gray exclamation overlay;
+tapping that overlay retries the complete import from private staging. Failed attachments do not
+disable Send and are excluded from the accepted result. `READY` tiles have no processing overlay.
+
+Tapping Send freezes that draft owner's exact text, tap-ordered model/settings snapshot, and
+attachment membership. The TextField remains enabled and editable in every submission and generation
+phase; add/remove and retry actions remain protected until the request leaves its pre-acceptance
+lifecycle. `WAITING` waits for every frozen attachment's processing coroutine to exit, then
+preserves Composer order while retaining only `READY` results; zero successful attachments is valid
+when the frozen text independently permits Send. Tapping the spinning Send control during `WAITING`
+cancels only that Send request, keeps attachment processing alive, and releases the deletion lock.
+`SUBMITTING` and accepted-clear recovery are non-cancellable and render one coherent neutral 3 dp
+busy indicator with disabled action semantics. Across actionable and non-actionable transitions, the
+container's primary/surface-variant colors and the content's on-primary/on-surface-variant colors each
+interpolate with the historical 400 ms tween. The icon Crossfade remains an independent 200 ms linear
+transition. Failure before accepted input returns the frozen request to `IDLE`.
+
+Authoritative acceptance clears only the frozen text and attachment membership. Revision-aware
+settlement preserves text typed after the tap, including a TextField edit that becomes visible before
+its asynchronous draft observer reaches the controller. A durable acceptance whose draft clear fails
+enters a non-resendable accepted-clear state and exposes a clear-only Retry; it never resubmits the
+already durable input. Direct and queued acceptance do not clear focus, hide the IME, or collapse an
+expanded Composer. Accepted draft clearing is state-only and does not own presentation focus.
+Keyboard and Composer dismissal remain owned by explicit navigation, user gestures, and the drawer
+greater-than-`0.5` threshold described below.
+
+Switching conversations cannot cancel, redirect, duplicate, or clear the frozen request. From Send
+tap through authoritative acceptance and exact-owner clearing, Delete Conversation is disabled for
+the origin and the controller rejects deletion races below the dialog. A New Chat request inserts a
+read barrier at tap time, so its immutable workspace includes every model, system-prompt, and
+conversation-setting write queued before the tap and excludes later workspace edits. Its conditional
+Room consumption matches the tap-time workspace plus the attachment states that actually settled
+before acceptance. If newer workspace metadata survives that transaction, accepted clearing removes
+only the sent draft fields and preserves the newer metadata. The request selects its newly created
+conversation only if the user still occupies the originating New Chat workspace;
+otherwise it appears in the list without taking focus or haptic confirmation. A process restart
+leaves durable drafts and
+attachment imports dormant until their exact owner is explicitly opened, then restores that owner
+without automatically replaying an unaccepted Send request.
+
+Attachment paging preserves occurrence identity. Send emits successful attachment artifacts and
+metadata in one traversal of Composer order. Composer and durable-message viewers assign pager
+indices while constructing their filtered media sequence; they never recover an occurrence with
+`indexOf` on a URI or path, so duplicate values and mixed attachment types open the tapped item.
+
+## Local Low Context controls
+
+When the selected model belongs to the embedded `Local` Provider, the Chat bottom bar's three-dot
+menu shows a conversation/New Chat `Low Context Mode` Switch. A null conversation value inherits
+the default-off, device-local value from `Provider > Local > Advanced`; an explicit menu change
+stores that conversation/workspace override. Selecting Ollama, a custom Provider, or a remote
+Provider hides and ignores this control without deleting its stored value.
+
+While Low Context Mode is effective, menu rows that add Provider or tool capability are disabled and
+use the standard Material disabled presentation: Gemini Code Execution and Google Search, OpenAI
+Service Tier and native Search, generic Web Search, and Shell. Thinking, Context Compact, Advanced
+Settings, the model selector, and context usage remain available. The Chat top-bar System Prompt row
+is disabled and gray but retains the selected prompt for later restoration. The Local Advanced
+default uses the standard whole-row `SettingsItem` toggle with the localized Low Context title and
+`Enable Low Context Mode by default` meaning; it is not a portable Settings import/export value.
+
+## 24. Chat top-bar title capsule motion
+
+The normal Chat top bar keeps its title capsule start-anchored after the trailing actions capsule has
+reserved its fixed width. Brand/conversation-title identity changes Crossfade the title presentation
+over `200 ms` with `FastOutSlowInEasing`. The title content is always measured and laid out against
+its latest stable final constraints inside a canvas capped at 260 dp; no animated value participates
+in the capsule, Crossfade, or Text layout width. An independently measured natural target controls
+only one left-anchored rounded drawing clip over `400 ms` with `FastOutSlowInEasing`, so the capsule
+background, shadow, and content reveal together while only the visible right edge moves.
+
+The title-motion identity includes the selected conversation and its visible title; the brand state
+has one stable identity. Token-subtitle appearance, disappearance, and value changes update the final
+layout directly without starting, cancelling, or restarting identity motion. During an active identity
+clip, the same owner continuously absorbs the latest measured token target by rebasing from the current
+visible boundary over the remaining portion of the original `400 ms` deadline. It does not queue a new
+motion, restart the clock, or finish at an obsolete target. The first terminal frame is exactly the
+stable latest boundary, with no post-animation spatial correction. Initial composition presents stable
+content without an entrance transition. A newer title interrupts in-flight clip and opacity motion and
+retargets the same owners from their current values without queuing. Reduced Motion snaps the clip
+boundary while retaining the component-owned `200 ms` opacity Crossfade.
+`animateContentSize` does not participate. The existing 180 dp internal title maximum, 20 dp trailing
+title padding, 16 dp actions gap, 98 dp actions width, ellipsis, icon geometry, search transition,
+title resolution, click behavior, and persistence remain unchanged.
+
+## 25. Task History return continuity and drawer focus threshold
+
+A conversation opened from a Task execution log is a transient preview owned by that exact task and
+execution conversation. The preview first observes its selected destination before reacting to later
+navigation. Once observed, entering New Chat or successfully selecting a forked/different conversation
+ends the preview immediately, restores the Chat top-left hamburger, and enables the drawer. A failed
+or cancelled fork leaves the selected preview unchanged and retains the Task return action. A requested
+return remains owned until the Tasks overlay has fully covered Chat, then restores the pre-preview
+conversation or New Chat destination.
+
+The active Task editor session retains only the exact execution-summary list that was rendered when an
+execution was opened, together with its existing numeric scroll position. When Tasks is recomposed
+during return, that task-bound snapshot seeds the first frame and the LazyColumn starts at the retained
+position. Room remains authoritative and continues collecting in parallel. While the overlay enters,
+live results are buffered; after entry completes, the page presents the latest Room list. Existing
+stable execution conversation IDs and Compose structural equality perform reconciliation. Agora adds
+no manual list-diff engine, durable history cache, duplicate repository flow, page-wide composition
+retention, or cross-task/process snapshot restoration. Switching tasks, clearing the editor session,
+or process death discards the snapshot.
+
+Drawer-driven Chat focus loss and full-screen Composer collapse use one strict progress threshold.
+Progress at or below `0.5` preserves focus and expanded state. A false-to-true crossing of
+`progress > 0.5` triggers the effect once; remaining above the threshold does not repeat it, and
+closing back to `0.5` or below rearms the next opening. Dragged and programmatic openings share this
+state. Existing Back handling remains independent. Direct and queued Send preserve focus, IME
+visibility, and expanded Composer state.
+
 ## 15. Verification
 
 Focused verification must cover the onboarding action's fixed 32 dp inset and 48 dp height, absence
 of custom press-size/inset/content-scale state, and unchanged action semantics, Generation Settings description, locale key/value
 parity for the Context and Thinking-segment labels, absence of the removed context-window wording,
-24 dp leading-icon parity across both chat-bottom dropdowns without resizing their triggers, absence
+24 dp leading-icon parity across both chat-bottom dropdowns without resizing their triggers,
+theme-adaptive Google Search and OpenAI Search icon color without fixed light/dark tint, absence
 of the Detailed token usage Appearance row and dead chat-side parameter threading, the Tool Blocks ->
 Thinking segment -> Auto-Expand Appearance row order with unchanged predicates, the normal-only
 0 dp gradient lead with unchanged 40 dp width and 20 dp expanded behavior, and scoped Settings-arrow
@@ -282,5 +521,49 @@ multiple image URI paste, mixed image/text pass-through, unsupported content pas
 private-copy routing, and failure cleanup. Model-alias verification covers explicit precedence, all
 approved family-specific suffixes, generic preservation of ambiguous tokens, casing/separator
 normalization, idempotence, inferred search, duplicate-display preservation, raw-ID supporting text,
-and unchanged-fallback non-persistence. The project-defined full build gate remains required after
-final code or resource changes.
+and unchanged-fallback non-persistence. Models-sync verification covers absence of an in-progress
+snackbar, the two 250 ms in-card crossfades, localized `Syncing...`, persistence of the admitted
+fingerprint after provider and global errors, no end-of-sync fingerprint recomputation, and
+cancellation without fingerprint persistence or completion presentation. Drawer edge-fade
+verification covers the shared conversation/search owner, empty-list behavior, item `0` and final-item
+identity, and the exact `0 dp`, `2 dp`, and above-`2 dp` top/bottom boundaries without adding content
+padding or changing scroll targets. Drawer reorder verification covers the `400 ms` normal-motion
+placement tween, the `180 ms` deletion fade, Reduced Motion's absent placement travel, numeric
+first-index/offset retention across ordinary reorders, cancellation of an active ordinary reorder
+scroll, and unchanged initial-load, count-changing insertion or deletion, and search-list behavior.
+Drawer first-Send verification separately covers the durable published event, both current-conversation
+guards, readiness at item `0`, canonical `SendFeedbackScrollSpec`, Reduced Motion direct positioning,
+user-input cancellation, and absence of delay, retry, fallback, or another auto-top trigger. Drawer
+Composer-dismiss verification covers the strict greater-than-`0.5` boundary, one effect per threshold
+crossing, rearming below the boundary, shared drag/programmatic state, and unchanged Back behavior.
+Direct-Send verification covers the absence of any acceptance-owned focus, IME, or expanded-Composer
+presentation side channel while preserving accepted-clear state and confirmation haptics. Send-control
+verification also requires exactly two 400 ms color tweens for container and content while retaining
+the independent shared 200 ms LinearEasing icon Crossfade, true enabled semantics, and 3 dp busy stroke.
+Task History verification covers target observation before preview settlement, New Chat and successful-
+fork hamburger restoration, failed-fork retention, task-bound first-frame execution seeding, numeric
+scroll restoration, post-enter Room reconciliation through stable conversation IDs, and snapshot reset
+on task switch, session clear, and process recreation without a manual diff or durable shadow cache.
+Drawer title verification covers one `200 ms` `FastOutSlowInEasing` Crossfade keyed only by the resolved
+visible title, stable initial composition, latest-value interruption, retained Reduced Motion opacity,
+and unchanged row geometry, ellipsis, colors, indicators, and menu values. Tasks Once verification covers the fixed 568 dp Material modal
+height, Material3 ownership of display mode and keyboard interaction, and absence of shadow mode,
+delay, retry, or window-size animation. Debug-model verification covers one canonical Chat-enabled
+model/alias set shared by ordinary Chat and manual Compact while every Provider Settings and other
+configuration surface remains free of Debug Provider/model integration. Notification/background-execution verification covers the
+post-onboarding request boundary, channel creation before permission launch, callback-driven initial
+composer focus after permission-dialog dismissal, launch-content independence from permission state,
+absence of timeout-based dismissal guessing, silent low-importance generation status,
+high-importance audible/vibrating response completion, shared Exact Execution and Battery
+Optimization grouping, resume-time exemption-state refresh, the general system settings intent,
+absence of direct exemption permission, and localized resource parity. Local Sandbox outcome
+verification covers emission before collection, ordered pending outcomes, one-time sequential display
+and consumption, absence of replay after collector recreation, every install/remove/upgrade/reset success and failure
+path, the empty Play stream, and the absence of persistence or retained UI state. The project-defined full build
+gate remains required after final code or resource changes. Chat top-bar verification covers the
+independently measured natural target, stable final-layout canvas, one interruptible `400 ms` rounded
+clip owner shared by background, shadow, and content, the `200 ms` title-only Crossfade, fixed start
+alignment, identity-only animation keys, token-only updates that continuously rebase the active clip
+toward the latest target within its original deadline, a first terminal frame equal to the stable
+boundary with no post-animation correction, initial stable presentation, Reduced Motion clip snap,
+absence of animated layout width and `animateContentSize`, and unchanged title/actions geometry.

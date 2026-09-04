@@ -1,7 +1,6 @@
 package com.newoether.agora.ui.chat.bottombar
 
-import com.newoether.agora.ui.components.DialogWindowEdgeToEdge
-
+import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.content.MediaType
 import androidx.compose.foundation.content.ReceiveContentListener
@@ -31,25 +30,18 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.input.*
 import androidx.compose.material.icons.Icons
-
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Image
-
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -58,20 +50,19 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.newoether.agora.R
-import com.newoether.agora.viewmodel.QueuedSend
-import com.newoether.agora.ui.chat.PdfPageSelectDialog
-import com.newoether.agora.ui.chat.VideoSliceDialog
+import com.newoether.agora.model.AttachmentImportState
+import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.ui.common.LocalAgoraHaptics
-import com.newoether.agora.ui.common.OpenAiServiceTierControlPanel
-import com.newoether.agora.ui.common.ThinkingControlPanel
 import com.newoether.agora.ui.common.openAiServiceTierShortLabel
 import com.newoether.agora.ui.common.thinkingControlShortLabel
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
-import com.newoether.agora.ui.motion.MotionAwareModalBottomSheet as ModalBottomSheet
 import com.newoether.agora.ui.theme.ChatType
 import com.newoether.agora.util.noOpBringIntoView
-import com.newoether.agora.viewmodel.SendAcceptance
+import com.newoether.agora.viewmodel.ConversationComposerController
+import com.newoether.agora.viewmodel.ConversationComposerSnapshot
+import com.newoether.agora.viewmodel.ConversationComposerSubmissionController
+import com.newoether.agora.viewmodel.QueuedSend
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.text.font.FontWeight
@@ -79,15 +70,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.newoether.agora.data.CustomProviderConfig
 import com.newoether.agora.data.providerDisplayName
 import com.newoether.agora.data.modelDisplayName
-
 internal val CHAT_BOTTOM_BAR_OUTER_RADIUS = 28.dp
 internal val CHAT_BOTTOM_BAR_OUTER_SHAPE = RoundedCornerShape(CHAT_BOTTOM_BAR_OUTER_RADIUS)
 internal val CHAT_DROPDOWN_MENU_SHAPE = RoundedCornerShape(16.dp)
-
 internal fun contextUsageExceedsCompactThreshold(
     estimatedTokens: Int, tokenBudget: Int, thresholdPercent: Int,
 ): Boolean {
@@ -100,12 +91,11 @@ internal fun contextUsageExceedsCompactThreshold(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun ChatBottomBar(
-    onSendMessage: suspend (
-        String,
-        List<com.newoether.agora.model.SelectedAttachment>,
-        suspend () -> Unit,
-    ) -> SendAcceptance?,
+internal fun ChatBottomBar(
+    submissionController: ConversationComposerSubmissionController,
+    composerOwnerId: String,
+    composerController: ConversationComposerController,
+    composerSnapshot: ConversationComposerSnapshot,
     onStopGeneration: () -> Unit = {},
     isLoading: Boolean,
     isCompacting: Boolean = false,
@@ -127,6 +117,8 @@ fun ChatBottomBar(
     openAiServiceTier: String = "auto",
     webSearchEnabled: Boolean = false,
     shellEnabled: Boolean = false,
+    showLowContextMode: Boolean = false,
+    lowContextModeEnabled: Boolean = false,
     onCodeExecutionToggle: (Boolean) -> Unit = {},
     onGoogleSearchToggle: (Boolean) -> Unit = {},
     onOpenAiWebSearchToggle: (Boolean) -> Unit = {},
@@ -138,13 +130,12 @@ fun ChatBottomBar(
     onOpenAiServiceTierChange: (String) -> Unit = {},
     onWebSearchToggle: (Boolean) -> Unit = {},
     onShellToggle: (Boolean) -> Unit = {},
+    onLowContextModeToggle: (Boolean) -> Unit = {},
     onModelSelect: (String) -> Unit,
-    onImageClick: (String) -> Unit = {},
     onAllMediaClick: ((urls: List<String>, index: Int) -> Unit)? = null,
     onFileContentClick: ((fileName: String, content: String) -> Unit)? = null,
     onPdfPagesClick: ((pages: List<String>, startIndex: Int) -> Unit)? = null,
     onPdfPreviewSelect: ((pages: List<String>, startIndex: Int) -> Unit)? = null,
-    onPdfViewerClosed: (() -> Unit)? = null,
     pdfViewerSelection: Set<Int> = emptySet(),
     onTogglePdfSelection: ((Int) -> Unit)? = null,
     onInitPdfSelection: ((Set<Int>) -> Unit)? = null,
@@ -178,22 +169,54 @@ fun ChatBottomBar(
     val scrollState = rememberScrollState()
     BackHandler(enabled = isExpanded) { onCollapse() }
     val isModelValid = selectedModel.isNotBlank() && enabledModels.contains(selectedModel)
-
-    // No-op bring-into-view to prevent auto-scrolling on text field focus
-
+    val submissionState = remember(submissionController, composerOwnerId) {
+        submissionController.observeState(composerOwnerId)
+    }
+    DisposableEffect(submissionController, composerOwnerId) {
+        onDispose { submissionController.releaseState(composerOwnerId) }
+    }
+    val submission by submissionState.collectAsState()
     val composer = composerState
-
-    // Draft persistence lives in ChatApp, keyed by conversation id (the id must be captured at
-    // edit time, not at debounce-fire time — see the draft effect there).
-
     val context = LocalContext.current
     val haptics = LocalAgoraHaptics.current
-    val clipboardImageReceiver = remember(context, composer) {
+    val activityLaunchScope = rememberCoroutineScope()
+    suspend fun withOwner(ownerId: String, action: suspend () -> Unit): Boolean {
+        if (submissionController.snapshot(ownerId).isFrozen) return false
+        composerController.load(ownerId)
+        return try {
+            if (submissionController.snapshot(ownerId).isFrozen) false else {
+                action()
+                true
+            }
+        } finally {
+            withContext(NonCancellable) { composerController.release(ownerId) }
+        }
+    }
+    fun importUris(ownerId: String, uris: List<Uri>, forcedType: String? = null) {
+        if (uris.isEmpty() || submissionController.snapshot(ownerId).isFrozen) return
+        activityLaunchScope.launch {
+            val (attachments, rejected) = inspectAttachmentIngress(
+                context,
+                uris,
+                forcedType,
+                composer.acceptsLocalSandboxAttachments(),
+            )
+            if (submissionController.snapshot(ownerId).isFrozen) return@launch
+            composer.reportUnsupportedFiles(rejected)
+            if (attachments.isEmpty()) return@launch
+            var imported = false
+            if (withOwner(ownerId) {
+                for (attachment in attachments) {
+                    if (submissionController.snapshot(ownerId).isFrozen) break
+                    imported = composerController.importAttachment(ownerId, attachment) || imported
+                }
+            } && imported) haptics.selection()
+        }
+    }
+    val clipboardImageReceiver = remember(context, composerOwnerId, composer) {
         object : ReceiveContentListener {
-            override fun onReceive(
-                transferableContent: TransferableContent,
-            ): TransferableContent? {
-                val imageUris = mutableListOf<android.net.Uri>()
+            override fun onReceive(transferableContent: TransferableContent): TransferableContent? {
+                val imageUris = mutableListOf<Uri>()
                 val advertisesImages = transferableContent.hasMediaType(MediaType.Image)
                 val remaining = transferableContent.consume { item ->
                     val uri = item.uri ?: return@consume false
@@ -203,9 +226,7 @@ fun ChatBottomBar(
                     if (isImage) imageUris += uri
                     isImage
                 }
-                if (imageUris.isNotEmpty()) {
-                    composer.onPickImages(imageUris)
-                }
+                importUris(composerOwnerId, imageUris, "image")
                 return remaining
             }
         }
@@ -213,14 +234,13 @@ fun ChatBottomBar(
     var showThinkingSheet by rememberSaveable { mutableStateOf(false) }
     var showOpenAiServiceTierSheet by rememberSaveable { mutableStateOf(false) }
     val composerOcclusionColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)
-    val composerOcclusionShape = RoundedCornerShape(
-        topStart = 20.dp,
-        topEnd = 20.dp,
-    )
-
-    // Restore PDF dialog after viewer closes
+    val composerOcclusionShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     LaunchedEffect(fullScreenViewerUrls) {
-        if (fullScreenViewerUrls == null && composer.pdfDialogHiddenForPreview && composer.pendingPdfUri != null) {
+        if (
+            fullScreenViewerUrls == null &&
+            composer.pdfDialogHiddenForPreview &&
+            composer.pendingPdfAttachmentId != null
+        ) {
             composer.showPdfPageDialog = true
             composer.pdfDialogHiddenForPreview = false
         }
@@ -228,41 +248,106 @@ fun ChatBottomBar(
     LaunchedEffect(openAiServiceTierAvailable) {
         if (!openAiServiceTierAvailable) showOpenAiServiceTierSheet = false
     }
+    LaunchedEffect(composerOwnerId, composerSnapshot.attachments, submission.isFrozen) {
+        if (submission.isFrozen) {
+            composer.resetPendingPdfState()
+            composer.resetPendingVideoState()
+            return@LaunchedEffect
+        }
+        if (composer.pendingPdfOwnerId != null && composer.pendingPdfOwnerId != composerOwnerId) {
+            composer.resetPendingPdfState()
+        }
+        if (
+            composer.pendingPdfOwnerId == composerOwnerId &&
+            composer.pendingPdfAttachmentId != null &&
+            composerSnapshot.attachments.none {
+                it.localId == composer.pendingPdfAttachmentId &&
+                    it.type == "pdf" && it.importState == AttachmentImportState.PROCESSING &&
+                    it.selectedPages == null
+            }
+        ) composer.resetPendingPdfState()
+        if (composer.pendingPdfAttachmentId == null) {
+            composerSnapshot.attachments.firstOrNull {
+                it.type == "pdf" && it.importState == AttachmentImportState.PROCESSING &&
+                    it.selectedPages == null && (it.pageCount ?: 0) > 0
+            }?.let { attachment ->
+                composer.pendingPdfOwnerId = composerOwnerId
+                composer.pendingPdfAttachmentId = attachment.localId
+                composer.showPdfPageDialog = true
+                onInitPdfSelection?.invoke((0 until minOf(attachment.pageCount ?: 0, 5)).toSet())
+            }
+        }
+        if (composer.pendingVideoOwnerId != null && composer.pendingVideoOwnerId != composerOwnerId) {
+            composer.resetPendingVideoState()
+        }
+        if (
+            composer.pendingVideoOwnerId == composerOwnerId &&
+            composer.pendingVideoAttachmentId != null &&
+            composerSnapshot.attachments.none {
+                it.localId == composer.pendingVideoAttachmentId &&
+                    it.type == "video" && it.importState == AttachmentImportState.PROCESSING &&
+                    it.frameCount == null
+            }
+        ) composer.resetPendingVideoState()
+        if (composer.pendingVideoAttachmentId == null && composer.pendingPdfAttachmentId == null) {
+            composerSnapshot.attachments.firstOrNull {
+                it.type == "video" && it.importState == AttachmentImportState.PROCESSING &&
+                    it.frameCount == null && it.localPath != null
+            }?.let { attachment ->
+                composer.pendingVideoOwnerId = composerOwnerId
+                composer.pendingVideoAttachmentId = attachment.localId
+                composer.showVideoSliceDialog = true
+            }
+        }
+    }
+
+    var pendingPhotoOwnerId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingVideoPickerOwnerId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingFileOwnerId by rememberSaveable { mutableStateOf<String?>(null) }
     val photoLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris -> composer.onPickImages(uris) }
+    ) { uris -> pendingPhotoOwnerId?.let { importUris(it, uris, "image") }; pendingPhotoOwnerId = null }
     val videoLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris -> composer.onPickVideos(uris) }
+    ) { uris -> pendingVideoPickerOwnerId?.let { importUris(it, uris, "video") }; pendingVideoPickerOwnerId = null }
     val fileLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.GetMultipleContents()
-    ) { uris -> composer.onPickFiles(uris, onInitPdfSelection) }
-    val activityLaunchScope = rememberCoroutineScope()
+    ) { uris -> pendingFileOwnerId?.let { importUris(it, uris) }; pendingFileOwnerId = null }
     var pendingCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingCameraOwnerId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingCameraPermissionPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingCameraPermissionOwnerId by rememberSaveable { mutableStateOf<String?>(null) }
     var internalCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var internalCameraOwnerId by rememberSaveable { mutableStateOf<String?>(null) }
     val cameraLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.TakePicture()
     ) { captured ->
-        pendingCameraPath?.let { privatePath ->
-            composer.completeCameraCapture(privatePath, captured)
-        }
+        val path = pendingCameraPath
+        val ownerId = pendingCameraOwnerId
         pendingCameraPath = null
+        pendingCameraOwnerId = null
+        if (path != null && ownerId != null) composer.completeCameraCapture(
+            ownerId, composerController, submissionController, path, captured,
+        )
     }
     val cameraPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        val privatePath = pendingCameraPermissionPath
+        val path = pendingCameraPermissionPath
+        val ownerId = pendingCameraPermissionOwnerId
         pendingCameraPermissionPath = null
-        if (granted && privatePath != null) {
-            internalCameraPath = privatePath
-        } else if (privatePath != null) {
-            composer.completeCameraCapture(privatePath, captured = false)
-            composer.reportCameraPreparationFailure()
+        pendingCameraPermissionOwnerId = null
+        if (granted && path != null && ownerId != null && !submissionController.snapshot(ownerId).isFrozen) {
+            internalCameraPath = path
+            internalCameraOwnerId = ownerId
+        } else if (path != null && ownerId != null) {
+            composer.completeCameraCapture(
+                ownerId, composerController, submissionController, path, captured = false,
+            )
+            if (!granted) composer.reportCameraPreparationFailure()
         }
     }
-
-    fun launchInternalCamera(privatePath: String) {
+    fun launchInternalCamera(ownerId: String, privatePath: String) {
         if (
             androidx.core.content.ContextCompat.checkSelfPermission(
                 context,
@@ -270,12 +355,13 @@ fun ChatBottomBar(
             ) == android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
             internalCameraPath = privatePath
+            internalCameraOwnerId = ownerId
         } else {
             pendingCameraPermissionPath = privatePath
+            pendingCameraPermissionOwnerId = ownerId
             cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
         }
     }
-
     Box(modifier = modifier.fillMaxWidth().then(if (isExpanded) Modifier.fillMaxHeight() else Modifier).padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 12.dp)) {
         Column(modifier = Modifier.fillMaxWidth().then(if (isExpanded) Modifier.fillMaxHeight() else Modifier)) {
             AnimatedVisibility(
@@ -289,7 +375,6 @@ fun ChatBottomBar(
             ) {
                 Spacer(modifier = Modifier.height(44.dp))
             }
-
             ComposerStatusColumn(
                 queuedSends = queuedSends,
                 onRemoveQueuedSend = onRemoveQueuedSend,
@@ -313,11 +398,12 @@ fun ChatBottomBar(
                     .background(composerOcclusionColor)
                     .zIndex(1f),
             ) {
-        // Also shown while expanded: hiding it there meant a full-screen composer gave no sign
-        // that attachments were about to be sent.
-        if (composer.selectedAttachments.isNotEmpty()) {
+        if (composerSnapshot.attachments.isNotEmpty()) {
             AttachmentPreviewRow(
-                composer = composer,
+                attachments = composerSnapshot.attachments,
+                editable = !submission.isFrozen,
+                onRemove = { id -> activityLaunchScope.launch { withOwner(composerOwnerId) { composerController.remove(composerOwnerId, id) } } },
+                onRetry = { id -> activityLaunchScope.launch { withOwner(composerOwnerId) { composerController.retry(composerOwnerId, id) } } },
                 onAllMediaClick = onAllMediaClick,
                 onFileContentClick = onFileContentClick,
                 onPdfPagesClick = onPdfPagesClick,
@@ -344,7 +430,6 @@ fun ChatBottomBar(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
                 },
-                enabled = true,
                 lineLimits = TextFieldLineLimits.MultiLine(1, if (isExpanded) Int.MAX_VALUE else 6),
                 contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 16.dp),
                 colors = TextFieldDefaults.colors(
@@ -373,6 +458,7 @@ fun ChatBottomBar(
         Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp, start = 8.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(48.dp).background(MaterialTheme.colorScheme.surfaceColorAtElevation(10.dp), RoundedCornerShape(100)).padding(horizontal = 8.dp, vertical = 4.dp)) {
                 AttachmentAddMenu(
+                    enabled = !submission.isFrozen,
                     onCamera = {
                         activityLaunchScope.launch {
                             val target = composer.createCameraCaptureTarget()
@@ -382,17 +468,20 @@ fun ChatBottomBar(
                             }
                             if (canLaunchSystemImageCapture(context)) {
                                 pendingCameraPath = target.privatePath
+                                pendingCameraOwnerId = composerOwnerId
                                 runCatching { cameraLauncher.launch(target.uri) }
                                     .onFailure {
                                         pendingCameraPath = null
-                                        launchInternalCamera(target.privatePath)
+                                        pendingCameraOwnerId = null
+                                        launchInternalCamera(composerOwnerId, target.privatePath)
                                     }
                             } else {
-                                launchInternalCamera(target.privatePath)
+                                launchInternalCamera(composerOwnerId, target.privatePath)
                             }
                         }
                     },
                     onPhotos = {
+                        pendingPhotoOwnerId = composerOwnerId
                         photoLauncher.launch(
                             androidx.activity.result.PickVisualMediaRequest(
                                 androidx.activity.result.contract.ActivityResultContracts
@@ -401,6 +490,7 @@ fun ChatBottomBar(
                         )
                     },
                     onVideos = {
+                        pendingVideoPickerOwnerId = composerOwnerId
                         videoLauncher.launch(
                             androidx.activity.result.PickVisualMediaRequest(
                                 androidx.activity.result.contract.ActivityResultContracts
@@ -408,7 +498,7 @@ fun ChatBottomBar(
                             ),
                         )
                     },
-                    onFiles = { fileLauncher.launch("*/*") },
+                    onFiles = { pendingFileOwnerId = composerOwnerId; fileLauncher.launch("*/*") },
                 )
                 var activeMenu by remember { mutableStateOf<String?>(null) }
                 var lastModelDismissTime by remember { mutableLongStateOf(0L) }
@@ -419,6 +509,7 @@ fun ChatBottomBar(
                     com.newoether.agora.model.ModelId.parse(selectedModel).providerName,
                     customProviders,
                 )
+                val capabilityControlsEnabled = !lowContextModeEnabled
                 val displayText = when {
                     isModelValid -> modelDisplayName(selectedModel, modelAliases, customProviders)
                     enabledModels.isNotEmpty() -> stringResource(R.string.select_model)
@@ -625,6 +716,29 @@ fun ChatBottomBar(
                         matchTextFieldWidth = false,
                         shape = CHAT_DROPDOWN_MENU_SHAPE,
                     ) {
+                        if (showLowContextMode) {
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            Icons.Default.Memory,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp),
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(stringResource(R.string.low_context_mode))
+                                    }
+                                },
+                                trailingIcon = {
+                                    Switch(
+                                        checked = lowContextModeEnabled,
+                                        onCheckedChange = onLowContextModeToggle,
+                                        modifier = Modifier.scale(0.7f),
+                                    )
+                                },
+                                onClick = { onLowContextModeToggle(!lowContextModeEnabled) },
+                            )
+                        }
                         DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -673,9 +787,11 @@ fun ChatBottomBar(
                                     Switch(
                                         checked = codeExecutionEnabled,
                                         onCheckedChange = { onCodeExecutionToggle(it) },
+                                        enabled = capabilityControlsEnabled,
                                         modifier = Modifier.scale(0.7f)
                                     )
                                 },
+                                enabled = capabilityControlsEnabled,
                                 onClick = { onCodeExecutionToggle(!codeExecutionEnabled) }
                             )
                             DropdownMenuItem(
@@ -684,7 +800,7 @@ fun ChatBottomBar(
                                         Image(
                                             painter = androidx.compose.ui.res.painterResource(R.drawable.provider_google),
                                             contentDescription = null,
-                                            colorFilter = ColorFilter.tint(Color.White),
+                                            colorFilter = ColorFilter.tint(LocalContentColor.current),
                                             modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp),
                                         )
                                         Spacer(modifier = Modifier.width(12.dp))
@@ -697,9 +813,11 @@ fun ChatBottomBar(
                                     Switch(
                                         checked = googleSearchEnabled,
                                         onCheckedChange = { onGoogleSearchToggle(it) },
+                                        enabled = capabilityControlsEnabled,
                                         modifier = Modifier.scale(0.7f)
                                     )
                                 },
+                                enabled = capabilityControlsEnabled,
                                 onClick = { onGoogleSearchToggle(!googleSearchEnabled) }
                             )
                         }
@@ -730,9 +848,11 @@ fun ChatBottomBar(
                                     Switch(
                                         checked = openAiServiceTierEnabled,
                                         onCheckedChange = onOpenAiServiceTierToggle,
+                                        enabled = capabilityControlsEnabled,
                                         modifier = Modifier.scale(0.7f),
                                     )
                                 },
+                                enabled = capabilityControlsEnabled,
                                 onClick = {
                                     activeMenu = null
                                     showOpenAiServiceTierSheet = true
@@ -743,6 +863,7 @@ fun ChatBottomBar(
                             NativeSearchMenuItem(
                                 checked = openAiWebSearchEnabled,
                                 provider = "OpenAI",
+                                enabled = capabilityControlsEnabled,
                                 onCheckedChange = onOpenAiWebSearchToggle,
                             )
                         }
@@ -759,9 +880,11 @@ fun ChatBottomBar(
                                     Switch(
                                         checked = webSearchEnabled,
                                         onCheckedChange = { onWebSearchToggle(it) },
+                                        enabled = capabilityControlsEnabled,
                                         modifier = Modifier.scale(0.7f)
                                     )
                                 },
+                                enabled = capabilityControlsEnabled,
                                 onClick = { onWebSearchToggle(!webSearchEnabled) }
                             )
                         }
@@ -778,9 +901,11 @@ fun ChatBottomBar(
                                     Switch(
                                         checked = shellEnabled,
                                         onCheckedChange = { onShellToggle(it) },
+                                        enabled = capabilityControlsEnabled,
                                         modifier = Modifier.scale(0.7f)
                                     )
                                 },
+                                enabled = capabilityControlsEnabled,
                                 onClick = { onShellToggle(!shellEnabled) }
                             )
                         }
@@ -811,12 +936,14 @@ fun ChatBottomBar(
             }
             ComposerSendButton(
                 textFieldState = textFieldState,
-                composer = composer,
+                ownerId = composerOwnerId,
+                snapshot = composerSnapshot,
+                submissionController = submissionController,
+                submission = submission,
                 isLoading = isLoading,
                 isSwitching = isSwitching,
                 isStopping = isStopping,
                 isModelValid = isModelValid,
-                onSendMessage = onSendMessage,
                 onStopGeneration = onStopGeneration,
                 onCollapse = onCollapse,
             )
@@ -854,12 +981,16 @@ fun ChatBottomBar(
         onOpenAiServiceTierToggle = onOpenAiServiceTierToggle,
         onOpenAiServiceTierChange = onOpenAiServiceTierChange,
         internalCameraPath = internalCameraPath,
-        onInternalCameraPathChange = { internalCameraPath = it },
+        internalCameraOwnerId = internalCameraOwnerId,
+        onInternalCameraCleared = { internalCameraPath = null; internalCameraOwnerId = null },
+        composerOwnerId = composerOwnerId,
+        composerController = composerController,
+        submissionController = submissionController,
+        composerSnapshot = composerSnapshot,
         composer = composer,
         pdfViewerSelection = pdfViewerSelection,
         onTogglePdfSelection = onTogglePdfSelection,
         onPdfPreviewSelect = onPdfPreviewSelect,
-        onInitPdfSelection = onInitPdfSelection,
     )
 
 }

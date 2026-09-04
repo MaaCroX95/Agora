@@ -115,6 +115,7 @@ internal fun buildLiveSegments(
     signatureProvider: String? = null,
     thoughtDurationMs: Long? = null,
     errorMessage: String? = null,
+    errorCode: String? = null,
     answerDeltas: List<StreamingTextDelta> = emptyList(),
 ): List<MessageSegment>? {
     val citations = flushed.filter { it.type == "citation" }
@@ -142,7 +143,13 @@ internal fun buildLiveSegments(
         )
     }
     errorMessage?.takeIf { it.isNotBlank() }?.let { error ->
-        result.add(MessageSegment(type = "error", content = error))
+        result.add(
+            MessageSegment(
+                type = "error",
+                content = error,
+                errorCode = errorCode,
+            )
+        )
     }
     result.addAll(citations)
     return result.ifEmpty { null }
@@ -203,6 +210,7 @@ internal data class GenerationFinalSnapshot(
     val thoughtSignatureProvider: String?,
     val thoughtDurationMs: Long?,
     val errorMessage: String?,
+    val errorCode: String? = null,
     val runId: String,
     val runSequence: Long,
     val answerDeltas: List<StreamingTextDelta> = emptyList(),
@@ -230,6 +238,7 @@ internal fun GenerationFinalSnapshot.toMessage(): ChatMessage = ChatMessage(
         thoughtSignatureProvider,
         thoughtDurationMs,
         errorMessage,
+        errorCode,
         answerDeltas = answerDeltas,
     ) ?: flushedSegments.ifEmpty { null },
     runId = runId,

@@ -3,12 +3,12 @@ package com.newoether.agora.api.openai
 import com.newoether.agora.api.*
 
 import com.newoether.agora.util.DebugLog
-import com.newoether.agora.api.util.StreamingThinkTagParser
 import com.newoether.agora.api.util.convertToOpenAiMessages
 import com.newoether.agora.api.util.prepareMessages
 import com.newoether.agora.api.util.RequestFormatException
 import com.newoether.agora.api.util.requireValidSerializedRequest
 import com.newoether.agora.api.util.StreamTermination
+import com.newoether.agora.api.util.asRetryableResponseBodyReadError
 import com.newoether.agora.api.util.asRetryableTransportError
 import com.newoether.agora.api.util.carriesModelOutput
 import com.newoether.agora.api.util.ProviderRetryPolicy
@@ -53,51 +53,25 @@ abstract class BaseOpenAiProvider : LlmProvider {
     protected open fun transformSystemPrompt(prompt: String?): String? = prompt
 
     /**
-     * Parse the delta from one SSE event and emit TextChunk / ThoughtChunk events.
-     * The base class handles tool_calls accumulation, finish_reason emission, and usage
-     * emission automatically.
-     *
-     * The default implementation covers the common OpenAI-compatible shape: a separate
-     * `reasoning_content` field (gated on [ProviderConfig.thinkingEnabled]) plus `content`.
-     * Providers with a different reasoning representation (e.g. OpenRouter's
-     * `reasoning_details`) override this.
+     * Parse one OpenAI-compatible delta into native thought and raw answer events.
+     * Provider-neutral inline marker recovery is owned by ProviderStreamNormalizer.
      */
     protected open suspend fun parseDeltaContent(
         delta: OpenAiDelta,
         config: ProviderConfig,
-        thinkParser: StreamingThinkTagParser,
         emit: suspend (StreamEvent) -> Unit
     ) {
         // reasoning_content is the vLLM/DeepSeek-compatible field; `reasoning` is the bare-string
         // form many relays emit instead. Take whichever the endpoint actually populated.
-        (delta.reasoningContent ?: delta.reasoning)?.let { reasoning ->
-            if (reasoning.isNotEmpty() && config.thinkingEnabled) {
-                emit(StreamEvent.ThoughtChunk(reasoning))
-            }
+        val reasoning = delta.reasoningContent?.takeIf(String::isNotBlank)
+            ?: delta.reasoning?.takeIf(String::isNotBlank)
+        reasoning?.let {
+            emit(StreamEvent.ThoughtChunk(it))
         }
-        delta.content?.let { content ->
-            if (content.isNotEmpty()) {
-                if (parseInlineThinkTags) {
-                    thinkParser.feed(
-                        content = content,
-                        thinkingEnabled = config.thinkingEnabled,
-                        onText = { emit(StreamEvent.TextChunk(it)) },
-                        onThought = { emit(StreamEvent.ThoughtChunk(it)) }
-                    )
-                } else {
-                    emit(StreamEvent.TextChunk(content))
-                }
-            }
+        delta.content?.takeIf(String::isNotEmpty)?.let { content ->
+            emit(StreamEvent.TextChunk(content))
         }
     }
-
-    /**
-     * When true, inline `<think>…</think>` in the content stream is parsed into thought chunks.
-     * Enabled only for self-hosted OpenAI-compatible servers (llama.cpp/vLLM render reasoning
-     * inline via the chat template); official cloud endpoints keep content literal so an answer
-     * that MENTIONS a think tag is never misclassified.
-     */
-    protected open val parseInlineThinkTags: Boolean = false
 
     protected open val retryableStatusCodes: Set<Int> = setOf(429, 502, 503, 504)
 
@@ -335,9 +309,11 @@ abstract class BaseOpenAiProvider : LlmProvider {
         config: ProviderConfig,
         emit: suspend (StreamEvent) -> Unit,
     ): StreamTermination {
-        val router = OpenAiResponsesEventRouter(json, config.thinkingEnabled)
+        val router = OpenAiResponsesEventRouter(json)
         var producedContent = false
         var reportedError = false
+        var streamError: GenerationError? = null
+        var responseBodyReadError: GenerationError? = null
         var timedOut = false
         var consecutiveReadTimeouts = 0
 
@@ -351,6 +327,10 @@ abstract class BaseOpenAiProvider : LlmProvider {
                     break
                 }
                 continue
+            } catch (error: Exception) {
+                if (!currentCoroutineContext().isActive) break
+                responseBodyReadError = error.asRetryableResponseBodyReadError() ?: throw error
+                break
             } ?: break
             consecutiveReadTimeouts = 0
             if (!line.startsWith("data: ")) continue
@@ -364,23 +344,23 @@ abstract class BaseOpenAiProvider : LlmProvider {
                     "AgoraAPI",
                     "[$name] malformed Responses payload exception=${error.javaClass.simpleName}",
                 )
-                reportedError = true
-                listOf(
-                    StreamEvent.Error(
-                        GenerationError.SseParse(
-                            rawLine = payload.take(512),
-                            cause = error.localizedMessage ?: "Malformed Responses SSE payload",
-                        )
-                    )
+                streamError = GenerationError.SseParse(
+                    rawLine = payload.take(512),
+                    cause = error.localizedMessage ?: "Malformed Responses SSE payload",
                 )
+                emptyList()
             }
             routed.forEach { event ->
-                if (event.carriesModelOutput()) producedContent = true
-                if (event is StreamEvent.Error) reportedError = true
-                emit(event)
+                if (event is StreamEvent.Error && event.error is GenerationError.SseParse) {
+                    streamError = event.error
+                } else {
+                    if (event.carriesModelOutput()) producedContent = true
+                    if (event is StreamEvent.Error) reportedError = true
+                    emit(event)
+                }
             }
             if (
-                reportedError || router.streamError != null ||
+                streamError != null || reportedError || router.streamError != null ||
                 router.sawTerminalMarker
             ) break
         }
@@ -393,10 +373,10 @@ abstract class BaseOpenAiProvider : LlmProvider {
             stopReason = router.stopReason,
             producedContent = producedContent,
             toolCallInFlight = router.toolCallInFlight,
-            streamError = router.streamError,
-            alreadyReportedError = reportedError || router.reportedError,
+            streamError = responseBodyReadError ?: streamError ?: router.streamError,
+            alreadyReportedError = reportedError,
             timedOut = timedOut,
-            retryableStreamError = !router.sawTerminalMarker,
+            retryableStreamError = responseBodyReadError != null || !router.sawTerminalMarker,
         )
     }
 
@@ -413,14 +393,7 @@ abstract class BaseOpenAiProvider : LlmProvider {
         config: ProviderConfig,
         emit: suspend (StreamEvent) -> Unit
     ): StreamTermination {
-        // Parser state belongs to one transport attempt. An empty/incomplete response may be
-        // replayed, and carrying a partial `<think` prefix into the next attempt would corrupt the
-        // successful retry even though no output from the failed attempt was surfaced.
-        val thinkParser = StreamingThinkTagParser()
         val pendingToolCalls = mutableMapOf<Int, PendingToolCall>()
-        // Accumulate answer content so that, if the server emits tool calls as content text rather
-        // than as structured delta.tool_calls (#33 path B), we can recover them at stream end.
-        val contentBuf = StringBuilder()
         var producedContent = false
         var reportedError = false
         var streamError: GenerationError? = null
@@ -432,15 +405,6 @@ abstract class BaseOpenAiProvider : LlmProvider {
             if (event is StreamEvent.Error) reportedError = true
             emit(event)
         }
-        val emitAndAccumulate: suspend (StreamEvent) -> Unit = { event ->
-            if (event is StreamEvent.TextChunk) contentBuf.append(event.text)
-            emitTracked(event)
-        }
-        var structuredToolCallsEmitted = false
-        var textToolCallsEmitted = false
-        val textToolParser = config.tools
-            ?.takeIf { it.isNotEmpty() }
-            ?.let { StreamingTextToolCallParser() }
         var terminalDeadlineNanos: Long? = null
 
         suspend fun emitPendingStructuredToolCalls() {
@@ -488,76 +452,8 @@ abstract class BaseOpenAiProvider : LlmProvider {
                         streamKey = it.streamKey,
                     )
                 }
-            structuredToolCallsEmitted = true
             if (calls.size == 1) emitTracked(calls.first())
             else emitTracked(StreamEvent.ToolCallsRequest(calls))
-        }
-
-        suspend fun emitFilteredText(text: String) {
-            parseDeltaContent(
-                delta = OpenAiDelta(content = text),
-                config = config,
-                thinkParser = thinkParser,
-                emit = emitAndAccumulate,
-            )
-        }
-
-        suspend fun emitTextToolUpdate(snapshot: StreamingTextToolCallParser.Snapshot) {
-            emitTracked(
-                StreamEvent.ToolCallUpdate(
-                    streamKey = snapshot.streamKey,
-                    id = null,
-                    name = snapshot.name,
-                    arguments = snapshot.arguments,
-                )
-            )
-        }
-
-        suspend fun emitCompletedTextTool(call: StreamingTextToolCallParser.CompletedCall) {
-            textToolCallsEmitted = true
-            emitTracked(
-                StreamEvent.ToolCallRequest(
-                    id = syntheticToolCallId(),
-                    name = call.name,
-                    arguments = call.arguments,
-                    streamKey = call.streamKey,
-                )
-            )
-        }
-
-        suspend fun emitMalformedTextTool(cause: String) {
-            emitTracked(
-                StreamEvent.Error(
-                    GenerationError.SseParse(
-                        rawLine = "tool_call",
-                        cause = cause,
-                    )
-                )
-            )
-        }
-
-        suspend fun parseDeltaWithStreamingTextTools(delta: OpenAiDelta) {
-            val content = delta.content
-            if (textToolParser == null || content.isNullOrEmpty()) {
-                parseDeltaContent(delta, config, thinkParser, emitAndAccumulate)
-                return
-            }
-
-            // Emit provider-specific reasoning fields once, then route only content through the
-            // text-tool parser so split tags never flash as answer text.
-            parseDeltaContent(
-                delta.copy(content = null),
-                config,
-                thinkParser,
-                emitAndAccumulate,
-            )
-            textToolParser.feed(
-                content = content,
-                onText = { emitFilteredText(it) },
-                onUpdate = { emitTextToolUpdate(it) },
-                onComplete = { emitCompletedTextTool(it) },
-                onMalformed = { emitMalformedTextTool(it) },
-            )
         }
 
         // Read timeouts are tolerated for long thinking pauses (read timeout = 5 min), but a
@@ -585,6 +481,10 @@ abstract class BaseOpenAiProvider : LlmProvider {
                     break
                 }
                 continue
+            } catch (e: Exception) {
+                if (!currentCoroutineContext().isActive) break
+                streamError = e.asRetryableResponseBodyReadError() ?: throw e
+                break
             } ?: break
             consecutiveReadTimeouts = 0
 
@@ -625,7 +525,7 @@ abstract class BaseOpenAiProvider : LlmProvider {
                 val choice = response.choices?.firstOrNull()
 
                 choice?.delta?.let { delta ->
-                    parseDeltaWithStreamingTextTools(delta)
+                    parseDeltaContent(delta, config, emitTracked)
 
                     delta.toolCalls?.forEach { tc ->
                         val existingEntry = tc.id?.let { id ->
@@ -636,8 +536,8 @@ abstract class BaseOpenAiProvider : LlmProvider {
                             ?: pendingToolCalls.keys.singleOrNull()
                             ?: pendingToolCalls.size
                         val pending = pendingToolCalls.getOrPut(index) { PendingToolCall() }
-                        if (tc.id != null) pending.id = tc.id
-                        tc.function?.name?.let { if (it.isNotEmpty()) pending.name = it }
+                        tc.id?.takeIf(String::isNotBlank)?.let { pending.id = it }
+                        tc.function?.name?.takeIf(String::isNotBlank)?.let { pending.name = it }
                         tc.function?.arguments?.let {
                             // Snapshot-tolerant: a relay that resends the whole argument string in
                             // every delta must not produce `{"a":1}{"a":1}`, and an empty
@@ -698,40 +598,6 @@ abstract class BaseOpenAiProvider : LlmProvider {
         // can prove that its metadata is complete; leaving it pending makes the termination error
         // carry toolCallInFlight=true and prevents execution of a truncated invocation.
 
-        textToolParser?.flush(
-            onText = { emitFilteredText(it) },
-            onUpdate = { emitTextToolUpdate(it) },
-            onComplete = { emitCompletedTextTool(it) },
-            onMalformed = { emitMalformedTextTool(it) },
-        )
-
-        thinkParser.flush(
-            onText = { emitAndAccumulate(StreamEvent.TextChunk(it)) },
-            onThought = { emitAndAccumulate(StreamEvent.ThoughtChunk(it)) },
-            thinkingEnabled = config.thinkingEnabled
-        )
-
-        // Fallback (#33 path B): some OpenAI-compatible servers (llama.cpp et al.) finish with
-        // finish_reason == "stop" and put the tool call in the content text instead of the
-        // structured delta.tool_calls field. If we never saw structured tool calls but tools were
-        // offered, parse them out of the accumulated content so the generation enters the
-        // tool-call phase instead of just printing the JSON as an answer. Brings these servers to
-        // parity with Ollama, which reads its structured tool_calls field directly.
-        if (
-            !structuredToolCallsEmitted &&
-            !textToolCallsEmitted &&
-            !config.tools.isNullOrEmpty()
-        ) {
-            val parsed = ToolCallTextParser.parse(contentBuf.toString())
-            if (parsed.size == 1) {
-                emitTracked(StreamEvent.ToolCallRequest(syntheticToolCallId(), parsed[0].name, parsed[0].arguments))
-            } else if (parsed.size > 1) {
-                emitTracked(StreamEvent.ToolCallsRequest(parsed.map {
-                    StreamEvent.ToolCallRequest(syntheticToolCallId(), it.name, it.arguments)
-                }))
-            }
-        }
-
         if (!currentCoroutineContext().isActive) {
             throw CancellationException("Stream cancelled")
         }
@@ -748,11 +614,6 @@ abstract class BaseOpenAiProvider : LlmProvider {
             timedOut = timedOut,
         )
     }
-
-    /** Synthetic id for tool calls recovered from content text (#33 path B), where the server
-     *  provides no id. Unique per call so the result can still be paired back to the request. */
-    private fun syntheticToolCallId(): String =
-        "call_text_${java.util.UUID.randomUUID()}"
 
     private fun buildGenerationError(
         statusCode: Int,

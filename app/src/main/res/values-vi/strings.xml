@@ -558,7 +558,7 @@
     <string name="memory_create">Tạo</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">Đang lấy danh sách các mô hình khả dụng...</string>
+    <string name="models_syncing">Đang đồng bộ...</string>
     <string name="snackbar_generating_title">Đang tạo tiêu đề...</string>
     <string name="snackbar_title_generated">Đã tạo tiêu đề.</string>
     <string name="snackbar_title_error">Gặp lỗi khi tạo tiêu đề.</string>
@@ -668,6 +668,8 @@
     <string name="auto_cache_title">Lưu bộ đệm</string>
     <string name="auto_cache">Tự động lưu bộ đệm các tin nhắn mới</string>
     <string name="auto_cache_desc">Tự động chỉ mục các tin nhắn mới bằng mô hình nhúng đã chọn. Khi tắt, các tin nhắn sẽ không bao giờ được lưu bộ đệm cho đến khi được kích hoạt thủ công.</string>
+    <string name="show_uncached_notification">Hiển thị thông báo tin nhắn chưa lưu bộ đệm</string>
+    <string name="show_uncached_notification_desc">Hiển thị lời nhắc khi tính năng tự động lưu bộ đệm bị tắt và vẫn còn tin nhắn chưa được lưu bộ đệm</string>
     <string name="cache_action">Lưu bộ đệm</string>
     <string name="recache_action">Lưu lại bộ đệm</string>
     <string name="recache_confirm_title">Lưu lại bộ đệm tất cả tin nhắn</string>
@@ -828,6 +830,9 @@
     <string name="export_button">Xuất</string>
     <string name="exporting_label">Đang xuất…</string>
     <string name="export_success">Xuất dữ liệu thành công.</string>
+    <string name="attachment_unavailable">Tệp đính kèm không khả dụng</string>
+    <string name="export_success_missing_resources">Đã xuất dữ liệu, nhưng không thể sử dụng %1$d tài nguyên.</string>
+    <string name="auto_backup_missing_resources">Đã sao lưu xong, nhưng không thể sử dụng %1$d tài nguyên.</string>
     <string name="export_failed">Xuất thất bại: %1$s</string>
     <string name="import_preview_title">Nhập dữ liệu</string>
     <string name="import_from">Xuất ngày %1$s\nTừ Agora v%2$s</string>
@@ -835,9 +840,13 @@
     <string name="import_strategy_merge">Gộp</string>
     <string name="import_strategy_replace">Thay thế</string>
     <string name="import_strategy_skip">Bỏ qua</string>
+    <string name="external_import_replace_confirm_title">Thay thế các cuộc trò chuyện hiện có?</string>
+    <string name="external_import_replace_confirm_message">Thao tác này xóa tất cả cuộc trò chuyện hiện có và chỉ giữ lại các cuộc trò chuyện đã nhập được chọn.</string>
+    <string name="external_import_replace_confirm_button">Thay thế cuộc trò chuyện</string>
     <string name="import_api_keys_warning">Bản sao lưu này chứa thông tin xác thực và bí mật. Chúng sẽ được nhập dưới dạng văn bản thuần. Chỉ tiếp tục nếu bạn tin tưởng nguồn.</string>
     <string name="import_button">Nhập</string>
     <string name="importing_label">Đang nhập…</string>
+    <string name="loading_label">Đang tải…</string>
     <string name="import_success">Nhập hoàn tất: %1$s</string>
     <string name="import_failed">Nhập thất bại: %1$s</string>
     <string name="import_invalid_file">Tệp .agora không hợp lệ. Vui lòng chọn bản xuất hợp lệ.</string>
@@ -1136,44 +1145,46 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">Nhà phát triển</string>
     <string name="settings_developer">Tùy chọn nhà phát triển</string>
-    <string name="settings_developer_desc">Chẩn đoán, trình kiểm tra giao thức và công cụ thử nghiệm</string>
+    <string name="settings_developer_desc">Thu thập chẩn đoán và điều khiển mô hình Debug cục bộ</string>
     <string name="developer_options_title">Tùy chọn nhà phát triển</string>
-    <string name="developer_options_status_group">Trạng thái</string>
-    <string name="developer_options_enabled_desc">Đã bật cho bản cài đặt này. Tắt để dừng và xóa dữ liệu chẩn đoán tạm thời.</string>
+    <string name="developer_options_features_group">Tính năng</string>
+    <string name="developer_options_debug_model">Mô hình gỡ lỗi</string>
+    <string name="developer_options_mode_description">Khi tắt, ứng dụng sẽ dừng thu thập, xóa dữ liệu chẩn đoán đã lưu và tắt mô hình Debug.</string>
+    <string name="developer_options_capture_description">Ghi chẩn đoán yêu cầu, luồng và thời gian chạy đã loại bỏ thông tin xác thực, sau đó xuất dữ liệu.</string>
+    <string name="developer_options_debug_model_description">Chỉ thêm mô hình Debug cục bộ, xác định vào bộ chọn mô hình Chat.</string>
+    <string name="developer_options_capture_summary">Tóm tắt</string>
+    <string name="developer_options_capture_raw">Thô</string>
+    <string name="developer_options_capture_play">Bắt đầu hoặc tiếp tục thu thập</string>
+    <string name="developer_options_capture_pause">Tạm dừng thu thập</string>
+    <string name="developer_options_capture_scroll_to_top">Cuộn lên đầu</string>
+    <string name="developer_options_capture_scroll_to_bottom">Cuộn xuống cuối</string>
+    <string name="developer_options_capture_more_actions">Thao tác thu thập</string>
+    <string name="developer_options_capture_clear_message">Xóa các sự kiện và bộ đếm đã thu thập? Trạng thái thu thập và phiên sẽ được giữ lại.</string>
+    <string name="developer_options_capture_clear_confirm">Xóa</string>
+    <string name="developer_options_capture_export_redacted_json">Xuất JSON đã biên tập</string>
+    <string name="developer_options_capture_export_summary_text">Xuất văn bản tóm tắt</string>
+    <string name="developer_options_capture_empty">Không có sự kiện đã thu thập</string>
+    <string name="developer_options_capture_state_idle">Không hoạt động</string>
+    <string name="developer_options_capture_state_running">Đang chạy</string>
+    <string name="developer_options_capture_state_paused">Đã tạm dừng</string>
+    <string name="developer_options_capture_status_summary">%1$s · %2$d sự kiện · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">Thu thập chưa đầy đủ · đã đạt giới hạn 64 MiB</string>
+    <string name="developer_options_capture_counters">Đã bỏ %1$d · Đã loại %2$d · Đã cắt %3$d</string>
+    <string name="developer_options_capture_session">Phiên %1$s · tiếp theo #%2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · ký tự nội dung=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">Phản hồi HTTP · mã=%1$d · ký tự=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">Dòng truyền %1$d · ký tự=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">Đã phân tích %1$s</string>
     <string name="developer_options_taps_remaining">Nhấn thêm %1$d lần để bật tùy chọn nhà phát triển.</string>
     <string name="developer_options_enabled_message">Đã bật tùy chọn nhà phát triển.</string>
     <string name="developer_options_already_enabled_message">Tùy chọn nhà phát triển đã được bật.</string>
-    <string name="developer_options_capture_group">Chẩn đoán</string>
     <string name="developer_options_capture">Thu thập chẩn đoán</string>
-    <string name="developer_options_capture_off_desc">Không có phiên chẩn đoán đang hoạt động. Việc thu thập vẫn tắt cho đến khi được khởi động rõ ràng.</string>
 
-    <string name="developer_options_test_lab_group">Thử nghiệm</string>
-    <string name="developer_options_test_lab">Phòng thử nghiệm</string>
-    <string name="developer_options_test_lab_desc">Các kiểm tra độc lập với nhà cung cấp và mẫu giao thức an toàn sẽ xuất hiện tại đây.</string>
     <string name="developer_options_disable_title">Tắt tùy chọn nhà phát triển?</string>
-    <string name="developer_options_disable_message">Thao tác này dừng thu thập đang hoạt động và xóa dữ liệu chẩn đoán tạm thời.</string>
+    <string name="developer_options_disable_message">Thao tác này dừng thu thập, xóa dữ liệu chẩn đoán và tắt mô hình gỡ lỗi.</string>
     <string name="developer_options_disable_confirm">Tắt</string>
-    <string name="developer_options_capture_on_desc">%1$d sự kiện siêu dữ liệu · đã bỏ %2$d. Nội dung tin nhắn không được thu thập.</string>
-    <string name="developer_options_capture_stopped_desc">Đã dừng thu thập. Giữ lại %1$d sự kiện · đã bỏ %2$d.</string>
-    <string name="developer_options_clear_diagnostics">Xóa phiên chẩn đoán</string>
-    <string name="developer_options_clear_diagnostics_desc">Dừng thu thập và xóa mọi sự kiện chẩn đoán trong bộ nhớ.</string>
-    <string name="developer_options_timeline_group">Dòng thời gian siêu dữ liệu</string>
-    <string name="developer_options_timeline_empty">Bắt đầu thu thập rồi chạy một thao tác để xem siêu dữ liệu thời gian chạy và HTTP theo thứ tự.</string>
-    <string name="developer_options_payload_capture">Thu thập tải trọng giao thức</string>
-    <string name="developer_options_payload_capture_desc">Thu thập cấu trúc yêu cầu, phản hồi và SSE đã được làm sạch. Đổi chế độ sẽ bắt đầu phiên mới.</string>
-    <string name="developer_options_sensitive_capture">Nội dung nhạy cảm</string>
-    <string name="developer_options_sensitive_capture_desc">Bao gồm nội dung tin nhắn và công cụ trong phiên này. Thông tin xác thực luôn được che.</string>
-    <string name="developer_options_sensitive_capture_title">Thu thập nội dung nhạy cảm?</string>
-    <string name="developer_options_sensitive_capture_message">Thao tác này bắt đầu một phiên mới trong bộ nhớ có thể chứa dữ liệu riêng tư của cuộc trò chuyện và công cụ. Phiên sẽ tắt khi dừng thu thập hoặc khởi động lại tiến trình ứng dụng. Thông tin xác thực vẫn được che.</string>
-    <string name="developer_options_sensitive_capture_confirm">Bắt đầu thu thập nhạy cảm</string>
-    <string name="developer_options_capture_redacted_desc">%1$d sự kiện · đã bỏ %2$d. Cấu trúc tải trọng được thu thập với nội dung đã che.</string>
-    <string name="developer_options_capture_sensitive_desc">%1$d sự kiện · đã bỏ %2$d. Nội dung nhạy cảm đang được thu thập; thông tin xác thực vẫn được che.</string>
-    <string name="developer_options_inspector_group">Trình kiểm tra</string>
-    <string name="developer_options_inspector">Trình kiểm tra cuộc trò chuyện</string>
-    <string name="developer_options_inspector_empty">Chưa chọn cuộc trò chuyện. Hãy mở một cuộc trò chuyện trước khi kiểm tra.</string>
-    <string name="developer_options_export_group">Xuất</string>
-    <string name="developer_options_export">Xuất gói chẩn đoán</string>
-    <string name="developer_options_export_desc">Chia sẻ gói JSON có giới hạn. Nội dung nhạy cảm được che và tệp không bao giờ tự động tải lên.</string>
+    <string name="developer_options_clear_diagnostics">Xóa phiên chẩn đoán?</string>
+    <string name="developer_options_clear_diagnostics_action">Xóa phiên chẩn đoán</string>
     <string name="developer_options_export_share_title">Chia sẻ gói chẩn đoán Agora</string>
     <string name="developer_options_export_failed">Không thể tạo gói chẩn đoán.</string>
     <string name="responses_api">Responses API</string>
@@ -1225,4 +1236,12 @@
     <string name="tool_edit_skill">Sửa kỹ năng</string>
     <string name="tool_delete_skill">Xóa kỹ năng</string>
     <string name="tool_read_file_truncated">Đang hiển thị một phần nội dung · tiếp tục từ byte %1$d</string>
+    <string name="low_context_mode">Chế độ ngữ cảnh thấp</string>
+    <string name="low_context_mode_default_desc">Bật chế độ ngữ cảnh thấp theo mặc định</string>
+    <string name="learn_more">Tìm hiểu thêm...</string>
+    <string name="local_model_limitations_title">Giới hạn của mô hình cục bộ</string>
+    <string name="local_model_limitations_body">Mô hình cục bộ bị giới hạn bởi bộ nhớ khả dụng trên thiết bị di động. Kích thước ngữ cảnh là một trong những giới hạn chính. Ngữ cảnh thường bao gồm lời nhắc hệ thống, định nghĩa công cụ hoặc hàm và kỹ năng. Để giảm mức sử dụng ngữ cảnh ban đầu, hãy mở menu ba chấm bên cạnh bộ chọn mô hình và bật chế độ ngữ cảnh thấp.</string>
+    <string name="delete_conversation_title">Xóa cuộc trò chuyện?</string>
+    <string name="delete_conversation_from_message_confirm">Xóa tin nhắn này sẽ xóa toàn bộ cuộc trò chuyện. Bạn không thể hoàn tác thao tác này.</string>
+    <string name="composer_clear_failed">Đã gửi tin nhắn nhưng không thể xóa bản nháp.</string>
 </resources>

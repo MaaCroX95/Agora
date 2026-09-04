@@ -7,62 +7,65 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.atomic.AtomicLong
 
-internal enum class RegenerationTransitionStage {
+internal enum class BranchReplacementTransitionStage {
     ANIMATING,
     COMMITTED,
 }
 
-internal data class RegenerationTransitionRequest(
+internal data class BranchReplacementTransitionRequest(
     val id: Long,
     val conversationId: String,
-    val oldMessageId: String,
-    val targetUserMessageId: String,
-    val stage: RegenerationTransitionStage,
+    val oldMessageId: String?,
+    val sourceUserMessageId: String?,
+    val targetUserMessageId: String?,
+    val stage: BranchReplacementTransitionStage,
     val fadeFinished: Boolean = false,
     val scrollFinished: Boolean = false,
     val scrollSucceeded: Boolean? = null,
 )
 
 /**
- * Coordinates the visual half of Regenerate without mutating the durable conversation graph.
+ * Coordinates the visual half of a durable branch replacement without mutating its graph.
  *
- * Fade and scroll are intentionally independent:
- *  1. alpha zero releases the generation coroutine immediately, so SENDING and the HTTP request
- *     never wait behind animation distance;
- *  2. scroll completion controls only when the transparent old composition may be released.
- *
- * COMMITTED selects the new Run while MessageList retains the old keyed composition. ChatApp clears
- * the transition only after both COMMITTED and scrollFinished are observable, preventing a height
- * collapse during the targeted animation without delaying request startup.
+ * Fade and scroll are intentionally independent when the target already exists, as in Regenerate.
+ * Edit publishes its target only at commit, so the same request starts scrolling after that target
+ * becomes visible. In both cases COMMITTED retains the transparent old composition until scrolling
+ * finishes, preventing the selected path from collapsing during the targeted movement.
  */
-internal class RegenerationTransitionCoordinator(
+internal class BranchReplacementTransitionCoordinator(
     private val fadeTimeoutMs: Long = 8_000L,
 ) {
     private data class ActiveTransition(
-        val request: RegenerationTransitionRequest,
+        val request: BranchReplacementTransitionRequest,
         val fadeFinished: CompletableDeferred<Boolean> = CompletableDeferred(),
     )
 
     private val lock = Any()
     private val ids = AtomicLong(0L)
     private var active: ActiveTransition? = null
-    private val _request = MutableStateFlow<RegenerationTransitionRequest?>(null)
-    val request: StateFlow<RegenerationTransitionRequest?> = _request.asStateFlow()
+    private val _request = MutableStateFlow<BranchReplacementTransitionRequest?>(null)
+    val request: StateFlow<BranchReplacementTransitionRequest?> = _request.asStateFlow()
 
     fun begin(
         conversationId: String,
-        oldMessageId: String,
-        targetUserMessageId: String,
-    ): RegenerationTransitionRequest? = synchronized(lock) {
+        oldMessageId: String?,
+        sourceUserMessageId: String? = null,
+        targetUserMessageId: String? = null,
+    ): BranchReplacementTransitionRequest? = synchronized(lock) {
         if (active != null) return null
-        val request = RegenerationTransitionRequest(
+        val fadeAlreadyFinished = oldMessageId == null
+        val request = BranchReplacementTransitionRequest(
             id = ids.incrementAndGet(),
             conversationId = conversationId,
             oldMessageId = oldMessageId,
+            sourceUserMessageId = sourceUserMessageId,
             targetUserMessageId = targetUserMessageId,
-            stage = RegenerationTransitionStage.ANIMATING,
+            stage = BranchReplacementTransitionStage.ANIMATING,
+            fadeFinished = fadeAlreadyFinished,
         )
-        active = ActiveTransition(request)
+        val transition = ActiveTransition(request)
+        if (fadeAlreadyFinished) transition.fadeFinished.complete(true)
+        active = transition
         _request.value = request
         request
     }
@@ -103,13 +106,19 @@ internal class RegenerationTransitionCoordinator(
 
     fun isAnimating(requestId: Long): Boolean = synchronized(lock) {
         active?.request?.let {
-            it.id == requestId && it.stage == RegenerationTransitionStage.ANIMATING
+            it.id == requestId && it.stage == BranchReplacementTransitionStage.ANIMATING
         } == true
     }
 
-    fun markCommitted(requestId: Long): Boolean = synchronized(lock) {
+    fun markCommitted(
+        requestId: Long,
+        targetUserMessageId: String? = null,
+    ): Boolean = synchronized(lock) {
         val transition = active?.takeIf { it.request.id == requestId } ?: return false
-        val committed = transition.request.copy(stage = RegenerationTransitionStage.COMMITTED)
+        val committed = transition.request.copy(
+            targetUserMessageId = targetUserMessageId ?: transition.request.targetUserMessageId,
+            stage = BranchReplacementTransitionStage.COMMITTED,
+        )
         active = transition.copy(request = committed)
         _request.value = committed
         true

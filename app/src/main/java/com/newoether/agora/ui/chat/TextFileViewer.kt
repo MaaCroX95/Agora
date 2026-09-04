@@ -28,6 +28,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.newoether.agora.R
 import com.newoether.agora.ui.chat.message.LiteralHtmlMarkdownBlock
+import com.newoether.agora.ui.chat.message.SearchHighlightedMarkdownHeading
+import com.newoether.agora.ui.chat.message.SearchHighlightedMarkdownTable
+import com.newoether.agora.ui.chat.message.SearchHighlightedMarkdownText
 import com.newoether.agora.ui.chat.message.chatLinkTextStyles
 import com.newoether.agora.ui.chat.message.literalHtmlMarkdownAnnotator
 import com.newoether.agora.ui.chat.message.scaledMarkdownTextStyle
@@ -39,6 +42,7 @@ import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.markdownPadding
 import org.intellij.markdown.MarkdownElementTypes
+import org.intellij.markdown.MarkdownTokenTypes
 
 private fun isMarkdownFile(fileName: String): Boolean =
     fileName.endsWith(".md", true) || fileName.endsWith(".markdown", true)
@@ -87,6 +91,67 @@ fun TextFileViewer(
         val literalHtmlComponents = remember {
             lateinit var components: MarkdownComponents
             components = markdownComponents(
+                text = { SearchHighlightedMarkdownText(it) },
+                paragraph = {
+                    SearchHighlightedMarkdownText(it, style = it.typography.paragraph)
+                },
+                heading1 = {
+                    SearchHighlightedMarkdownHeading(
+                        it,
+                        it.typography.h1,
+                        MarkdownTokenTypes.ATX_CONTENT,
+                    )
+                },
+                heading2 = {
+                    SearchHighlightedMarkdownHeading(
+                        it,
+                        it.typography.h2,
+                        MarkdownTokenTypes.ATX_CONTENT,
+                    )
+                },
+                heading3 = {
+                    SearchHighlightedMarkdownHeading(
+                        it,
+                        it.typography.h3,
+                        MarkdownTokenTypes.ATX_CONTENT,
+                    )
+                },
+                heading4 = {
+                    SearchHighlightedMarkdownHeading(
+                        it,
+                        it.typography.h4,
+                        MarkdownTokenTypes.ATX_CONTENT,
+                    )
+                },
+                heading5 = {
+                    SearchHighlightedMarkdownHeading(
+                        it,
+                        it.typography.h5,
+                        MarkdownTokenTypes.ATX_CONTENT,
+                    )
+                },
+                heading6 = {
+                    SearchHighlightedMarkdownHeading(
+                        it,
+                        it.typography.h6,
+                        MarkdownTokenTypes.ATX_CONTENT,
+                    )
+                },
+                setextHeading1 = {
+                    SearchHighlightedMarkdownHeading(
+                        it,
+                        it.typography.h1,
+                        MarkdownTokenTypes.SETEXT_CONTENT,
+                    )
+                },
+                setextHeading2 = {
+                    SearchHighlightedMarkdownHeading(
+                        it,
+                        it.typography.h2,
+                        MarkdownTokenTypes.SETEXT_CONTENT,
+                    )
+                },
+                table = { SearchHighlightedMarkdownTable(it) },
                 custom = { type, model ->
                     if (type == MarkdownElementTypes.HTML_BLOCK) {
                         LiteralHtmlMarkdownBlock(model)

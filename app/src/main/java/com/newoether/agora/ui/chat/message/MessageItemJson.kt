@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.newoether.agora.model.MessagePersistenceGuard
 import com.newoether.agora.ui.theme.ChatType
 import com.newoether.agora.util.NoAutoScrollSelectionContainer
 import kotlinx.coroutines.Dispatchers
@@ -203,12 +204,17 @@ private fun JsonScalarView(
     )
 }
 
+internal fun persistenceAwareJsonSource(text: String): String =
+    text.removeSuffix(MessagePersistenceGuard.TRUNCATION_MARKER)
+
 @Composable
 internal fun JsonOrPlainView(text: String) {
+    val jsonSource = persistenceAwareJsonSource(text)
+    val persistenceTruncated = jsonSource.length != text.length
     var parsed by remember { mutableStateOf<JsonRenderSnapshot?>(null) }
-    LaunchedEffect(text) {
+    LaunchedEffect(text, jsonSource) {
         val document = withContext(Dispatchers.Default) {
-            StreamingJsonParser.parse(text)
+            StreamingJsonParser.parse(jsonSource)
         }
         parsed = JsonRenderSnapshot(source = text, document = document)
     }
@@ -223,7 +229,8 @@ internal fun JsonOrPlainView(text: String) {
         visibleJsonRoots(document?.roots.orEmpty())
     }
     when {
-        document?.status != StreamingJsonStatus.INVALID && visibleRoots.isNotEmpty() -> {
+        document?.status != StreamingJsonStatus.INVALID &&
+            (visibleRoots.isNotEmpty() || persistenceTruncated) -> {
             NoAutoScrollSelectionContainer {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -233,6 +240,13 @@ internal fun JsonOrPlainView(text: String) {
                         key("json-root:$index") {
                             JsonNodeView(root)
                         }
+                    }
+                    if (persistenceTruncated) {
+                        Text(
+                            text = MessagePersistenceGuard.TRUNCATION_MARKER.trimStart(),
+                            style = ChatType.meta,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }

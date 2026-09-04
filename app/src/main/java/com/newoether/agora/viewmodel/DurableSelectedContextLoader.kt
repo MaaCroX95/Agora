@@ -39,6 +39,7 @@ internal fun selectedVisibleContextMessageIds(
  */
 internal class DurableSelectedContextLoader(
     private val conversations: ConversationRepository,
+    private val generationErrorFormatter: (String) -> String,
 ) {
     suspend fun load(request: DurableSelectedContextRequest): DurableSelectedContext =
         conversations.withProviderContextSnapshot {
@@ -84,7 +85,9 @@ internal class DurableSelectedContextLoader(
                 messages = projectProviderMessages(
                     entities = entities,
                     includeStoredTranscriptions = request.includeStoredTranscriptions,
-                ).let(::projectGenerationStatusesForApi),
+                ).let { messages ->
+                    projectGenerationStatusesForApi(messages, generationErrorFormatter)
+                },
                 entities = entities,
             )
         }

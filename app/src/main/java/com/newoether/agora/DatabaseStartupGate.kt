@@ -31,8 +31,8 @@ sealed interface DatabaseStartupBlockReason {
 /**
  * Serializes the process database lifecycle.
  *
- * No resource is published before it has opened successfully and its process services
- * have started. The only destructive transition is [clearBlockedDatabase], which is
+ * No resource is published before it has opened successfully and passed Room's schema
+ * validation. The only destructive transition is [clearBlockedDatabase], which is
  * rejected unless startup is already blocked and no resource is retained.
  */
 internal class DatabaseStartupGate<T : Any>(
@@ -40,7 +40,6 @@ internal class DatabaseStartupGate<T : Any>(
     private val openResource: suspend () -> T,
     private val closeResource: (T) -> Unit,
     private val deleteDatabase: suspend () -> Boolean,
-    private val startProcessServices: suspend (T) -> Unit,
     private val reportFailure: (Throwable) -> Unit,
 ) {
     private val lifecycleMutex = Mutex()
@@ -132,20 +131,6 @@ internal class DatabaseStartupGate<T : Any>(
         }
 
         resource = opened
-        try {
-            startProcessServices(opened)
-        } catch (error: Exception) {
-            resource = null
-            runCatching { closeResource(opened) }
-                .onFailure(reportFailure)
-            reportFailure(error)
-            return block(
-                DatabaseStartupBlockReason.Unreadable(
-                    errorType = error.javaClass.simpleName,
-                )
-            )
-        }
-
         mutableState.value = DatabaseStartupState.Ready
         return DatabaseStartupState.Ready
     }

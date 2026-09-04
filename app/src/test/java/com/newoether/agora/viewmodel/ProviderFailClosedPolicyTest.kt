@@ -1,5 +1,6 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.api.DebugProvider
 import com.newoether.agora.util.Constants
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -39,6 +40,40 @@ class ProviderFailClosedPolicyTest {
                 registered = true,
                 builtIn = false,
                 effectiveBaseUrl = "https://custom.example/v1",
+            )
+        )
+    }
+
+    @Test
+    fun debugProviderRequiresRegistrationAndItsDeveloperGate() {
+        assertFalse(
+            providerConfigurationIsValid(
+                providerName = DebugProvider.PROVIDER_NAME,
+                activeKey = "",
+                registered = false,
+                builtIn = true,
+                effectiveBaseUrl = null,
+                debugProviderEnabled = true,
+            )
+        )
+        assertFalse(
+            providerConfigurationIsValid(
+                providerName = DebugProvider.PROVIDER_NAME,
+                activeKey = "",
+                registered = true,
+                builtIn = true,
+                effectiveBaseUrl = null,
+                debugProviderEnabled = false,
+            )
+        )
+        assertTrue(
+            providerConfigurationIsValid(
+                providerName = DebugProvider.PROVIDER_NAME,
+                activeKey = "",
+                registered = true,
+                builtIn = true,
+                effectiveBaseUrl = null,
+                debugProviderEnabled = true,
             )
         )
     }

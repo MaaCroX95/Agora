@@ -34,7 +34,7 @@ data class EmbeddingModelCount(
 )
 
 @Dao
-interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContextDao {
+interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContextDao, NewChatPersistDao {
     // Task executions always remain in their owning Task's History.
     @Query("SELECT id, title, systemPromptId, modelId, taskId, origin, graduated, hasUnreadGeneration, selectedBranchesJson FROM conversations WHERE taskId IS NULL ORDER BY lastUpdated DESC")
     fun getAllConversations(): Flow<List<ChatConversation>>
@@ -44,18 +44,6 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
 
     @Query("SELECT * FROM conversations WHERE id = :conversationId")
     fun observeConversation(conversationId: String): Flow<ChatEntity?>
-
-    @Query("SELECT * FROM new_chat_persist WHERE id = 0")
-    fun observeNewChatPersist(): Flow<NewChatPersistEntity?>
-
-    @Query("SELECT * FROM new_chat_persist WHERE id = 0")
-    suspend fun getNewChatPersist(): NewChatPersistEntity?
-
-    @Upsert
-    suspend fun upsertNewChatPersist(entity: NewChatPersistEntity)
-
-    @Query("DELETE FROM new_chat_persist WHERE id = 0")
-    suspend fun deleteNewChatPersist(): Int
 
     @Query("SELECT * FROM conversation_settings_transfer WHERE conversationId = :conversationId")
     suspend fun getConversationSettingsTransfer(
@@ -71,25 +59,24 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
     @Query("DELETE FROM conversation_settings_transfer WHERE conversationId = :conversationId")
     suspend fun deleteConversationSettingsTransfer(conversationId: String): Int
 
-    @Query("SELECT * FROM messages WHERE id = :messageId")
-    fun observeMessage(messageId: String): Flow<MessageEntity?>
+    @Query("SELECT * FROM conversation_settings_import_transfer WHERE id = 0")
+    suspend fun getConversationSettingsImportTransfer(): ConversationSettingsImportTransferEntity?
+
+    @Upsert
+    suspend fun upsertConversationSettingsImportTransfer(
+        entity: ConversationSettingsImportTransferEntity,
+    )
 
     @Query(
         """
-        SELECT *
-        FROM messages
-        WHERE conversationId = :conversationId
-          AND (
-              text LIKE '%' || :escapedQuery || '%' ESCAPE '\'
-              OR toolCallJson LIKE '%' || :escapedQuery || '%' ESCAPE '\'
-          )
-        ORDER BY timestamp ASC, id ASC
+        DELETE FROM conversation_settings_import_transfer
+        WHERE id = 0 AND transferId = :transferId
         """
     )
-    fun observeConversationSearchMatches(
-        conversationId: String,
-        escapedQuery: String,
-    ): Flow<List<MessageEntity>>
+    suspend fun deleteConversationSettingsImportTransfer(transferId: String): Int
+
+    @Query("SELECT * FROM messages WHERE id = :messageId")
+    fun observeMessage(messageId: String): Flow<MessageEntity?>
 
     @Query(
         """
@@ -163,7 +150,10 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         SET selectedBranchesJson = :selectedBranchesJson,
             selectedRunBranchesJson = :selectedRunBranchesJson,
             modelId = :modelId,
-            lastUpdated = :at
+            lastUpdated = CASE
+                WHEN :touchConversationOnAdmission THEN :at
+                ELSE lastUpdated
+            END
         WHERE id = :conversationId
         """
     )
@@ -173,6 +163,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         selectedRunBranchesJson: String,
         modelId: String,
         at: Long,
+        touchConversationOnAdmission: Boolean,
     ): Int
 
     /**
@@ -225,6 +216,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         messageSelectionUpdates: Map<String?, String>,
         conversationModelId: String,
         at: Long,
+        touchConversationOnAdmission: Boolean,
     ): RunGraphCommit {
         require(run.status == RunStatus.ACTIVE)
         require(run.activeSlot == 1)
@@ -258,6 +250,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
                 selectedRunBranchesJson = encodeSelectionMap(runSelections),
                 modelId = conversationModelId,
                 at = at,
+                touchConversationOnAdmission = touchConversationOnAdmission,
             ) == 1
         ) { "Conversation ${run.conversationId} disappeared during Run creation" }
         return RunGraphCommit(messages, messageSelections, runSelections)
@@ -275,6 +268,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         messageSelectionUpdates: Map<String?, String>,
         conversationModelId: String,
         conversationSettingsJson: String?,
+        expectedNewChatPersist: NewChatPersistEntity?,
         at: Long,
     ): RunGraphCommit {
         require(conversation.id == run.conversationId)
@@ -282,8 +276,21 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
             "Conversation ${conversation.id} already exists"
         }
         require(conversationModelId.isNotBlank())
-        deleteNewChatPersist()
-        upsertConversation(conversation.copy(modelId = conversationModelId))
+        expectedNewChatPersist?.let { expected ->
+            deleteNewChatPersistIfMatches(
+                modelId = expected.modelId,
+                systemPromptId = expected.systemPromptId,
+                conversationSettingsJson = expected.conversationSettingsJson,
+                draftText = expected.draftText,
+                draftAttachments = expected.draftAttachments,
+            )
+        }
+        upsertConversation(
+            conversation.copy(
+                modelId = conversationModelId,
+                lastUpdated = at,
+            )
+        )
         upsertConversationSettingsTransfer(
             ConversationSettingsTransferEntity(
                 conversationId = conversation.id,
@@ -296,6 +303,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
             messageSelectionUpdates,
             conversationModelId,
             at,
+            touchConversationOnAdmission = true,
         )
     }
 
@@ -311,6 +319,47 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         for (run in runs) {
             if (getRun(run.id) == null) insertRun(run)
         }
+        messages.forEach { upsertMessage(it) }
+    }
+    @Transaction
+    suspend fun replaceImportedConversationGraph(
+        conversations: List<ChatEntity>,
+        runs: List<RunEntity>,
+        messages: List<MessageEntity>,
+    ) {
+        val conversationIds = conversations.mapTo(mutableSetOf(), ChatEntity::id)
+        val runIds = runs.mapTo(mutableSetOf(), RunEntity::id)
+        require(conversationIds.size == conversations.size) { "Imported conversation IDs must be unique" }
+        require(runIds.size == runs.size) { "Imported Run IDs must be unique" }
+        require(messages.mapTo(mutableSetOf(), MessageEntity::id).size == messages.size) {
+            "Imported message IDs must be unique"
+        }
+        val runsById = runs.associateBy(RunEntity::id)
+        val messagesById = messages.associateBy(MessageEntity::id)
+        require(runs.all {
+            it.status.isTerminal &&
+                it.activeSlot == null &&
+                it.conversationId in conversationIds
+        }) {
+            "Every imported Run must be terminal and belong to an imported conversation"
+        }
+        require(runs.all { run ->
+            run.parentRunId == null ||
+                runsById[run.parentRunId]?.conversationId == run.conversationId
+        }) {
+            "Every imported parent Run must belong to the same replacement conversation"
+        }
+        require(messages.all { message ->
+            message.conversationId in conversationIds &&
+                runsById[message.runId]?.conversationId == message.conversationId &&
+                (message.parentId == null ||
+                    messagesById[message.parentId]?.conversationId == message.conversationId)
+        }) {
+            "Every imported message and parent must belong to its replacement conversation"
+        }
+        deleteAllConversations()
+        conversations.forEach { upsertConversation(it) }
+        runs.forEach { insertRun(it) }
         messages.forEach { upsertMessage(it) }
     }
 
@@ -473,37 +522,34 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         ) == 1
     }
 
-    @Query(
-        """
-        SELECT * FROM runs
-        WHERE activeSlot = 1 AND status IN ('ACTIVE', 'STOPPING')
-        ORDER BY conversationId, id
-        """
-    )
-    suspend fun getOrphanedLiveRuns(): List<RunEntity>
-
+    /**
+     * Recovers only [conversationId]. The caller must own or have proven the absence of this
+     * conversation's process execution lease, so a live Run here is necessarily process-orphaned.
+     */
     @Transaction
-    suspend fun recoverOrphanedRuns(at: Long): Int {
-        val orphanedRuns = getOrphanedLiveRuns()
-        if (orphanedRuns.isEmpty()) return 0
-        val messagesByRun = getMessagesForRuns(orphanedRuns.map { it.id })
-            .groupBy { it.runId }
-        orphanedRuns.forEach { run ->
+    suspend fun recoverConversationRuntime(
+        conversationId: String,
+        at: Long,
+    ): Int {
+        val conversation = getConversation(conversationId) ?: return 0
+        var changedRows = 0
+        val liveRun = getLiveRun(conversationId)
+        if (liveRun != null) {
             val snapshot = RunRecoverySnapshot(
-                conversationId = run.conversationId,
-                runId = run.id,
-                pass = run.currentPass,
-                status = run.status,
+                conversationId = conversationId,
+                runId = liveRun.id,
+                pass = liveRun.currentPass,
+                status = liveRun.status,
             )
             val requested = ConversationRuntimeReducer.reduce(
-                RunState.Idle(run.conversationId),
+                RunState.Idle(conversationId),
                 ConversationCommand.Recover(snapshot),
             )
             val recoveryEffect = requested.effects
                 .filterIsInstance<RunEffect.RecoverDurableRun>()
                 .single()
-            check(recoveryEffect.priorStatus == run.status)
-            messagesByRun[run.id].orEmpty().forEach { message ->
+            check(recoveryEffect.priorStatus == liveRun.status)
+            getMessagesForRuns(listOf(liveRun.id)).forEach { message ->
                 val recoveredStatus = RunRecoveryPolicy.recoverMessageStatus(
                     message.participant,
                     message.status,
@@ -512,7 +558,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
                     RunRecoveryPolicy.stopIncompleteToolsJson(raw) ?: raw
                 }
                 if (recoveredStatus != message.status || recoveredToolJson != message.toolCallJson) {
-                    updateMessageCheckpoint(
+                    changedRows += updateMessageCheckpoint(
                         MessageStreamCheckpoint(
                             id = message.id,
                             text = message.text,
@@ -547,10 +593,32 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
                 ),
             )
             check(durableSuccess && completed.accepted && completed.newState is RunState.Idle) {
-                "Run recovery transaction lost ownership for ${run.id}"
+                "Run recovery transaction lost ownership for ${liveRun.id}"
+            }
+            changedRows += 1
+        }
+
+        conversation.selectedRunBranchesJson?.let { raw ->
+            val decoded = runCatching {
+                Json.decodeFromString<Map<String, String>>(raw)
+                    .mapKeys { if (it.key == "null") null else it.key }
+            }.getOrNull()
+            if (decoded != null) {
+                val repaired = RunBranchSelectionIntegrity.retainValidEdges(
+                    selections = decoded,
+                    runs = getRunsForConversationSnapshot(conversationId),
+                )
+                if (repaired != decoded) {
+                    changedRows += compareAndSetRunBranchSelections(
+                        conversationId = conversationId,
+                        expected = raw,
+                        replacement = encodeSelectionMap(repaired),
+                    )
+                }
             }
         }
-        return orphanedRuns.size
+        changedRows += stopStuckMessagesForConversation(conversationId)
+        return changedRows
     }
 
     @Update(entity = MessageEntity::class)
@@ -593,9 +661,6 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
     @Insert
     suspend fun insertEmbeddings(embeddings: List<EmbeddingEntity>): LongArray
 
-    @Upsert
-    suspend fun upsertEmbedding(embedding: EmbeddingEntity)
-
     @Query("SELECT * FROM embeddings WHERE messageId IN (:messageIds)")
     suspend fun getEmbeddingsByMessageIds(messageIds: List<String>): List<EmbeddingEntity>
 
@@ -604,9 +669,6 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
 
     @Query("SELECT * FROM embeddings")
     suspend fun getAllEmbeddings(): List<EmbeddingEntity>
-
-    @Query("DELETE FROM embeddings WHERE messageId = :messageId")
-    suspend fun deleteEmbedding(messageId: String)
 
     @Query(
         """
@@ -635,9 +697,6 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         limit: Int,
     ): List<EmbeddingSearchRow>
 
-    @Query("DELETE FROM embeddings WHERE modelId = :modelId")
-    suspend fun deleteEmbeddingsByModel(modelId: String)
-
     @Query("SELECT COUNT(*) FROM embeddings e INNER JOIN messages m ON e.messageId = m.id INNER JOIN conversations c ON m.conversationId = c.id WHERE e.modelId = :modelId AND c.taskId IS NULL AND m.participant IN ('USER', 'MODEL') AND m.text != '' AND m.id NOT LIKE 'tool_%' AND m.id NOT LIKE 'result_%' AND m.id NOT LIKE 'compact_%'")
     suspend fun getEmbeddingCountByModel(modelId: String): Int
 
@@ -661,6 +720,17 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
 
     @Query("SELECT COUNT(*) FROM messages m INNER JOIN conversations c ON m.conversationId = c.id WHERE c.taskId IS NULL AND m.participant IN ('USER', 'MODEL') AND m.text != '' AND m.id NOT LIKE 'tool_%' AND m.id NOT LIKE 'result_%' AND m.id NOT LIKE 'compact_%'")
     suspend fun getIndexableMessageCount(): Int
+
+    @Query(
+        """
+        SELECT m.id, m.text FROM messages m INNER JOIN conversations c ON m.conversationId = c.id
+        WHERE c.taskId IS NULL AND m.participant IN ('USER', 'MODEL') AND m.text != ''
+          AND m.id NOT LIKE 'tool_%' AND m.id NOT LIKE 'result_%' AND m.id NOT LIKE 'compact_%'
+          AND (:afterId IS NULL OR m.id > :afterId)
+        ORDER BY m.id LIMIT :limit
+        """,
+    )
+    suspend fun getSearchableMessagesPage(afterId: String?, limit: Int): List<IndexableMessage>
 
     @Query(
         """
@@ -695,17 +765,6 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
 
     @Query("SELECT EXISTS(SELECT 1 FROM messages m INNER JOIN conversations c ON m.conversationId = c.id WHERE m.id = :messageId AND c.taskId IS NULL AND m.participant IN ('USER', 'MODEL') AND m.text != '' AND m.id NOT LIKE 'tool_%' AND m.id NOT LIKE 'result_%' AND m.id NOT LIKE 'compact_%')")
     suspend fun isMessageSearchable(messageId: String): Boolean
-
-    /** Atomically enforces the search-visibility invariant for incremental indexing. */
-    @Transaction
-    suspend fun upsertEmbeddingIfSearchable(embedding: EmbeddingEntity): Boolean {
-        if (!isMessageSearchable(embedding.messageId)) {
-            deleteEmbedding(embedding.messageId)
-            return false
-        }
-        upsertEmbedding(embedding)
-        return true
-    }
 
     @Query("SELECT * FROM conversations WHERE id = :conversationId AND taskId IS NULL")
     suspend fun getSearchableConversation(conversationId: String): ChatEntity?

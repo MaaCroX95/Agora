@@ -4,24 +4,21 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.snapshots.SnapshotStateMap
 import com.newoether.agora.model.ChatMessage
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withTimeoutOrNull
 
 @Stable
@@ -41,10 +38,14 @@ internal class ConversationInteractionState internal constructor(
     var selectedShareMessageIds by mutableStateOf<Set<String>>(emptySet())
         private set
 
+    private val searchMatchDistances = mutableStateMapOf<String, Float>()
+    private val searchTurnIndexByMessageId = mutableStateMapOf<String, Int>()
     private fun resetForConversation() {
         searchActive = false
         searchQuery = ""
         searchMatchIndex = -1
+        searchMatchDistances.clear()
+        searchTurnIndexByMessageId.clear()
         shareSelectionActive = false
         selectedShareMessageIds = emptySet()
     }
@@ -58,9 +59,28 @@ internal class ConversationInteractionState internal constructor(
     }
 
     internal fun updateSearchQuery(query: String) {
+        if (query != searchQuery) searchMatchDistances.clear()
         searchMatchIndex = -1
         searchQuery = query
     }
+    internal fun recordSearchMatchDistance(key: String, distance: Float) {
+        searchMatchDistances[key] = distance
+    }
+    internal fun visibleSearchMatchDistances(
+        matches: List<ConversationSearchMatch>,
+    ): Map<String, Float> = searchMatchDistances
+        .filterKeys { key -> matches.any { match -> match.key == key } }
+    internal fun recordSearchTurns(turns: List<MessageListTurn>) {
+        searchTurnIndexByMessageId.clear()
+        turns.forEachIndexed { index, turn ->
+            turn.messages.forEach { message -> searchTurnIndexByMessageId[message.id] = index }
+        }
+    }
+
+    internal fun searchTurnIndexes(
+        matches: List<ConversationSearchMatch>,
+    ): Map<String, Int> = searchTurnIndexByMessageId
+        .filterKeys { messageId -> matches.any { match -> match.messageId == messageId } }
 
     internal fun previousSearchMatch(): Boolean {
         if (searchMatchIndex <= 0) return false
@@ -78,6 +98,7 @@ internal class ConversationInteractionState internal constructor(
         searchActive = false
         searchQuery = ""
         searchMatchIndex = -1
+        searchMatchDistances.clear()
     }
 
     internal fun activateSearch() {
@@ -127,64 +148,57 @@ internal class ConversationInteractionState internal constructor(
         currentConversationId: String?,
         messages: State<List<ChatMessage>>,
         listState: LazyListState,
-        searchMessages: (String, String) -> Flow<List<ChatMessage>>,
+        searchMessages: suspend (String, List<String>) -> List<ChatMessage>,
     ): ConversationInteractionProjection {
-        val selectedPathIds = messages.value.mapTo(linkedSetOf()) { message -> message.id }
-        val searchPayloadMessages by remember(
+        val selectedPathSearchMessages = remember(messages.value) {
+            messages.value.filter(::isConversationSearchBodyEligible)
+        }
+        val selectedPathSearchMessageIds = remember(selectedPathSearchMessages) {
+            selectedPathSearchMessages.map(ChatMessage::id)
+        }
+        val selectedPathSearchRevision = remember(selectedPathSearchMessages) {
+            selectedPathSearchMessages.map { message -> message.id to message.text }
+        }
+        val searchMatches by produceState(
+            initialValue = emptyList(),
             currentConversationId,
             searchActive,
             searchQuery,
+            selectedPathSearchRevision,
             searchMessages,
         ) {
+            value = emptyList()
             if (searchActive && currentConversationId != null && searchQuery.isNotBlank()) {
-                searchMessages(currentConversationId, searchQuery)
-            } else {
-                flowOf(emptyList())
+                value = scanConversationSearchMatches(
+                    selectedPathMessageIds = selectedPathSearchMessageIds,
+                    query = searchQuery,
+                    loadMessages = { messageIds ->
+                        searchMessages(currentConversationId, messageIds)
+                    },
+                )
             }
-        }.collectAsState(initial = emptyList())
-        val messagesForSearch = if (searchActive) {
-            searchPayloadMessages.filter { message -> message.id in selectedPathIds }
-        } else {
-            emptyList()
         }
         val messagesForSelection = if (shareSelectionActive) messages.value else emptyList()
         val selectableShareMessageIds = remember(messagesForSelection) {
             messagesForSelection.mapTo(linkedSetOf()) { it.id }
         }
-        val searchMatchDistances = remember(currentConversationId) {
-            mutableStateMapOf<String, Float>()
-        }
-        val searchMatches = remember(messagesForSearch, searchQuery) {
-            findConversationSearchMatches(messagesForSearch, searchQuery)
-        }
-        val searchTurns = remember(messages.value) {
-            buildMessageListTurns(messages.value)
-        }
-        val searchTurnIndexByMessageId = remember(searchTurns) {
-            buildMap {
-                searchTurns.forEachIndexed { index, turn ->
-                    turn.messages.forEach { message -> put(message.id, index) }
-                }
-            }
-        }
 
         LaunchedEffect(searchActive, searchQuery, searchMatches, currentConversationId) {
             if (!searchActive || searchQuery.isBlank() || searchMatches.isEmpty()) {
                 replaceSearchMatchIndex(-1)
-                searchMatchDistances.clear()
                 return@LaunchedEffect
             }
-            searchMatchDistances.clear()
-            val visibleDistances = withTimeoutOrNull(250L) {
-                snapshotFlow {
-                    searchMatchDistances
-                        .filterKeys { key -> searchMatches.any { it.key == key } }
-                        .toMap()
-                }
-                    .filter { it.isNotEmpty() }
-                    .debounce(32L)
-                    .first()
-            }.orEmpty()
+            val retainedVisibleDistances = visibleSearchMatchDistances(searchMatches)
+            val visibleDistances = if (retainedVisibleDistances.isNotEmpty()) {
+                retainedVisibleDistances
+            } else {
+                withTimeoutOrNull(250L) {
+                    snapshotFlow { visibleSearchMatchDistances(searchMatches) }
+                        .filter { it.isNotEmpty() }
+                        .debounce(32L)
+                        .first()
+                }.orEmpty()
+            }
             val exactVisibleIndex = nearestVisibleConversationSearchMatchIndex(
                 searchMatches,
                 visibleDistances,
@@ -193,6 +207,9 @@ internal class ConversationInteractionState internal constructor(
                 replaceSearchMatchIndex(exactVisibleIndex)
                 return@LaunchedEffect
             }
+            val actualTurnIndexes = snapshotFlow { searchTurnIndexes(searchMatches) }
+                .filter { it.isNotEmpty() }
+                .first()
             val layout = listState.layoutInfo
             val viewportCenter = (layout.viewportStartOffset + layout.viewportEndOffset) / 2
             val anchorTurn = layout.visibleItemsInfo
@@ -204,7 +221,7 @@ internal class ConversationInteractionState internal constructor(
             replaceSearchMatchIndex(
                 nearestConversationSearchMatchIndex(
                     matches = searchMatches,
-                    turnIndexByMessageId = searchTurnIndexByMessageId,
+                    turnIndexByMessageId = actualTurnIndexes,
                     anchorTurnIndex = anchorTurn,
                 )
             )
@@ -219,13 +236,11 @@ internal class ConversationInteractionState internal constructor(
         return remember(
             this,
             selectableShareMessageIds,
-            searchMatchDistances,
             searchMatches,
         ) {
             ConversationInteractionProjection(
                 state = this,
                 selectableShareMessageIds = selectableShareMessageIds,
-                searchMatchDistances = searchMatchDistances,
                 searchMatches = searchMatches,
             )
         }
@@ -248,7 +263,6 @@ internal class ConversationInteractionState internal constructor(
 internal class ConversationInteractionProjection internal constructor(
     private val state: ConversationInteractionState,
     val selectableShareMessageIds: Set<String>,
-    private val searchMatchDistances: SnapshotStateMap<String, Float>,
     val searchMatches: List<ConversationSearchMatch>,
 ) {
     val searchActive: Boolean get() = state.searchActive
@@ -257,10 +271,7 @@ internal class ConversationInteractionProjection internal constructor(
     val shareSelectionActive: Boolean get() = state.shareSelectionActive
     val selectedShareMessageIds: Set<String> get() = state.selectedShareMessageIds
 
-    fun updateSearchQuery(query: String) {
-        searchMatchDistances.clear()
-        state.updateSearchQuery(query)
-    }
+    fun updateSearchQuery(query: String) = state.updateSearchQuery(query)
 
     fun previousSearchMatch(): Boolean = state.previousSearchMatch()
 
@@ -280,9 +291,9 @@ internal class ConversationInteractionProjection internal constructor(
 
     fun takeShareSelection(): Set<String> = state.takeShareSelection()
 
-    fun recordSearchMatchDistance(key: String, distance: Float) {
-        searchMatchDistances[key] = distance
-    }
+    fun recordSearchMatchDistance(key: String, distance: Float) =
+        state.recordSearchMatchDistance(key, distance)
+    fun recordSearchTurns(turns: List<MessageListTurn>) = state.recordSearchTurns(turns)
 
 }
 
@@ -291,7 +302,7 @@ internal fun rememberConversationInteractionState(
     currentConversationId: String?,
     messages: State<List<ChatMessage>>,
     listState: LazyListState,
-    searchMessages: (String, String) -> Flow<List<ChatMessage>> = { _, _ -> flowOf(emptyList()) },
+    searchMessages: suspend (String, List<String>) -> List<ChatMessage> = { _, _ -> emptyList() },
 ): ConversationInteractionProjection {
     val state = rememberSaveable(saver = ConversationInteractionState.Saver) {
         ConversationInteractionState()

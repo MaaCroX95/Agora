@@ -78,7 +78,8 @@ suspend fun readFileContent(
 fun FileThumbnail(
     fileName: String?,
     isPdf: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    fallbackLabel: String = "TXT",
 ) {
     if (isPdf) {
         Box(
@@ -90,7 +91,8 @@ fun FileThumbnail(
             Text("PDF", style = MaterialTheme.typography.labelMedium, color = Color(0xFFE53935), fontWeight = FontWeight.SemiBold)
         }
     } else {
-        val ext = (fileName ?: "").substringAfterLast('.', "").uppercase().take(4).ifEmpty { "TXT" }
+        val ext = (fileName ?: "").substringAfterLast('.', "").uppercase().take(4)
+            .ifEmpty { fallbackLabel }
         Box(
             modifier = modifier
                 .clip(RoundedCornerShape(8.dp))
@@ -116,6 +118,7 @@ fun AttachmentThumbnailItem(
     fileName: String?,
     originalUri: String? = null,
     textContent: String? = null,
+    unavailable: Boolean = false,
     pdfPages: List<String> = emptyList(),
     showFileName: Boolean = true,
     allMediaUrls: List<String> = emptyList(),
@@ -129,6 +132,39 @@ fun AttachmentThumbnailItem(
     val thumbModifier = modifier
         .size(120.dp, 90.dp)
         .clip(RoundedCornerShape(8.dp))
+
+    if (unavailable) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.width(72.dp),
+        ) {
+            FileThumbnail(
+                fileName = fileName,
+                isPdf = type == "pdf",
+                modifier = Modifier.size(64.dp),
+                fallbackLabel = type.uppercase().take(4).ifEmpty { "FILE" },
+            )
+            if (showFileName && fileName != null) {
+                Text(
+                    text = fileName,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            Text(
+                text = androidx.compose.ui.res.stringResource(
+                    com.newoether.agora.R.string.attachment_unavailable,
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+                maxLines = 1,
+            )
+        }
+        return
+    }
 
     when (type) {
         "file" -> {

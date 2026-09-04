@@ -160,7 +160,6 @@ class ProotSandboxSupportTest {
             assertTrue(oversizedMatches.isEmpty())
             assertFalse(oversizedTruncated)
         } finally {
-            manager.close()
             filesDir.deleteRecursively()
         }
     }
@@ -206,7 +205,6 @@ class ProotSandboxSupportTest {
             }
         } finally {
             unmockkStatic(Os::class)
-            manager.close()
             filesDir.deleteRecursively()
         }
     }
@@ -269,7 +267,6 @@ class ProotSandboxSupportTest {
             verify(exactly = 1) { Os.chmod(any(), 0x1A0) }
         } finally {
             unmockkStatic(Os::class)
-            manager.close()
             filesDir.deleteRecursively()
         }
     }

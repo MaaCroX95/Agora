@@ -131,6 +131,48 @@ class ConversationExecutionCoordinatorTest {
     }
 
     @Test
+    fun tryForegroundLeaseRunsOnlyWhenTheConversationIsUnowned() = runTest {
+        val coordinator = ConversationExecutionCoordinator()
+        var entered = false
+
+        val acquired = coordinator.tryWithConversationLock("conversation") {
+            entered = true
+            assertTrue(coordinator.isExecuting("conversation"))
+        }
+
+        assertTrue(acquired)
+        assertTrue(entered)
+        assertFalse(coordinator.isExecuting("conversation"))
+        assertEquals(0, coordinator.trackedConversationCount())
+    }
+
+    @Test
+    fun tryForegroundLeaseRejectsAnExistingOwnerWithoutQueueing() = runTest {
+        val coordinator = ConversationExecutionCoordinator()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val owner = launch {
+            coordinator.withAutomationConversationLock("conversation") {
+                entered.complete(Unit)
+                release.await()
+            }
+        }
+        entered.await()
+        var recoveryEntered = false
+
+        val acquired = coordinator.tryWithConversationLock("conversation") {
+            recoveryEntered = true
+        }
+
+        assertFalse(acquired)
+        assertFalse(recoveryEntered)
+        assertEquals(1, coordinator.trackedConversationCount())
+        release.complete(Unit)
+        owner.join()
+        assertEquals(0, coordinator.trackedConversationCount())
+    }
+
+    @Test
     fun automationOwnership_isExposedSeparatelyFromForegroundWork() = runTest {
         val coordinator = ConversationExecutionCoordinator()
         val entered = CompletableDeferred<Unit>()

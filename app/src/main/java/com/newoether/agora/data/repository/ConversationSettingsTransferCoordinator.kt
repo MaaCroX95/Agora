@@ -1,6 +1,7 @@
 package com.newoether.agora.data.repository
 
 import com.newoether.agora.data.ConversationSettings
+import com.newoether.agora.data.local.ConversationSettingsImportTransferEntity
 import com.newoether.agora.data.local.ConversationSettingsTransferEntity
 import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.CancellationException
@@ -9,7 +10,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
-/** Completes Room-backed New Chat settings transfers into DataStore exactly once eventually. */
+/** Completes Room-backed conversation settings transfers into DataStore eventually. */
 class ConversationSettingsTransferCoordinator(
     private val conversations: ConversationRepository,
     private val settings: SettingsRepository,
@@ -24,17 +25,62 @@ class ConversationSettingsTransferCoordinator(
         true
     }
 
+    suspend fun completeImport(transferId: String): Boolean = transferMutex.withLock {
+        settings.awaitInitialLoad()
+        val transfer = conversations.getConversationSettingsImportTransfer()
+            ?.takeIf { it.transferId == transferId }
+            ?: return@withLock false
+        applyImportTransfer(transfer)
+        true
+    }
+
+    suspend fun completePendingImport(): Boolean = transferMutex.withLock {
+        settings.awaitInitialLoad()
+        val transfer = conversations.getConversationSettingsImportTransfer()
+            ?: return@withLock false
+        applyImportTransfer(transfer)
+        true
+    }
+
     suspend fun replayPending(): Int = transferMutex.withLock {
-        val pending = try {
+        try {
             settings.awaitInitialLoad()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            reportDeferredReplay("Unable to load pending conversation settings transfers", error)
+            return@withLock 0
+        }
+
+        var completed = 0
+        val importTransfer = try {
+            conversations.getConversationSettingsImportTransfer()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            reportDeferredReplay("Unable to load pending imported conversation settings", error)
+            return@withLock 0
+        }
+        if (importTransfer != null) {
+            try {
+                applyImportTransfer(importTransfer)
+                completed += 1
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                reportDeferredReplay("Deferred imported conversation settings transfer", error)
+                return@withLock completed
+            }
+        }
+
+        val pending = try {
             conversations.getPendingConversationSettingsTransfers()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
             reportDeferredReplay("Unable to load pending New Chat settings transfers", error)
-            return@withLock 0
+            return@withLock completed
         }
-        var completed = 0
         pending.forEach { transfer ->
             try {
                 applyTransfer(transfer)
@@ -57,6 +103,15 @@ class ConversationSettingsTransferCoordinator(
         }
         settings.setConversationSettingsAndAwait(transfer.conversationId, decoded)
         conversations.deleteConversationSettingsTransfer(transfer.conversationId)
+    }
+
+    private suspend fun applyImportTransfer(transfer: ConversationSettingsImportTransferEntity) {
+        val decoded = Json.decodeFromString<Map<String, ConversationSettings>>(transfer.settingsJson)
+        settings.applyConversationSettingsImportAndAwait(
+            imported = decoded,
+            replace = transfer.mode == ConversationSettingsImportTransferEntity.MODE_REPLACE,
+        )
+        conversations.deleteConversationSettingsImportTransfer(transfer.transferId)
     }
 
     private fun reportDeferredReplay(message: String, error: Exception) {

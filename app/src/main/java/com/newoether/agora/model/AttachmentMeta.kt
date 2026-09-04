@@ -37,6 +37,18 @@ enum class AttachmentStorage {
 }
 
 @Serializable
+enum class AttachmentImportState {
+    @SerialName("processing")
+    PROCESSING,
+
+    @SerialName("ready")
+    READY,
+
+    @SerialName("failed")
+    FAILED,
+}
+
+@Serializable
 data class AttachmentMeta(val items: List<AttachmentItem> = emptyList())
 
 @Serializable
@@ -53,6 +65,7 @@ data class AttachmentItem(
     val storage: AttachmentStorage = AttachmentStorage.APP_PRIVATE,
     @SerialName("sandbox_path") val sandboxPath: String? = null,
     @SerialName("file_size") val fileSize: Long? = null,
+    val unavailable: Boolean = false,
 )
 
 /** Used for passing attachment metadata from ChatBottomBar to ViewModel. */
@@ -67,6 +80,8 @@ data class SelectedAttachment(
     val type: String,               // "image", "video", "file", "pdf"
     val frameCount: Int? = null,
     val sliceIntervalMs: Long? = null,
+    val pageCount: Int? = null,
+    val videoDurationMs: Long? = null,
     val fileName: String? = null,
     val mimeType: String? = null,
     val fileSize: Long? = null,
@@ -76,4 +91,7 @@ data class SelectedAttachment(
     val localPath: String? = null,  // copied into storage owned by [storage] at pick time
     val storage: AttachmentStorage = AttachmentStorage.APP_PRIVATE,
     val sandboxPath: String? = null,
+    val importState: AttachmentImportState = AttachmentImportState.READY,
+    val preparedText: String? = null,
+    val unavailable: Boolean = false,
 )

@@ -67,7 +67,10 @@
     <string name="settings_automation_desc">Tâches, boucles et précision de planification</string>
     <string name="automation_ai_tools">Accéder aux tâches et aux boucles</string>
     <string name="automation_ai_tools_desc">Autoriser le modèle à créer et gérer des tâches, ou à démarrer et arrêter des boucles de conversation. Désactivé par défaut.</string>
-    <string name="automation_scheduling">Planification</string>
+    <string name="automation_background_execution">Exécution en arrière-plan</string>
+    <string name="automation_battery_optimization">Optimisation de la batterie</string>
+    <string name="automation_battery_optimization_ignored_desc">Non optimisée ; Android autorise Agora à s’exécuter sans optimisation de la batterie</string>
+    <string name="automation_battery_optimization_active_desc">Optimisée ; Android peut limiter l’exécution en arrière-plan</string>
     <string name="automation_exact_execution">Exécution exacte</string>
     <string name="automation_exact_execution_on_desc">Utiliser des alarmes exactes pour les tâches et les boucles. Android peut toujours appliquer des limites système.</string>
     <string name="automation_exact_execution_off_desc">Utiliser des alarmes inexactes économes en énergie. Activez cette option pour demander l’accès aux alarmes et rappels.</string>

@@ -14,10 +14,11 @@ internal class ConversationMessagePayloadHydration(
         conversations.observeMessage(messageId)
             .map { entity -> entity?.toUiChatMessage(appContext) }
 
-    fun observeSearchMessages(
+    suspend fun loadMessages(
         conversationId: String,
-        query: String,
-    ): Flow<List<ChatMessage>> =
-        conversations.observeConversationSearchMatches(conversationId, query)
-            .map { entities -> entities.map { entity -> entity.toUiChatMessage(appContext) } }
+        messageIds: List<String>,
+    ): List<ChatMessage> =
+        conversations.getMessagesByIds(messageIds)
+            .filter { entity -> entity.conversationId == conversationId }
+            .map { entity -> entity.toUiChatMessage(appContext) }
 }

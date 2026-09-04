@@ -42,7 +42,6 @@ fun SettingsProviderPage(viewModel: ChatViewModel, onBack: () -> Unit) {
 
     var selectedProvider by rememberSaveable { mutableStateOf<String?>(null) }
     var showAddCustomDialog by remember { mutableStateOf(false) }
-    val showDocFab by viewModel.settings.showDocumentationFab.collectAsState()
     val scrollState = rememberSaveable(saver = androidx.compose.foundation.ScrollState.Saver) { androidx.compose.foundation.ScrollState(0) }
 
     BackHandler {
@@ -81,7 +80,6 @@ fun SettingsProviderPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                     title = stringResource(R.string.settings_provider),
                     onBack = onBack,
                     scrollState = scrollState,
-                    floatingActionButton = { if (showDocFab) DocumentationFab("provider.md") }
                 ) {
                         SettingsGroupColumn {
                             SettingsGroup(title = stringResource(R.string.provider_built_in), items = builtInNames.map { name ->
@@ -160,7 +158,6 @@ fun SettingsProviderPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                             })
                         }
 
-                        if (showDocFab) Spacer(modifier = Modifier.height(80.dp))
                 }
 
                 // Add Custom Provider Dialog

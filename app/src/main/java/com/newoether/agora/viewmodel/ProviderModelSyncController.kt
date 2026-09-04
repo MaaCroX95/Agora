@@ -45,9 +45,10 @@ internal class ProviderModelSyncController(
     ) {
         scope.launch {
             if (_isSyncing.value) return@launch
+            val attemptedFingerprint = computeFingerprint()
             _isSyncing.value = true
             val outcome = try {
-                synchronize(request)
+                synchronize(request, attemptedFingerprint)
             } finally {
                 _isSyncing.value = false
             }
@@ -55,7 +56,10 @@ internal class ProviderModelSyncController(
         }
     }
 
-    private suspend fun synchronize(request: ProviderModelSyncRequest): ProviderModelSyncOutcome {
+    private suspend fun synchronize(
+        request: ProviderModelSyncRequest,
+        attemptedFingerprint: String,
+    ): ProviderModelSyncOutcome {
         val failures = mutableListOf<ProviderModelSyncFailure>()
         var successfulProviderCount = 0
         var skippedProviderCount = 0
@@ -87,10 +91,17 @@ internal class ProviderModelSyncController(
             val allKnownModels =
                 settings.getAvailableModels().values.flatten().toSet() + settings.customModels.value
             settings.setEnabledModels(settings.enabledModels.value.intersect(allKnownModels))
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            failures += ProviderModelSyncFailure(
+                providerName = request.globalProviderName,
+                reason = modelSyncFailureReason(error, request.failureLabels),
+            )
+        }
 
-            if (failures.isEmpty()) {
-                settings.saveLastModelsFetchFingerprint(computeFingerprint())
-            }
+        try {
+            settings.saveLastModelsFetchFingerprint(attemptedFingerprint)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {

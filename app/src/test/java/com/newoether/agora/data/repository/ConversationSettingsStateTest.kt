@@ -7,6 +7,64 @@ import org.junit.Test
 
 class ConversationSettingsStateTest {
     @Test
+    fun `merge supersedes imported identities but preserves unrelated pending writes`() {
+        val state = ConversationSettingsState()
+        val importedWrite = state.update("imported") { it.copy(temperature = 0.1f) }
+        val localWrite = state.update("local") { it.copy(temperature = 0.2f) }
+
+        val updated = state.applyImport(
+            imported = mapOf("imported" to ConversationSettings(temperature = 0.8f)),
+            replace = false,
+        )
+
+        assertEquals(0.8f, updated.getValue("imported").temperature)
+        assertEquals(0.2f, updated.getValue("local").temperature)
+        assertFalse(state.isLatest(importedWrite))
+        assertEquals(true, state.isLatest(localWrite))
+    }
+
+    @Test
+    fun `merge clears an imported identity whose archived settings are empty`() {
+        val state = ConversationSettingsState()
+        state.acceptPersisted(
+            mapOf("imported" to ConversationSettings(temperature = 0.1f)),
+        )
+
+        val updated = state.applyImport(
+            imported = mapOf("imported" to ConversationSettings()),
+            replace = false,
+        )
+
+        assertFalse(updated.containsKey("imported"))
+        assertFalse(state.state.value.containsKey("imported"))
+    }
+
+    @Test
+    fun `replace invalidates every pending pre-import write`() {
+        val state = ConversationSettingsState()
+        val oldWrite = state.update("old") { it.copy(temperature = 0.1f) }
+
+        val updated = state.applyImport(
+            imported = mapOf("imported" to ConversationSettings(temperature = 0.8f)),
+            replace = true,
+        )
+
+        assertEquals(setOf("imported"), updated.keys)
+        assertFalse(state.isLatest(oldWrite))
+    }
+
+    @Test
+    fun `empty replace clears the complete settings map`() {
+        val state = ConversationSettingsState()
+        state.acceptPersisted(
+            mapOf("old" to ConversationSettings(temperature = 0.1f)),
+        )
+
+        assertEquals(emptyMap<String, ConversationSettings>(), state.applyImport(emptyMap(), true))
+        assertEquals(emptyMap<String, ConversationSettings>(), state.state.value)
+    }
+
+    @Test
     fun `consecutive updates are immediately visible and preserve sibling toggles`() {
         val state = ConversationSettingsState()
 

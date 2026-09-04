@@ -4,6 +4,7 @@ import com.newoether.agora.automation.ConversationExecutionCoordinator
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.local.MessageEntity
+import com.newoether.agora.data.local.NewChatPersistEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.SettingsRepository
 import com.newoether.agora.model.ChatMessage
@@ -18,37 +19,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.io.File
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicBoolean
-
-/**
- * Owns temporary files created while preparing one Send until queue or Room takes ownership.
- *
- * The lease is deliberately independent from Run state. Transferring it records only file
- * ownership; it cannot accept a command, bind a Run, or start generation.
- */
-internal class PreparedMessagePayloadLease(
-    val payload: MessagePayloadBuilder.MessagePayload,
-    private val deletePath: (String) -> Unit = { path -> File(path).delete() },
-) {
-    private val transferred = AtomicBoolean(false)
-    private val cleaned = AtomicBoolean(false)
-
-    fun transferOwnership() {
-        transferred.set(true)
-    }
-
-    fun reclaimAfterRejectedTransfer() {
-        transferred.set(false)
-    }
-
-    fun releaseIfUnowned() {
-        if (!transferred.get() && cleaned.compareAndSet(false, true)) {
-            payload.preparedOwnedPaths.forEach(deletePath)
-        }
-    }
-}
 
 /** Complete immutable input for executing one reducer-authorized accepted-input effect. */
 internal data class DirectAcceptedInputRequest(
@@ -56,13 +27,18 @@ internal data class DirectAcceptedInputRequest(
     val wasNewChat: Boolean,
     val newConversation: ChatEntity?,
     val userText: String,
-    val payloadLease: PreparedMessagePayloadLease,
+    val payload: MessagePayloadBuilder.MessagePayload,
     val modelId: String,
+    val requestKind: String,
+    val touchConversationOnAdmission: Boolean,
     val newConversationSettings: ConversationSettings? = null,
+    val newChatPersistSnapshot: NewChatPersistEntity? = null,
     val alreadyHoldsLock: Boolean,
     val requestScroll: (conversationId: String, messageId: String) -> Unit,
     val onAccepted: suspend (SendAcceptance) -> Unit,
     val onModelMessageCreated: ((String) -> Unit)?,
+    val generationSnapshot: GenerationAdmissionSnapshot? = null,
+    val originNewChatEntryId: Long? = null,
 ) {
     val conversationId: String get() = inputEffect.identity.conversationId
     val runId: String get() = inputEffect.identity.runId
@@ -71,8 +47,16 @@ internal data class DirectAcceptedInputRequest(
     init {
         require(inputEffect.identity.pass == 0)
         require(modelId.isNotBlank())
+        require(requestKind.isNotBlank())
         require(newConversation == null || newConversation.id == conversationId)
         require(wasNewChat == (newConversation != null))
+        require(wasNewChat == (originNewChatEntryId != null))
+        require(wasNewChat || newChatPersistSnapshot == null)
+        generationSnapshot?.let { snapshot ->
+            require(snapshot.conversationId == conversationId)
+            require(snapshot.runId == runId)
+            require(snapshot.selectedModelId == modelId)
+        }
     }
 }
 
@@ -108,8 +92,7 @@ internal class DirectAcceptedInputEffectExecutor(
     private val toUiMessage: (MessageEntity) -> ChatMessage,
     private val isConversationOpen: (String) -> Boolean,
     private val applyCommittedNewConversationState: suspend (String) -> Unit,
-    private val clearCommittedNewChatWorkspace: suspend () -> Unit,
-    private val publishNewConversation: (String, String) -> Unit,
+    private val publishNewConversation: suspend (String, String, Long) -> Boolean,
     private val onUserMessagePersisted: (messageId: String, text: String) -> Unit,
     private val onGenerateTitle: (String) -> Unit,
     private val idFactory: () -> String = { UUID.randomUUID().toString() },
@@ -125,14 +108,9 @@ internal class DirectAcceptedInputEffectExecutor(
             executeInGenerationJob(request, state, acceptance)
         }
         if (job == null) {
-            request.payloadLease.releaseIfUnowned()
             acceptance.complete(null)
         } else {
-            // Covers cancellation before the coroutine body reaches its own finally block.
-            job.invokeOnCompletion {
-                request.payloadLease.releaseIfUnowned()
-                acceptance.complete(null)
-            }
+            job.invokeOnCompletion { acceptance.complete(null) }
         }
         return DirectAcceptedInputExecution(job, acceptance)
     }
@@ -148,8 +126,9 @@ internal class DirectAcceptedInputEffectExecutor(
             ConversationGenerationState.RunBindingOutcome.Rejected
         var inputGraphCommitted = false
         var newConversationTransferAttempted = false
-        var newConversationPublished = false
-        var newChatWorkspaceCleared = false
+        var newConversationSelectionAttempted = false
+        var newConversationSelected = false
+        var newConversationPresentationPublished = false
         val userMessageId = idFactory()
         val modelMessageId = idFactory()
         var roomProjectionFence: RoomMessageProjectionFence? = null
@@ -170,16 +149,21 @@ internal class DirectAcceptedInputEffectExecutor(
                 }
             }
         }
-        suspend fun publishAndClearNewChatIfNeeded() {
-            if (!request.wasNewChat) return
-            if (!newConversationPublished) {
-                publishNewConversation(request.conversationId, request.modelId)
-                newConversationPublished = true
+        suspend fun publishNewChatIfNeeded(acceptance: SendAcceptance.Direct): Boolean {
+            if (!request.wasNewChat) return false
+            if (!newConversationSelectionAttempted) {
+                newConversationSelected = publishNewConversation(
+                    request.conversationId,
+                    request.modelId,
+                    checkNotNull(request.originNewChatEntryId),
+                )
+                newConversationSelectionAttempted = true
             }
-            if (!newChatWorkspaceCleared) {
-                clearCommittedNewChatWorkspace()
-                newChatWorkspaceCleared = true
+            if (newConversationSelected && !newConversationPresentationPublished) {
+                acceptanceNotifier.publish(acceptance)
+                newConversationPresentationPublished = true
             }
+            return newConversationSelected
         }
 
         suspend fun reconcileCommittedInput(): Boolean = withContext(NonCancellable) {
@@ -187,7 +171,6 @@ internal class DirectAcceptedInputEffectExecutor(
                 inputGraphCommitted = conversations.getRun(request.runId) != null
             }
             if (!inputGraphCommitted) return@withContext false
-            request.payloadLease.transferOwnership()
             applyCommittedNewConversationStateIfNeeded()
             if (bindingOutcome is ConversationGenerationState.RunBindingOutcome.Rejected) {
                 bindingOutcome = state.finishInputPersistence(request.inputEffect.identity)
@@ -195,36 +178,43 @@ internal class DirectAcceptedInputEffectExecutor(
             }
             if (!durableAcceptance.isCompleted) {
                 val accepted = SendAcceptance.Direct(userMessageId, request.conversationId)
-                acceptanceNotifier.notify(accepted, request.onAccepted)
+                acceptanceNotifier.notify(
+                    accepted,
+                    request.onAccepted,
+                    publishEvent = !request.wasNewChat,
+                )
                 durableAcceptance.complete(accepted)
                 runCatching { request.onModelMessageCreated?.invoke(modelMessageId) }
             }
-            publishAndClearNewChatIfNeeded()
+            publishNewChatIfNeeded(SendAcceptance.Direct(userMessageId, request.conversationId))
             true
         }
 
         try {
             withOptionalLock(request.conversationId, request.alreadyHoldsLock) generationLock@ {
-                val generationSnapshot = requestBuilder.captureAdmissionSnapshot(
-                    conversationId = request.conversationId,
-                    runId = request.runId,
-                    modelId = request.modelId,
-                    conversationOverride = request.newConversation,
-                    conversationSettingsOverride = request.newConversationSettings,
-                )
+                val generationSnapshot = request.generationSnapshot
+                    ?: requestBuilder.captureAdmissionSnapshot(
+                        conversationId = request.conversationId,
+                        runId = request.runId,
+                        modelId = request.modelId,
+                        conversationOverride = request.newConversation,
+                        conversationSettingsOverride = request.newConversationSettings,
+                    )
                 val graphCommit = graphWriter.commit(
                     request = AcceptedInputGraphWriter.Request(
                         inputEffect = request.inputEffect,
                         userMessageId = userMessageId,
                         modelMessageId = modelMessageId,
                         userText = request.userText,
-                        images = request.payloadLease.payload.allImages,
-                        attachmentMeta = request.payloadLease.payload.attachmentMeta
+                        images = request.payload.allImages,
+                        attachmentMeta = request.payload.attachmentMeta
                             ?.let(Json::encodeToString),
                         modelId = generationSnapshot.selectedModelId,
                         userTimestamp = clock(),
+                        touchConversationOnAdmission = request.touchConversationOnAdmission,
                         newConversation = request.newConversation,
                         newConversationSettings = request.newConversationSettings,
+                        newChatPersistSnapshot = request.newChatPersistSnapshot,
                     ),
                     beforeRoomCommit = {
                         if (!request.wasNewChat && isConversationOpen(request.conversationId)) {
@@ -235,7 +225,6 @@ internal class DirectAcceptedInputEffectExecutor(
                 val userEntity = graphCommit.userMessage
                 val modelEntity = graphCommit.modelMessage
                 inputGraphCommitted = true
-                request.payloadLease.transferOwnership()
 
                 // Room already committed. A caller cancellation cannot undo this acknowledgement.
                 withContext(NonCancellable) {
@@ -244,7 +233,11 @@ internal class DirectAcceptedInputEffectExecutor(
                     runBound = bindingOutcome is ConversationGenerationState.RunBindingOutcome.Active
                     notifyPersistedUser(userMessageId, request.userText)
                     val accepted = SendAcceptance.Direct(userMessageId, request.conversationId)
-                    acceptanceNotifier.notify(accepted, request.onAccepted)
+                    acceptanceNotifier.notify(
+                        accepted,
+                        request.onAccepted,
+                        publishEvent = !request.wasNewChat,
+                    )
                     durableAcceptance.complete(accepted)
                     runCatching { request.onModelMessageCreated?.invoke(modelMessageId) }
                         .onFailure { error ->
@@ -255,8 +248,10 @@ internal class DirectAcceptedInputEffectExecutor(
                             )
                         }
 
-                    if (request.wasNewChat) {
-                        publishAndClearNewChatIfNeeded()
+                    if (
+                        request.wasNewChat &&
+                        publishNewChatIfNeeded(accepted)
+                    ) {
                         request.requestScroll(request.conversationId, userMessageId)
                     }
 
@@ -307,7 +302,7 @@ internal class DirectAcceptedInputEffectExecutor(
                         persistId = persistId,
                         runId = request.runId,
                         pass = 0,
-                        callerTag = "sendMessage",
+                        requestKind = request.requestKind,
                     ),
                     state,
                 )
@@ -365,7 +360,6 @@ internal class DirectAcceptedInputEffectExecutor(
         } finally {
             roomProjectionFence?.let(renderStore::releaseRoomMessageProjectionFence)
             if (!durableAcceptance.isCompleted) durableAcceptance.complete(null)
-            request.payloadLease.releaseIfUnowned()
         }
     }
 

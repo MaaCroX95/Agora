@@ -16,10 +16,26 @@ retention setting remains owned by [import-export.md](import-export.md).
 - `LlamaChatEngine` owns a resident Chat native handle and its replaceable multimodal projector
   substate. `LlamaEngine` owns a resident Embedding native handle only while the runtime identifies
   that resident as Embedding.
-- `AppContainer` binds the one app-lifetime idle-retention settings flow to the runtime.
+- `AppContainer` binds the one app-lifetime idle-retention settings flow to the runtime and supplies
+  Android's process native-library directory for backend initialization.
 
 No caller may load, unload, reset, replace, or generate with an embedded model outside this owner.
 Remote Providers, including a PC-hosted Qwen endpoint, do not enter this queue.
+
+### Android CPU backend initialization
+
+The Android build uses shared llama.cpp/ggml libraries and dynamic CPU backends. It packages the
+seven upstream Android ARM variants from `android_armv8.0_1` through `android_armv9.2_2`; the
+`android_armv8.0_1` module is the compatible arm64 baseline when no higher-scoring feature set is
+available. KleidiAI, Vulkan, and OpenMP remain disabled.
+
+`AppContainer` passes `applicationInfo.nativeLibraryDir` once to `LocalModelRuntime`. The runtime
+canonicalizes that directory and calls the existing `LlamaEngine` JNI owner, which loads the best
+compatible CPU module with `ggml_backend_load_all_from_path` before initializing llama.cpp. Chat and
+Embedding model-load entry points must not independently load or initialize backends. Repeated
+initialization from the same process directory is a no-op; a different directory is an invariant
+violation. If no compatible CPU backend loads, Local Chat reports its ordinary model-load failure and
+Local Embedding returns no result without making application startup fail.
 
 ## 2. Resident identity and switching
 
@@ -32,19 +48,40 @@ Chat and Embedding are different identities even when their canonical model path
 sampling values such as temperature, top P, frequency/presence penalties, and maximum output tokens
 do not construct the native context and therefore do not change identity.
 
-New Local Chat model records created through Settings or onboarding default to `nCtx=4096` and
+New Local Chat model records created through Settings or onboarding default to `nCtx=16384` and
 `maxTokens=1024`. Existing records are not migrated: the serialized `LocalChatModelConfig` fallback
 for a missing legacy `nCtx` remains 2048, and an explicitly stored context size remains unchanged.
 
-A task requesting the current identity reuses its resident model. Reused Chat identity clears its
-context before the new request; reused Embedding identity clears per-input context memory through
-the native Embedding path. A different path, mode, or Chat `nCtx` closes the old resident completely
-before the replacement load begins. If replacement loading fails, no model remains resident and the
-request fails through its ordinary Local error path.
+A task requesting the current identity reuses its resident model. Reused Chat identity also retains
+the native context's proven text KV prefix. Reused Embedding identity clears per-input context memory
+through the native Embedding path. A different path, mode, or Chat `nCtx` closes the old resident
+completely before the replacement load begins. If replacement loading fails, no model remains
+resident and the request fails through its ordinary Local error path.
 
 The multimodal projector is replaceable Chat substate rather than process identity. It is loaded only
 for an image request, reused only for the same projector path, replaced when that path changes, and
 never permits concurrent mutation of the resident Chat engine.
+
+### Text KV prefix ownership
+
+The resident native `ChatHandle` owns both its llama.cpp context memory and a ledger containing only
+token IDs whose decode completed successfully in that context. A new text prompt reuses their token
+longest-common-prefix, removes memory positions at and after the divergence, and decodes only the
+uncached suffix. A complete prompt match retains all but the final token so that this request decodes
+at least one token and obtains current sampling logits.
+
+The complete newly rendered prompt must fit `nCtx` before the resident cache is modified. A token or
+batch enters the ledger only after its corresponding `llama_decode` succeeds. Cancellation between
+successful batches may therefore retain the known prefix. Any nonzero decode result can leave a
+partially processed ubatch, so it clears both native memory and the ledger. If partial sequence
+removal is unsupported, fails, or leaves memory inconsistent with the retained prefix, the same full
+clear occurs before decoding the prompt from zero.
+
+Image embeddings cannot be represented by the text token ledger. Template, image-read, allocation,
+and multimodal tokenization failures that occur before native evaluation leave the prior text cache
+untouched. Immediately before mtmd evaluation, the runtime clears the text cache; every terminal path
+after evaluation starts clears native memory and the ledger again. The next text request after an
+image request therefore starts with an empty context.
 
 ## 3. Chat templates and thinking
 
@@ -55,7 +92,10 @@ template bundle is Chat resident substate and is released before its model.
 
 Each request passes its effective `thinkingEnabled` value into the model template. This value may
 change the rendered prompt but does not construct the model/context or change resident identity.
-Model-emitted reasoning delimiters are separated by the shared incremental thinking parser.
+Native template parsing remains authoritative for typed tool-call events. It must not bypass the
+shared incremental thinking parser for ordinary text: model-emitted reasoning delimiters, including
+supported space-bearing channel forms, are recovered across arbitrary callback chunk boundaries while
+matching markers inside Markdown inline or fenced code remain literal.
 
 Each Local request also carries its effective temperature, top P, maximum output tokens, frequency
 penalty, and presence penalty into both text and multimodal native generation. Nullable penalties
@@ -108,6 +148,14 @@ The default resource and every supported locale define the same localized key an
 The setting is device-local: it is excluded from portable Settings export/import and survives a
 Settings `REPLACE`, as specified by [import-export.md](import-export.md).
 
+`local_low_context_mode_enabled` is a separate device-local Boolean and defaults to `false`. It is
+exposed at Provider -> Local -> Advanced as the default for new and existing conversations that have
+no explicit override. A conversation or New Chat stores a nullable override: `null` inherits the
+current Provider default, while an explicit `true` or `false` continues to win if the default later
+changes. The request effect remains limited to ordinary embedded Local Chat as specified by
+[message-generation.md](message-generation.md); it does not change model residency, native context
+identity, Compact/title prompts, Ollama, or remote Providers.
+
 ## 7. Native streaming and telemetry
 
 Native text and multimodal decoding check cancellation after every decoded token. Complete UTF-8 is
@@ -140,6 +188,12 @@ Chat-template verification must cover explicit-template enforcement, official Ji
 request-level thinking control, UTF-8-safe prompt transfer, and absence of generic fallbacks.
 Native-streaming verification must cover both generation loops, exact batch bounds, UTF-8 boundary
 safety, terminal flushing, callback rejection, per-token cancellation, and content-free telemetry.
+Text-cache verification must cover same-identity reuse, token LCP divergence, exact-match one-token
+replay, prompt-capacity validation before mutation, failed truncation, decode failure, cancellation
+between successful batches, generated-token ledger ordering, and multimodal invalidation. Android
+backend verification must cover shared dynamic builds, all seven upstream Android ARM CPU modules,
+armv8.0 baseline packaging, explicit loading from `applicationInfo.nativeLibraryDir`, initialization
+before either model-load path, and absence of KleidiAI, Vulkan, and OpenMP.
 
 Settings tests must cover the exact presets/default/normalization, DataStore read/write, one
 AppContainer binding, Local Advanced placement and slider commit behavior, locale key/placeholder

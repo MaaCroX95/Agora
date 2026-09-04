@@ -46,6 +46,8 @@ object Constants {
      *  tool error instead of a permanent hang (#49). Overridable via GenerationContext. */
     const val TOOL_EXECUTION_TIMEOUT_SECONDS = 300
     const val TOOL_EXECUTION_TIMEOUT_MS = TOOL_EXECUTION_TIMEOUT_SECONDS * 1_000L
+    /** Image generation alone may wait up to ten minutes for generation and download. */
+    const val IMAGE_GENERATION_TIMEOUT_MS = 600_000L
     /** Wall-clock budget for a shell-command confirmation prompt. The await hangs forever if the
      *  Activity is backgrounded/rebuilt (dialog never renders) or in a headless automation run,
      *  so failing safe (refusing) after this timeout unblocks the stream (#49). */

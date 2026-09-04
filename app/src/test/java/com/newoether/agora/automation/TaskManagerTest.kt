@@ -11,15 +11,19 @@ import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class TaskManagerTest {
     @Test
     fun scheduledIncompleteTaskIsDisabledWithoutCallingModel() = runTest {
@@ -37,7 +41,7 @@ class TaskManagerTest {
         assertTrue(result is TaskManager.ExecutionResult.Skipped)
         assertFalse(stored.enabled)
         assertEquals(0L, stored.nextRunAt)
-        coVerify(exactly = 0) { engine.runOnce(any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { engine.runOnceWithAutomationGuardsHeld(any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -59,6 +63,75 @@ class TaskManagerTest {
     }
 
     @Test
+    fun incompleteRunNowDraftIsNeverPersistedOrExecuted() = runTest {
+        val repository = mockk<TaskRepository>()
+        val engine = mockk<TaskExecutionEngine>()
+        every { repository.getAllTasks() } returns MutableStateFlow(emptyList())
+        coEvery { repository.upsertTask(any()) } returns Unit
+        val manager = TaskManager(
+            repository,
+            mockk(),
+            engine,
+            backgroundScope,
+        )
+
+        manager.runNow(task(name = "", prompt = "Prompt"))
+        manager.runNow(task(name = "Task", prompt = ""))
+
+        coVerify(exactly = 0) { repository.upsertTask(any()) }
+        coVerify(exactly = 0) { engine.runOnceWithAutomationGuardsHeld(any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun listRunNowPreservesPersistedEnabledState() = runTest {
+        val repository = mockk<TaskRepository>()
+        val conversations = mockk<ConversationRepository>()
+        val engine = mockk<TaskExecutionEngine>()
+        var stored = task().copy(enabled = false, nextRunAt = 0L)
+        every { repository.getAllTasks() } returns MutableStateFlow(listOf(stored))
+        coEvery { repository.getTask(stored.id) } coAnswers { stored }
+        coEvery { repository.upsertTask(any()) } coAnswers { stored = firstArg() }
+        coEvery { conversations.recoverConversationRuntime(any(), any()) } returns 0
+        coEvery { conversations.getConversation(any()) } returns null
+        coEvery { conversations.upsertConversation(any()) } returns Unit
+        coEvery { engine.runOnceWithAutomationGuardsHeld(any(), any(), any(), any(), any(), any(), any()) } returns
+            TaskExecutionEngine.Result.Busy()
+        val manager = TaskManager(repository, conversations, engine, backgroundScope)
+
+        manager.runNow(stored.copy(enabled = true))
+        runCurrent()
+
+        coVerify(atLeast = 1) { repository.upsertTask(any()) }
+        assertFalse(stored.enabled)
+    }
+
+    @Test
+    fun editorRunNowPersistsCurrentEnabledState() = runTest {
+        val repository = mockk<TaskRepository>()
+        val conversations = mockk<ConversationRepository>()
+        val engine = mockk<TaskExecutionEngine>()
+        var stored = task().copy(enabled = false, nextRunAt = 0L)
+        every { repository.getAllTasks() } returns MutableStateFlow(listOf(stored))
+        coEvery { repository.getTask(stored.id) } coAnswers { stored }
+        coEvery { repository.upsertTask(any()) } coAnswers { stored = firstArg() }
+        coEvery { conversations.recoverConversationRuntime(any(), any()) } returns 0
+        coEvery { conversations.getConversation(any()) } returns null
+        coEvery { conversations.upsertConversation(any()) } returns Unit
+        coEvery { engine.runOnceWithAutomationGuardsHeld(any(), any(), any(), any(), any(), any(), any()) } returns
+            TaskExecutionEngine.Result.Busy()
+        val manager = TaskManager(repository, conversations, engine, backgroundScope)
+
+        manager.runNow(
+            stored.copy(enabled = true),
+            preservePersistedEnabled = false,
+        )
+        runCurrent()
+
+        coVerify(atLeast = 1) { repository.upsertTask(any()) }
+        assertTrue(stored.enabled)
+    }
+
+    @Test
     fun busyConversationIsReturnedAsAReplaySafeDeferredOccurrence() = runTest {
         val repository = mockk<TaskRepository>()
         val conversations = mockk<ConversationRepository>()
@@ -66,11 +139,11 @@ class TaskManagerTest {
         val stored = task()
         every { repository.getAllTasks() } returns MutableStateFlow(listOf(stored))
         coEvery { repository.getTask(stored.id) } returns stored
-        coEvery { conversations.ensureRunRecovery() } returns Unit
+        coEvery { conversations.recoverConversationRuntime(any(), any()) } returns 0
         coEvery { conversations.getConversation("execution") } returns null
         coEvery { conversations.upsertConversation(any()) } returns Unit
         coEvery {
-            engine.runOnce("execution", stored.prompt, stored.modelId, "", true, any())
+            engine.runOnceWithAutomationGuardsHeld("execution", stored.prompt, stored.modelId, "", true, any(), "task")
         } returns TaskExecutionEngine.Result.Busy()
         val manager = TaskManager(repository, conversations, engine, backgroundScope)
 
@@ -79,6 +152,37 @@ class TaskManagerTest {
         val deferred = result as TaskManager.ExecutionResult.Deferred
         assertEquals("execution", deferred.conversationId)
         assertEquals("Conversation is already generating", deferred.reason)
+        coVerifyOrder {
+            conversations.recoverConversationRuntime("execution", any())
+            conversations.getConversation("execution")
+            conversations.upsertConversation(any())
+            engine.runOnceWithAutomationGuardsHeld(
+                "execution", stored.prompt, stored.modelId, "", true, any(), "task",
+            )
+        }
+    }
+
+    @Test
+    fun exactRecoveryFailureStopsBeforeDeterministicExecutionReadsOrGeneration() = runTest {
+        val repository = mockk<TaskRepository>()
+        val conversations = mockk<ConversationRepository>()
+        val engine = mockk<TaskExecutionEngine>()
+        val stored = task()
+        every { repository.getAllTasks() } returns MutableStateFlow(listOf(stored))
+        coEvery { repository.getTask(stored.id) } returns stored
+        coEvery { conversations.recoverConversationRuntime("execution", any()) } throws
+            IllegalStateException("recovery failed")
+        val manager = TaskManager(repository, conversations, engine, backgroundScope)
+
+        val failure = runCatching {
+            manager.executeById(stored.id, "execution")
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        coVerify(exactly = 0) { conversations.getConversation(any()) }
+        coVerify(exactly = 0) {
+            engine.runOnceWithAutomationGuardsHeld(any(), any(), any(), any(), any(), any())
+        }
     }
 
     @Test
@@ -99,7 +203,7 @@ class TaskManagerTest {
         )
         every { repository.getAllTasks() } returns MutableStateFlow(listOf(stored))
         coEvery { repository.getTask(stored.id) } returns stored
-        coEvery { conversations.ensureRunRecovery() } returns Unit
+        coEvery { conversations.recoverConversationRuntime(any(), any()) } returns 0
         coEvery { conversations.getConversation("execution") } returns ChatEntity(
             id = "execution",
             title = "Task",
@@ -137,7 +241,7 @@ class TaskManagerTest {
         val success = result as TaskManager.ExecutionResult.Success
         assertEquals("execution", success.conversationId)
         assertEquals("done", success.response)
-        coVerify(exactly = 0) { engine.runOnce(any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { engine.runOnceWithAutomationGuardsHeld(any(), any(), any(), any(), any(), any()) }
     }
 
     private fun task(

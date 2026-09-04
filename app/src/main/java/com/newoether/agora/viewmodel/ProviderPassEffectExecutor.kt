@@ -1,5 +1,6 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.api.HttpClient
 import com.newoether.agora.api.LlmProvider
 import com.newoether.agora.api.ProviderConfig
 import com.newoether.agora.api.StreamEvent
@@ -14,6 +15,7 @@ internal data class ProviderPassExecutionRequest(
     val provider: LlmProvider,
     val messages: List<ChatMessage>,
     val config: ProviderConfig,
+    val requestTrace: HttpClient.RequestTrace? = null,
 )
 
 internal data class ProviderPassExecutionCallbacks(
@@ -38,17 +40,23 @@ internal class ProviderPassEffectExecutor(
             )
         var firstEventPending = callbacks.onFirstEvent != null
         try {
-            return runner.run(
-                identity = startEffect.identity,
-                provider = request.provider,
-                messages = request.messages,
-                config = request.config,
-            ) { event ->
-                if (firstEventPending) {
-                    firstEventPending = false
-                    callbacks.onFirstEvent?.invoke()
+            return HttpClient.withStreamScope(
+                scope = HttpClient.boundStreamScope(),
+                requestTrace = request.requestTrace,
+            ) {
+                runner.run(
+                    identity = startEffect.identity,
+                    provider = request.provider,
+                    messages = request.messages,
+                    config = request.config,
+                ) { event ->
+                    request.requestTrace?.recordParsedEvent(event)
+                    if (firstEventPending) {
+                        firstEventPending = false
+                        callbacks.onFirstEvent?.invoke()
+                    }
+                    callbacks.onEvent(event)
                 }
-                callbacks.onEvent(event)
             }
         } catch (error: Exception) {
             // Runner normally closes failures into an outcome. A consumer failure must still close

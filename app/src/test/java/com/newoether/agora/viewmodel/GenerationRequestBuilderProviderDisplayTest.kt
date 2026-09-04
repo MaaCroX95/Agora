@@ -5,18 +5,32 @@ import com.newoether.agora.R
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.CustomProviderConfig
 import com.newoether.agora.data.MemoryManager
+import com.newoether.agora.data.PredefinedVariables
+import com.newoether.agora.data.PromptItemType
+import com.newoether.agora.data.PromptTemplateItem
 import com.newoether.agora.data.SkillManager
+import com.newoether.agora.data.SystemPromptEntry
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.SettingsRepository
+import com.newoether.agora.util.Constants
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class GenerationRequestBuilderProviderDisplayTest {
     @Test
     fun `conversation tool overrides are reflected immediately in effective settings`() {
@@ -27,6 +41,7 @@ class GenerationRequestBuilderProviderDisplayTest {
                     webSearchEnabled = false,
                     shellEnabled = false,
                     openAiWebSearchEnabled = false,
+                    lowContextModeEnabled = false,
                 )
             )
         )
@@ -47,6 +62,7 @@ class GenerationRequestBuilderProviderDisplayTest {
         every { settings.openAiServiceTier } returns MutableStateFlow("auto")
         every { settings.webSearchEnabled } returns MutableStateFlow(true)
         every { settings.shellEnabled } returns MutableStateFlow(true)
+        every { settings.localLowContextModeEnabled } returns MutableStateFlow(true)
         val builder = GenerationRequestBuilder(
             settings = settings,
             convRepo = mockk<ConversationRepository>(),
@@ -64,6 +80,153 @@ class GenerationRequestBuilderProviderDisplayTest {
         assertEquals(false, effective.webSearchEnabled)
         assertEquals(false, effective.shellEnabled)
         assertEquals(false, effective.openAiWebSearchEnabled)
+        assertEquals(false, effective.lowContextModeEnabled)
+    }
+
+    @Test
+    fun `local low context admission omits structured prompt work and preserves compact prompt`() = runTest {
+        val fixture = RequestBuilderFixture(
+            providerName = Constants.PROVIDER_LOCAL,
+            lowContextModeEnabled = true,
+        )
+
+        val snapshot = fixture.builder.captureAdmissionSnapshot(
+            conversationId = "conversation",
+            runId = "run",
+            modelId = fixture.modelId,
+            resolvedPromptOverride = GenerationRequestBuilder.ResolvedPrompt(
+                systemPrompt = "override system",
+                userPrepend = "override user prepend",
+                userPostpend = "override user postpend",
+                assistantPrepend = "override assistant prepend",
+                assistantPostpend = "override assistant postpend",
+            ),
+        )
+
+        assertTrue(snapshot.config.lowContextModeEnabled)
+        assertNull(snapshot.config.effectiveSystemPrompt)
+        assertNull(snapshot.config.userPrepend)
+        assertNull(snapshot.config.userPostpend)
+        assertNull(snapshot.config.assistantPrepend)
+        assertNull(snapshot.config.assistantPostpend)
+        assertNull(snapshot.config.promptTemplate)
+        assertNull(snapshot.config.requestResolver)
+        assertFalse(snapshot.config.codeExecutionEnabled)
+        assertFalse(snapshot.config.googleSearchEnabled)
+        assertFalse(snapshot.config.openAiWebSearchEnabled)
+        assertFalse(snapshot.context.skillReadAccess)
+        assertFalse(snapshot.context.skillModifyAccess)
+        assertEquals("", snapshot.context.skillCatalog)
+        coVerify(exactly = 0) { fixture.conversations.getConversation(any()) }
+        verify(exactly = 0) { fixture.memoryManager.getActiveMemory() }
+        verify(exactly = 0) { fixture.skillManager.catalog() }
+
+        assertFalse(snapshot.automaticCompact.generationConfig.lowContextModeEnabled)
+        assertEquals(
+            RequestBuilderFixture.COMPACT_PROMPT,
+            snapshot.automaticCompact.generationConfig.effectiveSystemPrompt,
+        )
+        assertFalse(snapshot.automaticCompact.generationContext.skillReadAccess)
+        assertEquals("", snapshot.automaticCompact.generationContext.skillCatalog)
+    }
+
+    @Test
+    fun `local low context disabled preserves structured prompt projection`() = runTest {
+        val fixture = RequestBuilderFixture(
+            providerName = Constants.PROVIDER_LOCAL,
+            lowContextModeEnabled = false,
+        )
+
+        val snapshot = fixture.builder.captureContextProjectionSnapshot(
+            conversationId = "conversation",
+            modelId = fixture.modelId,
+        )
+
+        assertFalse(snapshot.config.lowContextModeEnabled)
+        assertEquals(RequestBuilderFixture.RESOLVED_SYSTEM_PROMPT, snapshot.config.effectiveSystemPrompt)
+        assertEquals("user-before|", snapshot.config.userPrepend)
+        assertEquals("|user-after", snapshot.config.userPostpend)
+        assertEquals("assistant-before|", snapshot.config.assistantPrepend)
+        assertEquals("|assistant-after", snapshot.config.assistantPostpend)
+        assertTrue(snapshot.config.promptTemplate != null)
+        assertTrue(snapshot.context.skillReadAccess)
+        assertEquals(RequestBuilderFixture.SKILL_CATALOG, snapshot.context.skillCatalog)
+        verify { fixture.memoryManager.getActiveMemory() }
+        verify { fixture.skillManager.catalog() }
+    }
+
+    @Test
+    fun `remote and ollama ignore a true low context conversation override`() = runTest {
+        listOf(Constants.PROVIDER_OPENAI, Constants.PROVIDER_OLLAMA).forEach { providerName ->
+            val fixture = RequestBuilderFixture(
+                providerName = providerName,
+                lowContextModeEnabled = true,
+            )
+
+            val snapshot = fixture.builder.captureContextProjectionSnapshot(
+                conversationId = "conversation",
+                modelId = fixture.modelId,
+            )
+
+            assertFalse(providerName, snapshot.config.lowContextModeEnabled)
+            assertEquals(
+                providerName,
+                RequestBuilderFixture.RESOLVED_SYSTEM_PROMPT,
+                snapshot.config.effectiveSystemPrompt,
+            )
+            assertEquals(providerName, "user-before|", snapshot.config.userPrepend)
+            assertEquals(providerName, "|user-after", snapshot.config.userPostpend)
+            assertTrue(providerName, snapshot.config.promptTemplate != null)
+        }
+    }
+
+    @Test
+    fun `generation provider admission waits for initial registry sync before resolving`() = runTest {
+        val modelId = "custom-provider-00000000-0000-4000-8000-000000000001:model"
+        val providerName = "Relay X"
+        val settings = mockk<SettingsRepository>()
+        val providerRegistry = mockk<ProviderRegistry>()
+        val gate = CompletableDeferred<Unit>()
+        val events = mutableListOf<String>()
+
+        coEvery { providerRegistry.awaitInitialSync() } coAnswers {
+            events += "await"
+            gate.await()
+            events += "synced"
+        }
+        every { providerRegistry.providerForModel(modelId) } answers {
+            events += "resolve"
+            providerName
+        }
+        every { settings.resolveActiveKey(providerName) } returns "active-key"
+        every { providerRegistry.isConfigured(providerName, "active-key") } returns true
+
+        val builder = GenerationRequestBuilder(
+            settings = settings,
+            convRepo = mockk<ConversationRepository>(),
+            memoryManager = mockk<MemoryManager>(),
+            skillManager = mockk<SkillManager>(),
+            providerRegistry = providerRegistry,
+            ragManager = mockk<RagManager>(),
+            appContext = mockk<Context>(),
+            pendingConversationSettings = MutableStateFlow<ConversationSettings?>(null),
+            onSnackbar = {},
+        )
+
+        val result = async { builder.awaitProviderKey(modelId) }
+        runCurrent()
+
+        assertEquals(listOf("await"), events)
+        assertFalse(result.isCompleted)
+
+        gate.complete(Unit)
+        runCurrent()
+
+        assertEquals(
+            GenerationRequestBuilder.ProviderKey(providerName, "active-key"),
+            result.await(),
+        )
+        assertEquals(listOf("await", "synced", "resolve"), events)
     }
 
     @Test
@@ -102,5 +265,147 @@ class GenerationRequestBuilderProviderDisplayTest {
         assertEquals(1, snackbars.size)
         assertTrue(snackbars.single().contains(providerAlias))
         assertFalse(snackbars.single().contains(providerId))
+    }
+}
+
+private class RequestBuilderFixture(
+    providerName: String,
+    lowContextModeEnabled: Boolean,
+) {
+    companion object {
+        const val COMPACT_PROMPT = "compact prompt"
+        const val SKILL_CATALOG = "skill catalog"
+        const val RESOLVED_SYSTEM_PROMPT = "system|active memory|skill catalog"
+        private const val PROMPT_ID = "prompt-id"
+    }
+
+    val modelId = "$providerName:model"
+    val settings = mockk<SettingsRepository>()
+    val conversations = mockk<ConversationRepository>()
+    val memoryManager = mockk<MemoryManager>()
+    val skillManager = mockk<SkillManager>()
+    private val providerRegistry = mockk<ProviderRegistry>()
+    private val ragManager = mockk<RagManager>()
+    private val provider = mockk<com.newoether.agora.api.LlmProvider>()
+
+    val builder: GenerationRequestBuilder
+
+    init {
+        val prompt = SystemPromptEntry(
+            id = PROMPT_ID,
+            title = "Prompt",
+            systemItems = listOf(
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "system|"),
+                PromptTemplateItem(
+                    type = PromptItemType.PREDEFINED,
+                    value = PredefinedVariables.ACTIVE_MEMORY,
+                ),
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "|"),
+                PromptTemplateItem(
+                    type = PromptItemType.PREDEFINED,
+                    value = PredefinedVariables.SKILL_CATALOG,
+                ),
+            ),
+            userItems = listOf(
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "user-before|"),
+                PredefinedVariables.promptItem(),
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "|user-after"),
+            ),
+            assistantItems = listOf(
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "assistant-before|"),
+                PredefinedVariables.promptItem(),
+                PromptTemplateItem(type = PromptItemType.CUSTOM, value = "|assistant-after"),
+            ),
+        )
+        every { settings.conversationSettings } returns MutableStateFlow(
+            mapOf(
+                "conversation" to ConversationSettings(
+                    codeExecutionEnabled = true,
+                    googleSearchEnabled = true,
+                    openAiWebSearchEnabled = true,
+                    lowContextModeEnabled = lowContextModeEnabled,
+                )
+            )
+        )
+        every { settings.maxContextWindow } returns MutableStateFlow(32_768)
+        every { settings.defaultTemperature } returns MutableStateFlow(null)
+        every { settings.defaultMaxTokens } returns MutableStateFlow(null)
+        every { settings.defaultTopP } returns MutableStateFlow(null)
+        every { settings.defaultFrequencyPenalty } returns MutableStateFlow(null)
+        every { settings.defaultPresencePenalty } returns MutableStateFlow(null)
+        every { settings.codeExecutionEnabled } returns MutableStateFlow(true)
+        every { settings.googleSearchEnabled } returns MutableStateFlow(true)
+        every { settings.openAiWebSearchEnabled } returns MutableStateFlow(true)
+        every { settings.thinkingEnabled } returns MutableStateFlow(true)
+        every { settings.thinkingLevel } returns MutableStateFlow("medium")
+        every { settings.thinkingBudgetEnabled } returns MutableStateFlow(false)
+        every { settings.thinkingBudgetTokens } returns MutableStateFlow(4096)
+        every { settings.openAiServiceTierEnabled } returns MutableStateFlow(false)
+        every { settings.openAiServiceTier } returns MutableStateFlow("auto")
+        every { settings.webSearchEnabled } returns MutableStateFlow(true)
+        every { settings.shellEnabled } returns MutableStateFlow(true)
+        every { settings.localLowContextModeEnabled } returns MutableStateFlow(false)
+        every { settings.contextCompactModel } returns MutableStateFlow(null)
+        every { settings.contextCompactPrompt } returns MutableStateFlow(COMPACT_PROMPT)
+        every { settings.contextCompactEnabled } returns MutableStateFlow(true)
+        every { settings.contextCompactThresholdPercent } returns MutableStateFlow(80)
+        every { settings.contextCompactRetainCount } returns MutableStateFlow(8)
+        every { settings.openAiResponsesApiEnabled } returns MutableStateFlow(false)
+        every { settings.customProviders } returns MutableStateFlow(emptyList())
+        every { settings.titleGenerationEnabled } returns MutableStateFlow(true)
+        every { settings.imageGenModel } returns MutableStateFlow(null)
+        every { settings.imageTranscriptionModel } returns MutableStateFlow(null)
+        every { settings.accessSkills } returns MutableStateFlow(true)
+        every { settings.accessSkillsModify } returns MutableStateFlow(true)
+        every { settings.accessSavedMemories } returns MutableStateFlow(true)
+        every { settings.accessActiveMemory } returns MutableStateFlow(true)
+        every { settings.accessPastConversations } returns MutableStateFlow(true)
+        every { settings.modelSearchMethod } returns MutableStateFlow("keyword")
+        every { settings.ragThreshold } returns MutableStateFlow(0.5f)
+        every { settings.searchMatchLimit } returns MutableStateFlow(10)
+        every { settings.searchContextWindow } returns MutableStateFlow(8)
+        every { settings.webSearchApiKeys } returns MutableStateFlow(emptyMap())
+        every { settings.webSearchProvider } returns MutableStateFlow("duckduckgo")
+        every { settings.webSearchNumResults } returns MutableStateFlow(5)
+        every { settings.webSearchBaseUrl } returns MutableStateFlow("")
+        every { settings.imageGenEnabled } returns MutableStateFlow(false)
+        every { settings.imageGenSize } returns MutableStateFlow("1024x1024")
+        every { settings.automationToolsEnabled } returns MutableStateFlow(true)
+        every { settings.shellDevices } returns MutableStateFlow(emptyList())
+        every { settings.sandboxEnabled } returns MutableStateFlow(true)
+        every { settings.sandboxSharedStorageEnabled } returns MutableStateFlow(true)
+        every { settings.imageTranscriptionEnabled } returns MutableStateFlow(false)
+        every { settings.imageTranscriptionEnabledModels } returns MutableStateFlow(emptySet())
+        every { settings.imageTranscriptionBatchSize } returns MutableStateFlow(3)
+        every { settings.imageTranscriptionPrompt } returns MutableStateFlow("transcribe")
+        every { settings.activeSystemPromptId } returns MutableStateFlow(PROMPT_ID)
+        every { settings.systemPrompts } returns MutableStateFlow(listOf(prompt))
+        coEvery { settings.awaitActiveKey(any()) } returns "key"
+        every { settings.resolveActiveKey(any()) } returns "key"
+
+        coEvery { providerRegistry.awaitInitialSync() } returns Unit
+        every { providerRegistry.canonicalModelId(any()) } answers { firstArg() }
+        every { providerRegistry.providerForModel(any()) } returns providerName
+        every { providerRegistry.isConfigured(any(), any()) } returns true
+        every { providerRegistry.generationSnapshot() } returns mapOf(providerName to provider)
+        every { providerRegistry.getEffectiveBaseUrl(any()) } returns null
+
+        every { ragManager.activeEmbeddingModel } returns MutableStateFlow(null)
+        every { ragManager.resolveEmbeddingApiKey() } returns null
+        coEvery { conversations.getConversation(any()) } returns null
+        every { memoryManager.getActiveMemory() } returns "active memory"
+        every { skillManager.catalog() } returns SKILL_CATALOG
+
+        builder = GenerationRequestBuilder(
+            settings = settings,
+            convRepo = conversations,
+            memoryManager = memoryManager,
+            skillManager = skillManager,
+            providerRegistry = providerRegistry,
+            ragManager = ragManager,
+            appContext = mockk(),
+            pendingConversationSettings = MutableStateFlow(null),
+            onSnackbar = {},
+        )
     }
 }

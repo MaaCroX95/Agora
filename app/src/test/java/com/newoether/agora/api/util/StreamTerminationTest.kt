@@ -11,7 +11,7 @@ import org.junit.Test
 
 class StreamTerminationTest {
     @Test
-    fun citationUpdates_doNotCountAsModelOutput() {
+    fun citationAndEmptyTextUpdates_doNotCountAsModelOutput() {
         val event = StreamEvent.CitationUpdate(
             CitationRecord(
                 sourceId = "citation_source",
@@ -22,6 +22,7 @@ class StreamTerminationTest {
         )
 
         assertFalse(event.carriesModelOutput())
+        assertFalse(StreamEvent.TextChunk("").carriesModelOutput())
     }
 
     private fun termination(
@@ -32,6 +33,7 @@ class StreamTerminationTest {
         streamError: GenerationError? = null,
         alreadyReportedError: Boolean = false,
         timedOut: Boolean = false,
+        retryableStreamError: Boolean = true,
     ) = StreamTermination(
         sawTerminalMarker = sawTerminalMarker,
         stopReason = stopReason,
@@ -40,6 +42,7 @@ class StreamTerminationTest {
         streamError = streamError,
         alreadyReportedError = alreadyReportedError,
         timedOut = timedOut,
+        retryableStreamError = retryableStreamError,
     )
 
     @Test
@@ -136,6 +139,82 @@ class StreamTerminationTest {
 
         assertEquals(apiError, result.toError("Anthropic"))
         assertFalse(result.isRetryable)
+    }
+
+    @Test
+    fun explicitUnreadableServerResponse_isRetriedBeforeOutput() {
+        val apiError = GenerationError.Api(
+            code = null,
+            type = "server_error",
+            message = "The server response could not be read.",
+        )
+        val result = termination(
+            sawTerminalMarker = true,
+            stopReason = "failed",
+            producedContent = false,
+            streamError = apiError,
+            retryableStreamError = false,
+        )
+
+        assertEquals(apiError, result.toError("OpenAI"))
+        assertTrue(result.isRetryable)
+    }
+
+    @Test
+    fun explicitUnreadableServerResponseAfterContent_isNotRetried() {
+        val result = termination(
+            sawTerminalMarker = true,
+            stopReason = "failed",
+            producedContent = true,
+            streamError = GenerationError.Api(
+                code = null,
+                type = "server_error",
+                message = "The server response could not be read.",
+            ),
+            retryableStreamError = false,
+        )
+
+        assertFalse(result.isRetryable)
+    }
+
+    @Test
+    fun otherExplicitTerminalStreamError_isNotRetried() {
+        val result = termination(
+            sawTerminalMarker = true,
+            stopReason = "failed",
+            producedContent = false,
+            streamError = GenerationError.Api(
+                code = null,
+                type = "provider_error",
+                message = "upstream rejected",
+            ),
+            retryableStreamError = false,
+        )
+
+        assertFalse(result.isRetryable)
+    }
+
+    @Test
+    fun wrappedUnreadableResponseIOException_isRetryableTransportFailure() {
+        val failure = java.io.IOException(
+            "request failed",
+            java.io.IOException("The server response could not be read."),
+        )
+
+        val error = failure.asRetryableTransportError() as GenerationError.Network
+
+        assertEquals("The server response could not be read.", error.message)
+        assertNull(java.io.IOException("invalid response").asRetryableTransportError())
+        assertNull(
+            java.io.IOException(
+                "The server response could not be read.",
+                java.net.UnknownHostException("host unavailable"),
+            ).asRetryableTransportError()
+        )
+        assertNull(
+            java.net.UnknownHostException("The server response could not be read.")
+                .asRetryableTransportError()
+        )
     }
 
     @Test

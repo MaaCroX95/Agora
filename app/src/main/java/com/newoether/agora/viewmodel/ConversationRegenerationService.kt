@@ -32,7 +32,7 @@ internal class ConversationRegenerationService(
     private val conversations: ConversationRepository,
     private val requestBuilder: GenerationRequestBuilder,
     private val executionCoordinator: ConversationExecutionCoordinator,
-    private val transitions: RegenerationTransitionCoordinator,
+    private val transitions: BranchReplacementTransitionCoordinator,
     private val terminalSettlement: GenerationTerminalSettlementController,
     private val boundRunGenerationLauncher: BoundRunGenerationLauncher,
     private val guidanceDrain: QueuedGuidanceDrainExecutor,
@@ -157,6 +157,8 @@ internal class ConversationRegenerationService(
                         listOf(modelEntity),
                         messageSelectionUpdates = mapOf(sourceBoundary.id to modelEntity.id),
                         conversationModelId = generationSnapshot.selectedModelId,
+                        at = startTime,
+                        touchConversationOnAdmission = true,
                     )
                     graphCommitted = true
                     transitions.markCommitted(transition.id)
@@ -193,7 +195,7 @@ internal class ConversationRegenerationService(
                             persistId = persistId,
                             runId = runId,
                             pass = 0,
-                            callerTag = "regenerate",
+                            requestKind = "chat",
                         ),
                         state,
                     )

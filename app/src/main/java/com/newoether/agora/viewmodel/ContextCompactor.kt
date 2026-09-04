@@ -25,9 +25,7 @@ data class CompactRequest(
 /** Provider-equivalent split input without role coalescing away durable graph ids. */
 internal fun compactSplitMessages(messages: List<ChatMessage>): List<ChatMessage> =
     stripEmptyTurns(
-        validateToolMessages(
-            projectGenerationStatusesForApi(messages.distinctBy(ChatMessage::id))
-        )
+        validateToolMessages(messages.distinctBy(ChatMessage::id))
     )
 
 internal fun normalizeContextCompactOutput(text: String): String {
@@ -169,6 +167,7 @@ internal fun automaticCompactNeeded(
     selectedChildren: Map<String?, String>,
     contextLimit: Int,
     retainLogicalMessages: Int,
+    generationErrorFormatter: (String) -> String,
     includeStoredTranscriptions: Boolean = false,
     fixedTokenCost: Int = 0,
     userPrepend: String? = null,
@@ -184,7 +183,11 @@ internal fun automaticCompactNeeded(
         path = ApiPathAssembler.assemble(
             selectedPath.mapNotNull { entitiesById[it.id] },
             entities,
-        ).let { projectProviderMessages(it, includeStoredTranscriptions) },
+        ).let { entities ->
+            projectProviderMessages(entities, includeStoredTranscriptions)
+        }.let { messages ->
+            projectGenerationStatusesForApi(messages, generationErrorFormatter)
+        },
         contextLimit = contextLimit,
         retainLogicalMessages = retainLogicalMessages,
         fixedTokenCost = fixedTokenCost,
@@ -229,8 +232,9 @@ internal fun automaticCompactNeeded(
 /** Non-destructive context compaction. Original messages remain in the graph. */
 internal class ContextCompactor(
     private val conversations: ConversationRepository,
+    private val generationErrorFormatter: (String) -> String,
     private val contextLoader: DurableSelectedContextLoader =
-        DurableSelectedContextLoader(conversations),
+        DurableSelectedContextLoader(conversations, generationErrorFormatter),
 ) : ContextCompactOperation {
     override suspend fun automaticNeeded(
         conversationId: String,

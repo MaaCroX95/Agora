@@ -11,16 +11,19 @@ import com.newoether.agora.model.Participant
 import com.newoether.agora.util.DebugLog
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
 import java.util.ArrayDeque
 import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -131,11 +134,10 @@ class ConversationUiStateAssemblerTest {
     fun `room graph becomes ready atomically before runtime overlay is published`() = runTest {
         val conversations = mockk<ConversationRepository>()
         val registry = mockk<ConversationStateRegistry>()
-        val executionCoordinator = mockk<ConversationExecutionCoordinator>()
+        val executionCoordinator = ConversationExecutionCoordinator()
         val state = generationState(isLoading = true, generating = false)
         val roomMessages = MutableSharedFlow<List<MessageContextTopology>>(replay = 1)
-        coEvery { conversations.ensureRunRecovery() } returns Unit
-        coEvery { conversations.fixStuckMessages(CONVERSATION_ID) } returns Unit
+        coEvery { conversations.recoverConversationRuntime(CONVERSATION_ID, any()) } returns 0
         coEvery { conversations.getConversation(CONVERSATION_ID) } returns ChatEntity(
             id = CONVERSATION_ID,
             title = "Conversation",
@@ -144,8 +146,6 @@ class ConversationUiStateAssemblerTest {
         every { conversations.observeMessageTopology(CONVERSATION_ID) } returns
             roomMessages
         every { registry.getOrCreate(CONVERSATION_ID) } returns state
-        every { executionCoordinator.activeAutomationConversationIds } returns
-            MutableStateFlow(emptySet())
         val currentConversationId = MutableStateFlow<String?>(null)
         val assembler = ConversationUiStateAssembler(
             conversations = conversations,
@@ -169,8 +169,10 @@ class ConversationUiStateAssemblerTest {
         assertEquals(mapOf<String?, String>(null to "root"), assembler.renderStore.selectedChildren)
         assertTrue(assembler.isLoading.value)
         assertNull(assembler.generatingInConversationId.value)
-        coVerify(exactly = 1) { conversations.ensureRunRecovery() }
-        coVerify(exactly = 1) { conversations.fixStuckMessages(CONVERSATION_ID) }
+        coVerifyOrder {
+            conversations.recoverConversationRuntime(CONVERSATION_ID, any())
+            conversations.getConversation(CONVERSATION_ID)
+        }
 
         currentConversationId.value = null
         runCurrent()
@@ -184,9 +186,8 @@ class ConversationUiStateAssemblerTest {
     fun `active automation prevents foreground recovery from stopping its live row`() = runTest {
         val conversations = mockk<ConversationRepository>()
         val registry = mockk<ConversationStateRegistry>()
-        val executionCoordinator = mockk<ConversationExecutionCoordinator>()
+        val executionCoordinator = ConversationExecutionCoordinator()
         val state = generationState(isLoading = false, generating = false)
-        coEvery { conversations.ensureRunRecovery() } returns Unit
         coEvery { conversations.getConversation(CONVERSATION_ID) } returns ChatEntity(
             id = CONVERSATION_ID,
             title = "Conversation",
@@ -194,14 +195,20 @@ class ConversationUiStateAssemblerTest {
         every { conversations.observeMessageTopology(CONVERSATION_ID) } returns
             MutableStateFlow(emptyList())
         every { registry.getOrCreate(CONVERSATION_ID) } returns state
-        every { executionCoordinator.activeAutomationConversationIds } returns
-            MutableStateFlow(setOf(CONVERSATION_ID))
-        val currentConversationId = MutableStateFlow<String?>(CONVERSATION_ID)
+        val ownerEntered = CompletableDeferred<Unit>()
+        val releaseOwner = CompletableDeferred<Unit>()
+        val ownerJob = launch {
+            executionCoordinator.withAutomationConversationLock(CONVERSATION_ID) {
+                ownerEntered.complete(Unit)
+                releaseOwner.await()
+            }
+        }
+        ownerEntered.await()
         val assembler = ConversationUiStateAssembler(
             conversations = conversations,
             registry = registry,
             executionCoordinator = executionCoordinator,
-            currentConversationId = currentConversationId,
+            currentConversationId = MutableStateFlow(CONVERSATION_ID),
             scope = backgroundScope,
             projectionDispatcher = StandardTestDispatcher(testScheduler),
         )
@@ -210,7 +217,10 @@ class ConversationUiStateAssemblerTest {
         runCurrent()
 
         assertEquals(CONVERSATION_ID, assembler.loadedMessagesConversationId.value)
-        coVerify(exactly = 0) { conversations.fixStuckMessages(any()) }
+        coVerify(exactly = 0) { conversations.recoverConversationRuntime(any(), any()) }
+
+        releaseOwner.complete(Unit)
+        ownerJob.join()
     }
 
     @Test
@@ -241,12 +251,14 @@ class ConversationUiStateAssemblerTest {
         every { DebugLog.e(any(), any(), any()) } returns Unit
         try {
             val conversations = mockk<ConversationRepository>()
-            coEvery { conversations.ensureRunRecovery() } throws IllegalStateException("failed")
+            val executionCoordinator = ConversationExecutionCoordinator()
+            coEvery { conversations.recoverConversationRuntime(CONVERSATION_ID, any()) } throws
+                IllegalStateException("failed")
             val failedIds = mutableListOf<String>()
             val assembler = ConversationUiStateAssembler(
                 conversations = conversations,
                 registry = mockk(),
-                executionCoordinator = mockk(),
+                executionCoordinator = executionCoordinator,
                 currentConversationId = MutableStateFlow(CONVERSATION_ID),
                 scope = backgroundScope,
                 projectionDispatcher = StandardTestDispatcher(testScheduler),

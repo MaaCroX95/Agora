@@ -24,8 +24,18 @@ internal enum class LlamaGenerationStopReason(val nativeValue: String) {
     }
 }
 
+internal data class LlamaToolCall(
+    val index: Int,
+    val id: String?,
+    val name: String,
+    val arguments: String,
+)
+
 internal sealed interface LlamaGenerationEvent {
     data class Text(val value: String) : LlamaGenerationEvent
+    data class Thought(val value: String) : LlamaGenerationEvent
+    data class ToolCallUpdate(val call: LlamaToolCall) : LlamaGenerationEvent
+    data class ToolCallsCompleted(val calls: List<LlamaToolCall>) : LlamaGenerationEvent
     data class Completed(
         val reason: LlamaGenerationStopReason,
         val inputTokenCount: Int,
@@ -40,12 +50,58 @@ internal sealed interface LlamaGenerationEvent {
 }
 
 interface NativeChatCallback {
-    fun onToken(token: String): Boolean
+    fun onText(text: String): Boolean
+    fun onThought(thought: String): Boolean
+    fun onToolCall(index: Int, id: String, name: String, arguments: String): Boolean
+    fun onToolCallsComplete(): Boolean
     fun onDone(reason: String, inputTokenCount: Int, outputTokenCount: Int)
     fun onError(message: String, inputTokenCount: Int, outputTokenCount: Int)
 }
 
-class ChatTemplateMessage(val role: String, val content: String)
+class ChatTemplateToolCall(
+    val id: String,
+    val name: String,
+    val arguments: String,
+)
+
+class ChatTemplateMessage(
+    val role: String,
+    val content: String,
+    val toolCalls: Array<ChatTemplateToolCall> = emptyArray(),
+    val toolName: String = "",
+    val toolCallId: String = "",
+)
+
+class ChatTemplateTool(
+    val name: String,
+    val description: String,
+    val parameters: String,
+)
+
+class LlamaChatTemplateRequest(
+    val messages: Array<ChatTemplateMessage>,
+    val tools: Array<ChatTemplateTool>,
+    val addGenerationPrompt: Boolean,
+    val enableThinking: Boolean,
+)
+
+class ChatTemplateGrammarTrigger(
+    val type: Int,
+    val value: String,
+    val token: Int,
+)
+
+class LlamaChatTemplateResult(
+    val prompt: String,
+    val supportsTools: Boolean,
+    val grammar: String = "",
+    val grammarLazy: Boolean = false,
+    val generationPrompt: String = "",
+    val grammarTriggers: Array<ChatTemplateGrammarTrigger> = emptyArray(),
+    val preservedTokens: Array<String> = emptyArray(),
+    val format: Int = 0,
+    val parser: String = "",
+)
 
 class LlamaChatEngine(
     val modelPath: String,
@@ -70,24 +126,21 @@ class LlamaChatEngine(
     private external fun nativeChatGetTemplate(handle: Long): String?
     private external fun nativeChatApplyTemplate(
         handle: Long,
-        messages: Array<ChatTemplateMessage>,
-        addAss: Boolean,
-        enableThinking: Boolean,
-    ): String?
+        request: LlamaChatTemplateRequest,
+    ): LlamaChatTemplateResult?
     private external fun nativeChatLoadMmproj(handle: Long, mmprojPath: String): Boolean
     private external fun nativeChatUnloadMmproj(handle: Long)
     private external fun nativeChatHasMmproj(handle: Long): Boolean
     private external fun nativeChatGenerateWithImages(
-        handle: Long, prompt: String, imagePaths: Array<String>,
+        handle: Long, template: LlamaChatTemplateResult, imagePaths: Array<String>,
         temperature: Float, topP: Float, frequencyPenalty: Float, presencePenalty: Float,
         maxTokens: Int, callback: NativeChatCallback,
     ): Int
     private external fun nativeChatGenerate(
-        handle: Long, prompt: String, temperature: Float, topP: Float,
+        handle: Long, template: LlamaChatTemplateResult, temperature: Float, topP: Float,
         frequencyPenalty: Float, presencePenalty: Float, maxTokens: Int,
         callback: NativeChatCallback,
     ): Int
-    private external fun nativeChatReset(handle: Long)
     private external fun nativeChatFreeModel(handle: Long)
     private external fun nativeChatCancel(handle: Long)
 
@@ -127,17 +180,21 @@ class LlamaChatEngine(
 
     fun applyTemplate(
         messages: List<ChatTemplateMessage>,
+        tools: List<ChatTemplateTool> = emptyList(),
         addAss: Boolean = true,
         enableThinking: Boolean = true,
-    ): String? {
+    ): LlamaChatTemplateResult? {
         lock.readLock().lock()
         try {
             if (nativeHandle == 0L) return null
             return nativeChatApplyTemplate(
                 nativeHandle,
-                messages.toTypedArray(),
-                addAss,
-                enableThinking,
+                LlamaChatTemplateRequest(
+                    messages = messages.toTypedArray(),
+                    tools = tools.toTypedArray(),
+                    addGenerationPrompt = addAss,
+                    enableThinking = enableThinking,
+                ),
             )
         } finally {
             lock.readLock().unlock()
@@ -145,7 +202,7 @@ class LlamaChatEngine(
     }
 
     internal fun generate(
-        prompt: String,
+        template: LlamaChatTemplateResult,
         temperature: Float = 0.7f,
         topP: Float = 0.9f,
         frequencyPenalty: Float = 0f,
@@ -158,10 +215,42 @@ class LlamaChatEngine(
         }
 
         val terminalSignalled = AtomicBoolean(false)
+        val toolCalls = linkedMapOf<Int, LlamaToolCall>()
         val callback = object : NativeChatCallback {
-            override fun onToken(token: String): Boolean =
-                !terminalSignalled.get() &&
-                    trySendBlocking(LlamaGenerationEvent.Text(token)).isSuccess
+            override fun onText(text: String): Boolean =
+                !terminalSignalled.get() && text.isNotEmpty() &&
+                    trySendBlocking(LlamaGenerationEvent.Text(text)).isSuccess
+
+            override fun onThought(thought: String): Boolean =
+                !terminalSignalled.get() && thought.isNotEmpty() &&
+                    trySendBlocking(LlamaGenerationEvent.Thought(thought)).isSuccess
+
+            override fun onToolCall(
+                index: Int,
+                id: String,
+                name: String,
+                arguments: String,
+            ): Boolean {
+                if (terminalSignalled.get() || index < 0) return false
+                val previous = toolCalls[index]
+                val call = LlamaToolCall(
+                    index = index,
+                    id = id.takeIf(String::isNotBlank) ?: previous?.id,
+                    name = name.takeIf(String::isNotBlank) ?: previous?.name.orEmpty(),
+                    arguments = arguments.takeIf(String::isNotEmpty)
+                        ?: previous?.arguments.orEmpty(),
+                )
+                toolCalls[index] = call
+                return trySendBlocking(LlamaGenerationEvent.ToolCallUpdate(call)).isSuccess
+            }
+
+            override fun onToolCallsComplete(): Boolean {
+                if (terminalSignalled.get()) return false
+                if (toolCalls.isEmpty()) return true
+                return trySendBlocking(
+                    LlamaGenerationEvent.ToolCallsCompleted(toolCalls.toSortedMap().values.toList())
+                ).isSuccess
+            }
 
             override fun onDone(reason: String, inputTokenCount: Int, outputTokenCount: Int) {
                 if (!terminalSignalled.compareAndSet(false, true)) return
@@ -202,7 +291,7 @@ class LlamaChatEngine(
                 val handle = nativeHandle
                 if (handle != 0L) {
                     val result = nativeChatGenerate(
-                        handle, prompt, temperature, topP, frequencyPenalty, presencePenalty,
+                        handle, template, temperature, topP, frequencyPenalty, presencePenalty,
                         maxTokens, callback,
                     )
                     if (result < 0 && !terminalSignalled.get()) {
@@ -272,7 +361,7 @@ class LlamaChatEngine(
     }
 
     internal fun generateWithImages(
-        prompt: String,
+        template: LlamaChatTemplateResult,
         imagePaths: List<String>,
         temperature: Float = 0.7f,
         topP: Float = 0.9f,
@@ -286,10 +375,42 @@ class LlamaChatEngine(
         }
 
         val terminalSignalled = AtomicBoolean(false)
+        val toolCalls = linkedMapOf<Int, LlamaToolCall>()
         val callback = object : NativeChatCallback {
-            override fun onToken(token: String): Boolean =
-                !terminalSignalled.get() &&
-                    trySendBlocking(LlamaGenerationEvent.Text(token)).isSuccess
+            override fun onText(text: String): Boolean =
+                !terminalSignalled.get() && text.isNotEmpty() &&
+                    trySendBlocking(LlamaGenerationEvent.Text(text)).isSuccess
+
+            override fun onThought(thought: String): Boolean =
+                !terminalSignalled.get() && thought.isNotEmpty() &&
+                    trySendBlocking(LlamaGenerationEvent.Thought(thought)).isSuccess
+
+            override fun onToolCall(
+                index: Int,
+                id: String,
+                name: String,
+                arguments: String,
+            ): Boolean {
+                if (terminalSignalled.get() || index < 0) return false
+                val previous = toolCalls[index]
+                val call = LlamaToolCall(
+                    index = index,
+                    id = id.takeIf(String::isNotBlank) ?: previous?.id,
+                    name = name.takeIf(String::isNotBlank) ?: previous?.name.orEmpty(),
+                    arguments = arguments.takeIf(String::isNotEmpty)
+                        ?: previous?.arguments.orEmpty(),
+                )
+                toolCalls[index] = call
+                return trySendBlocking(LlamaGenerationEvent.ToolCallUpdate(call)).isSuccess
+            }
+
+            override fun onToolCallsComplete(): Boolean {
+                if (terminalSignalled.get()) return false
+                if (toolCalls.isEmpty()) return true
+                return trySendBlocking(
+                    LlamaGenerationEvent.ToolCallsCompleted(toolCalls.toSortedMap().values.toList())
+                ).isSuccess
+            }
 
             override fun onDone(reason: String, inputTokenCount: Int, outputTokenCount: Int) {
                 if (!terminalSignalled.compareAndSet(false, true)) return
@@ -327,7 +448,7 @@ class LlamaChatEngine(
                 val handle = nativeHandle
                 if (handle != 0L) {
                     val result = nativeChatGenerateWithImages(
-                        handle, prompt, imagePaths.toTypedArray(),
+                        handle, template, imagePaths.toTypedArray(),
                         temperature, topP, frequencyPenalty, presencePenalty,
                         maxTokens, callback,
                     )
@@ -363,17 +484,6 @@ class LlamaChatEngine(
             }
         } finally {
             lock.readLock().unlock()
-        }
-    }
-
-    fun resetContext() {
-        lock.writeLock().lock()
-        try {
-            if (nativeHandle != 0L) {
-                nativeChatReset(nativeHandle)
-            }
-        } finally {
-            lock.writeLock().unlock()
         }
     }
 

@@ -67,7 +67,10 @@
     <string name="settings_automation_desc">Tác vụ, vòng lặp và độ chính xác của lịch</string>
     <string name="automation_ai_tools">Truy cập tác vụ và vòng lặp</string>
     <string name="automation_ai_tools_desc">Cho phép mô hình tạo và quản lý tác vụ hoặc bắt đầu và dừng vòng lặp cuộc trò chuyện. Mặc định tắt.</string>
-    <string name="automation_scheduling">Lập lịch</string>
+    <string name="automation_background_execution">Thực thi trong nền</string>
+    <string name="automation_battery_optimization">Tối ưu hóa pin</string>
+    <string name="automation_battery_optimization_ignored_desc">Không tối ưu hóa; Android cho phép Agora chạy mà không bị tối ưu hóa pin</string>
+    <string name="automation_battery_optimization_active_desc">Đang tối ưu hóa; Android có thể giới hạn việc thực thi trong nền</string>
     <string name="automation_exact_execution">Thực thi chính xác</string>
     <string name="automation_exact_execution_on_desc">Dùng báo thức chính xác cho tác vụ và vòng lặp. Android vẫn có thể áp dụng giới hạn hệ thống.</string>
     <string name="automation_exact_execution_off_desc">Dùng báo thức không chính xác để tiết kiệm pin. Bật để yêu cầu quyền truy cập Báo thức và lời nhắc.</string>

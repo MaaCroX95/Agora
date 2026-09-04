@@ -7,10 +7,16 @@ import com.newoether.agora.data.local.ChatDao
 import com.newoether.agora.data.local.ChatDatabase
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.local.LoopEntity
+import com.newoether.agora.data.local.deleteSemanticModel
+import com.newoether.agora.data.local.invalidateSemanticModel
+import com.newoether.agora.data.local.semanticModelSnapshot
 import com.newoether.agora.data.local.TaskEntity
+import com.newoether.agora.data.repository.ConversationSettingsTransferCoordinator
 import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
@@ -72,6 +78,16 @@ internal fun sanitizeImportedConversation(
     }
 }
 
+internal fun embeddingModelSemanticsChanged(
+    before: EmbeddingModelConfig,
+    after: EmbeddingModelConfig,
+): Boolean = before.type != after.type || when (after.type) {
+    EmbeddingModelType.REMOTE ->
+        before.remoteModelName != after.remoteModelName ||
+            before.remoteBaseUrl != after.remoteBaseUrl
+    EmbeddingModelType.LOCAL -> before.localFilePath != after.localFilePath
+}
+
 class DataImporter(
     private val context: Context,
     private val database: ChatDatabase,
@@ -79,6 +95,7 @@ class DataImporter(
     private val settingsManager: SettingsManager,
     private val memoryManager: MemoryManager,
     private val skillManager: SkillManager,
+    private val conversationSettingsTransfers: ConversationSettingsTransferCoordinator,
 ) {
     enum class ImportStrategy { MERGE, REPLACE, SKIP }
 
@@ -91,10 +108,33 @@ class DataImporter(
     private val conversationGraphImporter = NativeConversationGraphImporter(
         database = database,
         chatDao = chatDao,
-        settingsManager = settingsManager,
         importJson = importJson,
         mediaRestorer = conversationMediaRestorer,
     )
+
+    private suspend fun reconcileImportedEmbeddingModels(
+        previousModels: List<EmbeddingModelConfig>,
+    ) {
+        val previousById = previousModels.associateBy(EmbeddingModelConfig::id)
+        val importedModelIds = settingsManager.embeddingModels.first().map(EmbeddingModelConfig::id)
+        val affectedModelIds = buildSet {
+            addAll(previousById.keys)
+            addAll(importedModelIds)
+        }
+        val updatedAt = System.currentTimeMillis()
+        affectedModelIds.forEach { modelId ->
+            EmbeddingCacheLocks.forModel(modelId).withLock {
+                val current = settingsManager.embeddingModels.first()
+                    .firstOrNull { it.id == modelId }
+                val previous = previousById[modelId]
+                when {
+                    current == null -> database.deleteSemanticModel(modelId)
+                    previous == null || embeddingModelSemanticsChanged(previous, current) ->
+                        database.invalidateSemanticModel(modelId, updatedAt)
+                }
+            }
+        }
+    }
 
     @Serializable
     data class ImportManifest(
@@ -117,6 +157,9 @@ class DataImporter(
     ) {
         val hasConversationGraph: Boolean
             get() = conversationCount > 0 || taskCount > 0 || loopCount > 0
+        val hasImportableData: Boolean
+            get() = hasConversationGraph || memoryCount > 0 || systemPromptCount > 0 ||
+                settingsPresent || apiKeysPresent
         val isSupportedVersion: Boolean
             get() = NativeBackupFormat.isSupported(manifest.version)
     }
@@ -276,24 +319,22 @@ class DataImporter(
         val temporary = File(context.filesDir, ".custom_font_import_${UUID.randomUUID()}.tmp")
         val target = File(context.filesDir, "custom_font_import_${UUID.randomUUID()}")
         try {
-            archive.stream(entry)?.use { input ->
-                temporary.outputStream().buffered().use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var total = 0L
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        total += count
-                        if (total > MAX_CUSTOM_FONT_BYTES) {
-                            throw IOException("Custom font exceeds the import size limit")
-                        }
-                        output.write(buffer, 0, count)
-                    }
-                }
-            } ?: return null
+            archive.copyTo(
+                name = entry,
+                target = temporary,
+                maxBytes = MAX_CUSTOM_FONT_BYTES,
+            ) ?: return null
             val displayName = com.newoether.agora.util.readFontName(temporary)
             if (!temporary.renameTo(target)) {
-                temporary.copyTo(target, overwrite = true)
+                temporary.inputStream().use { input ->
+                    NativeBackupArchive.copyStreamToFile(
+                        input = input,
+                        target = target,
+                        declaredSize = temporary.length(),
+                        maxBytes = MAX_CUSTOM_FONT_BYTES,
+                        sourceName = "custom font",
+                    )
+                }
                 temporary.delete()
             }
             return RestoredCustomFont(target.absolutePath, displayName)
@@ -350,10 +391,24 @@ class DataImporter(
                 }
 
                 val keysDecision = decisions[DataExporter.ExportCategory.API_KEYS]
+                val promptsDecision = decisions[DataExporter.ExportCategory.SYSTEM_PROMPTS]
+                val convDecision = decisions[DataExporter.ExportCategory.CONVERSATIONS]
+                val memDecision = decisions[DataExporter.ExportCategory.MEMORIES]
+                val settingsDecision = decisions[DataExporter.ExportCategory.SETTINGS]
                 val allowLegacySecrets =
                     manifest.version < NativeBackupFormat.CURRENT_VERSION &&
                         keysDecision != null &&
                         keysDecision != ImportStrategy.SKIP
+
+                opened.preflightImportResources(
+                    conversationsSelected = convDecision != null &&
+                        convDecision != ImportStrategy.SKIP,
+                    settingsSelected = settingsDecision != null &&
+                        settingsDecision != ImportStrategy.SKIP,
+                    archiveVersion = manifest.version,
+                    destinationRoot = context.filesDir,
+                    customFontLimitBytes = MAX_CUSTOM_FONT_BYTES,
+                )
 
                 // Import prompts before conversations/settings so every archived prompt reference
                 // can be resolved after MERGE ID collision handling.
@@ -361,7 +416,6 @@ class DataImporter(
                     availableIds = settingsManager.systemPrompts.first()
                         .mapTo(mutableSetOf()) { it.id },
                 )
-                val promptsDecision = decisions[DataExporter.ExportCategory.SYSTEM_PROMPTS]
                 if (promptsDecision != null && promptsDecision != ImportStrategy.SKIP) {
                     try {
                         promptImport = importSystemPrompts(opened, promptsDecision)
@@ -372,10 +426,11 @@ class DataImporter(
                     step()
                 }
 
-                val convDecision = decisions[DataExporter.ExportCategory.CONVERSATIONS]
                 if (convDecision != null && convDecision != ImportStrategy.SKIP) {
                     var restoredMedia: NativeConversationMediaRestorer.RestoredMedia? = null
+                    var graphCommitted = false
                     try {
+                        conversationSettingsTransfers.completePendingImport()
                         val media = conversationMediaRestorer.restoreConversationMedia(opened)
                         restoredMedia = media
                         val headers = opened.stream(NativeBackupFormat.CONVERSATIONS_ENTRY)
@@ -388,24 +443,44 @@ class DataImporter(
                                 )
                             }
                             ?: error("${NativeBackupFormat.CONVERSATIONS_ENTRY} is missing")
-                        conversationGraphImporter.importConversationGraph(
+                        val semanticSnapshot = semanticModelSnapshot(
+                            activeModelId = settingsManager.activeEmbeddingModelId.first(),
+                            configuredModelIds = settingsManager.embeddingModels.first().map { it.id },
+                        )
+                        val settingsTransferId = conversationGraphImporter.importConversationGraph(
                             archive = opened,
                             strategy = convDecision,
                             headers = headers,
                             restoredMedia = media,
                             archiveVersion = manifest.version,
+                            semanticSnapshot = semanticSnapshot,
                         )
+                        graphCommitted = true
                         conversationsImported = headers.conversations.size
                         tasksImported = headers.tasks.size
                         loopsImported = headers.loops.size
+                        try {
+                            conversationSettingsTransfers.completeImport(settingsTransferId)
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            errors += "Conversation settings: " +
+                                (error.localizedMessage ?: "Deferred until next startup")
+                        }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        if (!graphCommitted) {
+                            restoredMedia?.createdFiles?.forEach { runCatching { it.delete() } }
+                        }
+                        throw cancelled
                     } catch (error: Exception) {
-                        restoredMedia?.createdFiles?.forEach { runCatching { it.delete() } }
+                        if (!graphCommitted) {
+                            restoredMedia?.createdFiles?.forEach { runCatching { it.delete() } }
+                        }
                         errors += "Conversations: ${error.localizedMessage ?: "Unknown error"}"
                     }
                     step()
                 }
 
-                val memDecision = decisions[DataExporter.ExportCategory.MEMORIES]
                 if (memDecision != null && memDecision != ImportStrategy.SKIP) {
                     try {
                         val memNames = opened.names().filter { it.startsWith("memories/") }
@@ -482,10 +557,10 @@ class DataImporter(
                     step()
                 }
 
-                val settingsDecision = decisions[DataExporter.ExportCategory.SETTINGS]
                 if (settingsDecision != null && settingsDecision != ImportStrategy.SKIP) {
                     var restoredFont: RestoredCustomFont? = null
                     var fontApplied = false
+                    val previousEmbeddingModels = settingsManager.embeddingModels.first()
                     try {
                         val settingsObject = opened[NativeBackupFormat.SETTINGS_ENTRY]
                             ?.decodeToString()
@@ -544,6 +619,15 @@ class DataImporter(
                     } catch (error: Exception) {
                         if (!fontApplied) restoredFont?.path?.let(::File)?.delete()
                         errors += "Settings: ${error.localizedMessage ?: "Unknown error"}"
+                    } finally {
+                        withContext(NonCancellable) {
+                            runCatching {
+                                reconcileImportedEmbeddingModels(previousEmbeddingModels)
+                            }.exceptionOrNull()?.let { error ->
+                                errors += "Settings index: " +
+                                    (error.localizedMessage ?: "Could not refresh embeddings")
+                            }
+                        }
                     }
                     step()
                 }

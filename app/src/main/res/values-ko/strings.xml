@@ -564,7 +564,7 @@
     <string name="memory_create">만들기</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">사용 가능한 모델 가져오는 중...</string>
+    <string name="models_syncing">동기화 중...</string>
     <string name="snackbar_generating_title">제목 생성 중...</string>
     <string name="snackbar_title_generated">제목이 생성되었습니다.</string>
     <string name="snackbar_title_error">제목 생성 중 오류가 발생했습니다.</string>
@@ -665,6 +665,8 @@
     <string name="auto_cache_title">캐싱</string>
     <string name="auto_cache">새 메시지 자동 캐시</string>
     <string name="auto_cache_desc">선택한 임베딩 모델로 새 메시지를 자동으로 인덱싱합니다. 꺼져 있으면 수동으로 실행하기 전까지 메시지가 캐시되지 않습니다.</string>
+    <string name="show_uncached_notification">캐시되지 않은 메시지 알림 표시</string>
+    <string name="show_uncached_notification_desc">자동 캐시가 꺼져 있고 캐시되지 않은 메시지가 남아 있을 때 알림을 표시합니다.</string>
     <string name="cache_action">캐시</string>
     <string name="recache_action">다시 캐시</string>
     <string name="recache_confirm_title">모든 메시지 다시 캐시</string>
@@ -825,6 +827,9 @@
     <string name="export_button">내보내기</string>
     <string name="exporting_label">내보내는 중…</string>
     <string name="export_success">데이터를 성공적으로 내보냈습니다.</string>
+    <string name="attachment_unavailable">첨부 파일을 사용할 수 없음</string>
+    <string name="export_success_missing_resources">데이터를 내보냈지만 리소스 %1$d개를 사용할 수 없었습니다.</string>
+    <string name="auto_backup_missing_resources">백업이 완료되었지만 리소스 %1$d개를 사용할 수 없었습니다.</string>
 
     <string name="export_failed">내보내기 실패: %1$s</string>
     <string name="import_preview_title">데이터 가져오기</string>
@@ -833,9 +838,13 @@
     <string name="import_strategy_merge">병합</string>
     <string name="import_strategy_replace">교체</string>
     <string name="import_strategy_skip">건너뛰기</string>
+    <string name="external_import_replace_confirm_title">기존 대화를 교체할까요?</string>
+    <string name="external_import_replace_confirm_message">모든 기존 대화를 삭제하고 선택한 가져온 대화만 유지합니다.</string>
+    <string name="external_import_replace_confirm_button">대화 교체</string>
     <string name="import_api_keys_warning">이 백업에는 자격 증명 및 비밀 정보가 포함되어 있습니다. 평문으로 가져오므로 출처를 신뢰하는 경우에만 계속하세요.</string>
     <string name="import_button">가져오기</string>
     <string name="importing_label">가져오는 중…</string>
+    <string name="loading_label">불러오는 중…</string>
     <string name="import_success">가져오기 완료: %1$s</string>
     <string name="import_failed">가져오기 실패: %1$s</string>
     <string name="import_invalid_file">잘못된 .agora 파일입니다. 유효한 내보내기를 선택하세요.</string>
@@ -1130,44 +1139,46 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">개발자</string>
     <string name="settings_developer">개발자 옵션</string>
-    <string name="settings_developer_desc">진단, 프로토콜 검사기 및 테스트 도구</string>
+    <string name="settings_developer_desc">진단 캡처 및 로컬 Debug 모델 제어</string>
     <string name="developer_options_title">개발자 옵션</string>
-    <string name="developer_options_status_group">상태</string>
-    <string name="developer_options_enabled_desc">이 설치에서 활성화되어 있습니다. 끄면 임시 진단을 중지하고 삭제합니다.</string>
+    <string name="developer_options_features_group">기능</string>
+    <string name="developer_options_debug_model">디버그 모델</string>
+    <string name="developer_options_mode_description">끄면 캡처를 중지하고 보관된 진단 데이터를 삭제하며 Debug 모델을 비활성화합니다.</string>
+    <string name="developer_options_capture_description">자격 증명을 제거한 요청, 스트림 및 런타임 진단을 기록하고 내보냅니다.</string>
+    <string name="developer_options_debug_model_description">로컬 결정론적 Debug 모델을 채팅 모델 선택기에만 추가합니다.</string>
+    <string name="developer_options_capture_summary">요약</string>
+    <string name="developer_options_capture_raw">원본</string>
+    <string name="developer_options_capture_play">캡처 시작 또는 재개</string>
+    <string name="developer_options_capture_pause">캡처 일시중지</string>
+    <string name="developer_options_capture_scroll_to_top">맨 위로 스크롤</string>
+    <string name="developer_options_capture_scroll_to_bottom">맨 아래로 스크롤</string>
+    <string name="developer_options_capture_more_actions">캡처 작업</string>
+    <string name="developer_options_capture_clear_message">캡처된 이벤트와 카운터를 지울까요? 캡처 상태와 세션은 유지됩니다.</string>
+    <string name="developer_options_capture_clear_confirm">지우기</string>
+    <string name="developer_options_capture_export_redacted_json">편집된 JSON 내보내기</string>
+    <string name="developer_options_capture_export_summary_text">요약 텍스트 내보내기</string>
+    <string name="developer_options_capture_empty">캡처된 이벤트 없음</string>
+    <string name="developer_options_capture_state_idle">대기 중</string>
+    <string name="developer_options_capture_state_running">실행 중</string>
+    <string name="developer_options_capture_state_paused">일시중지됨</string>
+    <string name="developer_options_capture_status_summary">%1$s · 이벤트 %2$d개 · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">캡처 미완료 · 64 MiB 제한에 도달함</string>
+    <string name="developer_options_capture_counters">삭제됨 %1$d · 축출됨 %2$d · 잘림 %3$d</string>
+    <string name="developer_options_capture_session">세션 %1$s · 다음 #%2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · 본문 문자=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">HTTP 응답 · 코드=%1$d · 문자=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">전송 줄 %1$d · 문자=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">%1$s 파싱됨</string>
     <string name="developer_options_taps_remaining">개발자 옵션을 사용하려면 %1$d번 더 탭하세요.</string>
     <string name="developer_options_enabled_message">개발자 옵션이 활성화되었습니다.</string>
     <string name="developer_options_already_enabled_message">개발자 옵션이 이미 활성화되어 있습니다.</string>
-    <string name="developer_options_capture_group">진단</string>
     <string name="developer_options_capture">진단 캡처</string>
-    <string name="developer_options_capture_off_desc">활성 진단 세션이 없습니다. 명시적으로 시작할 때까지 캡처는 꺼져 있습니다.</string>
 
-    <string name="developer_options_test_lab_group">테스트</string>
-    <string name="developer_options_test_lab">테스트 랩</string>
-    <string name="developer_options_test_lab_desc">공급자와 무관한 검사 및 안전한 프로토콜 픽스처가 여기에 표시됩니다.</string>
     <string name="developer_options_disable_title">개발자 옵션을 끄시겠습니까?</string>
-    <string name="developer_options_disable_message">활성 캡처를 중지하고 임시 진단 데이터를 삭제합니다.</string>
+    <string name="developer_options_disable_message">캡처를 중지하고 진단 데이터를 삭제하며 디버그 모델을 끕니다.</string>
     <string name="developer_options_disable_confirm">끄기</string>
-    <string name="developer_options_capture_on_desc">메타데이터 이벤트 %1$d개 · 삭제 %2$d개. 메시지 내용은 캡처되지 않습니다.</string>
-    <string name="developer_options_capture_stopped_desc">캡처가 중지되었습니다. 이벤트 %1$d개 유지 · %2$d개 삭제.</string>
-    <string name="developer_options_clear_diagnostics">진단 세션 지우기</string>
-    <string name="developer_options_clear_diagnostics_desc">캡처를 중지하고 메모리의 모든 진단 이벤트를 지웁니다.</string>
-    <string name="developer_options_timeline_group">메타데이터 타임라인</string>
-    <string name="developer_options_timeline_empty">캡처를 시작한 다음 작업을 실행하면 순서가 지정된 런타임 및 HTTP 메타데이터가 표시됩니다.</string>
-    <string name="developer_options_payload_capture">프로토콜 페이로드 캡처</string>
-    <string name="developer_options_payload_capture_desc">정리된 요청, 응답 및 SSE 구조를 캡처합니다. 모드를 바꾸면 새 세션이 시작됩니다.</string>
-    <string name="developer_options_sensitive_capture">민감한 콘텐츠</string>
-    <string name="developer_options_sensitive_capture_desc">이 세션에 메시지 및 도구 콘텐츠를 포함합니다. 인증 정보는 항상 삭제됩니다.</string>
-    <string name="developer_options_sensitive_capture_title">민감한 콘텐츠를 캡처할까요?</string>
-    <string name="developer_options_sensitive_capture_message">비공개 대화 및 도구 데이터가 포함될 수 있는 새 메모리 세션을 시작합니다. 캡처를 중지하거나 앱 프로세스를 다시 시작하면 꺼집니다. 인증 정보는 삭제됩니다.</string>
-    <string name="developer_options_sensitive_capture_confirm">민감한 캡처 시작</string>
-    <string name="developer_options_capture_redacted_desc">이벤트 %1$d개 · 삭제 %2$d개. 콘텐츠가 삭제된 페이로드 구조를 캡처하고 있습니다.</string>
-    <string name="developer_options_capture_sensitive_desc">이벤트 %1$d개 · 삭제 %2$d개. 민감한 콘텐츠를 캡처 중이며 인증 정보는 삭제됩니다.</string>
-    <string name="developer_options_inspector_group">검사기</string>
-    <string name="developer_options_inspector">대화 검사기</string>
-    <string name="developer_options_inspector_empty">선택된 대화가 없습니다. 검사하기 전에 대화를 여세요.</string>
-    <string name="developer_options_export_group">내보내기</string>
-    <string name="developer_options_export">진단 번들 내보내기</string>
-    <string name="developer_options_export_desc">제한된 JSON 번들을 공유합니다. 민감한 콘텐츠는 삭제되며 파일은 자동 업로드되지 않습니다.</string>
+    <string name="developer_options_clear_diagnostics">진단 세션을 지울까요?</string>
+    <string name="developer_options_clear_diagnostics_action">진단 세션 지우기</string>
     <string name="developer_options_export_share_title">Agora 진단 번들 공유</string>
     <string name="developer_options_export_failed">진단 번들을 만들 수 없습니다.</string>
     <string name="responses_api">Responses API</string>
@@ -1219,4 +1230,12 @@
     <string name="tool_edit_skill">스킬 편집</string>
     <string name="tool_delete_skill">스킬 삭제</string>
     <string name="tool_read_file_truncated">일부 콘텐츠 표시됨 · %1$d바이트부터 계속</string>
+    <string name="low_context_mode">낮은 컨텍스트 모드</string>
+    <string name="low_context_mode_default_desc">낮은 컨텍스트 모드를 기본으로 사용</string>
+    <string name="learn_more">자세히 알아보기...</string>
+    <string name="local_model_limitations_title">로컬 모델의 제한</string>
+    <string name="local_model_limitations_body">로컬 모델은 모바일 기기에서 사용할 수 있는 메모리의 제약을 받습니다. 컨텍스트 크기는 주요 제한 중 하나입니다. 컨텍스트에는 보통 시스템 프롬프트, 도구 또는 함수 정의, 스킬이 포함됩니다. 초기 컨텍스트 사용량을 줄이려면 모델 선택기 옆의 점 3개 메뉴를 열고 낮은 컨텍스트 모드를 사용하세요.</string>
+    <string name="delete_conversation_title">대화를 삭제할까요?</string>
+    <string name="delete_conversation_from_message_confirm">이 메시지를 삭제하면 전체 대화가 삭제됩니다. 이 작업은 실행 취소할 수 없습니다.</string>
+    <string name="composer_clear_failed">메시지는 전송되었지만 초안을 지우지 못했습니다.</string>
 </resources>

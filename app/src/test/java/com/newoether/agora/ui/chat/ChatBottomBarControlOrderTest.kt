@@ -2,6 +2,7 @@ package com.newoether.agora.ui.chat
 
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -31,6 +32,111 @@ class ChatBottomBarControlOrderTest {
         assertTrue("OpenAI Search must immediately follow Service Tier", source.startsWith(nativeSearchCondition, nextControlStart))
         assertTrue("OpenAI Search must remain before generic Web Search", nativeSearchStart < genericSearchStart)
     }
+
+    @Test
+    fun `Low Context Mode disables only capability controls`() {
+        val source = mainSource("com/newoether/agora/ui/chat/bottombar/ChatBottomBar.kt")
+        val lowContextCondition = "if (showLowContextMode)"
+        val lowContextStart = source.indexOf(lowContextCondition)
+        val lowContextBodyStart = source.indexOf('{', startIndex = lowContextStart)
+        val lowContextEnd = source.matchingBraceIndex(lowContextBodyStart)
+        val lowContextItem = source.substring(lowContextStart, lowContextEnd + 1)
+        val capabilitySection = source
+            .substringAfter("val isGemini")
+            .substringBefore("Text(stringResource(R.string.context_compact))")
+        val thinkingSection = source
+            .substringAfter("Text(stringResource(R.string.thinking))")
+            .substringBefore("val isGemini")
+        val compactAndAdvancedSection = source
+            .substringAfter("Text(stringResource(R.string.context_compact))")
+
+        assertEquals(1, source.countOccurrences(lowContextCondition))
+        assertTrue(lowContextItem.contains("R.string.low_context_mode"))
+        assertTrue(lowContextItem.contains("checked = lowContextModeEnabled"))
+        assertTrue(lowContextItem.contains("onCheckedChange = onLowContextModeToggle"))
+        assertTrue(source.contains("val capabilityControlsEnabled = !lowContextModeEnabled"))
+        assertEquals(11, capabilitySection.countOccurrences("enabled = capabilityControlsEnabled"))
+        assertTrue(capabilitySection.contains("NativeSearchMenuItem("))
+        assertTrue(capabilitySection.contains("if (showWebSearch)"))
+        assertTrue(capabilitySection.contains("if (showShell)"))
+        assertFalse(thinkingSection.contains("capabilityControlsEnabled"))
+        assertFalse(compactAndAdvancedSection.contains("capabilityControlsEnabled"))
+        assertTrue(compactAndAdvancedSection.contains("enabled = canCompact && !isCompacting"))
+        assertTrue(compactAndAdvancedSection.contains("R.string.advanced_settings"))
+    }
+
+    @Test
+    fun `System Prompt and Local Provider default use their canonical enabled state`() {
+        val topBar = mainSource("com/newoether/agora/ui/chat/ChatTopBar.kt")
+        val chatApp = mainSource("com/newoether/agora/ui/chat/ChatApp.kt")
+        val settings = mainSource(
+            "com/newoether/agora/ui/settings/SettingsProviderDetailPage.kt",
+        )
+        val systemPromptItem = topBar
+            .substringAfter("Text(stringResource(R.string.system_prompt))")
+            .substringBefore("Text(stringResource(R.string.conversation_fork_menu))")
+        val lowContextSetting = settings
+            .substringAfter("value = localLowContextModeEnabled")
+            .substringBefore("LocalModelIdleRetentionSlider(")
+
+        assertTrue(topBar.contains("systemPromptEnabled: Boolean = true"))
+        assertTrue(systemPromptItem.contains("enabled = systemPromptEnabled"))
+        assertTrue(chatApp.contains(
+            "systemPromptEnabled = !conversationControls.lowContextModeEnabled"
+        ))
+        assertTrue(settings.contains(
+            "viewModel.settings.localLowContextModeEnabled.collectAsState()"
+        ))
+        assertTrue(lowContextSetting.contains(
+            "viewModel.settings::setLocalLowContextModeEnabled"
+        ))
+        assertTrue(lowContextSetting.contains("R.string.low_context_mode"))
+        assertTrue(lowContextSetting.contains("R.string.low_context_mode_default_desc"))
+        assertTrue(lowContextSetting.contains("checked = localLowContextModeEnabled"))
+    }
+    @Test
+    fun `System Prompt create action stays left and uses the default template`() {
+        val dialogs = mainSource("com/newoether/agora/ui/chat/ChatDialogs.kt")
+        val host = mainSource("com/newoether/agora/ui/chat/ChatAppDialogHost.kt")
+        val actions = dialogs
+            .substringAfter("internal fun ChatSystemPromptDialog(")
+            .substringBefore("internal fun ChatAdvancedSettingsDialog(")
+            .substringAfter("confirmButton = {")
+        val create = actions.indexOf("TextButton(onClick = onCreate)")
+        val flexible = actions.indexOf("Spacer(modifier = Modifier.weight(1f))")
+        val cancel = actions.indexOf("Text(stringResource(R.string.cancel))")
+        val fixed = actions.indexOf("Spacer(modifier = Modifier.width(8.dp))")
+        val save = actions.indexOf("Text(stringResource(R.string.save))")
+        assertTrue(create >= 0 && create < flexible && flexible < cancel)
+        assertTrue(cancel < fixed && fixed < save)
+        assertTrue(host.contains(
+            "onCreate = { promptDraft = DefaultSystemPrompt.create() }",
+        ))
+        assertTrue(host.contains("isNew = true"))
+        assertTrue(host.contains("addSystemPromptAndAwait("))
+    }
+
+    @Test
+    fun `Top Bar and Bottom Bar share canonical context projection usage`() {
+        val chatApp = mainSource("com/newoether/agora/ui/chat/ChatApp.kt")
+        val chatViewModel = mainSource("com/newoether/agora/viewmodel/ChatViewModel.kt")
+        val conversationUi = mainSource(
+            "com/newoether/agora/viewmodel/ConversationUiStateAssembler.kt",
+        )
+
+        assertEquals(2, chatApp.countOccurrences("contextUsage.estimatedTokenCount"))
+        assertTrue(chatApp.contains("totalTokens = contextUsage.estimatedTokenCount"))
+        assertTrue(chatApp.contains(
+            "contextEstimatedTokens = contextUsage.estimatedTokenCount"
+        ))
+        assertFalse(chatApp.contains("viewModel.totalTokens.collectAsState()"))
+        assertFalse(chatViewModel.contains("conversationUi.totalTokens"))
+        assertFalse(conversationUi.contains("val totalTokens: StateFlow<Int>"))
+        assertFalse(conversationUi.contains("sumOf { it.tokenCount }"))
+    }
+
+    private fun mainSource(relativePath: String): String =
+        File(locateMainSourceRoot(), relativePath).readText()
 
     private fun String.matchingBraceIndex(openBraceIndex: Int): Int {
         require(openBraceIndex >= 0) { "Opening brace was not found" }

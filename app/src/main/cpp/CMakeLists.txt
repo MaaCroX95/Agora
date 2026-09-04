@@ -18,11 +18,34 @@ set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "")
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "")
 set(LLAMA_BUILD_SERVER OFF CACHE BOOL "")
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "")
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+set(GGML_BACKEND_DL ON CACHE BOOL "" FORCE)
+set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
+set(GGML_CPU_KLEIDIAI OFF CACHE BOOL "" FORCE)
+set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(${LLAMA_CPP_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama)
 add_subdirectory(${LLAMA_CPP_DIR}/tools/mtmd ${CMAKE_CURRENT_BINARY_DIR}/mtmd)
+
+set(AGORA_ANDROID_CPU_BACKENDS
+    ggml-cpu-android_armv8.0_1
+    ggml-cpu-android_armv8.2_1
+    ggml-cpu-android_armv8.2_2
+    ggml-cpu-android_armv8.6_1
+    ggml-cpu-android_armv9.0_1
+    ggml-cpu-android_armv9.2_1
+    ggml-cpu-android_armv9.2_2
+)
+foreach(backend IN LISTS AGORA_ANDROID_CPU_BACKENDS)
+    if(NOT TARGET ${backend})
+        message(FATAL_ERROR "Required Android CPU backend target is missing: ${backend}")
+    endif()
+    set_target_properties(${backend} PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}
+    )
+endforeach()
 
 foreach(cli llama-mtmd-cli llama-mtmd-debug
          llama-llava-cli llama-gemma3-cli llama-minicpmv-cli llama-qwen2vl-cli)

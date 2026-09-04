@@ -564,7 +564,7 @@
     <string name="memory_create">Erstellen</string>
 
     <!-- Snackbar Messages -->
-    <string name="snackbar_fetching_models">Verfügbare Modelle werden abgerufen...</string>
+    <string name="models_syncing">Synchronisierung...</string>
     <string name="snackbar_generating_title">Titel wird generiert...</string>
     <string name="snackbar_title_generated">Titel generiert.</string>
     <string name="snackbar_title_error">Fehler bei der Titelgenerierung.</string>
@@ -665,6 +665,8 @@
     <string name="auto_cache_title">Zwischenspeicherung</string>
     <string name="auto_cache">Neue Nachrichten automatisch zwischenspeichern</string>
     <string name="auto_cache_desc">Indexiert neue Nachrichten automatisch mit dem ausgewählten Embedding-Modell. Wenn deaktiviert, werden Nachrichten erst nach manueller Auslösung zwischengespeichert.</string>
+    <string name="show_uncached_notification">Benachrichtigung für nicht zwischengespeicherte Nachrichten anzeigen</string>
+    <string name="show_uncached_notification_desc">Zeigt eine Erinnerung an, wenn das automatische Zwischenspeichern deaktiviert ist und Nachrichten nicht zwischengespeichert sind</string>
     <string name="cache_action">Cache</string>
     <string name="recache_action">Neu zwischenspeichern</string>
     <string name="recache_confirm_title">Alle Nachrichten neu zwischenspeichern</string>
@@ -825,6 +827,9 @@
     <string name="export_button">Exportieren</string>
     <string name="exporting_label">Exportieren…</string>
     <string name="export_success">Daten erfolgreich exportiert.</string>
+    <string name="attachment_unavailable">Anhang nicht verfügbar</string>
+    <string name="export_success_missing_resources">Daten wurden exportiert, aber %1$d Ressourcen waren nicht verfügbar.</string>
+    <string name="auto_backup_missing_resources">Sicherung abgeschlossen, aber %1$d Ressourcen waren nicht verfügbar.</string>
 
     <string name="export_failed">Export fehlgeschlagen: %1$s</string>
     <string name="import_preview_title">Daten importieren</string>
@@ -833,9 +838,13 @@
     <string name="import_strategy_merge">Zusammenführen</string>
     <string name="import_strategy_replace">Ersetzen</string>
     <string name="import_strategy_skip">Überspringen</string>
+    <string name="external_import_replace_confirm_title">Vorhandene Unterhaltungen ersetzen?</string>
+    <string name="external_import_replace_confirm_message">Dadurch werden alle vorhandenen Unterhaltungen gelöscht und nur die ausgewählten importierten Unterhaltungen behalten.</string>
+    <string name="external_import_replace_confirm_button">Unterhaltungen ersetzen</string>
     <string name="import_api_keys_warning">Diese Sicherung enthält Zugangsdaten und Geheimnisse. Sie werden im Klartext importiert. Fahre nur fort, wenn du der Quelle vertraust.</string>
     <string name="import_button">Importieren</string>
     <string name="importing_label">Importieren…</string>
+    <string name="loading_label">Wird geladen…</string>
     <string name="import_success">Import abgeschlossen: %1$s</string>
     <string name="import_failed">Import fehlgeschlagen: %1$s</string>
     <string name="import_invalid_file">Ungültige .agora-Datei. Bitte wähle einen gültigen Export.</string>
@@ -1130,44 +1139,46 @@
     <!-- Developer Options -->
     <string name="settings_group_developer">Entwickler</string>
     <string name="settings_developer">Entwickleroptionen</string>
-    <string name="settings_developer_desc">Diagnosen, Protokollinspektoren und Testwerkzeuge</string>
+    <string name="settings_developer_desc">Diagnoseaufzeichnung und Steuerung des lokalen Debug-Modells</string>
     <string name="developer_options_title">Entwickleroptionen</string>
-    <string name="developer_options_status_group">Status</string>
-    <string name="developer_options_enabled_desc">Für diese Installation aktiviert. Beim Ausschalten werden temporäre Diagnosen beendet und gelöscht.</string>
+    <string name="developer_options_features_group">Funktionen</string>
+    <string name="developer_options_debug_model">Debug-Modell</string>
+    <string name="developer_options_mode_description">Beim Ausschalten wird die Aufzeichnung beendet, gespeicherte Diagnose wird gelöscht und das Debug-Modell deaktiviert.</string>
+    <string name="developer_options_capture_description">Anfrage-, Stream- und Laufzeitdiagnose ohne Zugangsdaten aufzeichnen und anschließend exportieren.</string>
+    <string name="developer_options_debug_model_description">Das lokale deterministische Debug-Modell nur zur Modellauswahl im Chat hinzufügen.</string>
+    <string name="developer_options_capture_summary">Zusammenfassung</string>
+    <string name="developer_options_capture_raw">Rohdaten</string>
+    <string name="developer_options_capture_play">Aufzeichnung starten oder fortsetzen</string>
+    <string name="developer_options_capture_pause">Aufzeichnung pausieren</string>
+    <string name="developer_options_capture_scroll_to_top">Nach oben scrollen</string>
+    <string name="developer_options_capture_scroll_to_bottom">Nach unten scrollen</string>
+    <string name="developer_options_capture_more_actions">Aufzeichnungsaktionen</string>
+    <string name="developer_options_capture_clear_message">Aufgezeichnete Ereignisse und Zähler löschen? Aufzeichnungsstatus und Sitzung bleiben erhalten.</string>
+    <string name="developer_options_capture_clear_confirm">Löschen</string>
+    <string name="developer_options_capture_export_redacted_json">Bereinigtes JSON exportieren</string>
+    <string name="developer_options_capture_export_summary_text">Zusammenfassungstext exportieren</string>
+    <string name="developer_options_capture_empty">Keine aufgezeichneten Ereignisse</string>
+    <string name="developer_options_capture_state_idle">Inaktiv</string>
+    <string name="developer_options_capture_state_running">Läuft</string>
+    <string name="developer_options_capture_state_paused">Pausiert</string>
+    <string name="developer_options_capture_status_summary">%1$s · %2$d Ereignisse · %3$s</string>
+    <string name="developer_options_capture_capacity_incomplete">Aufzeichnung unvollständig · 64-MiB-Limit erreicht</string>
+    <string name="developer_options_capture_counters">Verworfen %1$d · Entfernt %2$d · Gekürzt %3$d</string>
+    <string name="developer_options_capture_session">Sitzung %1$s · nächste Nr. %2$d</string>
+    <string name="developer_options_capture_http_request_summary">HTTP %1$s · Textzeichen=%2$d</string>
+    <string name="developer_options_capture_http_response_summary">HTTP-Antwort · Code=%1$d · Zeichen=%2$d</string>
+    <string name="developer_options_capture_wire_line_summary">Übertragungszeile %1$d · Zeichen=%2$d</string>
+    <string name="developer_options_capture_parsed_event_summary">%1$s verarbeitet</string>
     <string name="developer_options_taps_remaining">Noch %1$d-mal tippen, um die Entwickleroptionen zu aktivieren.</string>
     <string name="developer_options_enabled_message">Entwickleroptionen wurden aktiviert.</string>
     <string name="developer_options_already_enabled_message">Entwickleroptionen sind bereits aktiviert.</string>
-    <string name="developer_options_capture_group">Diagnosen</string>
     <string name="developer_options_capture">Diagnoseaufzeichnung</string>
-    <string name="developer_options_capture_off_desc">Keine Diagnosesitzung ist aktiv. Die Aufzeichnung bleibt aus, bis sie ausdrücklich gestartet wird.</string>
 
-    <string name="developer_options_test_lab_group">Tests</string>
-    <string name="developer_options_test_lab">Testlabor</string>
-    <string name="developer_options_test_lab_desc">Anbieterunabhängige Prüfungen und sichere Protokollbeispiele werden hier angezeigt.</string>
     <string name="developer_options_disable_title">Entwickleroptionen ausschalten?</string>
-    <string name="developer_options_disable_message">Dadurch wird die aktive Aufzeichnung beendet und temporäre Diagnosedaten werden gelöscht.</string>
+    <string name="developer_options_disable_message">Dadurch wird die Aufzeichnung beendet, die Diagnosedaten werden gelöscht und das Debug-Modell wird deaktiviert.</string>
     <string name="developer_options_disable_confirm">Ausschalten</string>
-    <string name="developer_options_capture_on_desc">%1$d Metadatenereignisse · %2$d verworfen. Nachrichteninhalte werden nicht erfasst.</string>
-    <string name="developer_options_capture_stopped_desc">Aufzeichnung beendet. %1$d Ereignisse behalten · %2$d verworfen.</string>
-    <string name="developer_options_clear_diagnostics">Diagnosesitzung löschen</string>
-    <string name="developer_options_clear_diagnostics_desc">Beendet die Aufzeichnung und löscht alle Diagnoseereignisse im Speicher.</string>
-    <string name="developer_options_timeline_group">Metadaten-Zeitleiste</string>
-    <string name="developer_options_timeline_empty">Starten Sie die Aufzeichnung und führen Sie einen Vorgang aus, um geordnete Laufzeit- und HTTP-Metadaten zu sehen.</string>
-    <string name="developer_options_payload_capture">Protokollnutzdaten erfassen</string>
-    <string name="developer_options_payload_capture_desc">Bereinigte Anfrage-, Antwort- und SSE-Strukturen erfassen. Ein Moduswechsel startet eine neue Sitzung.</string>
-    <string name="developer_options_sensitive_capture">Vertrauliche Inhalte</string>
-    <string name="developer_options_sensitive_capture_desc">Nachrichten- und Werkzeuginhalte in dieser Sitzung einschließen. Anmeldedaten bleiben immer geschwärzt.</string>
-    <string name="developer_options_sensitive_capture_title">Vertrauliche Inhalte erfassen?</string>
-    <string name="developer_options_sensitive_capture_message">Dies startet eine neue Speichersitzung, die private Unterhaltungs- und Werkzeugdaten enthalten kann. Sie wird beim Beenden der Aufzeichnung oder beim Neustart des App-Prozesses deaktiviert. Anmeldedaten bleiben geschwärzt.</string>
-    <string name="developer_options_sensitive_capture_confirm">Vertrauliche Aufzeichnung starten</string>
-    <string name="developer_options_capture_redacted_desc">%1$d Ereignisse · %2$d verworfen. Nutzdatenstrukturen werden mit geschwärzten Inhalten erfasst.</string>
-    <string name="developer_options_capture_sensitive_desc">%1$d Ereignisse · %2$d verworfen. Vertrauliche Inhalte werden erfasst; Anmeldedaten bleiben geschwärzt.</string>
-    <string name="developer_options_inspector_group">Inspektoren</string>
-    <string name="developer_options_inspector">Unterhaltungsinspektor</string>
-    <string name="developer_options_inspector_empty">Keine Unterhaltung ausgewählt. Öffnen Sie vor der Prüfung eine Unterhaltung.</string>
-    <string name="developer_options_export_group">Export</string>
-    <string name="developer_options_export">Diagnosepaket exportieren</string>
-    <string name="developer_options_export_desc">Gibt ein begrenztes JSON-Paket frei. Vertrauliche Inhalte werden geschwärzt und die Datei wird nie automatisch hochgeladen.</string>
+    <string name="developer_options_clear_diagnostics">Diagnosesitzung löschen?</string>
+    <string name="developer_options_clear_diagnostics_action">Diagnosesitzung löschen</string>
     <string name="developer_options_export_share_title">Agora-Diagnosepaket teilen</string>
     <string name="developer_options_export_failed">Das Diagnosepaket konnte nicht erstellt werden.</string>
     <string name="responses_api">Responses API</string>
@@ -1219,4 +1230,12 @@
     <string name="tool_edit_skill">Skill bearbeiten</string>
     <string name="tool_delete_skill">Skill löschen</string>
     <string name="tool_read_file_truncated">Teilinhalt angezeigt · bei Byte %1$d fortfahren</string>
+    <string name="low_context_mode">Modus mit kleinem Kontext</string>
+    <string name="low_context_mode_default_desc">Modus mit kleinem Kontext standardmäßig aktivieren</string>
+    <string name="learn_more">Mehr erfahren...</string>
+    <string name="local_model_limitations_title">Einschränkungen lokaler Modelle</string>
+    <string name="local_model_limitations_body">Lokale Modelle sind durch den auf Mobilgeräten verfügbaren Arbeitsspeicher begrenzt. Die Kontextgröße ist eine der wichtigsten Einschränkungen. Der Kontext enthält häufig den System-Prompt, Werkzeug- oder Funktionsdefinitionen und Skills. Um den anfänglichen Kontextverbrauch zu verringern, öffnen Sie das Drei-Punkte-Menü neben der Modellauswahl und aktivieren Sie den Modus mit kleinem Kontext.</string>
+    <string name="delete_conversation_title">Unterhaltung löschen?</string>
+    <string name="delete_conversation_from_message_confirm">Durch das Löschen dieser Nachricht wird die gesamte Unterhaltung entfernt. Diese Aktion kann nicht rückgängig gemacht werden.</string>
+    <string name="composer_clear_failed">Nachricht gesendet, aber der Entwurf konnte nicht gelöscht werden.</string>
 </resources>

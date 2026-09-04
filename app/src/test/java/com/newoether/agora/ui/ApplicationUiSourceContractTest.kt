@@ -137,7 +137,7 @@ class ApplicationUiSourceContractTest {
         assertTrue(source.contains("eraseColor(Color.WHITE)"))
         assertEquals(
             2,
-            Regex("val bitmap = createPageBitmap\\(scaledWidth, scaledHeight\\)")
+            Regex("bitmap = createPageBitmap\\(width, height\\)")
                 .findAll(source)
                 .count(),
         )
@@ -152,9 +152,14 @@ class ApplicationUiSourceContractTest {
             2,
             Regex("Bitmap\\.CompressFormat\\.JPEG, 80").findAll(source).count(),
         )
-        assertTrue(source.contains("for (i in selectedPages.sorted())"))
-        assertTrue(source.contains("onProgress?.invoke(i + 1, effectiveTotal)"))
-        assertTrue(source.contains("paths.forEach { runCatching { File(it).delete() } }"))
+        assertTrue(source.contains("for (index in selectedPages.sorted())"))
+        assertTrue(source.contains("onProgress?.invoke(index + 1, effectiveTotal)"))
+        assertEquals(4, Regex("paths\\.forEach \\{ File\\(it\\)\\.delete\\(\\) \\}")
+            .findAll(source).count())
+        assertTrue(source.contains(
+            "): List<String> = renderAllPages(context, uri.toString(), maxPages, onProgress)",
+        ))
+        assertTrue(source.contains("val descriptor = openDescriptor(context, source) ?: return emptyList()"))
     }
 
     @Test
@@ -185,7 +190,7 @@ class ApplicationUiSourceContractTest {
     }
 
     @Test
-    fun `chat bottom dropdowns match the user message twenty four dp icon size`() {
+    fun `chat bottom dropdowns keep twenty four dp icons and adaptive provider color`() {
         val attachment = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/chat/bottombar/AttachmentAddMenu.kt",
         )
@@ -203,6 +208,10 @@ class ApplicationUiSourceContractTest {
         assertTrue(attachment.contains("CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp"))
         assertTrue(bottomBar.contains("CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp"))
         assertTrue(components.contains("Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp)"))
+        assertTrue(bottomBar.contains("ColorFilter.tint(LocalContentColor.current)"))
+        assertFalse(bottomBar.contains("ColorFilter.tint(Color.White)"))
+        assertTrue(components.contains("tint = LocalContentColor.current"))
+        assertFalse(components.contains("tint = Color.White"))
         assertTrue(attachment.contains("Icons.Default.Add"))
         assertTrue(attachment.contains("modifier = Modifier.size(16.dp)"))
         assertTrue(bottomBar.contains("Icons.Default.MoreVert"))
@@ -354,6 +363,20 @@ class ApplicationUiSourceContractTest {
         assertTrue(editFocus.contains("state.scrollToItem("))
         assertTrue(editFocus.contains("state.smoothSeekToItem("))
         assertTrue(scrollActor.contains("scroll(MutatePriority.Default)"))
+    }
+
+    @Test
+    fun `user edit size owner includes the branch selector`() {
+        val user = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/chat/message/UserMessageBubble.kt",
+        )
+        val stableBlock = user
+            .substringAfter("Column(\n        horizontalAlignment = Alignment.End,")
+            .substringBefore("DropdownMenu(")
+
+        assertEquals(1, Regex("Modifier\\.animateContentSize").findAll(user).count())
+        assertTrue(stableBlock.contains("Modifier.animateContentSize"))
+        assertTrue(user.substringAfter(stableBlock).contains("if (showBranchSelector"))
     }
 
     @Test
@@ -832,6 +855,130 @@ class ApplicationUiSourceContractTest {
         assertTrue(mediaViewer.contains("onClick = { requestClose() }"))
         assertFalse(mediaViewer.contains("LaunchedEffect(closing)"))
         assertFalse(mediaViewer.contains("kotlinx.coroutines.delay(400)"))
+    }
+
+    @Test
+    fun `notification permission waits for Chat and gates initial composer focus until dismissal`() {
+        val main = sourceFile("app/src/main/java/com/newoether/agora/MainActivity.kt")
+        val chat = sourceFile("app/src/main/java/com/newoether/agora/ui/chat/ChatApp.kt")
+        val interactionEffects = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/chat/ChatAppInteractionEffects.kt",
+        )
+        val service = sourceFile(
+            "app/src/main/java/com/newoether/agora/service/AgoraForegroundService.kt",
+        )
+        val activityStartup = main
+            .substringAfter("override fun onCreate(savedInstanceState: Bundle?)")
+            .substringBefore("override fun onResume()")
+        val mainNavigation = main.substringAfter("fun MainNavigation(")
+        val permissionLauncher = mainNavigation
+            .substringAfter("val notificationPermissionLauncher")
+            .substringBefore("LaunchedEffect(Unit)")
+        val permissionEffect = mainNavigation
+            .substringAfter("LaunchedEffect(Unit) {")
+            .substringBefore("var showSettings")
+        val launchEffects = interactionEffects
+            .substringAfter("internal fun ChatLaunchInteractionEffects(")
+            .substringBefore("internal fun ChatNavigationEffects(")
+        val generationChannel = service
+            .substringAfter("private fun createGenerationChannel(context: Context)")
+            .substringBefore("fun showTerminalNotification(")
+        val completionChannel = service
+            .substringAfter("private fun createCompletionChannel(context: Context)")
+            .substringBefore("private fun createPendingIntent(")
+
+        val onboardingBranch = activityStartup.substringAfter("when (showOnboarding)")
+
+        assertFalse(activityStartup.contains("requestPermissions("))
+        assertTrue(onboardingBranch.substringAfter("false -> {").contains("MainNavigation("))
+        assertTrue(mainNavigation.contains("mutableStateOf(!shouldRequestNotificationPermission)"))
+        assertTrue(permissionLauncher.contains("initialComposerFocusReady = true"))
+        assertTrue(permissionEffect.contains("AgoraForegroundService.createChannels(appContext)"))
+        assertTrue(permissionEffect.contains("notificationPermissionLauncher.launch("))
+        assertFalse(permissionEffect.contains("delay("))
+        assertTrue(
+            permissionEffect.indexOf("AgoraForegroundService.createChannels(appContext)") <
+                permissionEffect.indexOf("notificationPermissionLauncher.launch("),
+        )
+        assertTrue(main.contains("initialComposerFocusReady = initialComposerFocusReady"))
+        assertTrue(chat.contains("initialComposerFocusReady: Boolean = true"))
+        assertTrue(chat.contains("ChatLaunchInteractionEffects("))
+        assertTrue(launchEffects.contains("LaunchedEffect(Unit)"))
+        assertTrue(launchEffects.contains("latestOnShowLaunchContent()"))
+        assertTrue(launchEffects.contains(
+            "LaunchedEffect(initialComposerFocusReady, inputFocusRequester)"
+        ))
+        assertTrue(launchEffects.contains("if (initialComposerFocusReady)"))
+        assertTrue(launchEffects.contains("inputFocusRequester.requestFocus()"))
+        assertTrue(generationChannel.contains("NotificationManager.IMPORTANCE_LOW"))
+        assertTrue(generationChannel.contains("setSound(null, null)"))
+        assertTrue(generationChannel.contains("setShowBadge(false)"))
+        assertTrue(completionChannel.contains("NotificationManager.IMPORTANCE_HIGH"))
+        assertTrue(completionChannel.contains("RingtoneManager.TYPE_NOTIFICATION"))
+        assertTrue(completionChannel.contains("enableVibration(true)"))
+        assertTrue(service.contains(".setPriority(NotificationCompat.PRIORITY_HIGH)"))
+    }
+
+    @Test
+    fun `Automation groups exact execution and battery optimization in every locale`() {
+        val page = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/settings/SettingsAutomationPage.kt",
+        )
+        val manifest = sourceFile("app/src/main/AndroidManifest.xml")
+        val backgroundGroup = page
+            .substringAfter("title = stringResource(R.string.automation_background_execution)")
+            .substringBefore("if (showDocFab)")
+
+        assertTrue(backgroundGroup.contains("R.string.automation_exact_execution"))
+        assertTrue(backgroundGroup.contains("R.string.automation_battery_optimization"))
+        assertTrue(
+            backgroundGroup.indexOf("R.string.automation_exact_execution") <
+                backgroundGroup.indexOf("R.string.automation_battery_optimization"),
+        )
+        assertTrue(page.contains("isIgnoringBatteryOptimizations(context.packageName)"))
+        assertTrue(page.contains("Lifecycle.Event.ON_RESUME"))
+        assertTrue(page.contains("Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS"))
+        assertFalse(page.contains("Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"))
+        assertFalse(manifest.contains("REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"))
+
+        val directories = listOf(
+            "values", "values-ar", "values-de", "values-es", "values-fr", "values-ja",
+            "values-ko", "values-pt-rBR", "values-ru", "values-vi", "values-zh",
+            "values-zh-rTW",
+        )
+        val keys = listOf(
+            "automation_background_execution",
+            "automation_battery_optimization",
+            "automation_battery_optimization_ignored_desc",
+            "automation_battery_optimization_active_desc",
+        )
+        directories.forEach { directory ->
+            val fileName = if (directory == "values-zh") "strings.xml" else "automation_strings.xml"
+            val strings = sourceFile("app/src/main/res/$directory/$fileName")
+            keys.forEach { key ->
+                assertTrue("$directory $key", strings.contains("name=\"$key\""))
+            }
+            assertFalse("$directory obsolete scheduling category", strings.contains(
+                "name=\"automation_scheduling\"",
+            ))
+        }
+    }
+
+    @Test
+    fun `Once date picker keeps the Material modal height without taking over mode or IME`() {
+        val source = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/tasks/TaskEditorSupportingComponents.kt",
+        )
+        val picker = source
+            .substringAfter("internal fun TaskDatePickerDialog(")
+            .substringBefore("internal fun TaskTimePickerDialog(")
+
+        assertTrue(picker.contains("modifier = Modifier.height(568.dp)"))
+        assertTrue(picker.contains("showModeToggle = true"))
+        assertFalse(picker.contains("pendingCalendarMode"))
+        assertFalse(picker.contains("displayMode = DatePickerDisplayMode"))
+        assertFalse(picker.contains("LocalSoftwareKeyboardController"))
+        assertFalse(picker.contains("delay("))
     }
 
     private fun stringValue(xml: String, key: String): String {

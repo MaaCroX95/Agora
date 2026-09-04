@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.net.toUri
 import androidx.compose.foundation.clickable
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Icon
@@ -45,14 +47,23 @@ fun SettingsAutomationPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     val alarmManager = remember {
         context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
     }
+    val powerManager = remember {
+        context.getSystemService(Context.POWER_SERVICE) as PowerManager
+    }
     var exactPermissionGranted by remember {
         mutableStateOf(canScheduleExactAlarms(alarmManager))
+    }
+    var batteryOptimizationIgnored by remember {
+        mutableStateOf(powerManager.isIgnoringBatteryOptimizations(context.packageName))
     }
     var awaitingExactPermission by rememberSaveable { mutableStateOf(false) }
 
     DisposableEffect(lifecycleOwner, exactEnabled) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                batteryOptimizationIgnored = powerManager.isIgnoringBatteryOptimizations(
+                    context.packageName,
+                )
                 val granted = canScheduleExactAlarms(alarmManager)
                 exactPermissionGranted = granted
                 if (awaitingExactPermission) {
@@ -124,36 +135,70 @@ fun SettingsAutomationPage(viewModel: ChatViewModel, onBack: () -> Unit) {
             )
 
             SettingsGroup(
-                title = stringResource(R.string.automation_scheduling),
-                items = listOf({
-                    SettingsItem(
-                        headlineContent = { Text(stringResource(R.string.automation_exact_execution)) },
-                        supportingContent = {
-                            Text(
-                                stringResource(
-                                    when {
-                                        exactEnabled && exactPermissionGranted -> R.string.automation_exact_execution_on_desc
-                                        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ->
-                                            R.string.automation_exact_execution_off_legacy_desc
-                                        else -> R.string.automation_exact_execution_off_desc
-                                    }
+                title = stringResource(R.string.automation_background_execution),
+                items = listOf(
+                    {
+                        SettingsItem(
+                            headlineContent = { Text(stringResource(R.string.automation_exact_execution)) },
+                            supportingContent = {
+                                Text(
+                                    stringResource(
+                                        when {
+                                            exactEnabled && exactPermissionGranted -> R.string.automation_exact_execution_on_desc
+                                            Build.VERSION.SDK_INT < Build.VERSION_CODES.S ->
+                                                R.string.automation_exact_execution_off_legacy_desc
+                                            else -> R.string.automation_exact_execution_off_desc
+                                        }
+                                    )
                                 )
-                            )
-                        },
-                        leadingContent = {
-                            Icon(Icons.Default.Schedule, null, tint = MaterialTheme.colorScheme.primary)
-                        },
-                        trailingContent = {
-                            Switch(
-                                checked = exactEnabled && exactPermissionGranted,
-                                onCheckedChange = ::setExactEnabled,
-                            )
-                        },
-                        modifier = Modifier.clickable {
-                            setExactEnabled(!(exactEnabled && exactPermissionGranted))
-                        },
-                    )
-                }),
+                            },
+                            leadingContent = {
+                                Icon(Icons.Default.Schedule, null, tint = MaterialTheme.colorScheme.primary)
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = exactEnabled && exactPermissionGranted,
+                                    onCheckedChange = ::setExactEnabled,
+                                )
+                            },
+                            modifier = Modifier.clickable {
+                                setExactEnabled(!(exactEnabled && exactPermissionGranted))
+                            },
+                        )
+                    },
+                    {
+                        SettingsItem(
+                            headlineContent = {
+                                Text(stringResource(R.string.automation_battery_optimization))
+                            },
+                            supportingContent = {
+                                Text(
+                                    stringResource(
+                                        if (batteryOptimizationIgnored) {
+                                            R.string.automation_battery_optimization_ignored_desc
+                                        } else {
+                                            R.string.automation_battery_optimization_active_desc
+                                        }
+                                    )
+                                )
+                            },
+                            leadingContent = {
+                                Icon(
+                                    Icons.Default.BatterySaver,
+                                    null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            },
+                            modifier = Modifier.clickable {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                    )
+                                }
+                            },
+                        )
+                    },
+                ),
             )
         }
         if (showDocFab) { Spacer(modifier = Modifier.height(80.dp)) }

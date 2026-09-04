@@ -87,6 +87,8 @@ private fun variableIcon(key: String): ImageVector = when (key) {
 @Composable
 fun SystemPromptEditorPage(
     entry: SystemPromptEntry?,
+    isNew: Boolean = false,
+    saveEnabled: Boolean = true,
     onSave: (
         title: String,
         systemItems: List<PromptTemplateItem>,
@@ -97,7 +99,7 @@ fun SystemPromptEditorPage(
     showDocFab: Boolean = true
 ) {
     val allowSpatialTransitions = LocalAgoraMotionPolicy.current.allowSpatialTransitions
-    val isEdit = entry != null
+    val isEdit = entry != null && !isNew
     var title by remember { mutableStateOf(entry?.title ?: "") }
     var selectedTab by remember { mutableIntStateOf(0) }
 
@@ -138,18 +140,21 @@ fun SystemPromptEditorPage(
         title = if (isEdit) stringResource(R.string.prompts_edit_title) else stringResource(R.string.prompts_add_title),
         onBack = onBack,
         actions = {
-            IconButton(onClick = {
-                if (title.isBlank()) {
-                    titleError = true
-                    return@IconButton
-                }
-                onSave(
-                    title,
-                    systemItems.toList(),
-                    PredefinedVariables.normalizeMessageTemplate(userItems),
-                    PredefinedVariables.normalizeMessageTemplate(assistantItems),
-                )
-            }) {
+            IconButton(
+                enabled = saveEnabled,
+                onClick = {
+                    if (title.isBlank()) {
+                        titleError = true
+                        return@IconButton
+                    }
+                    onSave(
+                        title,
+                        systemItems.toList(),
+                        PredefinedVariables.normalizeMessageTemplate(userItems),
+                        PredefinedVariables.normalizeMessageTemplate(assistantItems),
+                    )
+                },
+            ) {
                 Icon(Icons.Default.Save, contentDescription = stringResource(R.string.provider_save))
             }
         },

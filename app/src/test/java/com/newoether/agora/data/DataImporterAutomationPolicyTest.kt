@@ -128,6 +128,27 @@ class DataImporterAutomationPolicyTest {
         )
 
         assertTrue(preview.hasConversationGraph)
+        assertTrue(preview.hasImportableData)
+    }
+
+    @Test
+    fun apiKeyOnlyBackup_hasImportableData() {
+        val preview = DataImporter.ImportPreview(
+            manifest = DataImporter.ImportManifest(hasApiKeys = true),
+            apiKeysPresent = true,
+        )
+
+        assertFalse(preview.hasConversationGraph)
+        assertTrue(preview.hasImportableData)
+    }
+
+    @Test
+    fun emptyBackup_hasNoImportableData() {
+        val preview = DataImporter.ImportPreview(
+            manifest = DataImporter.ImportManifest(),
+        )
+
+        assertFalse(preview.hasImportableData)
     }
 
     private fun task(cron: String, nextRunAt: Long) = TaskEntity(

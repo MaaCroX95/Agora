@@ -1,5 +1,6 @@
 package com.newoether.agora.api.util
 
+import com.newoether.agora.R
 import com.newoether.agora.model.AttachmentMeta
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageSegment
@@ -7,6 +8,10 @@ import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.ToolCallData
 import com.newoether.agora.model.TokenUsage
+import com.newoether.agora.viewmodel.normalizePersistedGenerationErrorText
+import android.content.Context
+import io.mockk.every
+import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -15,8 +20,10 @@ import org.junit.Test
 
 class GenerationStatusMessagesTest {
     @Test
-    fun standaloneError_remainsAssistantAndIncludesRawPersistedDetail() {
+    fun standaloneError_usesTheExactGrayErrorFormatterResultOnce() {
         val rawError = """{"balance":0.57,"error":{"message":"raw provider failure"}}"""
+        val displayedError = "Raw provider failure"
+        val context = mockk<Context>()
         val error = ChatMessage(
             id = "error",
             text = "partial answer",
@@ -38,7 +45,9 @@ class GenerationStatusMessagesTest {
             retryText = "retry",
         )
 
-        val projected = projectGenerationStatusesForApi(listOf(error)).single()
+        val projected = projectGenerationStatusesForApi(listOf(error)) { raw ->
+            normalizePersistedGenerationErrorText(context, raw)
+        }.single()
 
         assertEquals(Participant.MODEL, projected.participant)
         assertEquals(MessageStatus.SUCCESS, projected.status)
@@ -46,16 +55,95 @@ class GenerationStatusMessagesTest {
             "partial answer\n\n" +
                 "[Generation status: ERROR]\n" +
                 "The previous assistant generation failed before completing.\n" +
-                "Details:\n$rawError",
+                "Details:\n$displayedError",
             projected.text,
         )
-        assertEquals(1, Regex(Regex.escape(rawError)).findAll(projected.text).count())
+        assertFalse(projected.text.contains(rawError))
+        assertEquals(1, Regex(Regex.escape(displayedError)).findAll(projected.text).count())
         assertTrue(projected.images.isEmpty())
         assertEquals(null, projected.thoughts)
         assertEquals(null, projected.toolCall)
         assertEquals(null, projected.segments)
         assertEquals(null, projected.attachmentMeta)
         assertEquals(null, projected.tokenUsage)
+    }
+
+    @Test
+    fun multiSentenceVisibleError_isInjectedIntoContextInFullOnce() {
+        val visibleError =
+            "Server_error [server_error]: An error occurred while processing your request. " +
+                "You can retry your request, or contact the help center if the error persists. " +
+                "Please include the request ID test-request-id in your message."
+        val context = mockk<Context>()
+        val error = ChatMessage(
+            id = "error",
+            text = "",
+            status = MessageStatus.ERROR,
+            participant = Participant.MODEL,
+            segments = listOf(MessageSegment(type = "error", content = visibleError)),
+        )
+
+        val projected = projectGenerationStatusesForApi(listOf(error)) { raw ->
+            normalizePersistedGenerationErrorText(context, raw)
+        }.single()
+
+        assertEquals(
+            "[Generation status: ERROR]\n" +
+                "The previous assistant generation failed before completing.\n" +
+                "Details:\n$visibleError",
+            projected.text,
+        )
+        assertEquals(1, Regex(Regex.escape(visibleError)).findAll(projected.text).count())
+    }
+
+    @Test
+    fun legacyNetworkWrapper_usesTheSameLocalizedGrayErrorText() {
+        val context = mockk<Context>()
+        val localized = "Connection closed."
+        every { context.getString(R.string.generation_error_connection_closed) } returns localized
+        val rawError = "Network error (0): connection closed"
+        val error = ChatMessage(
+            id = "error",
+            text = "",
+            status = MessageStatus.ERROR,
+            participant = Participant.MODEL,
+            segments = listOf(MessageSegment(type = "error", content = rawError)),
+        )
+
+        val projected = projectGenerationStatusesForApi(listOf(error)) { raw ->
+            normalizePersistedGenerationErrorText(context, raw)
+        }.single()
+
+        assertTrue(projected.text.endsWith("Details:\n$localized"))
+        assertFalse(projected.text.contains(rawError))
+    }
+
+    @Test
+    fun malformedAndAlreadyFormattedErrors_preserveTheGrayFormatterResult() {
+        val context = mockk<Context>()
+        val details = listOf(
+            "  {bad  " to "{bad",
+            "INSUFFICIENT_BALANCE [billing_error]: Balance too low" to
+                "INSUFFICIENT_BALANCE [billing_error]: Balance too low",
+        )
+
+        details.forEachIndexed { index, (raw, displayed) ->
+            val projected = projectGenerationStatusesForApi(
+                listOf(
+                    ChatMessage(
+                        id = "error-$index",
+                        text = "",
+                        status = MessageStatus.ERROR,
+                        participant = Participant.MODEL,
+                        segments = listOf(MessageSegment(type = "error", content = raw)),
+                    ),
+                ),
+            ) { detail ->
+                normalizePersistedGenerationErrorText(context, detail)
+            }.single()
+
+            assertTrue(projected.text.endsWith("Details:\n$displayed"))
+        }
     }
 
     @Test
@@ -72,7 +160,7 @@ class GenerationStatusMessagesTest {
             participant = Participant.USER,
         )
 
-        val projected = projectGenerationStatusesForApi(listOf(stopped, followUp))
+        val projected = projectGenerationStatusesForApi(listOf(stopped, followUp)) { it }
 
         assertEquals(2, projected.size)
         assertEquals("stopped", projected[0].id)
@@ -96,7 +184,7 @@ class GenerationStatusMessagesTest {
             participant = Participant.MODEL,
         )
 
-        val projected = projectGenerationStatusesForApi(listOf(stopped)).single()
+        val projected = projectGenerationStatusesForApi(listOf(stopped)) { it }.single()
 
         assertEquals(Participant.MODEL, projected.participant)
         assertEquals(
@@ -116,8 +204,8 @@ class GenerationStatusMessagesTest {
                     status = MessageStatus.SUCCESS,
                     participant = Participant.ERROR,
                 ),
-            )
-        ).single()
+            ),
+        ) { it }.single()
 
         assertEquals(Participant.MODEL, projected.participant)
         assertEquals(MessageStatus.SUCCESS, projected.status)
@@ -130,8 +218,14 @@ class GenerationStatusMessagesTest {
     }
 
     @Test
-    fun terminalProjection_isIdempotent() {
+    fun terminalProjection_isIdempotentAndFormatsOnce() {
         val rawError = """{"error":{"message":"once"}}"""
+        val displayedError = "Once"
+        var formatterCalls = 0
+        val formatter: (String) -> String = {
+            formatterCalls += 1
+            displayedError
+        }
         val error = ChatMessage(
             id = "error",
             text = "",
@@ -140,11 +234,13 @@ class GenerationStatusMessagesTest {
             segments = listOf(MessageSegment(type = "error", content = rawError)),
         )
 
-        val once = projectGenerationStatusesForApi(listOf(error))
-        val twice = projectGenerationStatusesForApi(once)
+        val once = projectGenerationStatusesForApi(listOf(error), formatter)
+        val twice = projectGenerationStatusesForApi(once, formatter)
 
         assertSame(once, twice)
-        assertEquals(1, Regex(Regex.escape(rawError)).findAll(twice.single().text).count())
+        assertEquals(1, formatterCalls)
+        assertEquals(1, Regex(Regex.escape(displayedError)).findAll(twice.single().text).count())
+        assertFalse(twice.single().text.contains(rawError))
         assertEquals(
             1,
             Regex(Regex.escape("[Generation status: ERROR]"))
@@ -162,7 +258,7 @@ class GenerationStatusMessagesTest {
             participant = Participant.MODEL,
         )
 
-        val projected = projectGenerationStatusesForApi(listOf(tool))
+        val projected = projectGenerationStatusesForApi(listOf(tool)) { it }
 
         assertSame(tool, projected.single())
         assertFalse(projected.single().text.contains("[Generation status:"))
@@ -178,6 +274,6 @@ class GenerationStatusMessagesTest {
         )
         val messages = listOf(success)
 
-        assertSame(messages, projectGenerationStatusesForApi(messages))
+        assertSame(messages, projectGenerationStatusesForApi(messages) { it })
     }
 }

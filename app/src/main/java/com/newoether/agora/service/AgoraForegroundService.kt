@@ -8,6 +8,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -240,7 +242,12 @@ class AgoraForegroundService : Service() {
             )
         }
 
-        fun createChannel(context: Context) {
+        fun createChannels(context: Context) {
+            createGenerationChannel(context)
+            createCompletionChannel(context)
+        }
+
+        private fun createGenerationChannel(context: Context) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
             val manager = context.getSystemService(NotificationManager::class.java)
             val channel = NotificationChannel(
@@ -311,6 +318,13 @@ class AgoraForegroundService : Service() {
             ).apply {
                 description = "Shown when a response finishes generating"
                 setShowBadge(true)
+                setSound(
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                        .build(),
+                )
+                enableVibration(true)
             }
             val manager = context.getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
@@ -349,7 +363,7 @@ class AgoraForegroundService : Service() {
         super.onCreate()
         instance = this
         CrashReporter.note("FGS.onCreate")
-        createChannel(this)
+        createGenerationChannel(this)
         val notification = buildGenerationNotification(currentText ?: getString(R.string.generating_response))
         // Must NOT catch exceptions here: if startForeground() fails, the real
         // exception (SecurityException, ForegroundServiceStartNotAllowed, etc.)

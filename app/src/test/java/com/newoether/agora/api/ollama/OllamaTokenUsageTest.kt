@@ -49,6 +49,18 @@ class OllamaTokenUsageTest {
     }
 
     @Test
+    fun blankDoneReasonIsAbsent() {
+        val termination = ollamaStreamTermination(
+            sawDone = true,
+            doneReason = " ",
+            producedContent = true,
+        )
+
+        assertNull(termination.stopReason)
+        assertNull(termination.toError("Ollama"))
+    }
+
+    @Test
     fun errorOnlyNdjsonPayloadDoesNotRequireDoneField() {
         val decoded = Json.decodeFromString<OllamaStreamResponse>(
             """{"error":"failed to generate"}"""

@@ -17,6 +17,9 @@ the exact development boundary. Current explicit user requirements override olde
 - `NativeBackupSecretsPolicy` is the only owner of opt-in secret capture and restoration.
 - Conversation, attachment, Memory, Skill, System Prompt, and custom-font owners retain their normal
   persistence and conflict rules during transport; import/export does not create shadow stores.
+- Unreadable conversation or draft image, video, PDF, and file references remain in their original
+  attachment order as typed unavailable placeholders. Placeholders retain the filename when known,
+  carry no device URI/path, and are never exposed as readable or previewable content.
 
 Adding a DataStore key does not make it portable. A setting enters an archive only after this
 contract, export, restore, Replace reset, and focused compatibility tests are updated together.
@@ -38,6 +41,30 @@ rejected before category restoration.
 
 The archive never treats a manifest category as proof that its payload is valid. Missing, malformed,
 or incompatible entries produce category errors without reinterpreting another entry as a fallback.
+Archive validation completes before any category mutation or resource extraction. Entry names must be
+relative forward-slash paths with no empty, `.` or `..` segment, drive prefix, backslash ambiguity,
+or duplicate/colliding file-directory identity. `conversations.json` is an unbounded streamed database
+payload: preview and import never materialize the complete entry in memory, but opening the archive
+still streams it fully and verifies its declared size and CRC before any mutation. All remaining
+non-resource entries, which current import paths may materialize wholly in memory, are limited to
+256 MiB expanded aggregate metadata and receive the same streamed size and CRC verification.
+
+Conversation image/video/draft resources, legacy `images/` and `videos/` resources, and the recognized
+custom-font entry are storage-backed resources. Normal attachment resources have no fixed byte or
+entry-count ceiling when storage is sufficient; there is no standalone total ZIP entry-count limit.
+A seekable SAF source is opened directly through its file descriptor, so preview/import does not
+create or retain a whole-archive copy in application cache. A provider that cannot expose random
+access is rejected with an instruction to download/select a local file; import does not fall back to
+a cache duplicate or a second streaming authority. Every selected resource extraction preflights
+destination capacity, checks space again while streaming, and deletes partial files on failure. The
+custom-font owner retains its separate 64 MiB limit. Sandbox and proot payloads remain excluded rather
+than becoming resources.
+
+A conversation export reads conversation settings before entering Room, then captures Conversations,
+Runs, paged Messages, Tasks, Loops, and every raw media reference into a temporary typed JSONL spool
+inside one `ChatDatabase` transaction. The transaction performs no destination, ZIP, or media I/O.
+Only after it returns may export open the destination, read media, rewrite archive paths, and emit
+`conversations.json`. The spool is deleted on success, failure, and coroutine cancellation.
 
 ## 3. Portable `settings.json` allowlist
 
@@ -50,7 +77,7 @@ The following JSON field names are the complete current portable allowlist.
 | Provider and reasoning | `codeExecutionEnabled`, `googleSearchEnabled`, `thinkingEnabled`, `thinkingLevel`, `thinkingBudgetEnabled`, `thinkingBudgetTokens`, `openAiServiceTierEnabled`, `openAiServiceTier`, `openAiResponsesApiEnabled`, `providerBaseUrls` |
 | Title generation | `titleGenerationEnabled`, `titleGenerationModel`, `titleGenerationPrompt`, `titleGenerationNotificationsEnabled` |
 | Tool access | `accessPastConversations`, `accessSavedMemories`, `accessActiveMemory`, `accessSkills` |
-| Search and embedding | `ragSearchEnabled`, `modelSearchMethod`, `manualSearchMethod`, `remoteEmbeddingModels`, `activeRemoteEmbeddingModelId`, `searchContextWindow`, `searchMatchLimit`, `ragThreshold`, `autoCacheEnabled` |
+| Search and embedding | `ragSearchEnabled`, `modelSearchMethod`, `manualSearchMethod`, `remoteEmbeddingModels`, `activeRemoteEmbeddingModelId`, `searchContextWindow`, `searchMatchLimit`, `ragThreshold`, `autoCacheEnabled`, `showUncachedNotification` |
 | Language, Web Search, and image generation | `appLanguage`, `webSearchEnabled`, `webSearchProvider`, `webSearchNumResults`, `webSearchBaseUrl`, `imageGenEnabled`, `imageGenModel`, `imageGenSize`, `autoUpdateCheck` |
 | Image transcription | `imageTranscriptionEnabled`, `imageTranscriptionEnabledModels`, `imageTranscriptionModel`, `imageTranscriptionBatchSize`, `imageTranscriptionPrompt` |
 | Shell, automation, custom Providers, and MCP | `shellEnabled`, `shellConfirmEnabled`, secret-free `shellDevices`, `automationToolsEnabled`, `exactExecutionEnabled`, `customProviders`, secret-free `mcpServers` |
@@ -79,6 +106,11 @@ Settings `REPLACE` import unless a separate selected category owns it:
   and imported model files.
 - `local_model_idle_retention_minutes` / Local model idle retention. It persists in this device's
   DataStore, defaults to five minutes, and is not exported, imported, or cleared by Replace.
+- `local_low_context_mode_enabled` / the Local Provider's Low Context Mode default. It persists in
+  this device's DataStore, defaults off, and is not exported, imported, or cleared by Replace.
+  Nullable conversation/New Chat overrides are separate conversation-scoped settings and therefore
+  travel only with their conversation; a null override continues to inherit the destination device's
+  current Local Provider default.
 - Sandbox enabled/shared-storage state, sandbox files, and pending/runtime Sandbox attachment state.
 - Developer Options, first-launch/onboarding/rating state, message counters, and other installation
   lifecycle metadata.
@@ -124,6 +156,27 @@ Secret `MERGE` retains unmatched local secrets and merges imported records by st
 identity. Secret `REPLACE` clears replaceable secret values for existing structural owners when the
 archive omits them, but it does not create an owner for an orphan secret.
 
+ChatGPT and Claude imports expose `MERGE` and `REPLACE` for the selected conversations. `MERGE`
+preserves every unrelated local conversation and adds only imported graph identities that are not
+already present. `REPLACE` deletes every existing conversation graph and leaves only the selected
+imported conversations. The external replacement validates the complete selected graph before any
+delete and performs the delete plus Conversation, Run, and Message writes in one Room transaction.
+The unified Settings UI must present a second destructive confirmation before starting external
+`REPLACE`, explicitly stating that all existing conversations will be deleted and only the selected
+imported conversations will remain.
+
+The native `.agora` preview separates each visible category decision block by 16 dp while retaining
+the existing 4 dp label-to-strategy-control gap inside a block. After the user selects an archive,
+reading, validating, and generating its preview shows a non-dismissible modal titled `Loading…`
+until the preview is ready or the operation fails. The preview choices appear only after that loading
+state clears. After the user confirms Import, actual native restoration shows a separate modal titled
+`Importing…`; after the user selects an export destination, native export shows the corresponding
+`Exporting…` modal until success or failure. All three native modals use the same centered,
+indeterminate, motion-aware circular progress indicator, reject Back and outside-click dismissal,
+and expose no cancel action. Preview-loading state is distinct from actual import progress and clears
+on success, invalid or empty archives, failure, and cancellation. Third-party Claude/GPT imports
+retain their determinate percentage presentation.
+
 ## 7. Legacy compatibility and failure behavior
 
 - Unknown JSON fields are ignored; known fields are normalized and validated by their current owner.
@@ -136,6 +189,9 @@ archive omits them, but it does not create an owner for an orphan secret.
   reused. Active references are accepted only when their target survives import.
 - A category failure is reported with its category and does not convert malformed input into a
   successful default. Temporary custom-font files are deleted when installation fails.
+- Missing individual attachment resources do not fail an otherwise valid export or automatic backup.
+  The successful result reports the total unavailable-resource count, and restore keeps each durable
+  placeholder disabled with its type, filename, and relative attachment order intact.
 - Import must never delete or overwrite data outside the selected category and strategy boundary.
 
 ## 8. Required verification
@@ -151,7 +207,14 @@ Focused tests for any archive or setting change must prove:
 7. archive category selection cannot mutate an unselected category;
 8. conversation media, Memory/Skill files, System Prompts, and custom fonts keep their owner-specific
    conflict, cleanup, and rollback behavior;
-9. the default and every maintained public manual remain consistent with this contract.
+9. archive validation rejects unsafe or duplicate paths before mutation, leaves streamed
+   `conversations.json` without a fixed byte cap while verifying its size and CRC, caps aggregate
+   in-memory non-resource metadata at 256 MiB, requires direct seekable-source access without a
+   whole-cache duplicate, and enforces destination capacity before and during resource copy without
+   a standalone resource entry-count limit;
+10. unreadable attachment resources preserve order, type, and filename as disabled placeholders, and
+   successful manual and automatic backups report the complete unavailable-resource count;
+11. the default and every maintained public manual remain consistent with this contract.
 
 The project full build remains required after implementation changes. Build success alone does not
 prove SAF access, large-archive streaming, device storage, or user-visible conflict handling.

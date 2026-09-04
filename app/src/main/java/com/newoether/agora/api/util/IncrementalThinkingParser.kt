@@ -43,6 +43,8 @@ internal class IncrementalThinkingParser(
         // Legacy local templates seen in older llama.cpp model cards.
         Marker("<|channel>thought\n", listOf("<channel|>")),
         Marker("<|channel>analysis\n", listOf("<channel|>")),
+        Marker("<|channel>thought ", listOf("<channel|>")),
+        Marker("<|channel>analysis ", listOf("<channel|>")),
     )
     private val implicitMarker = Marker(
         start = "",

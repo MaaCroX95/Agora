@@ -138,7 +138,8 @@ data class ConversationSettings(
     val openAiServiceTierEnabled: Boolean? = null,
     val openAiServiceTier: String? = null,
     val webSearchEnabled: Boolean? = null,
-    val shellEnabled: Boolean? = null
+    val shellEnabled: Boolean? = null,
+    val lowContextModeEnabled: Boolean? = null,
 ) {
     fun isAllNull() = contextWindow == null && temperature == null && maxTokens == null && topP == null
         && frequencyPenalty == null && presencePenalty == null
@@ -147,4 +148,5 @@ data class ConversationSettings(
         && thinkingLevel == null && thinkingBudgetEnabled == null && thinkingBudgetTokens == null
         && openAiServiceTierEnabled == null && openAiServiceTier == null
         && webSearchEnabled == null && shellEnabled == null
+        && lowContextModeEnabled == null
 }

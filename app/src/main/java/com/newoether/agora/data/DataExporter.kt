@@ -2,23 +2,27 @@ package com.newoether.agora.data
 
 import android.content.Context
 import android.net.Uri
+import androidx.room.withTransaction
 import com.newoether.agora.automation.LoopPolicy
 import com.newoether.agora.data.local.ChatDao
-import com.newoether.agora.data.local.ChatEntity
-import com.newoether.agora.data.local.MessageAttachmentReference
+import com.newoether.agora.data.local.ChatDatabase
 import com.newoether.agora.data.local.MessageEntity
-import com.newoether.agora.data.local.MessageToolMediaReference
 import com.newoether.agora.model.AttachmentMeta
 import com.newoether.agora.model.SelectedAttachment
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToStream
 import java.io.BufferedOutputStream
+import java.io.BufferedWriter
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -30,6 +34,7 @@ import java.util.zip.ZipOutputStream
 
 class DataExporter(
     private val context: Context,
+    private val database: ChatDatabase,
     private val chatDao: ChatDao,
     private val settingsManager: SettingsManager,
     private val memoryManager: MemoryManager,
@@ -38,6 +43,13 @@ class DataExporter(
     companion object {
         /** Bounds entity/string expansion while exporting databases with large chat histories. */
         private const val MESSAGE_PAGE_SIZE = 64
+        private const val SNAPSHOT_PREFIX = "agora-export-snapshot-"
+        private const val SNAPSHOT_SUFFIX = ".jsonl"
+        private const val SNAPSHOT_CONVERSATION = "C"
+        private const val SNAPSHOT_RUN = "R"
+        private const val SNAPSHOT_MESSAGE = "M"
+        private const val SNAPSHOT_TASK = "T"
+        private const val SNAPSHOT_LOOP = "L"
     }
 
     enum class ExportCategory(val manifestKey: String) {
@@ -147,7 +159,8 @@ class DataExporter(
     )
 
     data class ExportResult(
-        val imagesExported: Int = 0
+        val imagesExported: Int = 0,
+        val missingResourceCount: Int = 0,
     )
 
     private data class MediaExportPlan(
@@ -156,6 +169,7 @@ class DataExporter(
         val draftAttachments: Map<String, String?>,
         val sourceToArchiveEntry: Map<String, String>,
         val copiedImageCount: Int,
+        val missingResourceCount: Int,
     )
 
     private fun openImageStream(imgUri: String): java.io.InputStream? {
@@ -202,6 +216,7 @@ class DataExporter(
     ) {
         var afterId: String? = null
         while (true) {
+            currentCoroutineContext().ensureActive()
             val page = chatDao.getMessagesPage(afterId, MESSAGE_PAGE_SIZE)
             if (page.isEmpty()) break
             block(page)
@@ -210,29 +225,161 @@ class DataExporter(
         }
     }
 
-    private suspend fun forEachAttachmentReferencePage(
-        block: suspend (List<MessageAttachmentReference>) -> Unit,
-    ) {
-        var afterId: String? = null
-        while (true) {
-            val page = chatDao.getMessageAttachmentReferencesPage(afterId, MESSAGE_PAGE_SIZE)
-            if (page.isEmpty()) break
-            block(page)
-            afterId = page.last().id
-            if (page.size < MESSAGE_PAGE_SIZE) break
+    private fun BufferedWriter.writeSnapshotRecord(type: String, json: String) {
+        write(type)
+        write('\t'.code)
+        write(json)
+        newLine()
+    }
+
+    private suspend fun captureConversationSnapshot(
+        conversationSettings: Map<String, ConversationSettings>,
+    ): File {
+        val spool = File.createTempFile(SNAPSHOT_PREFIX, SNAPSHOT_SUFFIX, context.cacheDir)
+        try {
+            database.withTransaction {
+                spool.bufferedWriter(Charsets.UTF_8).use { writer ->
+                    val conversations = chatDao.getAllConversationsList()
+                    for (conversation in conversations) {
+                        currentCoroutineContext().ensureActive()
+                        writer.writeSnapshotRecord(
+                            SNAPSHOT_CONVERSATION,
+                            Json.encodeToString(
+                                ExportChatEntity(
+                                    id = conversation.id,
+                                    title = conversation.title,
+                                    lastUpdated = conversation.lastUpdated,
+                                    selectedBranchesJson = conversation.selectedBranchesJson,
+                                    systemPromptId = conversation.systemPromptId,
+                                    modelId = conversation.modelId,
+                                    taskId = conversation.taskId,
+                                    origin = conversation.origin,
+                                    graduated = conversation.graduated,
+                                    selectedRunBranchesJson = conversation.selectedRunBranchesJson,
+                                    draftText = conversation.draftText,
+                                    draftAttachments = conversation.draftAttachments,
+                                    conversationSettings = conversationSettings[conversation.id],
+                                ),
+                            ),
+                        )
+                        for (run in chatDao.getRunsForConversationSnapshot(conversation.id)) {
+                            currentCoroutineContext().ensureActive()
+                            writer.writeSnapshotRecord(
+                                SNAPSHOT_RUN,
+                                Json.encodeToString(
+                                    ExportRunEntity(
+                                        id = run.id,
+                                        conversationId = run.conversationId,
+                                        parentRunId = run.parentRunId,
+                                        status = run.status.name,
+                                        startedAt = run.startedAt,
+                                        lastCheckpointAt = run.lastCheckpointAt,
+                                        stopRequestedAt = run.stopRequestedAt,
+                                        endedAt = run.endedAt,
+                                        endReason = run.endReason?.name,
+                                        currentPass = run.currentPass,
+                                        legacyAmbiguous = run.legacyAmbiguous,
+                                    ),
+                                ),
+                            )
+                        }
+                    }
+
+                    forEachMessagePage { page ->
+                        for (message in page) {
+                            currentCoroutineContext().ensureActive()
+                            writer.writeSnapshotRecord(
+                                SNAPSHOT_MESSAGE,
+                                Json.encodeToString(
+                                    ExportMessageEntity(
+                                        id = message.id,
+                                        conversationId = message.conversationId,
+                                        parentId = message.parentId,
+                                        text = message.text,
+                                        images = message.images,
+                                        thoughts = message.thoughts,
+                                        thoughtTitle = message.thoughtTitle,
+                                        tokenCount = message.tokenCount,
+                                        inputTokenCount = message.inputTokenCount,
+                                        cachedInputTokenCount = message.cachedInputTokenCount,
+                                        cacheWriteInputTokenCount = message.cacheWriteInputTokenCount,
+                                        uncachedInputTokenCount = message.uncachedInputTokenCount,
+                                        outputTokenCount = message.outputTokenCount,
+                                        reasoningTokenCount = message.reasoningTokenCount,
+                                        status = message.status.name,
+                                        participant = message.participant.name,
+                                        timestamp = message.timestamp,
+                                        thoughtTimeMs = message.thoughtTimeMs,
+                                        modelName = message.modelName,
+                                        toolCallJson = message.toolCallJson,
+                                        attachmentMeta = message.attachmentMeta,
+                                        runId = message.runId,
+                                        runSequence = message.runSequence,
+                                        consumedAtPass = message.consumedAtPass,
+                                    ),
+                                ),
+                            )
+                        }
+                    }
+
+                    for (task in chatDao.getAllTasksList()) {
+                        currentCoroutineContext().ensureActive()
+                        writer.writeSnapshotRecord(
+                            SNAPSHOT_TASK,
+                            Json.encodeToString(
+                                ExportTaskEntity(
+                                    id = task.id,
+                                    name = task.name,
+                                    prompt = task.prompt,
+                                    systemPrompt = task.systemPrompt,
+                                    modelId = task.modelId,
+                                    cronExpr = task.cronExpr,
+                                    runAt = task.runAt,
+                                    createdAt = task.createdAt,
+                                    lastRunAt = task.lastRunAt,
+                                ),
+                            ),
+                        )
+                    }
+
+                    for (loop in chatDao.getAllLoopsList()) {
+                        currentCoroutineContext().ensureActive()
+                        val sanitized = sanitizeImportedLoop(loop)
+                        writer.writeSnapshotRecord(
+                            SNAPSHOT_LOOP,
+                            Json.encodeToString(
+                                ExportLoopEntity(
+                                    conversationId = sanitized.conversationId,
+                                    intervalMs = sanitized.intervalMs,
+                                    prompt = sanitized.prompt,
+                                    cycleCount = sanitized.cycleCount,
+                                    maxCycles = sanitized.maxCycles,
+                                ),
+                            ),
+                        )
+                    }
+                }
+            }
+            return spool
+        } catch (error: Throwable) {
+            spool.delete()
+            throw error
         }
     }
 
-    private suspend fun forEachToolMediaReferencePage(
-        block: suspend (List<MessageToolMediaReference>) -> Unit,
+    private suspend fun forEachSnapshotRecord(
+        spool: File,
+        type: String,
+        block: suspend (String) -> Unit,
     ) {
-        var afterId: String? = null
-        while (true) {
-            val page = chatDao.getMessageToolMediaReferencesPage(afterId, MESSAGE_PAGE_SIZE)
-            if (page.isEmpty()) break
-            block(page)
-            afterId = page.last().id
-            if (page.size < MESSAGE_PAGE_SIZE) break
+        spool.bufferedReader(Charsets.UTF_8).use { reader ->
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val line = reader.readLine() ?: break
+                val separator = line.indexOf('\t')
+                if (separator != 1) throw IOException("Invalid export snapshot record")
+                if (line.startsWith(type)) block(line.substring(separator + 1))
+            }
         }
     }
 
@@ -259,13 +406,14 @@ class DataExporter(
 
     private suspend fun buildMediaExportPlan(
         zip: ZipOutputStream,
-        conversations: List<ChatEntity>,
+        spool: File,
     ): MediaExportPlan {
         val messageImages = mutableMapOf<String, List<String>>()
         val messageAttachmentMeta = mutableMapOf<String, String?>()
         val draftAttachments = mutableMapOf<String, String?>()
         val sourceToArchiveEntry = mutableMapOf<String, String>()
         var copiedImageCount = 0
+        var missingResourceCount = 0
 
         fun copySource(source: String, prefix: String): String? {
             if (source.isBlank()) return null
@@ -284,8 +432,20 @@ class DataExporter(
             return entry.takeIf { copied }?.also { sourceToArchiveEntry[sourceKey] = it }
         }
 
-        forEachAttachmentReferencePage { page ->
-            page.forEach { message ->
+        forEachSnapshotRecord(spool, SNAPSHOT_MESSAGE) { raw ->
+            val message = Json.decodeFromString<ExportMessageEntity>(raw)
+            val meta = message.attachmentMeta?.let {
+                runCatching { Json.decodeFromString<AttachmentMeta>(it) }.getOrNull()
+            }
+            meta?.items
+                ?.asSequence()
+                ?.filter { it.type == "video" && !it.unavailable }
+                ?.mapNotNull { it.originalUri }
+                ?.forEach { source ->
+                    copySource(source, NativeBackupFormat.VIDEO_MEDIA_PREFIX)
+                }
+
+            if (message.images.isNotEmpty()) {
                 val oldToNewImageIndex = mutableMapOf<Int, Int>()
                 val archivedImages = buildList {
                     message.images.forEachIndexed { oldIndex, source ->
@@ -297,63 +457,50 @@ class DataExporter(
                     }
                 }
                 messageImages[message.id] = archivedImages
-
-                val meta = message.attachmentMeta?.let {
-                    runCatching { Json.decodeFromString<AttachmentMeta>(it) }.getOrNull()
-                }
-                meta?.items
-                    ?.asSequence()
-                    ?.filter { it.type == "video" }
-                    ?.mapNotNull { it.originalUri }
-                    ?.forEach { source ->
-                        copySource(source, NativeBackupFormat.VIDEO_MEDIA_PREFIX)
-                    }
                 messageAttachmentMeta[message.id] =
                     NativeBackupMediaPolicy.rewriteAttachmentMetaForExport(
-                    raw = message.attachmentMeta,
-                    oldToNewImageIndex = oldToNewImageIndex,
-                    archiveEntryForSource = { source ->
-                        sourceToArchiveEntry[mediaSourceKey(source)]
-                    },
-                )
-            }
-        }
-
-        forEachToolMediaReferencePage { page ->
-            page.forEach { message ->
-                NativeBackupMediaPolicy.toolImagePaths(message.toolCallJson).forEach { source ->
-                    if (copySource(source, NativeBackupFormat.IMAGE_MEDIA_PREFIX) != null) {
-                        copiedImageCount++
-                    }
-                }
-            }
-        }
-
-        conversations.forEach { conversation ->
-            val attachments = conversation.draftAttachments?.let { raw ->
-                runCatching { Json.decodeFromString<List<SelectedAttachment>>(raw) }.getOrNull()
-            } ?: return@forEach
-            val archived = NativeBackupMediaPolicy.exportableDraftAttachments(attachments)
-                .mapNotNull { attachment ->
-                    val primarySource = listOfNotNull(
-                        attachment.localPath,
-                        attachment.uri.takeIf(String::isNotBlank),
-                    ).firstNotNullOfOrNull { source ->
-                        copySource(source, NativeBackupFormat.DRAFT_MEDIA_PREFIX)
-                    } ?: return@mapNotNull null
-                    val processedFrames = attachment.processedFrames
-                        ?.mapNotNull { copySource(it, NativeBackupFormat.DRAFT_MEDIA_PREFIX) }
-                        ?.takeIf(List<String>::isNotEmpty)
-                    val preRenderedPaths = attachment.preRenderedPaths
-                        ?.mapNotNull { copySource(it, NativeBackupFormat.DRAFT_MEDIA_PREFIX) }
-                        ?.takeIf(List<String>::isNotEmpty)
-                    attachment.copy(
-                        uri = primarySource,
-                        localPath = primarySource,
-                        processedFrames = processedFrames,
-                        preRenderedPaths = preRenderedPaths,
+                        raw = message.attachmentMeta,
+                        originalImageSources = message.images,
+                        oldToNewImageIndex = oldToNewImageIndex,
+                        archiveEntryForSource = { source ->
+                            sourceToArchiveEntry[mediaSourceKey(source)]
+                        },
+                        onMissingResource = { missingResourceCount++ },
                     )
+            } else if (message.attachmentMeta != null) {
+                messageAttachmentMeta[message.id] =
+                    NativeBackupMediaPolicy.rewriteAttachmentMetaForExport(
+                        raw = message.attachmentMeta,
+                        originalImageSources = emptyList(),
+                        oldToNewImageIndex = emptyMap(),
+                        archiveEntryForSource = { source ->
+                            sourceToArchiveEntry[mediaSourceKey(source)]
+                        },
+                        onMissingResource = { missingResourceCount++ },
+                    )
+            }
+
+            NativeBackupMediaPolicy.toolImagePaths(message.toolCallJson).forEach { source ->
+                if (copySource(source, NativeBackupFormat.IMAGE_MEDIA_PREFIX) != null) {
+                    copiedImageCount++
                 }
+            }
+        }
+
+        forEachSnapshotRecord(spool, SNAPSHOT_CONVERSATION) { raw ->
+            val conversation = Json.decodeFromString<ExportChatEntity>(raw)
+            val attachments = conversation.draftAttachments?.let { encoded ->
+                runCatching {
+                    Json.decodeFromString<List<SelectedAttachment>>(encoded)
+                }.getOrNull()
+            } ?: return@forEachSnapshotRecord
+            val archived = NativeBackupMediaPolicy.rewriteDraftAttachmentsForExport(
+                attachments = attachments,
+                archiveEntryForSource = { source ->
+                    copySource(source, NativeBackupFormat.DRAFT_MEDIA_PREFIX)
+                },
+                onMissingResource = { missingResourceCount++ },
+            )
             draftAttachments[conversation.id] = archived
                 .takeIf(List<SelectedAttachment>::isNotEmpty)
                 ?.let { Json.encodeToString(it) }
@@ -365,42 +512,28 @@ class DataExporter(
             draftAttachments = draftAttachments,
             sourceToArchiveEntry = sourceToArchiveEntry,
             copiedImageCount = copiedImageCount,
+            missingResourceCount = missingResourceCount,
         )
     }
 
-    /**
-     * Writes the existing conversations.json shape one entity at a time. The archive format stays
-     * compatible, but message bodies are never duplicated into an all-messages DTO list.
-     */
+    /** Writes the captured Room snapshot without performing any further database reads. */
     @OptIn(ExperimentalSerializationApi::class)
     private suspend fun writeConversationArchive(
         zip: ZipOutputStream,
-        conversations: List<ChatEntity>,
+        spool: File,
         mediaPlan: MediaExportPlan,
-        conversationSettings: Map<String, ConversationSettings>,
     ) {
         zip.putNextEntry(ZipEntry(NativeBackupFormat.CONVERSATIONS_ENTRY))
         try {
             zip.writeJsonToken("{\"conversations\":[")
             var first = true
-            conversations.forEach { conversation ->
+            forEachSnapshotRecord(spool, SNAPSHOT_CONVERSATION) { raw ->
                 if (!first) zip.write(','.code)
                 first = false
+                val conversation = Json.decodeFromString<ExportChatEntity>(raw)
                 Json.encodeToStream(
-                    ExportChatEntity(
-                        id = conversation.id,
-                        title = conversation.title,
-                        lastUpdated = conversation.lastUpdated,
-                        selectedBranchesJson = conversation.selectedBranchesJson,
-                        systemPromptId = conversation.systemPromptId,
-                        modelId = conversation.modelId,
-                        taskId = conversation.taskId,
-                        origin = conversation.origin,
-                        graduated = conversation.graduated,
-                        selectedRunBranchesJson = conversation.selectedRunBranchesJson,
-                        draftText = conversation.draftText,
+                    conversation.copy(
                         draftAttachments = mediaPlan.draftAttachments[conversation.id],
-                        conversationSettings = conversationSettings[conversation.id],
                     ),
                     zip,
                 )
@@ -408,109 +541,47 @@ class DataExporter(
 
             zip.writeJsonToken("],\"runs\":[")
             first = true
-            for (conversation in conversations) {
-                for (run in chatDao.getRunsForConversation(conversation.id).first()) {
-                    if (!first) zip.write(','.code)
-                    first = false
-                    Json.encodeToStream(
-                        ExportRunEntity(
-                            id = run.id,
-                            conversationId = run.conversationId,
-                            parentRunId = run.parentRunId,
-                            status = run.status.name,
-                            startedAt = run.startedAt,
-                            lastCheckpointAt = run.lastCheckpointAt,
-                            stopRequestedAt = run.stopRequestedAt,
-                            endedAt = run.endedAt,
-                            endReason = run.endReason?.name,
-                            currentPass = run.currentPass,
-                            legacyAmbiguous = run.legacyAmbiguous,
-                        ),
-                        zip,
-                    )
-                }
+            forEachSnapshotRecord(spool, SNAPSHOT_RUN) { raw ->
+                if (!first) zip.write(','.code)
+                first = false
+                zip.writeJsonToken(raw)
             }
 
             zip.writeJsonToken("],\"messages\":[")
             first = true
-            forEachMessagePage { page ->
-                page.forEach { message ->
-                    if (!first) zip.write(','.code)
-                    first = false
-                    Json.encodeToStream(
-                        ExportMessageEntity(
-                            id = message.id,
-                            conversationId = message.conversationId,
-                            parentId = message.parentId,
-                            text = message.text,
-                            images = mediaPlan.messageImages[message.id] ?: emptyList(),
-                            thoughts = message.thoughts,
-                            thoughtTitle = message.thoughtTitle,
-                            tokenCount = message.tokenCount,
-                            inputTokenCount = message.inputTokenCount,
-                            cachedInputTokenCount = message.cachedInputTokenCount,
-                            cacheWriteInputTokenCount = message.cacheWriteInputTokenCount,
-                            uncachedInputTokenCount = message.uncachedInputTokenCount,
-                            outputTokenCount = message.outputTokenCount,
-                            reasoningTokenCount = message.reasoningTokenCount,
-                            status = message.status.name,
-                            participant = message.participant.name,
-                            timestamp = message.timestamp,
-                            thoughtTimeMs = message.thoughtTimeMs,
-                            modelName = message.modelName,
-                            toolCallJson = NativeBackupMediaPolicy.rewriteToolImagePathsForExport(
-                                raw = message.toolCallJson,
-                                archiveEntryForSource = { source ->
-                                    mediaPlan.sourceToArchiveEntry[mediaSourceKey(source)]
-                                },
-                            ),
-                            attachmentMeta = mediaPlan.messageAttachmentMeta[message.id],
-                            runId = message.runId,
-                            runSequence = message.runSequence,
-                            consumedAtPass = message.consumedAtPass,
+            forEachSnapshotRecord(spool, SNAPSHOT_MESSAGE) { raw ->
+                if (!first) zip.write(','.code)
+                first = false
+                val message = Json.decodeFromString<ExportMessageEntity>(raw)
+                Json.encodeToStream(
+                    message.copy(
+                        images = mediaPlan.messageImages[message.id] ?: emptyList(),
+                        toolCallJson = NativeBackupMediaPolicy.rewriteToolImagePathsForExport(
+                            raw = message.toolCallJson,
+                            archiveEntryForSource = { source ->
+                                mediaPlan.sourceToArchiveEntry[mediaSourceKey(source)]
+                            },
                         ),
-                        zip,
-                    )
-                }
+                        attachmentMeta = mediaPlan.messageAttachmentMeta[message.id],
+                    ),
+                    zip,
+                )
             }
 
             zip.writeJsonToken("],\"tasks\":[")
             first = true
-            chatDao.getAllTasksList().forEach { task ->
+            forEachSnapshotRecord(spool, SNAPSHOT_TASK) { raw ->
                 if (!first) zip.write(','.code)
                 first = false
-                Json.encodeToStream(
-                    ExportTaskEntity(
-                        id = task.id,
-                        name = task.name,
-                        prompt = task.prompt,
-                        systemPrompt = task.systemPrompt,
-                        modelId = task.modelId,
-                        cronExpr = task.cronExpr,
-                        runAt = task.runAt,
-                        createdAt = task.createdAt,
-                        lastRunAt = task.lastRunAt,
-                    ),
-                    zip,
-                )
+                zip.writeJsonToken(raw)
             }
 
             zip.writeJsonToken("],\"loops\":[")
             first = true
-            chatDao.getAllLoopsList().forEach { loop ->
+            forEachSnapshotRecord(spool, SNAPSHOT_LOOP) { raw ->
                 if (!first) zip.write(','.code)
                 first = false
-                val sanitized = sanitizeImportedLoop(loop)
-                Json.encodeToStream(
-                    ExportLoopEntity(
-                        conversationId = sanitized.conversationId,
-                        intervalMs = sanitized.intervalMs,
-                        prompt = sanitized.prompt,
-                        cycleCount = sanitized.cycleCount,
-                        maxCycles = sanitized.maxCycles,
-                    ),
-                    zip,
-                )
+                zip.writeJsonToken(raw)
             }
             zip.writeJsonToken("]}")
         } finally {
@@ -538,34 +609,40 @@ class DataExporter(
         )
 
         var imagesExportedTotal = 0
+        var missingResourceCount = 0
         val totalSteps = categories.size + 1 // +1 for manifest
         var completed = 0
         fun step() { completed++; onProgress(completed.toFloat() / totalSteps) }
 
-        val rawOutput = context.contentResolver.openOutputStream(uri)
-            ?: throw IOException("Could not open the selected backup destination")
-        rawOutput.use { raw ->
-            val zip = ZipOutputStream(BufferedOutputStream(raw))
+        val conversationSpool = if (ExportCategory.CONVERSATIONS in categories) {
+            captureConversationSnapshot(settingsManager.conversationSettings.first())
+        } else {
+            null
+        }
+        try {
+            val rawOutput = context.contentResolver.openOutputStream(uri)
+                ?: throw IOException("Could not open the selected backup destination")
+            rawOutput.use { raw ->
+                val zip = ZipOutputStream(BufferedOutputStream(raw))
 
-            // Manifest
-            zip.putNextEntry(ZipEntry(NativeBackupFormat.MANIFEST_ENTRY))
-            Json.encodeToStream(manifest, zip)
-            zip.closeEntry()
-            step()
-
-            // Conversations
-            if (ExportCategory.CONVERSATIONS in categories) {
-                val conversations = chatDao.getAllConversationsList()
-                val mediaPlan = buildMediaExportPlan(zip, conversations)
-                imagesExportedTotal += mediaPlan.copiedImageCount
-                writeConversationArchive(
-                    zip = zip,
-                    conversations = conversations,
-                    mediaPlan = mediaPlan,
-                    conversationSettings = settingsManager.conversationSettings.first(),
-                )
+                // Manifest
+                zip.putNextEntry(ZipEntry(NativeBackupFormat.MANIFEST_ENTRY))
+                Json.encodeToStream(manifest, zip)
+                zip.closeEntry()
                 step()
-            }
+
+                // Conversations
+                if (conversationSpool != null) {
+                    val mediaPlan = buildMediaExportPlan(zip, conversationSpool)
+                    imagesExportedTotal += mediaPlan.copiedImageCount
+                    missingResourceCount += mediaPlan.missingResourceCount
+                    writeConversationArchive(
+                        zip = zip,
+                        spool = conversationSpool,
+                        mediaPlan = mediaPlan,
+                    )
+                    step()
+                }
 
             // Memories
             if (ExportCategory.MEMORIES in categories) {
@@ -644,7 +721,13 @@ class DataExporter(
             zip.flush()
         }
 
-        onProgress(1f)
-        ExportResult(imagesExported = imagesExportedTotal)
+            onProgress(1f)
+            ExportResult(
+                imagesExported = imagesExportedTotal,
+                missingResourceCount = missingResourceCount,
+            )
+        } finally {
+            conversationSpool?.delete()
+        }
     }
 }

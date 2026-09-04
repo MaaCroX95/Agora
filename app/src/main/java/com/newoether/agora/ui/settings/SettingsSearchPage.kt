@@ -2,6 +2,8 @@ package com.newoether.agora.ui.settings
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -13,6 +15,7 @@ import androidx.compose.material.icons.filled.ManageSearch
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
@@ -26,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
 import com.newoether.agora.api.ProviderDefaults
+import com.newoether.agora.data.local.SemanticIndexLedgerEntity
 import com.newoether.agora.ui.common.PersistedSliderFeedbackGate
 import com.newoether.agora.ui.components.clearFocusOnTap
 import com.newoether.agora.util.Constants
@@ -47,12 +51,16 @@ private val searchMethods = listOf(
 fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     val accessPastConversations by viewModel.settings.accessPastConversations.collectAsState()
     val autoCacheEnabled by viewModel.settings.autoCacheEnabled.collectAsState()
+    val showUncachedNotification by viewModel.settings.showUncachedNotification.collectAsState()
     val modelSearchMethod by viewModel.settings.modelSearchMethod.collectAsState()
     val manualSearchMethod by viewModel.settings.manualSearchMethod.collectAsState()
     val embeddingModels by viewModel.settings.embeddingModels.collectAsState()
     val activeEmbeddingModelId by viewModel.settings.activeEmbeddingModelId.collectAsState()
-    val cachingProgress by viewModel.ragManager.cachingProgress.collectAsState()
+    val cachingModels by viewModel.ragManager.cachingModels.collectAsState()
     val cacheCounts by viewModel.ragManager.cacheCounts.collectAsState()
+    val cacheCountLoading by viewModel.ragManager.cacheCountLoading.collectAsState()
+    val cacheCountFailures by viewModel.ragManager.cacheCountFailures.collectAsState()
+    val ledgerStates by viewModel.ragManager.ledgerStates.collectAsState()
     val searchContextWindow by viewModel.settings.searchContextWindow.collectAsState()
     val searchMatchLimit by viewModel.settings.searchMatchLimit.collectAsState()
     val ragThreshold by viewModel.settings.ragThreshold.collectAsState()
@@ -134,19 +142,39 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
 
                 SettingsGroup(
                     title = stringResource(R.string.auto_cache_title),
-                items = listOf(
-                    {
+                items = buildList {
+                    add {
                         SettingsItem(
                             headlineContent = { Text(stringResource(R.string.auto_cache)) },
                             supportingContent = { Text(stringResource(R.string.auto_cache_desc)) },
                             leadingContent = { Icon(Icons.Default.Cached, null, tint = MaterialTheme.colorScheme.primary) },
                             trailingContent = {
-                                Switch(checked = autoCacheEnabled, onCheckedChange = { viewModel.settings.setAutoCacheEnabled(it) })
+                                Switch(checked = autoCacheEnabled, onCheckedChange = { viewModel.ragManager.setAutoCacheEnabled(it) })
                             },
-                            modifier = Modifier.clickable { viewModel.settings.setAutoCacheEnabled(!autoCacheEnabled) }
+                            modifier = Modifier.clickable { viewModel.ragManager.setAutoCacheEnabled(!autoCacheEnabled) }
                         )
                     }
-                )
+                    if (!autoCacheEnabled) {
+                        add {
+                            SettingsItem(
+                                headlineContent = { Text(stringResource(R.string.show_uncached_notification)) },
+                                supportingContent = { Text(stringResource(R.string.show_uncached_notification_desc)) },
+                                leadingContent = {
+                                    Icon(Icons.Default.Notifications, null, tint = MaterialTheme.colorScheme.primary)
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        checked = showUncachedNotification,
+                                        onCheckedChange = viewModel.settings::setShowUncachedNotification,
+                                    )
+                                },
+                                modifier = Modifier.clickable {
+                                    viewModel.settings.setShowUncachedNotification(!showUncachedNotification)
+                                }
+                            )
+                        }
+                    }
+                }
             )
 
             SettingsGroup(
@@ -260,24 +288,38 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                         embeddingModels.forEach { model ->
                             add {
                                 val isActive = model.id == activeEmbeddingModelId
-                                val progress = cachingProgress[model.id]
-                                val isCaching = progress != null
+                                val isCaching = model.id in cachingModels
                                 val counts = cacheCounts[model.id]
-                                val allCached = counts != null && counts.second > 0 && counts.first >= counts.second
+                                val isCountLoading = model.id in cacheCountLoading
+                                val initialFailure = counts == null && !isCountLoading &&
+                                    model.id in cacheCountFailures
+                                val ledgerCurrent = ledgerStates[model.id] ==
+                                    SemanticIndexLedgerEntity.STATE_CURRENT
                                 SettingsItem(
                                     headlineContent = { Text(model.name) },
                                     supportingContent = {
                                         val typeLabel = if (model.type == com.newoether.agora.data.EmbeddingModelType.REMOTE)
                                             stringResource(R.string.embedding_type_remote)
                                         else stringResource(R.string.embedding_type_local)
-                                        val cacheLabel = if (counts != null && counts.second > 0) {
-                                            val notCached = (counts.second - counts.first).coerceAtLeast(0)
-                                            if (notCached == 0) stringResource(R.string.cached)
-                                            else "${notCached} ${stringResource(R.string.not_cached)} (${counts.first}/${counts.second})"
-                                        } else {
-                                            stringResource(R.string.not_cached)
+                                        Crossfade(
+                                            targetState = counts to initialFailure,
+                                            animationSpec = tween(250),
+                                            label = "embeddingCacheStatus-${model.id}",
+                                        ) { (snapshot, failed) ->
+                                            val cacheLabel = when {
+                                                snapshot != null && ledgerCurrent ->
+                                                    stringResource(R.string.cached)
+                                                snapshot != null -> {
+                                                    val notCached = (snapshot.second - snapshot.first)
+                                                        .coerceAtLeast(0)
+                                                    "$notCached ${stringResource(R.string.not_cached)} " +
+                                                        "(${snapshot.first}/${snapshot.second})"
+                                                }
+                                                failed -> stringResource(R.string.tool_state_failed)
+                                                else -> stringResource(R.string.loading_label)
+                                            }
+                                            Text("$typeLabel · $cacheLabel")
                                         }
-                                        Text("$typeLabel · $cacheLabel")
                                     },
                                     leadingContent = {
                                         RadioButton(
@@ -287,25 +329,35 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                     },
                                     trailingContent = {
                                         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                            if (isCaching) {
-                                                val ratio = if (progress.second <= 0) {
-                                                    0f
-                                                } else {
-                                                    progress.first.toFloat() / progress.second.toFloat()
+                                            val actionState = when {
+                                                isCaching -> "caching"
+                                                initialFailure -> "failed"
+                                                counts == null -> "loading"
+                                                ledgerCurrent -> "recache"
+                                                else -> "cache"
+                                            }
+                                            Crossfade(
+                                                targetState = actionState,
+                                                animationSpec = tween(250),
+                                                label = "embeddingCacheAction-${model.id}",
+                                            ) { state ->
+                                                when (state) {
+                                                    "caching", "loading" -> CircularProgressIndicator(
+                                                        modifier = Modifier.size(24.dp),
+                                                        strokeWidth = 3.dp,
+                                                    )
+                                                    "failed" -> TextButton(
+                                                        onClick = viewModel.ragManager::loadCacheCounts,
+                                                    ) { Text(stringResource(R.string.retry)) }
+                                                    "recache" -> TextButton(
+                                                        onClick = { showRecacheConfirm = model.id },
+                                                    ) { Text(stringResource(R.string.recache_action)) }
+                                                    else -> TextButton(
+                                                        onClick = {
+                                                            viewModel.ragManager.cacheMessagesForModel(model.id)
+                                                        },
+                                                    ) { Text(stringResource(R.string.cache_action)) }
                                                 }
-                                                CircularProgressIndicator(
-                                                    progress = { ratio },
-                                                    modifier = Modifier.size(24.dp),
-                                                    strokeWidth = 3.dp
-                                                )
-                                            } else {
-                                                TextButton(onClick = {
-                                                    if (allCached) {
-                                                        showRecacheConfirm = model.id
-                                                    } else {
-                                                        viewModel.ragManager.cacheMessagesForModel(model.id)
-                                                    }
-                                                }) { Text(if (allCached) stringResource(R.string.recache_action) else stringResource(R.string.cache_action)) }
                                             }
                                             Box {
                                                 IconButton(onClick = { showMenuForModel = model.id }) {

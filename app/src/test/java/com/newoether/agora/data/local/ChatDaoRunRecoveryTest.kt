@@ -22,7 +22,6 @@ class ChatDaoRunRecoveryTest {
     @Test
     fun recoveryExecutesTheExactSnapshotEffectAndStopsItsInFlightModel() = runTest {
         val dao = mockk<ChatDao>()
-        val run = liveRun(status = RunStatus.ACTIVE)
         val message = MessageEntity(
             id = "message",
             conversationId = CONVERSATION_ID,
@@ -34,8 +33,7 @@ class ChatDaoRunRecoveryTest {
             runSequence = 0,
         )
         val checkpoint = slot<MessageStreamCheckpoint>()
-        coEvery { dao.recoverOrphanedRuns(any()) } coAnswers { callOriginal() }
-        coEvery { dao.getOrphanedLiveRuns() } returns listOf(run)
+        stubExactOwner(dao, liveRun(RunStatus.ACTIVE))
         coEvery { dao.getMessagesForRuns(listOf(RUN_ID)) } returns listOf(message)
         coEvery { dao.updateMessageCheckpoint(capture(checkpoint)) } returns 1
         coEvery {
@@ -47,29 +45,56 @@ class ChatDaoRunRecoveryTest {
             )
         } returns 1
 
-        assertEquals(1, dao.recoverOrphanedRuns(99L))
+        assertEquals(2, dao.recoverConversationRuntime(CONVERSATION_ID, 99L))
         assertEquals(MessageStatus.STOPPED, checkpoint.captured.status)
-        coVerify(exactly = 1) {
-            dao.terminalizeLiveRun(
-                RUN_ID,
-                RunStatus.STOPPED,
-                RunEndReason.PROCESS_RECOVERED,
-                99L,
-            )
-        }
+        coVerify(exactly = 1) { dao.getConversation(CONVERSATION_ID) }
+        coVerify(exactly = 1) { dao.getLiveRun(CONVERSATION_ID) }
+        coVerify(exactly = 1) { dao.stopStuckMessagesForConversation(CONVERSATION_ID) }
+        coVerify(exactly = 0) { dao.getAllConversationsList() }
     }
 
     @Test
     fun recoveryRejectsALostExactRunUpdate() = runTest {
         val dao = mockk<ChatDao>()
-        coEvery { dao.recoverOrphanedRuns(any()) } coAnswers { callOriginal() }
-        coEvery { dao.getOrphanedLiveRuns() } returns listOf(liveRun(RunStatus.STOPPING))
+        stubExactOwner(dao, liveRun(RunStatus.STOPPING))
         coEvery { dao.getMessagesForRuns(listOf(RUN_ID)) } returns emptyList()
         coEvery { dao.terminalizeLiveRun(any(), any(), any(), any()) } returns 0
 
-        val failure = runCatching { dao.recoverOrphanedRuns(99L) }.exceptionOrNull()
+        val failure = runCatching {
+            dao.recoverConversationRuntime(CONVERSATION_ID, 99L)
+        }.exceptionOrNull()
 
         assertTrue(failure is IllegalStateException)
+        coVerify(exactly = 0) { dao.stopStuckMessagesForConversation(any()) }
+    }
+
+    @Test
+    fun recoveryRepairsOnlyTheExactOwnersRunBranchesAndStuckRows() = runTest {
+        val dao = mockk<ChatDao>()
+        coEvery { dao.recoverConversationRuntime(any(), any()) } coAnswers { callOriginal() }
+        coEvery { dao.getConversation(CONVERSATION_ID) } returns ChatEntity(
+            id = CONVERSATION_ID,
+            title = "Conversation",
+            selectedRunBranchesJson = "{\"null\":\"missing\"}",
+        )
+        coEvery { dao.getLiveRun(CONVERSATION_ID) } returns null
+        coEvery { dao.getRunsForConversationSnapshot(CONVERSATION_ID) } returns emptyList()
+        coEvery {
+            dao.compareAndSetRunBranchSelections(
+                CONVERSATION_ID,
+                "{\"null\":\"missing\"}",
+                "{}",
+            )
+        } returns 1
+        coEvery { dao.stopStuckMessagesForConversation(CONVERSATION_ID) } returns 2
+
+        assertEquals(3, dao.recoverConversationRuntime(CONVERSATION_ID, 99L))
+
+        coVerify(exactly = 1) { dao.getRunsForConversationSnapshot(CONVERSATION_ID) }
+        coVerify(exactly = 0) { dao.getConversation(OTHER_CONVERSATION_ID) }
+        coVerify(exactly = 0) { dao.getLiveRun(OTHER_CONVERSATION_ID) }
+        coVerify(exactly = 0) { dao.stopStuckMessagesForConversation(OTHER_CONVERSATION_ID) }
+        coVerify(exactly = 0) { dao.getAllConversationsList() }
     }
 
     @Test
@@ -87,13 +112,12 @@ class ChatDaoRunRecoveryTest {
             runSequence = 1,
         )
         val checkpoint = slot<MessageStreamCheckpoint>()
-        coEvery { dao.recoverOrphanedRuns(any()) } coAnswers { callOriginal() }
-        coEvery { dao.getOrphanedLiveRuns() } returns listOf(liveRun(RunStatus.ACTIVE))
+        stubExactOwner(dao, liveRun(RunStatus.ACTIVE))
         coEvery { dao.getMessagesForRuns(listOf(RUN_ID)) } returns listOf(compact)
         coEvery { dao.updateMessageCheckpoint(capture(checkpoint)) } returns 1
         coEvery { dao.terminalizeLiveRun(any(), any(), any(), any()) } returns 1
 
-        assertEquals(1, dao.recoverOrphanedRuns(99L))
+        assertEquals(2, dao.recoverConversationRuntime(CONVERSATION_ID, 99L))
         assertEquals(compact.id, checkpoint.captured.id)
         assertEquals("partial summary", checkpoint.captured.text)
         assertEquals(MessageStatus.STOPPED, checkpoint.captured.status)
@@ -117,14 +141,14 @@ class ChatDaoRunRecoveryTest {
             runSequence = 0,
         )
         val checkpoint = slot<MessageStreamCheckpoint>()
-        coEvery { dao.recoverOrphanedRuns(any()) } coAnswers { callOriginal() }
-        coEvery { dao.getOrphanedLiveRuns() } returns listOf(liveRun(RunStatus.ACTIVE))
+        stubExactOwner(dao, liveRun(RunStatus.ACTIVE))
         coEvery { dao.getMessagesForRuns(listOf(RUN_ID)) } returns listOf(message)
         coEvery { dao.updateMessageCheckpoint(capture(checkpoint)) } returns 1
         coEvery { dao.terminalizeLiveRun(any(), any(), any(), any()) } returns 1
-        assertEquals(1, dao.recoverOrphanedRuns(99L))
+
+        assertEquals(2, dao.recoverConversationRuntime(CONVERSATION_ID, 99L))
         val segments = Json.parseToJsonElement(
-            requireNotNull(checkpoint.captured.toolCallJson)
+            requireNotNull(checkpoint.captured.toolCallJson),
         ).jsonArray
         assertEquals(
             ToolExecutionStates.STOPPED,
@@ -137,6 +161,17 @@ class ChatDaoRunRecoveryTest {
         )
         assertEquals("true", segments[1].jsonObject["futureFlag"]?.toString())
     }
+
+    private fun stubExactOwner(dao: ChatDao, run: RunEntity?) {
+        coEvery { dao.recoverConversationRuntime(any(), any()) } coAnswers { callOriginal() }
+        coEvery { dao.getConversation(CONVERSATION_ID) } returns ChatEntity(
+            id = CONVERSATION_ID,
+            title = "Conversation",
+        )
+        coEvery { dao.getLiveRun(CONVERSATION_ID) } returns run
+        coEvery { dao.stopStuckMessagesForConversation(CONVERSATION_ID) } returns 0
+    }
+
     private fun liveRun(status: RunStatus) = RunEntity(
         id = RUN_ID,
         conversationId = CONVERSATION_ID,
@@ -151,6 +186,7 @@ class ChatDaoRunRecoveryTest {
 
     private companion object {
         const val CONVERSATION_ID = "conversation"
+        const val OTHER_CONVERSATION_ID = "other"
         const val RUN_ID = "run"
     }
 }

@@ -84,6 +84,83 @@ class ContextCompactTest {
     }
 
     @Test
+    fun compactContinuationStaysOnCompactWhenLaterUserIsNotAdjacent() {
+        val compact = message("compact_boundary", "summary", Participant.MODEL).copy(
+            parentId = "u0",
+            timestamp = 123L,
+        )
+        val prepared = prepareMessages(
+            listOf(
+                message("u0", "old", Participant.USER),
+                compact,
+                message("a1", "later assistant", Participant.MODEL),
+                message("u2", "later user", Participant.USER),
+            ),
+            contextTokenBudget = 4_096,
+        )
+
+        assertEquals(
+            listOf("context_summary_compact_boundary", "a1", "u2"),
+            prepared.map { it.id },
+        )
+        assertEquals(
+            "<context_summary>\nsummary\n</context_summary>\n\nPlease continue.",
+            prepared[0].text,
+        )
+        assertEquals(Participant.USER, prepared[0].participant)
+        assertEquals(compact.parentId, prepared[0].parentId)
+        assertEquals(compact.timestamp, prepared[0].timestamp)
+        assertEquals("later assistant", prepared[1].text)
+        assertEquals("later user", prepared[2].text)
+        assertTrue(prepared.drop(1).none { it.text.contains("Please continue.") })
+    }
+
+    @Test
+    fun compactContinuationNeverMovesIntoFollowingToolRound() {
+        val compact = message("compact_boundary", "summary", Participant.MODEL).copy(
+            timestamp = 123L,
+        )
+        val toolCall = message("tool_call", "", Participant.MODEL).copy(
+            segments = listOf(
+                com.newoether.agora.model.MessageSegment(
+                    type = "tool",
+                    toolName = "file_read",
+                    toolArgs = "{}",
+                    toolCallId = "call-1",
+                )
+            ),
+        )
+        val toolResult = message("result_call", "result", Participant.USER).copy(
+            segments = listOf(
+                com.newoether.agora.model.MessageSegment(
+                    type = "tool",
+                    toolName = "file_read",
+                    toolResult = "result",
+                    toolCallId = "call-1",
+                )
+            ),
+        )
+
+        val prepared = prepareMessages(
+            listOf(compact, toolCall, toolResult),
+            contextTokenBudget = 4_096,
+        )
+
+        assertEquals(
+            listOf("context_summary_compact_boundary", "tool_call", "result_call"),
+            prepared.map { it.id },
+        )
+        assertEquals(
+            "<context_summary>\nsummary\n</context_summary>\n\nPlease continue.",
+            prepared[0].text,
+        )
+        assertEquals(compact.timestamp, prepared[0].timestamp)
+        assertTrue(prepared.drop(1).none { it.text.contains("Please continue.") })
+        assertEquals("{}", prepared[1].segments?.single()?.toolArgs)
+        assertEquals("result", prepared[2].segments?.single()?.toolResult)
+    }
+
+    @Test
     fun initialApiUserPromptSuppressesCompactContinuation() {
         val compact = message("compact_boundary", "summary", Participant.MODEL)
         val prompt = message(
@@ -101,6 +178,48 @@ class ContextCompactTest {
         assertEquals("<context_summary>\nsummary\n</context_summary>", prepared[0].text)
         assertEquals("Create the compact context summary now.", prepared[1].text)
         assertTrue(prepared.none { it.text.contains("Please continue.") })
+    }
+
+    @Test
+    fun nonTerminalInitialApiUserPromptSuppressesCompactContinuation() {
+        val compact = message("compact_boundary", "summary", Participant.MODEL)
+        val prompt = message(
+            "api_initial_user_${compact.id}",
+            "Create the compact context summary now.",
+            Participant.USER,
+        ).copy(parentId = compact.id)
+
+        val prepared = prepareMessages(
+            listOf(compact, prompt, message("a1", "later assistant", Participant.MODEL)),
+            contextTokenBudget = 4_096,
+        )
+
+        assertTrue(prepared.any { it.text.contains("Create the compact context summary now.") })
+        assertTrue(prepared.none { it.text.contains("Please continue.") })
+    }
+
+    @Test
+    fun terminalInitialApiUserPromptDoesNotSuppressWhenNotAdjacent() {
+        val compact = message("compact_boundary", "summary", Participant.MODEL)
+        val model = message("a1", "later assistant", Participant.MODEL)
+        val prompt = message(
+            "api_initial_user_${model.id}",
+            "Create the compact context summary now.",
+            Participant.USER,
+        ).copy(parentId = model.id)
+
+        val prepared = prepareMessages(
+            listOf(compact, model, prompt),
+            contextTokenBudget = 4_096,
+        )
+
+        assertEquals(
+            "<context_summary>\nsummary\n</context_summary>\n\nPlease continue.",
+            prepared[0].text,
+        )
+        assertEquals("later assistant", prepared[1].text)
+        assertEquals("Create the compact context summary now.", prepared[2].text)
+        assertTrue(prepared.drop(1).none { it.text.contains("Please continue.") })
     }
 
     @Test

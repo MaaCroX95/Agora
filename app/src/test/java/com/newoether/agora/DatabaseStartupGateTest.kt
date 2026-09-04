@@ -2,7 +2,6 @@ package com.newoether.agora
 
 import com.newoether.agora.data.local.DatabaseCompatibility
 import java.io.IOException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
@@ -16,11 +15,10 @@ import org.junit.Test
 
 class DatabaseStartupGateTest {
     @Test
-    fun `future database stays closed until explicit clear then starts once`() = runTest {
+    fun `future database stays closed until explicit clear then opens once`() = runTest {
         var compatibility: DatabaseCompatibility = DatabaseCompatibility.FutureVersion(23, 22)
         var openCalls = 0
         var deleteCalls = 0
-        var startCalls = 0
 
         val gate = DatabaseStartupGate(
             inspectDatabase = { compatibility },
@@ -34,26 +32,21 @@ class DatabaseStartupGateTest {
                 compatibility = DatabaseCompatibility.Missing
                 true
             },
-            startProcessServices = { startCalls += 1 },
             reportFailure = {},
         )
 
-        val blocked = gate.initialize()
-        assertTrue(blocked is DatabaseStartupState.Blocked)
+        assertTrue(gate.initialize() is DatabaseStartupState.Blocked)
         assertEquals(0, openCalls)
-        assertEquals(0, startCalls)
         assertNull(gate.awaitReadyResource())
 
         assertTrue(gate.clearBlockedDatabase())
         assertEquals(DatabaseStartupState.Ready, gate.state.value)
         assertEquals(1, deleteCalls)
         assertEquals(1, openCalls)
-        assertEquals(1, startCalls)
         assertEquals("database", gate.requireReadyResource())
 
         assertEquals(DatabaseStartupState.Ready, gate.initialize())
         assertEquals(1, openCalls)
-        assertEquals(1, startCalls)
     }
 
     @Test
@@ -61,7 +54,6 @@ class DatabaseStartupGateTest {
         val failure = IOException("unreadable")
         val reported = mutableListOf<Throwable>()
         var opened = false
-
         val gate = DatabaseStartupGate(
             inspectDatabase = { DatabaseCompatibility.Unreadable(failure) },
             openResource = {
@@ -70,7 +62,6 @@ class DatabaseStartupGateTest {
             },
             closeResource = {},
             deleteDatabase = { true },
-            startProcessServices = {},
             reportFailure = reported::add,
         )
 
@@ -93,7 +84,6 @@ class DatabaseStartupGateTest {
             },
             closeResource = {},
             deleteDatabase = { false },
-            startProcessServices = {},
             reportFailure = {},
         )
         val original = gate.initialize()
@@ -104,9 +94,8 @@ class DatabaseStartupGateTest {
     }
 
     @Test
-    fun `concurrent initialization publishes and starts one resource`() = runTest {
+    fun `concurrent initialization publishes one validated resource`() = runTest {
         var openCalls = 0
-        var startCalls = 0
         val gate = DatabaseStartupGate(
             inspectDatabase = { DatabaseCompatibility.Supported(22) },
             openResource = {
@@ -116,58 +105,33 @@ class DatabaseStartupGateTest {
             },
             closeResource = {},
             deleteDatabase = { true },
-            startProcessServices = { startCalls += 1 },
             reportFailure = {},
         )
 
         List(4) { async { gate.initialize() } }.awaitAll()
 
         assertEquals(1, openCalls)
-        assertEquals(1, startCalls)
         assertEquals(DatabaseStartupState.Ready, gate.state.value)
+        assertEquals("database", gate.requireReadyResource())
     }
 
     @Test
-    fun `ready waits for process services to finish`() = runTest {
-        val servicesStarted = CompletableDeferred<Unit>()
-        val releaseServices = CompletableDeferred<Unit>()
-        val gate = DatabaseStartupGate(
-            inspectDatabase = { DatabaseCompatibility.Supported(22) },
-            openResource = { "database" },
-            closeResource = {},
-            deleteDatabase = { true },
-            startProcessServices = {
-                servicesStarted.complete(Unit)
-                releaseServices.await()
-            },
-            reportFailure = {},
-        )
-        val initialization = async { gate.initialize() }
-        servicesStarted.await()
-        assertEquals(DatabaseStartupState.Checking, gate.state.value)
-        assertFalse(initialization.isCompleted)
-        releaseServices.complete(Unit)
-        assertEquals(DatabaseStartupState.Ready, initialization.await())
-        assertEquals(DatabaseStartupState.Ready, gate.state.value)
-    }
-    @Test
-    fun `service start failure closes resource and remains blocked`() = runTest {
-        val failure = IllegalStateException("start failed")
+    fun `open failure closes no resource and remains blocked`() = runTest {
+        val failure = IllegalStateException("open failed")
         var closeCalls = 0
         val reported = mutableListOf<Throwable>()
         val gate = DatabaseStartupGate(
             inspectDatabase = { DatabaseCompatibility.Supported(22) },
-            openResource = { "database" },
+            openResource = { throw failure },
             closeResource = { closeCalls += 1 },
             deleteDatabase = { true },
-            startProcessServices = { throw failure },
             reportFailure = reported::add,
         )
 
         val state = gate.initialize()
 
         assertTrue(state is DatabaseStartupState.Blocked)
-        assertEquals(1, closeCalls)
+        assertEquals(0, closeCalls)
         assertSame(failure, reported.last())
         assertNull(gate.awaitReadyResource())
     }

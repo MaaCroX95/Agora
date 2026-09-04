@@ -1,14 +1,17 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.api.LOCAL_CONTEXT_CAPACITY_ERROR_CODE
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.model.CitationAnchor
 import com.newoether.agora.model.CitationPolicy
 import com.newoether.agora.model.MessageSegment
+import com.newoether.agora.model.MessagePersistenceGuard
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.ToolExecutionStates
 import com.newoether.agora.model.citationRecords
 import com.newoether.agora.model.toMessageSegment
+import com.newoether.agora.ui.chat.message.assistantErrorContent
 import com.newoether.agora.util.Constants
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -130,6 +133,7 @@ class UiMessageProjectionTest {
         toolCallJson: String?,
         thoughts: String? = null,
         status: MessageStatus = MessageStatus.SUCCESS,
+        modelName: String? = null,
     ) = MessageEntity(
         id = id,
         conversationId = "conversation",
@@ -140,9 +144,46 @@ class UiMessageProjectionTest {
         status = status,
         participant = Participant.MODEL,
         timestamp = 1L,
+        modelName = modelName,
         toolCallJson = toolCallJson,
         runId = "run",
     )
+    @Test
+    fun localContextHelpRejectsOtherProvidersAndErrorsAfterProjection() {
+        val cases = listOf(
+            "Remote: model" to LOCAL_CONTEXT_CAPACITY_ERROR_CODE,
+            "Ollama: model" to LOCAL_CONTEXT_CAPACITY_ERROR_CODE,
+            "Local: model.gguf" to "different_error",
+            "Local: model.gguf" to null,
+        )
+
+        cases.forEachIndexed { index, (modelName, errorCode) ->
+            val segments = listOf(
+                MessageSegment(
+                    type = "error",
+                    content = "Context capacity reached",
+                    errorCode = errorCode,
+                )
+            )
+            val projected = messageEntity(
+                id = "assistant-$index",
+                text = "",
+                toolCallJson = MessagePersistenceGuard.encodeSegmentsBounded(segments),
+                status = MessageStatus.ERROR,
+                modelName = modelName,
+            ).toUiChatMessage { it }
+
+            assertEquals(
+                false,
+                assistantErrorContent(
+                    projected,
+                    projected.segments.orEmpty(),
+                    "Failed to generate",
+                )?.showLocalContextHelp,
+            )
+        }
+    }
+
     @Test
     fun persistedImplicitThinkingCloseIsRecoveredForUi() {
         val segments = listOf(

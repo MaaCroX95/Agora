@@ -85,6 +85,7 @@ class ConversationRegenerationServiceTest {
                 messageSelectionUpdates = mapOf("source-input" to "new-model"),
                 conversationModelId = "provider:model",
                 at = any(),
+                touchConversationOnAdmission = true,
             )
         } answers {
             RunGraphCommit(
@@ -107,12 +108,12 @@ class ConversationRegenerationServiceTest {
                         it.snapshot === fixture.snapshot &&
                         it.runId == "new-run" &&
                         it.pass == 0 &&
-                        it.callerTag == "regenerate"
+                        it.requestKind == "chat"
                 },
                 state,
             )
         }
-        assertEquals(RegenerationTransitionStage.COMMITTED, fixture.transitions.request.value?.stage)
+        assertEquals(BranchReplacementTransitionStage.COMMITTED, fixture.transitions.request.value?.stage)
         assertEquals("source-run", createdRun.captured.parentRunId)
         assertEquals(50L, createdRun.captured.startedAt)
         assertEquals(listOf("new-model"), createdMessages.captured.map { it.id })
@@ -166,6 +167,7 @@ class ConversationRegenerationServiceTest {
                 messageSelectionUpdates = mapOf(upper.id to "new-model"),
                 conversationModelId = "provider:model",
                 at = any(),
+                touchConversationOnAdmission = true,
             )
         } answers {
             RunGraphCommit(
@@ -192,7 +194,7 @@ class ConversationRegenerationServiceTest {
             fixture.boundLauncher.launch(
                 match {
                     it.modelMessageId == "new-model" &&
-                        it.callerTag == "regenerate"
+                        it.requestKind == "chat"
                 },
                 state,
             )
@@ -208,7 +210,7 @@ class ConversationRegenerationServiceTest {
     private class Fixture {
         val conversations = mockk<ConversationRepository>()
         val requestBuilder = mockk<GenerationRequestBuilder>()
-        val transitions = RegenerationTransitionCoordinator(fadeTimeoutMs = 5_000L)
+        val transitions = BranchReplacementTransitionCoordinator(fadeTimeoutMs = 5_000L)
         val terminalSettlement = mockk<GenerationTerminalSettlementController>()
         val boundLauncher = mockk<BoundRunGenerationLauncher>()
         val guidanceDrain = mockk<QueuedGuidanceDrainExecutor>()

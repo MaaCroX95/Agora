@@ -1,5 +1,6 @@
 package com.newoether.agora.ui.chat.message
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,6 +45,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.ui.components.LatexImageTransformer
+import com.newoether.agora.ui.components.isDisplayLatexLink
 import com.newoether.agora.ui.chat.caseInsensitiveMatchRanges
 import com.newoether.agora.ui.chat.visibleMarkdownMatchRanges
 import com.newoether.agora.ui.theme.ChatType
@@ -64,6 +66,7 @@ import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.compose.elements.MarkdownCodeBackground
 import com.mikepenz.markdown.compose.elements.MarkdownCodeBlock
 import com.mikepenz.markdown.compose.elements.MarkdownCodeFence
+import com.mikepenz.markdown.compose.elements.MarkdownImage
 import com.mikepenz.markdown.compose.elements.MarkdownText
 import com.mikepenz.markdown.compose.elements.MarkdownTable
 import com.mikepenz.markdown.compose.elements.MarkdownTableHeader
@@ -110,7 +113,7 @@ internal fun chatLinkTextStyles(color: Color): TextLinkStyles {
         style = style,
         focusedStyle = style,
         hoveredStyle = style,
-        pressedStyle = style.copy(color = color.copy(alpha = 0.72f)),
+        pressedStyle = style,
     )
 }
 
@@ -144,10 +147,29 @@ internal fun scaledMarkdownTextStyle(style: TextStyle): TextStyle = style.copy(
         trim = LineHeightStyle.Trim.Both,
     ),
 )
+
+internal fun ASTNode.needsListParagraphSpacer(): Boolean {
+    if (type != MarkdownElementTypes.PARAGRAPH) return false
+    val listItem = parent?.takeIf { it.type == MarkdownElementTypes.LIST_ITEM } ?: return false
+    return listItem.children
+        .takeWhile { it !== this }
+        .any { it.type == MarkdownElementTypes.PARAGRAPH }
+}
+
+internal fun isScrollableDisplayLatexImage(content: String, node: ASTNode): Boolean {
+    val linkNode = node.findDescendantOfType(MarkdownElementTypes.LINK_DESTINATION) ?: return false
+    val link = content.substring(linkNode.startOffset, linkNode.endOffset)
+    return isDisplayLatexLink(link)
+}
+
+private fun ASTNode.findDescendantOfType(type: org.intellij.markdown.IElementType): ASTNode? {
+    if (this.type == type) return this
+    return children.firstNotNullOfOrNull { child -> child.findDescendantOfType(type) }
+}
+
 @Composable
 internal fun rememberChatMarkdownAssets(
     textColor: Color,
-    searchHighlight: SearchHighlightSpec? = null,
     parseInlineDollarMath: Boolean = false,
 ): ChatMarkdownAssets {
     val linkColor = MaterialTheme.colorScheme.primary
@@ -214,7 +236,6 @@ internal fun rememberChatMarkdownAssets(
     val activeSearchHighlightColor = ActiveSearchHighlightBackground
 
     val customMarkdownComponents = remember(
-        searchHighlight,
         searchHighlightColor,
         activeSearchHighlightColor,
     ) {
@@ -223,16 +244,24 @@ internal fun rememberChatMarkdownAssets(
             text = { model ->
                 SearchHighlightedMarkdownText(
                     model = model,
-                    spec = searchHighlight,
+                    spec = LocalSearchHighlightSpec.current,
                     highlightColor = searchHighlightColor,
                     activeHighlightColor = activeSearchHighlightColor,
                 )
+            },
+            image = { model ->
+                ScrollableDisplayLatexImage(model)
             },
             paragraph = { model ->
                 SearchHighlightedMarkdownText(
                     model = model,
                     style = model.typography.paragraph,
-                    spec = searchHighlight,
+                    modifier = if (model.node.needsListParagraphSpacer()) {
+                        Modifier.padding(top = LocalMarkdownPadding.current.block)
+                    } else {
+                        Modifier
+                    },
+                    spec = LocalSearchHighlightSpec.current,
                     highlightColor = searchHighlightColor,
                     activeHighlightColor = activeSearchHighlightColor,
                 )
@@ -242,7 +271,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h1,
                     MarkdownTokenTypes.ATX_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -252,7 +281,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h2,
                     MarkdownTokenTypes.ATX_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -262,7 +291,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h3,
                     MarkdownTokenTypes.ATX_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -272,7 +301,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h4,
                     MarkdownTokenTypes.ATX_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -282,7 +311,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h5,
                     MarkdownTokenTypes.ATX_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -292,7 +321,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h6,
                     MarkdownTokenTypes.ATX_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -302,7 +331,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h1,
                     MarkdownTokenTypes.SETEXT_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -312,7 +341,7 @@ internal fun rememberChatMarkdownAssets(
                     model,
                     model.typography.h2,
                     MarkdownTokenTypes.SETEXT_CONTENT,
-                    searchHighlight,
+                    LocalSearchHighlightSpec.current,
                     searchHighlightColor,
                     activeSearchHighlightColor,
                 )
@@ -321,7 +350,7 @@ internal fun rememberChatMarkdownAssets(
                 SearchHighlightedMarkdownCode(
                     model = model,
                     fenced = true,
-                    spec = searchHighlight,
+                    spec = LocalSearchHighlightSpec.current,
                     highlightColor = searchHighlightColor,
                     activeHighlightColor = activeSearchHighlightColor,
                 )
@@ -330,7 +359,7 @@ internal fun rememberChatMarkdownAssets(
                 SearchHighlightedMarkdownCode(
                     model = model,
                     fenced = false,
-                    spec = searchHighlight,
+                    spec = LocalSearchHighlightSpec.current,
                     highlightColor = searchHighlightColor,
                     activeHighlightColor = activeSearchHighlightColor,
                 )
@@ -338,7 +367,7 @@ internal fun rememberChatMarkdownAssets(
             table = { model ->
                 SearchHighlightedMarkdownTable(
                     model = model,
-                    spec = searchHighlight,
+                    spec = LocalSearchHighlightSpec.current,
                     highlightColor = searchHighlightColor,
                     activeHighlightColor = activeSearchHighlightColor,
                 )
@@ -351,7 +380,7 @@ internal fun rememberChatMarkdownAssets(
                         literalText = requireNotNull(
                             literalHtmlBlockText(model.content, model.node)
                         ),
-                        spec = searchHighlight,
+                        spec = LocalSearchHighlightSpec.current,
                         highlightColor = searchHighlightColor,
                         activeHighlightColor = activeSearchHighlightColor,
                     )
@@ -516,11 +545,11 @@ private fun OverflowFriendlyMarkdownTable(model: MarkdownComponentModel) {
 }
 
 @Composable
-private fun SearchHighlightedMarkdownTable(
+internal fun SearchHighlightedMarkdownTable(
     model: MarkdownComponentModel,
-    spec: SearchHighlightSpec?,
-    highlightColor: Color,
-    activeHighlightColor: Color,
+    spec: SearchHighlightSpec? = null,
+    highlightColor: Color = SearchHighlightBackground,
+    activeHighlightColor: Color = ActiveSearchHighlightBackground,
 ) {
     MarkdownTable(
         content = model.content,
@@ -609,15 +638,15 @@ private fun SearchHighlightedMarkdownTableRow(
 }
 
 @Composable
-private fun SearchHighlightedMarkdownText(
+internal fun SearchHighlightedMarkdownText(
     model: MarkdownComponentModel,
     style: TextStyle = model.typography.text,
     textNode: ASTNode = model.node,
     modifier: Modifier = Modifier,
     literalText: String? = null,
-    spec: SearchHighlightSpec?,
-    highlightColor: Color,
-    activeHighlightColor: Color,
+    spec: SearchHighlightSpec? = null,
+    highlightColor: Color = SearchHighlightBackground,
+    activeHighlightColor: Color = ActiveSearchHighlightBackground,
 ) {
     val settings = annotatorSettings()
     val citationTokens = LocalCitationInlineTokens.current
@@ -648,7 +677,7 @@ private fun SearchHighlightedMarkdownText(
             color = fadeColor,
             fade = nodeFade,
         )
-        MarkdownText(
+        AnimatedMarkdownText(
             content = renderedText,
             node = model.node,
             modifier = modifier,
@@ -701,25 +730,25 @@ private fun SearchHighlightedMarkdownText(
         layoutResult = layoutResult,
         coordinates = coordinates,
     )
-    MarkdownText(
+    AnimatedMarkdownText(
         content = renderedText,
         node = model.node,
         modifier = modifier
             .onGloballyPositioned { coordinates = it },
         style = style,
-        onTextLayout = { result, _ -> layoutResult = result },
+        onTextLayout = { layoutResult = it },
         sourceContent = model.content,
     )
 }
 
 @Composable
-private fun SearchHighlightedMarkdownHeading(
+internal fun SearchHighlightedMarkdownHeading(
     model: MarkdownComponentModel,
     style: TextStyle,
     contentType: org.intellij.markdown.IElementType,
-    spec: SearchHighlightSpec?,
-    highlightColor: Color,
-    activeHighlightColor: Color,
+    spec: SearchHighlightSpec? = null,
+    highlightColor: Color = SearchHighlightBackground,
+    activeHighlightColor: Color = ActiveSearchHighlightBackground,
 ) {
     SearchHighlightedMarkdownText(
         model = model,
@@ -730,6 +759,44 @@ private fun SearchHighlightedMarkdownHeading(
         highlightColor = highlightColor,
         activeHighlightColor = activeHighlightColor,
     )
+}
+
+@Composable
+private fun ScrollableDisplayLatexImage(model: MarkdownComponentModel) {
+    if (!isScrollableDisplayLatexImage(model.content, model.node)) {
+        MarkdownImage(model.content, model.node)
+        return
+    }
+
+    val horizontalScrollState = rememberScrollState()
+    TrackStreamingHorizontalScroll(horizontalScrollState)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(horizontalScrollState),
+    ) {
+        MarkdownImage(model.content, model.node)
+    }
+}
+
+@Composable
+private fun TrackStreamingHorizontalScroll(horizontalScrollState: ScrollState) {
+    val interactionController = LocalStreamingMarkdownInteractionController.current
+    val interactionOwner = remember { Any() }
+    if (interactionController != null) {
+        LaunchedEffect(interactionController, interactionOwner, horizontalScrollState) {
+            snapshotFlow { horizontalScrollState.isScrollInProgress }
+                .distinctUntilChanged()
+                .collect { active ->
+                    interactionController.setCodeBlockScrolling(interactionOwner, active)
+                }
+        }
+        DisposableEffect(interactionController, interactionOwner) {
+            onDispose {
+                interactionController.setCodeBlockScrolling(interactionOwner, active = false)
+            }
+        }
+    }
 }
 
 @Composable
@@ -861,22 +928,7 @@ private fun SearchHighlightedMarkdownCodeText(
     }
 
     val horizontalScrollState = rememberScrollState()
-    val interactionController = LocalStreamingMarkdownInteractionController.current
-    val interactionOwner = remember { Any() }
-    if (interactionController != null) {
-        LaunchedEffect(interactionController, interactionOwner, horizontalScrollState) {
-            snapshotFlow { horizontalScrollState.isScrollInProgress }
-                .distinctUntilChanged()
-                .collect { active ->
-                    interactionController.setCodeBlockScrolling(interactionOwner, active)
-                }
-        }
-        DisposableEffect(interactionController, interactionOwner) {
-            onDispose {
-                interactionController.setCodeBlockScrolling(interactionOwner, active = false)
-            }
-        }
-    }
+    TrackStreamingHorizontalScroll(horizontalScrollState)
 
     MarkdownCodeBackground(
         color = LocalMarkdownColors.current.codeBackground,

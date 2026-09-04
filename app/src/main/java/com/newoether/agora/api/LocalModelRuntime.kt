@@ -103,17 +103,39 @@ internal object LocalModelRuntime {
     private var idleRetentionMinutes = DEFAULT_LOCAL_MODEL_IDLE_RETENTION_MINUTES
 
     @Volatile
+    private var nativeBackendDirectory: String? = null
+
+    @Volatile
     private var activeChatEngine: LlamaChatEngine? = null
+
+    internal fun initialize(nativeLibraryDir: String) {
+        require(nativeLibraryDir.isNotBlank()) { "Native library directory must not be blank" }
+        val canonicalDirectory = canonicalize(nativeLibraryDir)
+        synchronized(lifecycleLock) {
+            val currentDirectory = nativeBackendDirectory
+            if (currentDirectory != null) {
+                check(currentDirectory == canonicalDirectory) {
+                    "Local llama backends already initialized from a different directory"
+                }
+                return
+            }
+            if (!LlamaEngine.initializeBackends(canonicalDirectory)) {
+                DebugLog.e(TAG, "Unable to initialize the Local llama CPU backend")
+                return
+            }
+            nativeBackendDirectory = canonicalDirectory
+        }
+    }
 
     suspend fun runChat(
         modelPath: String,
         nCtx: Int,
         block: suspend (LlamaChatEngine) -> Unit,
     ): Boolean = tasks.run {
+        if (nativeBackendDirectory == null) return@run false
         val identity = LocalModelIdentity.Chat(canonicalize(modelPath), nCtx)
         val current = resident
         val engine = if (current is Resident.Chat && current.identity == identity) {
-            current.engine.resetContext()
             current.engine
         } else {
             unloadResident()
@@ -139,6 +161,7 @@ internal object LocalModelRuntime {
         modelPath: String,
         block: () -> T,
     ): T? = tasks.run {
+        if (nativeBackendDirectory == null) return@run null
         val identity = LocalModelIdentity.Embedding(canonicalize(modelPath))
         if (resident?.identity != identity) {
             unloadResident()

@@ -1,7 +1,9 @@
 package com.newoether.agora.ui.settings
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -149,6 +151,7 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     val customProviders by viewModel.settings.customProviders.collectAsState()
     val modelAliases by viewModel.settings.modelAliases.collectAsState()
     val selectedModel by viewModel.settings.selectedModel.collectAsState()
+    val isSyncingModels by viewModel.isSyncingModels.collectAsState()
     var showActiveModelDialog by remember { mutableStateOf(false) }
     var showModelAliasDialog by remember { mutableStateOf<String?>(null) }
     var showCustomModelDialog by remember { mutableStateOf(false) }
@@ -390,9 +393,42 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
             item(key = "sync") {
                 CardSurface(shape = TopRounded) {
                     SettingsItem(
-                        headlineContent = { Text(stringResource(R.string.models_sync)) },
+                        headlineContent = {
+                            Crossfade(
+                                targetState = isSyncingModels,
+                                animationSpec = tween(durationMillis = 250),
+                                label = "modelSyncHeadline",
+                            ) { syncing ->
+                                Text(
+                                    stringResource(
+                                        if (syncing) R.string.models_syncing else R.string.models_sync
+                                    )
+                                )
+                            }
+                        },
                         supportingContent = { Text(stringResource(R.string.models_sync_desc)) },
-                        leadingContent = { Icon(Icons.Default.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                        leadingContent = {
+                            Crossfade(
+                                targetState = isSyncingModels,
+                                animationSpec = tween(durationMillis = 250),
+                                label = "modelSyncLeading",
+                            ) { syncing ->
+                                if (syncing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        strokeWidth = 2.5.dp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                } else {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+                            }
+                        },
                         modifier = Modifier.clickable { viewModel.fetchAvailableModels() }
                     )
                 }

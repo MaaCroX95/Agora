@@ -1,5 +1,8 @@
 package com.newoether.agora.ui.chat.message
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.activity.compose.BackHandler
@@ -57,8 +60,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -77,7 +84,11 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import kotlin.math.roundToInt
@@ -140,6 +151,7 @@ import com.mikepenz.markdown.compose.MarkdownElement
 import com.mikepenz.markdown.compose.elements.MarkdownTable
 import com.mikepenz.markdown.compose.elements.MarkdownTableHeader
 import com.mikepenz.markdown.compose.elements.MarkdownTableRow
+import com.mikepenz.markdown.compose.elements.MarkdownText
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.flavours.MarkdownFlavourDescriptor
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
@@ -161,6 +173,70 @@ internal class ChatMarkdownRenderContext(
     val plainTextStyle: TextStyle,
     val parseInlineDollarMath: Boolean,
 )
+
+internal const val MarkdownLinkPressAnimationMillis = 180
+internal const val MarkdownLinkPressedAlpha = 0.72f
+
+@Composable
+internal fun AnimatedMarkdownText(
+    content: AnnotatedString,
+    node: ASTNode,
+    modifier: Modifier = Modifier,
+    style: TextStyle,
+    sourceContent: String,
+    onTextLayout: ((TextLayoutResult) -> Unit)? = null,
+) {
+    var layoutResult by remember(content) { mutableStateOf<TextLayoutResult?>(null) }
+    var activeLink by remember(content) {
+        mutableStateOf<AnnotatedString.Range<LinkAnnotation>?>(null)
+    }
+    var isPressed by remember(content) { mutableStateOf(false) }
+    val linkColor = MaterialTheme.colorScheme.primary
+    val animatedColor by animateColorAsState(
+        targetValue = if (isPressed) linkColor.copy(alpha = MarkdownLinkPressedAlpha) else linkColor,
+        animationSpec = tween(MarkdownLinkPressAnimationMillis, easing = FastOutSlowInEasing),
+        finishedListener = { if (!isPressed) activeLink = null },
+        label = "markdownLinkPressColor",
+    )
+    val rendered = remember(content, activeLink, animatedColor) {
+        activeLink?.let { link ->
+            buildAnnotatedString {
+                append(content)
+                addStyle(SpanStyle(color = animatedColor), link.start, link.end)
+            }
+        } ?: content
+    }
+    MarkdownText(
+        content = rendered,
+        node = node,
+        modifier = modifier.pointerInput(content) {
+            try {
+                awaitEachGesture {
+                    val down = awaitFirstDown(false, PointerEventPass.Initial)
+                    val offset = layoutResult?.getOffsetForPosition(down.position)
+                    val link = offset?.takeIf { content.isNotEmpty() }?.let {
+                        val start = it.coerceIn(0, content.lastIndex)
+                        content.getLinkAnnotations(start, start + 1).firstOrNull()
+                    }
+                    if (link != null) {
+                        activeLink = link
+                        isPressed = true
+                        waitForUpOrCancellation(PointerEventPass.Initial)
+                        isPressed = false
+                    }
+                }
+            } finally {
+                isPressed = false
+            }
+        },
+        style = style,
+        onTextLayout = { result, _ ->
+            layoutResult = result
+            onTextLayout?.invoke(result)
+        },
+        sourceContent = sourceContent,
+    )
+}
 
 @Composable
 internal fun MarkdownTextContent(

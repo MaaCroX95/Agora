@@ -1,5 +1,9 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.api.ToolDefinition
+import com.newoether.agora.api.ToolFunction
+import com.newoether.agora.api.ToolParameters
+import com.newoether.agora.api.ToolProperty
 import com.newoether.agora.api.util.convertToOpenAiMessages
 import com.newoether.agora.api.util.prepareMessages
 import com.newoether.agora.data.local.MessageEntity
@@ -14,6 +18,7 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -21,7 +26,11 @@ class GenerationApiPathBuilderTest {
     @Test
     fun `caller snapshot produces compact-bounded path and exact provider config`() = runTest {
         val repository = mockk<ConversationRepository>(relaxed = true)
-        val builder = GenerationApiPathBuilder(repository) { emptyList() }
+        val builder = GenerationApiPathBuilder(
+            conversations = repository,
+            generationErrorFormatter = { it },
+            toolDefinitions = { listOf(toolDefinition()) },
+        )
         val compact = message("${Constants.COMPACT_MSG_PREFIX}boundary", parentId = "old", sequence = 1)
         val user = message("user", parentId = compact.id, sequence = 2, participant = Participant.USER)
         val model = message("model", parentId = user.id, sequence = 3)
@@ -39,10 +48,48 @@ class GenerationApiPathBuilderTest {
         assertEquals(listOf(compact.id, user.id, model.id), path.messages.map { it.id })
         assertEquals("model-id", path.providerConfig.modelId)
         assertEquals("system", path.providerConfig.systemPrompt)
-        assertTrue(path.providerConfig.tools.orEmpty().isEmpty())
+        assertEquals(listOf(toolDefinition()), path.providerConfig.tools)
         assertEquals(
             generationConfig().maxContextWindow -
-                ContextTokenEstimator.estimateFixed("system", emptyList()),
+                ContextTokenEstimator.estimateFixed("system", listOf(toolDefinition())),
+            path.providerConfig.maxContextWindow,
+        )
+    }
+
+    @Test
+    fun `low context mode omits system prompt tools and their fixed token cost`() = runTest {
+        val repository = mockk<ConversationRepository>(relaxed = true)
+        var definitionReads = 0
+        val builder = GenerationApiPathBuilder(
+            conversations = repository,
+            generationErrorFormatter = { it },
+            toolDefinitions = {
+                definitionReads++
+                error("Low Context Mode must not read tool definitions")
+            },
+        )
+        val user = message("user", null, 0, Participant.USER)
+        val config = generationConfig().copy(
+            effectiveSystemPrompt = null,
+            lowContextModeEnabled = true,
+        )
+
+        val path = builder.build(
+            GenerationApiPathRequest(
+                parentId = user.id,
+                conversationId = "conversation",
+                config = config,
+                context = GenerationContext(),
+                loadedMessages = listOf(user),
+            ),
+        )
+
+        assertEquals(0, definitionReads)
+        assertEquals(null, path.providerConfig.systemPrompt)
+        assertTrue(path.providerConfig.tools.orEmpty().isEmpty())
+        assertEquals(
+            config.maxContextWindow -
+                ContextTokenEstimator.estimateFixed(null, emptyList()),
             path.providerConfig.maxContextWindow,
         )
     }
@@ -50,7 +97,11 @@ class GenerationApiPathBuilderTest {
     @Test
     fun `nearest normally completed compact on the parent chain is the context boundary`() = runTest {
         val repository = mockk<ConversationRepository>(relaxed = true)
-        val builder = GenerationApiPathBuilder(repository) { emptyList() }
+        val builder = GenerationApiPathBuilder(
+            conversations = repository,
+            generationErrorFormatter = { it },
+            toolDefinitions = { emptyList() },
+        )
 
         for (invalidStatus in listOf(
             MessageStatus.ERROR,
@@ -93,7 +144,11 @@ class GenerationApiPathBuilderTest {
     @Test
     fun `blank successful Compact still excludes every older ancestor`() = runTest {
         val repository = mockk<ConversationRepository>(relaxed = true)
-        val builder = GenerationApiPathBuilder(repository) { emptyList() }
+        val builder = GenerationApiPathBuilder(
+            conversations = repository,
+            generationErrorFormatter = { it },
+            toolDefinitions = { emptyList() },
+        )
         val old = message("old", null, 0, Participant.USER)
         val compact = message(
             "${Constants.COMPACT_MSG_PREFIX}blank",
@@ -119,7 +174,11 @@ class GenerationApiPathBuilderTest {
     @Test
     fun `stopped run remains an assistant before queued guidance in first openai request`() = runTest {
         val repository = mockk<ConversationRepository>(relaxed = true)
-        val builder = GenerationApiPathBuilder(repository) { emptyList() }
+        val builder = GenerationApiPathBuilder(
+            conversations = repository,
+            generationErrorFormatter = { it },
+            toolDefinitions = { emptyList() },
+        )
         val oldUser = message("old-user", null, 0, Participant.USER)
         val stoppedModel = message("stopped-model", oldUser.id, 1)
             .copy(text = "partial answer", status = MessageStatus.STOPPED, runId = "old-run")
@@ -161,9 +220,14 @@ class GenerationApiPathBuilderTest {
     }
 
     @Test
-    fun `failed run sends its concrete raw error once on the same assistant turn`() = runTest {
+    fun `failed run sends the formatted error once on the same assistant turn`() = runTest {
         val repository = mockk<ConversationRepository>(relaxed = true)
-        val builder = GenerationApiPathBuilder(repository) { emptyList() }
+        val displayedError = "Displayed provider failure"
+        val builder = GenerationApiPathBuilder(
+            conversations = repository,
+            generationErrorFormatter = { displayedError },
+            toolDefinitions = { emptyList() },
+        )
         val rawError = """Network error (403): {"balance":0.57,"code":"INSUFFICIENT_BALANCE"}"""
         val oldUser = message("old-user", null, 0, Participant.USER)
         val failedModel = message("failed-model", oldUser.id, 1)
@@ -192,19 +256,25 @@ class GenerationApiPathBuilderTest {
         val failed = path.messages.single { it.id == failedModel.id }
         assertEquals(Participant.MODEL, failed.participant)
         assertEquals(MessageStatus.SUCCESS, failed.status)
-        assertEquals(1, Regex(Regex.escape(rawError)).findAll(failed.text).count())
+        assertEquals(1, Regex(Regex.escape(displayedError)).findAll(failed.text).count())
+        assertFalse(failed.text.contains(rawError))
         val wire = convertToOpenAiMessages(
             prepareMessages(path.messages, path.providerConfig.maxContextWindow),
         )
         assertEquals(listOf("user", "assistant", "user"), wire.map { it.role })
         val wireText = wire.flatMap { it.content.orEmpty() }.mapNotNull { it.text }.joinToString("\n")
-        assertEquals(1, Regex(Regex.escape(rawError)).findAll(wireText).count())
+        assertEquals(1, Regex(Regex.escape(displayedError)).findAll(wireText).count())
+        assertFalse(wireText.contains(rawError))
     }
 
     @Test
     fun `failed compact is not a request boundary`() = runTest {
         val repository = mockk<ConversationRepository>(relaxed = true)
-        val builder = GenerationApiPathBuilder(repository) { emptyList() }
+        val builder = GenerationApiPathBuilder(
+            conversations = repository,
+            generationErrorFormatter = { it },
+            toolDefinitions = { emptyList() },
+        )
         val old = message("old", null, 0, participant = Participant.USER)
         val failed = message(
             "${Constants.COMPACT_MSG_PREFIX}failed",
@@ -245,6 +315,7 @@ class GenerationApiPathBuilderTest {
         )
         val builder = GenerationApiPathBuilder(
             conversations = repository,
+            generationErrorFormatter = { it },
             contextLoader = contextLoader,
             toolDefinitions = { emptyList() },
         )
@@ -270,7 +341,11 @@ class GenerationApiPathBuilderTest {
     @Test
     fun `prompt cache key is scoped to the official OpenAI provider`() = runTest {
         val repository = mockk<ConversationRepository>(relaxed = true)
-        val builder = GenerationApiPathBuilder(repository) { emptyList() }
+        val builder = GenerationApiPathBuilder(
+            conversations = repository,
+            generationErrorFormatter = { it },
+            toolDefinitions = { emptyList() },
+        )
         val message = message("user", null, 0, Participant.USER)
 
         val official = builder.build(
@@ -305,6 +380,22 @@ class GenerationApiPathBuilderTest {
         googleSearchEnabled = false,
         thinkingEnabled = false,
         baseUrl = null,
+    )
+
+    private fun toolDefinition() = ToolDefinition(
+        function = ToolFunction(
+            name = "test_tool",
+            description = "Test tool",
+            parameters = ToolParameters(
+                properties = mapOf(
+                    "value" to ToolProperty(
+                        type = "string",
+                        description = "Test value",
+                    )
+                ),
+                required = listOf("value"),
+            ),
+        ),
     )
 
     private fun message(

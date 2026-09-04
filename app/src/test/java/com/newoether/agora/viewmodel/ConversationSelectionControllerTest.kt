@@ -1,8 +1,10 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.api.DebugProvider
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.model.ChatMessage
+import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
 import com.newoether.agora.util.DebugLog
@@ -51,6 +53,46 @@ class ConversationSelectionControllerTest {
     }
 
     @Test
+    fun acceptedNewChatSelectsOnlyTheExactStillOccupiedEntry() = runTest {
+        val fixture = Fixture(backgroundScope)
+        val entryId = fixture.controller.newChatEntryId.value
+
+        assertTrue(
+            fixture.controller.publishAcceptedConversationIfOriginStillOpen(
+                "accepted",
+                "provider:model",
+                entryId,
+            ),
+        )
+        assertEquals("accepted", fixture.controller.currentConversationId.value)
+        assertFalse(fixture.controller.isNewChatMode.value)
+    }
+
+    @Test
+    fun pendingConversationSelectionRejectsBackgroundNewChatFocusSteal() = runTest {
+        val fadeGate = CompletableDeferred<Unit>()
+        val fixture = Fixture(backgroundScope, fadeDelay = { fadeGate.await() })
+        coEvery { fixture.conversations.getConversation("other") } returns
+            ChatEntity("other", "Other", modelId = "other-model")
+        val entryId = fixture.controller.newChatEntryId.value
+
+        fixture.controller.selectConversation("other")
+        assertFalse(
+            fixture.controller.publishAcceptedConversationIfOriginStillOpen(
+                "background",
+                "provider:model",
+                entryId,
+            ),
+        )
+        assertNull(fixture.controller.currentConversationId.value)
+        assertTrue(fixture.controller.isNewChatMode.value)
+
+        fadeGate.complete(Unit)
+        runCurrent()
+        assertEquals("other", fixture.controller.currentConversationId.value)
+    }
+
+    @Test
     fun activeModelWritesAlwaysUseTheWorkspaceBoundary() = runTest {
         val fixture = Fixture(backgroundScope)
 
@@ -68,6 +110,91 @@ class ConversationSelectionControllerTest {
     }
 
     @Test
+    fun debugModelVisibilityRequiresBothDeveloperGates() {
+        val ordinary = linkedSetOf("provider:model")
+        val staleDebugSelection = ordinary + DebugProvider.MODEL_ID
+
+        assertEquals(ordinary, validChatModels(ordinary, false, false))
+        assertEquals(ordinary, validChatModels(ordinary, true, false))
+        assertEquals(ordinary, validChatModels(ordinary, false, true))
+        assertEquals(ordinary, validChatModels(staleDebugSelection, true, false))
+        assertEquals(ordinary, validChatModels(staleDebugSelection, false, true))
+        assertEquals(
+            ordinary + DebugProvider.MODEL_ID,
+            validChatModels(ordinary, true, true),
+        )
+    }
+
+    @Test
+    fun disablingDebugFallsBackAndPersistsTheNewChatModel() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.validModels.value = setOf("default-model", DebugProvider.MODEL_ID)
+        fixture.newChatModelId.value = DebugProvider.MODEL_ID
+        runCurrent()
+        assertEquals(DebugProvider.MODEL_ID, fixture.controller.currentActiveModel.value)
+
+        fixture.validModels.value = setOf("default-model")
+        runCurrent()
+
+        assertEquals("default-model", fixture.controller.currentActiveModel.value)
+        verify(exactly = 1) {
+            fixture.workspaces.setModel(NEW_CHAT_WORKSPACE_ID, "default-model")
+        }
+    }
+
+    @Test
+    fun removedConversationModelFallsBackAndPersistsThroughTheWorkspace() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.validModels.value = fixture.validModels.value.orEmpty() + "removed-model"
+        fixture.controller.publishAcceptedConversation("conversation", "removed-model")
+        runCurrent()
+        assertEquals("removed-model", fixture.controller.currentActiveModel.value)
+
+        fixture.validModels.value = fixture.validModels.value.orEmpty() - "removed-model"
+        runCurrent()
+
+        assertEquals("default-model", fixture.controller.currentActiveModel.value)
+        verify(exactly = 1) {
+            fixture.workspaces.setModel("conversation", "default-model")
+        }
+    }
+
+    @Test
+    fun missingValidDefaultClearsTheConversationModelAndBlocksGeneration() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.validModels.value = setOf("stale-model")
+        fixture.controller.publishAcceptedConversation("conversation", "stale-model")
+        runCurrent()
+        assertEquals("stale-model", fixture.controller.currentActiveModel.value)
+
+        fixture.defaultModel.value = "missing-default"
+        fixture.validModels.value = emptySet()
+        runCurrent()
+
+        assertEquals("", fixture.controller.currentActiveModel.value)
+        verify(exactly = 1) {
+            fixture.workspaces.setModel("conversation", null)
+        }
+    }
+
+    @Test
+    fun explicitNewChatSelectionSupersedesAStaleWorkspaceFallback() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.validModels.value = setOf("default-model", "selected-model")
+        fixture.newChatModelId.value = "removed-model"
+        fixture.controller.setActiveModel("selected-model")
+        runCurrent()
+
+        assertEquals("selected-model", fixture.controller.currentActiveModel.value)
+        verify(exactly = 1) {
+            fixture.workspaces.setModel(NEW_CHAT_WORKSPACE_ID, "selected-model")
+        }
+        verify(exactly = 0) {
+            fixture.workspaces.setModel(NEW_CHAT_WORKSPACE_ID, "default-model")
+        }
+    }
+
+    @Test
     fun acceptedConversationKeepsTheCapturedModelAfterNewChatStateClears() = runTest {
         val fixture = Fixture(backgroundScope)
         fixture.newChatModelId.value = "restored-model"
@@ -79,6 +206,182 @@ class ConversationSelectionControllerTest {
         assertFalse(fixture.controller.isNewChatMode.value)
         assertEquals("conversation", fixture.controller.currentConversationId.value)
         assertEquals("restored-model", fixture.controller.currentActiveModel.value)
+    }
+
+    @Test
+    fun selectedRuntimeFollowsGeneratingAToIdleB() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.activateAnswer("a", "answer-a")
+        fixture.controller.publishAcceptedConversation("a", "old-model")
+        coEvery { fixture.conversations.getConversation("b") } returns
+            ChatEntity("b", "B", modelId = "new-model")
+
+        fixture.controller.selectConversation("b")
+        runCurrent()
+
+        assertEquals("b", fixture.controller.currentConversationId.value)
+        assertEquals(
+            ConversationGenerationSnapshot(),
+            fixture.controller.selectedConversationGenerationSnapshot.value,
+        )
+    }
+
+    @Test
+    fun selectedRuntimeFollowsIdleAToGeneratingB() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.activateAnswer("b", "answer-b")
+        fixture.controller.publishAcceptedConversation("a", "old-model")
+        coEvery { fixture.conversations.getConversation("b") } returns
+            ChatEntity("b", "B", modelId = "new-model")
+
+        fixture.controller.selectConversation("b")
+        runCurrent()
+
+        val snapshot = fixture.controller.selectedConversationGenerationSnapshot.value
+        assertEquals("b", fixture.controller.currentConversationId.value)
+        assertEquals("b", snapshot.conversationId)
+        assertEquals("answer-b", snapshot.streamingMessage?.id)
+        assertTrue(snapshot.isGenerating)
+    }
+
+    @Test
+    fun selectedRuntimeUsesBWhenBothConversationsAreGenerating() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.activateAnswer("a", "answer-a")
+        fixture.activateAnswer("b", "answer-b")
+        fixture.controller.publishAcceptedConversation("a", "old-model")
+        coEvery { fixture.conversations.getConversation("b") } returns
+            ChatEntity("b", "B", modelId = "new-model")
+
+        fixture.controller.selectConversation("b")
+        runCurrent()
+
+        assertEquals(
+            "answer-b",
+            fixture.controller.selectedConversationGenerationSnapshot.value.streamingMessage?.id,
+        )
+    }
+
+    @Test
+    fun rapidAToBToARestoresTheCurrentASnapshot() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.activateAnswer("a", "answer-a")
+        fixture.activateAnswer("b", "answer-b")
+        fixture.controller.publishAcceptedConversation("a", "old-model")
+        coEvery { fixture.conversations.getConversation("a") } returns
+            ChatEntity("a", "A", modelId = "old-model")
+        coEvery { fixture.conversations.getConversation("b") } returns
+            ChatEntity("b", "B", modelId = "new-model")
+
+        fixture.controller.selectConversation("b")
+        runCurrent()
+        fixture.controller.selectConversation("a")
+        runCurrent()
+
+        val snapshot = fixture.controller.selectedConversationGenerationSnapshot.value
+        assertEquals("a", fixture.controller.currentConversationId.value)
+        assertEquals("a", snapshot.conversationId)
+        assertEquals("answer-a", snapshot.streamingMessage?.id)
+    }
+
+    @Test
+    fun delayedOldRuntimeEmissionCannotOverwriteTheCurrentBinding() = runTest {
+        val fixture = Fixture(backgroundScope)
+        val (stateA, tokenA) = fixture.activateAnswer("a", "answer-a")
+        fixture.controller.publishAcceptedConversation("a", "old-model")
+        runCurrent()
+        stateA.streamUpdate(tokenA, fixture.answeringMessage("late-a"))
+        fixture.activateAnswer("b", "answer-b")
+
+        fixture.controller.publishAcceptedConversation("b", "new-model")
+        runCurrent()
+
+        val snapshot = fixture.controller.selectedConversationGenerationSnapshot.value
+        assertEquals("b", fixture.controller.currentConversationId.value)
+        assertEquals("b", snapshot.conversationId)
+        assertEquals("answer-b", snapshot.streamingMessage?.id)
+    }
+
+    @Test
+    fun publishAcceptedConversationSeedsTheRuntimeSnapshotSynchronously() = runTest {
+        val fixture = Fixture(backgroundScope)
+        val (state, _) = fixture.activateAnswer("accepted", "accepted-answer")
+
+        fixture.controller.publishAcceptedConversation("accepted", "current-model")
+
+        assertEquals("accepted", fixture.controller.currentConversationId.value)
+        assertEquals(
+            state.generationSnapshot.value,
+            fixture.controller.selectedConversationGenerationSnapshot.value,
+        )
+    }
+
+    @Test
+    fun newChatClearsTheSelectedRuntimeWhenTheConversationIdClears() = runTest {
+        val fadeGate = CompletableDeferred<Unit>()
+        val fixture = Fixture(backgroundScope, fadeDelay = { fadeGate.await() })
+        fixture.activateAnswer("conversation", "answer")
+        fixture.controller.publishAcceptedConversation("conversation", "provider:model")
+
+        fixture.controller.createNewChat()
+        assertEquals(
+            "answer",
+            fixture.controller.selectedConversationGenerationSnapshot.value.streamingMessage?.id,
+        )
+
+        fadeGate.complete(Unit)
+        runCurrent()
+
+        assertNull(fixture.controller.currentConversationId.value)
+        assertEquals(
+            ConversationGenerationSnapshot(),
+            fixture.controller.selectedConversationGenerationSnapshot.value,
+        )
+    }
+
+    @Test
+    fun deletedSelectedConversationEntersNewChatAfterSettlement() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.controller.publishAcceptedConversation("deleted", "old-model")
+
+        fixture.controller.settleDeletedSelectedConversation("deleted")
+        runCurrent()
+
+        assertTrue(fixture.controller.isNewChatMode.value)
+        assertNull(fixture.controller.currentConversationId.value)
+        assertEquals(1, fixture.clearGraphCount)
+    }
+
+    @Test
+    fun newerPendingConversationSelectionSupersedesDeletionSettlement() = runTest {
+        val fadeGate = CompletableDeferred<Unit>()
+        val fixture = Fixture(backgroundScope, fadeDelay = { fadeGate.await() })
+        fixture.controller.publishAcceptedConversation("deleted", "old-model")
+        coEvery { fixture.conversations.getConversation("new") } returns
+            ChatEntity("new", "New", modelId = "new-model")
+
+        fixture.controller.selectConversation("new")
+        fixture.controller.settleDeletedSelectedConversation("deleted")
+        fadeGate.complete(Unit)
+        runCurrent()
+
+        assertEquals("new", fixture.controller.currentConversationId.value)
+        assertEquals("new-model", fixture.controller.currentActiveModel.value)
+        assertFalse(fixture.controller.isNewChatMode.value)
+        assertEquals(0, fixture.clearGraphCount)
+    }
+
+    @Test
+    fun settlementDoesNotReplaceAnotherVisibleConversation() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.controller.publishAcceptedConversation("other", "current-model")
+
+        fixture.controller.settleDeletedSelectedConversation("deleted")
+        runCurrent()
+
+        assertEquals("other", fixture.controller.currentConversationId.value)
+        assertFalse(fixture.controller.isNewChatMode.value)
+        assertEquals(0, fixture.clearGraphCount)
     }
 
     @Test
@@ -185,7 +488,6 @@ class ConversationSelectionControllerTest {
                 parentRunId = "parent-run",
                 runId = "second-run",
                 messageSelections = mapOf("parent" to "second"),
-                at = any(),
             )
         } coAnswers {
             assertFalse(fixture.controller.switchingScrollRequest.value?.readyForUi ?: true)
@@ -206,7 +508,6 @@ class ConversationSelectionControllerTest {
                 "parent-run",
                 "second-run",
                 mapOf("parent" to "second"),
-                any(),
             )
         }
         fixture.registry.remove("conversation")
@@ -246,7 +547,7 @@ class ConversationSelectionControllerTest {
         assertEquals("first", fixture.renderStore.selectedChildren["parent"])
         assertNull(fixture.controller.switchingScrollRequest.value)
         coVerify(exactly = 0) {
-            fixture.conversations.selectRunBranch(any(), any(), any(), any(), any())
+            fixture.conversations.selectRunBranch(any(), any(), any(), any())
         }
         fixture.registry.remove("conversation")
     }
@@ -258,6 +559,19 @@ class ConversationSelectionControllerTest {
         val conversations = mockk<ConversationRepository>()
         val registry = ConversationStateRegistry()
         val renderStore = ConversationRenderStore()
+        val defaultModel = MutableStateFlow("default-model")
+        val validModels = MutableStateFlow<Set<String>?>(
+            setOf(
+                "default-model",
+                "provider:model",
+                "new-chat-model",
+                "conversation-model",
+                "restored-model",
+                "old-model",
+                "new-model",
+                "current-model",
+            ),
+        )
         val newChatModelId = MutableStateFlow<String?>(null)
         val workspaces = mockk<ConversationWorkspaceStore>(relaxed = true).also {
             every { it.newChatModelId } returns newChatModelId
@@ -265,11 +579,31 @@ class ConversationSelectionControllerTest {
         var clearGraphCount = 0
         var abortRegenerationCount = 0
         val contextInvalidations = mutableListOf<String>()
+        fun answeringMessage(messageId: String) = ChatMessage(
+            id = messageId,
+            text = "answer",
+            participant = Participant.MODEL,
+            status = MessageStatus.SENDING,
+            segments = listOf(MessageSegment(type = "answer", content = "answer")),
+        )
+
+        fun activateAnswer(
+            conversationId: String,
+            messageId: String,
+        ): Pair<ConversationGenerationState, Long> {
+            val state = registry.getOrCreate(conversationId)
+            val token = requireNotNull(state.acquireForSend())
+            state.loadingChange(token, true)
+            state.streamUpdate(token, answeringMessage(messageId))
+            return state to token
+        }
+
         val controller = ConversationSelectionController(
             scope = scope,
             conversations = conversations,
             registry = registry,
-            defaultModel = MutableStateFlow("default-model"),
+            defaultModel = defaultModel,
+            validModels = validModels,
             scrollRequests = ScrollRequestCoordinator(),
             renderStore = { renderStore },
             clearConversationGraph = { clearGraphCount += 1 },

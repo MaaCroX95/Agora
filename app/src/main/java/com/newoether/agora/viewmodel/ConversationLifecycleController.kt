@@ -1,6 +1,7 @@
 package com.newoether.agora.viewmodel
 
 import com.newoether.agora.data.repository.ConversationRepository
+import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,7 +18,8 @@ internal class ConversationLifecycleController(
     private val withConversationLock: suspend (String, suspend () -> Unit) -> Unit,
     private val removeRuntime: (String) -> Unit,
     private val stopVisibleGeneration: () -> Unit,
-    private val openNewChat: () -> Unit,
+    private val settleDeletedSelectedConversation: (String) -> Unit,
+    private val isDeleteLocked: (String) -> Boolean = { false },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) {
@@ -27,19 +29,50 @@ internal class ConversationLifecycleController(
         }
     }
 
-    fun delete(conversationId: String) {
-        if (currentConversationId.value == conversationId) {
-            stopVisibleGeneration()
-        }
+    fun delete(
+        conversationId: String,
+        expectedMessageIds: Set<String>? = null,
+        onResult: (Boolean) -> Unit = {},
+    ): Boolean {
+        if (isDeleteLocked(conversationId)) return false
         scope.launch(ioDispatcher) {
-            stopLoop(conversationId)
-            withConversationLock(conversationId) {
-                conversations.deleteConversation(conversationId)
-            }
-            removeRuntime(conversationId)
-            if (currentConversationId.value == conversationId) {
-                withContext(mainDispatcher) { openNewChat() }
+            var deleted = false
+            var selectedAtCommit = false
+            try {
+                withConversationLock(conversationId) {
+                    // Send admission uses this same lock. Only the winner may stop live work.
+                    if (isDeleteLocked(conversationId)) return@withConversationLock
+                    if (
+                        expectedMessageIds != null &&
+                        conversations.getMessageTopologySnapshot(conversationId)
+                            .mapTo(linkedSetOf()) { it.id } != expectedMessageIds
+                    ) return@withConversationLock
+                    selectedAtCommit = currentConversationId.value == conversationId
+                    if (selectedAtCommit) stopVisibleGeneration()
+                    stopLoop(conversationId)
+                    conversations.deleteConversation(conversationId)
+                    deleted = true
+                }
+                if (deleted) {
+                    removeRuntime(conversationId)
+                    if (selectedAtCommit) {
+                        withContext(mainDispatcher) {
+                            settleDeletedSelectedConversation(conversationId)
+                        }
+                    }
+                }
+            } catch (error: Exception) {
+                runCatching {
+                    DebugLog.e(
+                        "ConversationLifecycle",
+                        "Failed to delete conversation $conversationId",
+                        error,
+                    )
+                }
+            } finally {
+                withContext(mainDispatcher) { onResult(deleted) }
             }
         }
+        return true
     }
 }

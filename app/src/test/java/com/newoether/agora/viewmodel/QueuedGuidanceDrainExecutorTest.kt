@@ -48,29 +48,31 @@ class QueuedGuidanceDrainExecutorTest {
     fun launchCommitsWholeFifoAsOneBubbleBeforeCompactAndBoundGeneration() = runBlocking {
         val fixture = Fixture()
         val state = ConversationGenerationState("conversation")
-        QUEUED.forEach(state::enqueueSend)
+        val frozenSnapshot = fixture.snapshot.copy(runId = "old-run")
+        val queued = QUEUED.mapIndexed { index, send ->
+            if (index == QUEUED.lastIndex) send.copy(generationSnapshot = frozenSnapshot) else send
+        }
+        queued.forEach(state::enqueueSend)
         val lease = checkNotNull(state.claimQueuedSends())
         val claim = checkNotNull(fixture.executor.claimUnderLock(state, lease))
         every {
             fixture.requestBuilder.resolveProviderKey("provider:model-2")
         } returns GenerationRequestBuilder.ProviderKey("provider", "active-key")
         coEvery {
-            fixture.requestBuilder.captureAdmissionSnapshot(
-                any(), any(), any(), any(), any(),
-            )
-        } returns fixture.snapshot
-        coEvery {
             fixture.conversations.getProviderContextTopologySnapshot("conversation")
         } returns ProviderContextTopologySnapshot(null, emptyList())
         val createdRun = slot<RunEntity>()
         val createdMessages = slot<List<MessageEntity>>()
+        val commitAt = slot<Long>()
+        val touchPolicy = slot<Boolean>()
         coEvery {
             fixture.conversations.createRunWithMessages(
                 run = capture(createdRun),
                 messages = capture(createdMessages),
                 messageSelectionUpdates = any(),
                 conversationModelId = "provider:model-2",
-                at = any(),
+                at = capture(commitAt),
+                touchConversationOnAdmission = capture(touchPolicy),
             )
         } answers {
             val messages = secondArg<List<MessageEntity>>()
@@ -82,15 +84,19 @@ class QueuedGuidanceDrainExecutorTest {
 
         fixture.executor.launchClaim(state, claim)
 
+        coVerify(exactly = 0) {
+            fixture.requestBuilder.captureAdmissionSnapshot(any(), any(), any(), any(), any())
+        }
         coVerify(timeout = 5_000, exactly = 1) {
             fixture.boundLauncher.launch(
                 match {
                         it.conversationId == "conversation" &&
                         it.modelMessageId == "model-message" &&
-                        it.snapshot === fixture.snapshot &&
+                        it.snapshot == fixture.snapshot &&
+                        it.snapshot.config === fixture.snapshot.config &&
                         it.runId == "fresh-run" &&
                         it.pass == 0 &&
-                        it.callerTag == "guidanceBoundary"
+                        it.requestKind == "queued_guidance"
                 },
                 state,
             )
@@ -101,6 +107,9 @@ class QueuedGuidanceDrainExecutorTest {
         assertEquals("guidance-1", createdMessages.captured[0].id)
         assertEquals("one\n\ntwo", createdMessages.captured[0].text)
         assertEquals("model-message", createdMessages.captured[1].id)
+        assertEquals(100L, commitAt.captured)
+        assertTrue(touchPolicy.captured)
+        assertTrue(queued.all { it.createdAt != commitAt.captured })
         assertEquals(listOf("indexed:guidance-1:one\n\ntwo", "scroll:guidance-1"), fixture.events)
         assertFalse(state.settleGuidanceClaim(lease.id, durable = false))
         state.dispose()
@@ -149,6 +158,7 @@ class QueuedGuidanceDrainExecutorTest {
                 modelId = "provider:model-1",
                 attachments = emptyList(),
                 runId = "old-run",
+                createdAt = 10L,
             ),
             QueuedSend(
                 id = "guidance-2",
@@ -156,6 +166,7 @@ class QueuedGuidanceDrainExecutorTest {
                 modelId = "provider:model-2",
                 attachments = emptyList(),
                 runId = "old-run",
+                createdAt = 20L,
             ),
         )
 
