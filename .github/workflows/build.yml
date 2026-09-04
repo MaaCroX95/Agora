@@ -80,21 +80,58 @@ jobs:
         with:
           packages: "ndk;28.2.13676358"
 
-      - name: Restore signing key
-        if: ${{ env.KEYSTORE_BASE64 != '' }}
+      - name: Validate release signing secrets
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > ${{ github.workspace }}/release.jks
+          missing=0
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Required repository secret $name is not configured."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::Release APKs must use the permanent Agora Dev signing key; debug-signing fallback is disabled."
+            exit 1
+          fi
+
+      - name: Restore and verify signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          EXPECTED_SHA256: BA:4B:45:1D:80:48:90:22:35:B2:A9:0F:F3:4C:76:9E:02:BA:F1:4E:35:2C:03:97:89:42:42:DC:5C:EF:F3:BA
+        run: |
+          set -euo pipefail
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "${{ github.workspace }}/release.jks"
+          test -s "${{ github.workspace }}/release.jks"
+          chmod 600 "${{ github.workspace }}/release.jks"
+
+          certificate_output=$(keytool -J-Duser.language=en -J-Duser.country=US -list -v \
+            -keystore "${{ github.workspace }}/release.jks" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS")
+          actual_sha256=$(printf '%s\n' "$certificate_output" | sed -n 's/^[[:space:]]*SHA256: //p' | head -n 1)
+          if [ -z "$actual_sha256" ] || [ "$actual_sha256" != "$EXPECTED_SHA256" ]; then
+            echo "::error::Configured signing certificate does not match the permanent Agora Dev certificate."
+            exit 1
+          fi
+          echo "Configured signing certificate SHA-256: $actual_sha256"
+
           cat >> local.properties <<EOF
           storeFile=${{ github.workspace }}/release.jks
           storePassword=$KEYSTORE_PASSWORD
           keyAlias=$KEY_ALIAS
           keyPassword=$KEY_PASSWORD
           EOF
+
+      - name: Configure CI version code
+        run: echo "AGORA_VERSION_CODE=$((100000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
 
       - uses: gradle/actions/setup-gradle@v4
 
@@ -122,6 +159,25 @@ jobs:
               exit 1
             }
           done
+
+      - name: Verify APK signature
+        env:
+          EXPECTED_SHA256: BA:4B:45:1D:80:48:90:22:35:B2:A9:0F:F3:4C:76:9E:02:BA:F1:4E:35:2C:03:97:89:42:42:DC:5C:EF:F3:BA
+        run: |
+          set -euo pipefail
+          apk_path=$(find app/build/outputs/apk/fdroid/release -name '*.apk' -print -quit)
+          test -n "$apk_path"
+          apksigner_path=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -1)
+          test -x "$apksigner_path"
+          signature_output=$("$apksigner_path" verify --verbose --print-certs "$apk_path")
+          printf '%s\n' "$signature_output"
+          signer_sha256=$(printf '%s\n' "$signature_output" | sed -n 's/^.*certificate SHA-256 digest: //p' | head -n 1)
+          expected_compact=$(printf '%s' "$EXPECTED_SHA256" | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          signer_compact=$(printf '%s' "$signer_sha256" | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          if [ -z "$signer_compact" ] || [ "$signer_compact" != "$expected_compact" ]; then
+            echo "::error::Built APK signer does not match the permanent Agora Dev certificate."
+            exit 1
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
