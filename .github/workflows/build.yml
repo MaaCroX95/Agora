@@ -37,7 +37,7 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew -p build-logic test --stacktrace
-          ./gradlew :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest verifyKotlinFileSize --stacktrace
+          ./gradlew clean :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest verifyKotlinFileSize --stacktrace --no-build-cache
 
       - name: Upload test reports
         if: failure()
