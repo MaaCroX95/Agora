@@ -1,6 +1,6 @@
 # Web Search Product Contract
 
-Status: authoritative, 2026-08-27.
+Status: authoritative, 2026-09-03.
 
 This contract owns Agora's generic Web Search provider settings and execution, plus the boundary
 between that feature and provider-hosted native web search.
@@ -49,11 +49,23 @@ this product boundary or provider order requires explicit user confirmation and 
 - `SettingsContracts.kt` owns supported-value normalization and the default.
 - `SettingsWebSearchPage.kt` owns generic provider presentation and exact visible order.
 - `WebSearchToolProvider.kt` owns generic provider execution, normalized result enrichment, and
-  explicit `web_fetch` page reading.
+  explicit `agora_web_fetch` page reading.
 - Provider configuration, OpenAI-native search availability, `BaseOpenAiProvider`, and
   `GeminiProvider` own their separate provider-hosted search paths.
 
 No owner may infer the other capability from a matching company name or legacy stored value.
+
+### Generic tool-name boundary
+
+- The canonical model-facing generic function names are `agora_web_search` and `agora_web_fetch`.
+  The `agora_` namespace is required so OpenAI-compatible relays cannot confuse Agora-local
+  functions with provider-hosted paid `web_search` / web-fetch capabilities.
+- Legacy persisted calls named exactly `web_search` or `web_fetch` remain accepted local execution
+  aliases, but OpenAI-compatible request projection must rewrite those legacy names to the
+  canonical `agora_*` names, including provider-scoped raw Responses `function_call` replay items.
+- Result payloads may continue to use `"type":"web_search"`; that result-schema label is not a
+  callable tool name. Native provider-hosted Responses `type: "web_search"` remains unchanged and
+  is included only when the independent OpenAI Search setting resolves ON.
 
 ## 5. Native provider-hosted availability, request, and presentation
 
@@ -133,7 +145,7 @@ No owner may infer the other capability from a matching company name or legacy s
   fill the automatic-read quota. One failed light read must not fail or discard an otherwise
   successful search response. Cancellation still propagates through the ordinary tool/generation
   lifecycle rather than being converted into a page-read miss.
-- The `web_search` tool description must present search as a general factual-grounding and
+- The `agora_web_search` tool description must present search as a general factual-grounding and
   verification capability, not as a feature reserved for recent news. It must explicitly cover
   factual verification, current or niche/specific information, uncertainty resolution, and
   source-backed details. For specific factual questions where the model is not highly confident,
@@ -145,12 +157,12 @@ No owner may infer the other capability from a matching company name or legacy s
   synthesize from retrieved evidence. This is model-facing guidance only, not a harness-level forced first
   tool call. Existing stored stock prompts may receive this guidance only through an exact legacy stock
   paragraph replacement; user-authored prompt content must not be replaced wholesale.
-- `web_fetch` remains the explicit deeper-reading tool. It accepts an optional focus `query`; on long
+- `agora_web_fetch` remains the explicit deeper-reading tool. It accepts an optional focus `query`; on long
   pages that query may select a relevant bounded passage instead of only the leading text. The model
   should use it after `web_search` for exact claims not directly supported by snippets/excerpts, and
   the ordinary agent/tool continuation loop remains the sole owner of that follow-up.
 - Enrichment and stronger tool guidance do not imply a harness-level search-first gate. Enabling
-  generic Web Search exposes the ordinary tools; it does not force a `web_search` call before the
+  generic Web Search exposes the ordinary tools; it does not force an `agora_web_search` call before the
   model's first Provider pass.
 
 ## 7. Failure and security behavior
