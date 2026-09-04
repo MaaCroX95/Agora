@@ -59,6 +59,7 @@ import com.newoether.agora.data.local.TaskEntity
 import com.newoether.agora.data.modelDisplayName
 import java.util.Calendar
 import com.newoether.agora.ui.chat.ChatDeleteConfirmDialog
+import com.newoether.agora.ui.chat.ChatDeleteDialogPhase
 import com.newoether.agora.ui.components.clearFocusOnTap
 import com.newoether.agora.ui.settings.AnimatedActionFab
 import com.newoether.agora.ui.settings.CollapsingSettingsLazyScaffold
@@ -419,6 +420,7 @@ internal fun TaskDetailPage(
     }
     executionToDelete?.let { execution ->
         ChatDeleteConfirmDialog(
+            phase = ChatDeleteDialogPhase.CONFIRM,
             onConfirm = {
                 viewModel.deleteConversation(execution.conversation.id)
                 executionToDelete = null

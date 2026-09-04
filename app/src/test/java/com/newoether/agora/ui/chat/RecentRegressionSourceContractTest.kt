@@ -43,6 +43,9 @@ class RecentRegressionSourceContractTest {
         val dialogHost = source("ui/chat/ChatAppDialogHost.kt")
         val conversationConfirm = dialogHost.substringAfter("ChatDeleteConfirmDialog(")
             .substringBefore("onDismiss = state::dismissDelete")
+        val selectedConfirm = conversationConfirm.substringAfter("if (id == currentConversationId)")
+            .substringBefore("} else {")
+        val backgroundConfirm = conversationConfirm.substringAfter("} else {")
 
         assertTrue(confirm.indexOf("pendingDelete = null") < confirm.indexOf("confirmedDelete = pending"))
         assertTrue(effect.indexOf("withFrameNanos") < effect.indexOf("onDeleteConversation"))
@@ -52,8 +55,20 @@ class RecentRegressionSourceContractTest {
                 deleteBody.indexOf("withConversationLock"),
         )
         assertTrue(
-            conversationConfirm.indexOf("state.dismissDelete()") <
-                conversationConfirm.indexOf("viewModel.deleteConversation(id)"),
+            conversationConfirm.indexOf("state.beginDelete(id)") <
+                conversationConfirm.indexOf("if (id == currentConversationId)"),
+        )
+        assertTrue(
+            selectedConfirm.indexOf("state.completeDelete(id)") <
+                selectedConfirm.indexOf("deleteConversation()"),
+        )
+        assertTrue(
+            backgroundConfirm.indexOf("withFrameNanos") <
+                backgroundConfirm.indexOf("viewModel.currentConversationId.value"),
+        )
+        assertTrue(
+            backgroundConfirm.indexOf("viewModel.currentConversationId.value") <
+                backgroundConfirm.indexOf("deleteConversation()"),
         )
     }
 

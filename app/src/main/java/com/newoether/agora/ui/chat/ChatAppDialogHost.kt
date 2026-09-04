@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -25,6 +26,12 @@ import com.newoether.agora.ui.settings.SystemPromptEditorPage
 import com.newoether.agora.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 
+internal enum class ChatDeleteDialogPhase {
+    CONFIRM,
+    PENDING,
+    FAILED,
+}
+
 @Stable
 internal class ChatAppDialogState internal constructor(
     private val manualCompactVisibleState: MutableState<Boolean>,
@@ -34,6 +41,8 @@ internal class ChatAppDialogState internal constructor(
     var renameInitialName by mutableStateOf("")
         private set
     var deleteConversationId by mutableStateOf<String?>(null)
+        private set
+    var deleteConversationPhase by mutableStateOf(ChatDeleteDialogPhase.CONFIRM)
         private set
     var promptVisible by mutableStateOf(false)
         private set
@@ -52,11 +61,45 @@ internal class ChatAppDialogState internal constructor(
     }
 
     fun requestDelete(conversationId: String) {
+        if (deleteConversationPhase == ChatDeleteDialogPhase.PENDING) return
         deleteConversationId = conversationId
+        deleteConversationPhase = ChatDeleteDialogPhase.CONFIRM
+    }
+
+    fun beginDelete(conversationId: String): Boolean {
+        if (
+            deleteConversationId != conversationId ||
+            deleteConversationPhase == ChatDeleteDialogPhase.PENDING
+        ) {
+            return false
+        }
+        deleteConversationPhase = ChatDeleteDialogPhase.PENDING
+        return true
+    }
+
+    fun isDeletePending(conversationId: String): Boolean =
+        deleteConversationId == conversationId &&
+            deleteConversationPhase == ChatDeleteDialogPhase.PENDING
+
+    fun completeDelete(conversationId: String) {
+        if (deleteConversationId != conversationId) return
+        deleteConversationId = null
+        deleteConversationPhase = ChatDeleteDialogPhase.CONFIRM
+    }
+
+    fun failDelete(conversationId: String) {
+        if (deleteConversationId == conversationId) {
+            deleteConversationPhase = ChatDeleteDialogPhase.FAILED
+        } else if (deleteConversationId == null) {
+            deleteConversationId = conversationId
+            deleteConversationPhase = ChatDeleteDialogPhase.FAILED
+        }
     }
 
     fun dismissDelete() {
+        if (deleteConversationPhase == ChatDeleteDialogPhase.PENDING) return
         deleteConversationId = null
+        deleteConversationPhase = ChatDeleteDialogPhase.CONFIRM
     }
 
     fun showPrompt() {
@@ -111,6 +154,7 @@ internal fun ChatAppDialogHost(
     val promptEditorScope = rememberCoroutineScope()
     val systemPrompts by viewModel.settings.systemPrompts.collectAsState()
     val showDocFab by viewModel.settings.showDocumentationFab.collectAsState()
+    val currentConversationId by viewModel.currentConversationId.collectAsState()
     val createdPromptId = pendingCreatedPromptId?.takeIf { id ->
         systemPrompts.any { it.id == id }
     }
@@ -131,13 +175,37 @@ internal fun ChatAppDialogHost(
     }
 
     state.deleteConversationId?.let { id ->
+        val deleteConversation = {
+            val accepted = viewModel.deleteConversation(id) { deleted ->
+                if (deleted) {
+                    state.completeDelete(id)
+                    haptics.destructiveConfirmed()
+                } else {
+                    state.failDelete(id)
+                }
+            }
+            if (!accepted) state.failDelete(id)
+        }
         ChatDeleteConfirmDialog(
+            phase = state.deleteConversationPhase,
             onConfirm = {
-                // Remove the dialog in the tap's snapshot. For the selected conversation,
-                // deletion then waits behind ConversationSelectionController's loading overlay.
-                state.dismissDelete()
-                viewModel.deleteConversation(id) { deleted ->
-                    if (deleted) haptics.destructiveConfirmed()
+                if (state.beginDelete(id)) {
+                    if (id == currentConversationId) {
+                        // The selected conversation transfers blocking ownership to the full-screen
+                        // tree-mutation overlay before durable deletion starts.
+                        state.completeDelete(id)
+                        deleteConversation()
+                    } else {
+                        promptEditorScope.launch {
+                            // Draw the dialog's pending state before starting non-selected deletion.
+                            withFrameNanos { }
+                            if (!state.isDeletePending(id)) return@launch
+                            if (viewModel.currentConversationId.value == id) {
+                                state.completeDelete(id)
+                            }
+                            deleteConversation()
+                        }
+                    }
                 }
             },
             onDismiss = state::dismissDelete,
