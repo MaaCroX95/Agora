@@ -35,9 +35,19 @@ jobs:
 
       - name: Run application and build-logic tests
         run: |
+          set -o pipefail
           chmod +x ./gradlew
-          ./gradlew -p build-logic test --stacktrace
-          ./gradlew clean :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest verifyKotlinFileSize --stacktrace --no-build-cache
+          ./gradlew -p build-logic test --stacktrace 2>&1 | tee gradle-ci.log
+          ./gradlew clean :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest verifyKotlinFileSize --stacktrace --no-build-cache --info 2>&1 | tee -a gradle-ci.log
+
+      - name: Upload Gradle CI log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-ci-log
+          path: gradle-ci.log
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload test reports
         if: failure()
