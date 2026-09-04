@@ -211,7 +211,9 @@ class ToolResultContentSourceContractTest {
     }
 
     private fun source(root: File, name: String): String =
-        File(root, "com/newoether/agora/ui/chat/message/$name").readText()
+        File(root, "com/newoether/agora/ui/chat/message/$name")
+            .readText()
+            .replace("\r\n", "\n")
 
     private fun locateMainSourceRoot(): File {
         var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile

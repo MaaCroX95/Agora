@@ -11,7 +11,7 @@ class ConversationSwitchSafetySourceContractTest {
         val source = File(
             locateMainSourceRoot(),
             "com/newoether/agora/ui/chat/ChatScrollCoordinator.kt",
-        ).readText()
+        ).readText().replace("\r\n", "\n")
 
         assertFalse(
             "conversation projection latency must not terminalize the switch on a timer",
@@ -76,19 +76,19 @@ class ConversationSwitchSafetySourceContractTest {
         val sendButton = File(
             root,
             "com/newoether/agora/ui/chat/bottombar/ComposerSendButton.kt",
-        ).readText()
+        ).readText().replace("\r\n", "\n")
         val submission = File(
             root,
             "com/newoether/agora/viewmodel/ConversationComposerSubmissionController.kt",
-        ).readText()
+        ).readText().replace("\r\n", "\n")
         val generation = File(
             root,
             "com/newoether/agora/viewmodel/MessageGenerationController.kt",
-        ).readText()
+        ).readText().replace("\r\n", "\n")
         val drawer = File(
             root,
             "com/newoether/agora/ui/chat/ChatDrawerContent.kt",
-        ).readText()
+        ).readText().replace("\r\n", "\n")
 
         assertTrue(
             "attachment membership must freeze at the tap-time owner snapshot",
@@ -147,20 +147,20 @@ class ConversationSwitchSafetySourceContractTest {
     @Test
     fun `context rollout dims only classified rows through legacy message subtree alpha`() {
         val root = locateMainSourceRoot()
-        val chatApp = File(root, "com/newoether/agora/ui/chat/ChatApp.kt").readText()
-        val messageList = File(root, "com/newoether/agora/ui/chat/MessageList.kt").readText()
+        val chatApp = File(root, "com/newoether/agora/ui/chat/ChatApp.kt").readText().replace("\r\n", "\n")
+        val messageList = File(root, "com/newoether/agora/ui/chat/MessageList.kt").readText().replace("\r\n", "\n")
         val messageItem = File(
             root,
             "com/newoether/agora/ui/chat/message/MessageItem.kt",
-        ).readText()
+        ).readText().replace("\r\n", "\n")
         val userBubble = File(
             root,
             "com/newoether/agora/ui/chat/message/UserMessageBubble.kt",
-        ).readText()
+        ).readText().replace("\r\n", "\n")
         val assistantContent = File(
             root,
             "com/newoether/agora/ui/chat/message/AssistantMessageContent.kt",
-        ).readText()
+        ).readText().replace("\r\n", "\n")
 
         assertTrue(
             "rollout must be disabled until a matching successful projection is ready",
@@ -233,7 +233,7 @@ class ConversationSwitchSafetySourceContractTest {
         val source = File(
             locateMainSourceRoot(),
             "com/newoether/agora/ui/chat/ChatApp.kt",
-        ).readText()
+        ).readText().replace("\r\n", "\n")
         val rememberStart = source.indexOf("val showButton by remember(")
         val derivedStart = source.indexOf("derivedStateOf", startIndex = rememberStart)
         assertTrue("scroll button derived state must exist", rememberStart >= 0 && derivedStart > 0)
