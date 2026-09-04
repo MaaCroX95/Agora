@@ -12,6 +12,12 @@ import com.newoether.agora.util.Constants
 import java.io.File
 import java.security.MessageDigest
 
+internal fun openAiCompatibleWireToolName(name: String): String = when (name) {
+    "web_search" -> "agora_web_search"
+    "web_fetch" -> "agora_web_fetch"
+    else -> name
+}
+
 fun buildToolCallId(toolName: String, arguments: String, prefix: String = Constants.TOOL_CALL_ID_PREFIX): String {
     val digest = MessageDigest.getInstance("SHA-256")
     val input = "$toolName:$arguments"
@@ -77,10 +83,11 @@ fun convertToOpenAiMessages(
             val thoughtContent = msg.segments?.lastOrNull { it.type == "thought" }?.content
             if (!toolSegs.isNullOrEmpty()) {
                 val toolCalls = toolSegs.map { seg ->
-                    val tid = seg.toolCallId ?: buildToolCallId(seg.toolName ?: "", seg.toolArgs ?: "{}")
+                    val wireName = openAiCompatibleWireToolName(seg.toolName.orEmpty())
+                    val tid = seg.toolCallId ?: buildToolCallId(wireName, seg.toolArgs ?: "{}")
                     OpenAiRequestToolCall(
                         id = tid,
-                        function = OpenAiRequestFunction(name = seg.toolName ?: "", arguments = seg.toolArgs ?: "{}")
+                        function = OpenAiRequestFunction(name = wireName, arguments = seg.toolArgs ?: "{}")
                     )
                 }
                 entries.add(OpenAiMessage(
@@ -97,13 +104,14 @@ fun convertToOpenAiMessages(
                 ))
             } else if (msg.toolCall != null) {
                 val tc = msg.toolCall!!
-                val toolId = tc.toolCallId ?: buildToolCallId(tc.toolName, tc.arguments)
+                val wireName = openAiCompatibleWireToolName(tc.toolName)
+                val toolId = tc.toolCallId ?: buildToolCallId(wireName, tc.arguments)
                 entries.add(OpenAiMessage(
                     role = "assistant",
                     content = null,
                     toolCalls = listOf(OpenAiRequestToolCall(
                         id = toolId,
-                        function = OpenAiRequestFunction(name = tc.toolName, arguments = tc.arguments)
+                        function = OpenAiRequestFunction(name = wireName, arguments = tc.arguments)
                     )),
                     reasoningContent = thoughtContent?.ifEmpty { null },
                     responseOutputItems = tc.responseOutputItems.ifEmpty { null },
@@ -118,7 +126,7 @@ fun convertToOpenAiMessages(
             val toolSegs = msg.segments?.filter { it.type == "tool" }
             if (!toolSegs.isNullOrEmpty()) {
                 for (seg in toolSegs) {
-                    val toolId = seg.toolCallId ?: buildToolCallId(seg.toolName ?: "", seg.toolArgs ?: "{}")
+                    val toolId = seg.toolCallId ?: buildToolCallId(openAiCompatibleWireToolName(seg.toolName.orEmpty()), seg.toolArgs ?: "{}")
                     entries.add(OpenAiMessage(
                         role = "tool",
                         content = listOf(OpenAiContentPart(type = "text", text = seg.toolResult ?: "")),
@@ -127,7 +135,7 @@ fun convertToOpenAiMessages(
                 }
             } else if (msg.toolCall != null) {
                 val tc = msg.toolCall!!
-                val toolId = tc.toolCallId ?: buildToolCallId(tc.toolName, tc.arguments)
+                val toolId = tc.toolCallId ?: buildToolCallId(openAiCompatibleWireToolName(tc.toolName), tc.arguments)
                 entries.add(OpenAiMessage(
                     role = "tool",
                     content = listOf(OpenAiContentPart(type = "text", text = tc.result)),

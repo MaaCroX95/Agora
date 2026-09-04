@@ -36,8 +36,8 @@ class WebSearchToolProviderTest {
     fun definitions_whenEnabled_returnsTwoTools() {
         val defs = provider.definitions(enabledCtx)
         assertEquals(2, defs.size)
-        assertEquals("web_search", defs[0].function.name)
-        assertEquals("web_fetch", defs[1].function.name)
+        assertEquals("agora_web_search", defs[0].function.name)
+        assertEquals("agora_web_fetch", defs[1].function.name)
     }
 
     @Test
@@ -47,6 +47,8 @@ class WebSearchToolProviderTest {
 
     @Test
     fun handles_returnsTrueForWebTools() {
+        assertTrue(provider.handles("agora_web_search"))
+        assertTrue(provider.handles("agora_web_fetch"))
         assertTrue(provider.handles("web_search"))
         assertTrue(provider.handles("web_fetch"))
         assertFalse(provider.handles("unknown"))

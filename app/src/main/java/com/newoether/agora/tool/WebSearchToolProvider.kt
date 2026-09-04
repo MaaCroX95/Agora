@@ -108,7 +108,7 @@ class WebSearchToolProvider : ToolProvider {
         if (!ctx.webSearchEnabled) return emptyList()
         return listOf(
             ToolDefinition(function = ToolFunction(
-                name = "web_search",
+                name = "agora_web_search",
                 description = "Search the web for factual information, verification, current or niche information, and sources relevant to the user's question. Use this whenever external information can improve factual accuracy, verify a claim, resolve uncertainty, or provide up-to-date or source-backed details. For specific factual questions you are not highly confident about, prefer searching over relying on memory; do not reserve web search only for recent events. Prefer primary or authoritative sources for precise claims. Treat snippets and page excerpts as evidence only for details they actually support; if sources conflict or a needed detail is not supported, search again or use web_fetch instead of filling the gap from memory. Results include search snippets plus light page excerpts from the top readable results.",
                 parameters = ToolParameters(
                     properties = mapOf(
@@ -119,7 +119,7 @@ class WebSearchToolProvider : ToolProvider {
                 )
             )),
             ToolDefinition(function = ToolFunction(
-                name = "web_fetch",
+                name = "agora_web_fetch",
                 description = "Fetch and read a web page when search excerpts are not enough to support a specific claim. Prefer this over inferring missing details from memory, especially for exact dates, relationships, quotes, events, or disputed facts. For long pages, pass query with focus terms for the exact detail you need so the returned text can target the relevant passage.",
                 parameters = ToolParameters(
                     properties = mapOf(
@@ -139,13 +139,13 @@ class WebSearchToolProvider : ToolProvider {
         ctx: GenerationContext,
     ): String = withContext(Dispatchers.IO) {
         when (name) {
-            "web_search" -> executeWebSearch(arguments, ctx)
-            "web_fetch" -> executeWebFetch(arguments, ctx)
+            "agora_web_search", "web_search" -> executeWebSearch(arguments, ctx)
+            "agora_web_fetch", "web_fetch" -> executeWebFetch(arguments, ctx)
             else -> "Unknown tool: $name"
         }
     }
 
-    override fun handles(name: String): Boolean = name in setOf("web_search", "web_fetch")
+    override fun handles(name: String): Boolean = name in setOf("agora_web_search", "agora_web_fetch", "web_search", "web_fetch")
 
     private suspend fun executeWebSearch(arguments: String, ctx: GenerationContext): String {
         val argsStr = arguments.ifBlank { "{}" }
