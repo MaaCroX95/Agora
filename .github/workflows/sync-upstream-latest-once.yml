@@ -66,6 +66,36 @@ jobs:
           # Markdown hard-break trailing spaces in a test fixture. Gradle/unit/source-size checks
           # below are the authoritative verification for this sync.
 
+      - name: Preserve fork hosted-search test contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("app/src/test/java/com/newoether/agora/viewmodel/GenerationRequestBuilderProviderDisplayTest.kt")
+          text = path.read_text()
+          needle = (
+              '        every { settings.googleSearchEnabled } returns MutableStateFlow(true)\n'
+              '        every { settings.thinkingEnabled } returns MutableStateFlow(true)\n'
+          )
+          replacement = (
+              '        every { settings.googleSearchEnabled } returns MutableStateFlow(true)\n'
+              '        every { settings.openAiWebSearchEnabled } returns MutableStateFlow(true)\n'
+              '        every { settings.thinkingEnabled } returns MutableStateFlow(true)\n'
+          )
+          if replacement not in text:
+              if needle not in text:
+                  raise SystemExit("Expected upstream RequestBuilderFixture anchor not found")
+              text = text.replace(needle, replacement, 1)
+              path.write_text(text)
+          PY
+
+          if ! git diff --quiet -- app/src/test/java/com/newoether/agora/viewmodel/GenerationRequestBuilderProviderDisplayTest.kt; then
+            git add app/src/test/java/com/newoether/agora/viewmodel/GenerationRequestBuilderProviderDisplayTest.kt
+            git commit -m "test: preserve hosted search master gate fixture"
+          fi
+
       - name: Run full verification
         shell: bash
         run: |
