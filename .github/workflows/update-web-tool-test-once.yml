@@ -38,22 +38,17 @@ jobs:
                   raise SystemExit(f"expected exactly one occurrence: {old}")
               text = text.replace(old, new, 1)
 
-          old = '''    fun handles_returnsTrueForWebTools() {
-              assertTrue(provider.handles("web_search"))
-              assertTrue(provider.handles("web_fetch"))
-              assertFalse(provider.handles("unknown"))
-          }'''
-          new = '''    fun handles_returnsTrueForWebTools() {
-              assertTrue(provider.handles("agora_web_search"))
-              assertTrue(provider.handles("agora_web_fetch"))
-              assertTrue(provider.handles("web_search"))
-              assertTrue(provider.handles("web_fetch"))
-              assertFalse(provider.handles("unknown"))
-          }'''
+          old = '''        assertTrue(provider.handles("web_search"))
+                  assertTrue(provider.handles("web_fetch"))'''
+          new = '''        assertTrue(provider.handles("agora_web_search"))
+                  assertTrue(provider.handles("agora_web_fetch"))
+                  assertTrue(provider.handles("web_search"))
+                  assertTrue(provider.handles("web_fetch"))'''
           if text.count(old) != 1:
-              raise SystemExit("handles test block mismatch")
+              raise SystemExit("legacy handles assertions mismatch")
+          text = text.replace(old, new, 1)
 
-          p.write_text(text.replace(old, new, 1))
+          p.write_text(text)
           PY
 
           git diff --check
