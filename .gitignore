@@ -9,6 +9,10 @@
 .cxx
 local.properties
 
+# Signing material must never be committed.
+*.jks
+*.keystore
+
 # Kotlin/Tooling logs
 .kotlin/
 .kotlin-errors/
