@@ -199,8 +199,8 @@ internal object ToolPresentationResolver {
         "create_skill_file" -> ToolKind.SKILL_CREATE
         "edit_skill_file" -> ToolKind.SKILL_EDIT
         "delete_skill_file" -> ToolKind.SKILL_DELETE
-        "web_search", "openai_search", "google_search" -> ToolKind.WEB_SEARCH
-        "web_fetch" -> ToolKind.WEB_FETCH
+        "agora_web_search", "web_search", "openai_search", "google_search" -> ToolKind.WEB_SEARCH
+        "agora_web_fetch", "web_fetch" -> ToolKind.WEB_FETCH
         "search_conversations" -> ToolKind.CONVERSATION_SEARCH
         "list_conversations" -> ToolKind.CONVERSATION_LIST
         "read_conversation" -> ToolKind.CONVERSATION_READ

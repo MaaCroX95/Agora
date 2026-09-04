@@ -8,6 +8,7 @@ import com.newoether.agora.api.OpenAiResponseInputItem
 import com.newoether.agora.api.OpenAiResponseTool
 import com.newoether.agora.api.OpenAiResponsesRequest
 import com.newoether.agora.api.ToolDefinition
+import com.newoether.agora.api.util.openAiCompatibleWireToolName
 import com.newoether.agora.api.util.requireValidRequestFormat
 import com.newoether.agora.api.util.safeWireToolCallId
 import com.newoether.agora.api.util.safeWireToolName
@@ -125,6 +126,17 @@ internal fun OpenAiChatRequest.requireValidWireFormat(provider: String) {
     requireValidRequestFormat(provider, violations)
 }
 
+private fun JsonObject.normalizeLegacyAgoraWebToolName(): JsonObject {
+    val type = (this["type"] as? JsonPrimitive)?.content
+    val name = (this["name"] as? JsonPrimitive)?.content
+    if (type != "function_call" || name == null) return this
+    val normalizedName = openAiCompatibleWireToolName(name)
+    if (normalizedName == name) return this
+    return JsonObject(toMutableMap().apply {
+        put("name", JsonPrimitive(normalizedName))
+    })
+}
+
 internal fun List<OpenAiMessage>.toResponsesInput(
     providerName: String? = null,
 ): List<JsonObject> = buildList {
@@ -168,7 +180,9 @@ internal fun List<OpenAiMessage>.toResponsesInput(
             providerName != null &&
             message.responseOutputItemProvider == providerName
         ) {
-            message.responseOutputItems.orEmpty()
+            message.responseOutputItems.orEmpty().map {
+                it.normalizeLegacyAgoraWebToolName()
+            }
         } else {
             emptyList()
         }
@@ -179,7 +193,7 @@ internal fun List<OpenAiMessage>.toResponsesInput(
                     OpenAiResponseInputItem(
                         type = "function_call",
                         callId = call.id,
-                        name = call.function.name,
+                        name = openAiCompatibleWireToolName(call.function.name),
                         arguments = call.function.arguments,
                     ).toResponseInputJson(),
                 )
