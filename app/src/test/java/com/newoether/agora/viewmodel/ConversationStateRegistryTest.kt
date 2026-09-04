@@ -157,7 +157,7 @@ class ConversationStateRegistryTest {
 
         assertTrue(state.endGeneration(token))
         withTimeout(5_000) {
-            while (secondDrainCount == 0) yield()
+            while (secondDrainCount == 0 || registry.pendingDrainHandoffCount() != 0) yield()
         }
 
         assertEquals(0, firstDrainCount)
