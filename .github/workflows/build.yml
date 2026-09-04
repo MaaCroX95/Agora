@@ -38,7 +38,7 @@ jobs:
           set -o pipefail
           chmod +x ./gradlew
           ./gradlew -p build-logic test --stacktrace 2>&1 | tee gradle-ci.log
-          ./gradlew clean :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest verifyKotlinFileSize --stacktrace --no-build-cache --info 2>&1 | tee -a gradle-ci.log
+          ./gradlew :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest verifyKotlinFileSize --stacktrace --info 2>&1 | tee -a gradle-ci.log
 
       - name: Upload Gradle CI log
         if: always()
