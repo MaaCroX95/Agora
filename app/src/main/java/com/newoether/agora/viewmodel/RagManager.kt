@@ -38,17 +38,6 @@ internal fun isEmbeddingMessageIdEligible(messageId: String): Boolean =
         !messageId.startsWith(Constants.TOOL_MSG_PREFIX) &&
         !messageId.startsWith(Constants.RESULT_MSG_PREFIX)
 
-internal data class CacheWorkProgress(
-    val processed: Int,
-    val workTotal: Int,
-    val cached: Int,
-    val total: Int,
-    val progressPermille: Int,
-) {
-    val fraction: Float
-        get() = (progressPermille.coerceIn(0, 1000) / 1000f)
-}
-
 /**
  * Owns embedding-model settings, semantic-ledger admission, durable worker scheduling,
  * and the retained aggregate presentation used by Conversation Search settings.
@@ -67,20 +56,12 @@ class RagManager(
         }.stateIn(scope, SharingStarted.Eagerly, null)
 
     private val workManager = WorkManager.getInstance(appContext)
-    private val _cachingModels = MutableStateFlow<Set<String>>(emptySet())
-    val cachingModels: StateFlow<Set<String>> = _cachingModels.asStateFlow()
-    private val _cacheWorkProgress =
-        MutableStateFlow<Map<String, CacheWorkProgress>>(emptyMap())
-    internal val cacheWorkProgress: StateFlow<Map<String, CacheWorkProgress>> =
-        _cacheWorkProgress.asStateFlow()
-    private val _cacheCounts = MutableStateFlow<Map<String, Pair<Int, Int>>>(emptyMap())
-    val cacheCounts: StateFlow<Map<String, Pair<Int, Int>>> = _cacheCounts.asStateFlow()
-    private val _cacheCountLoading = MutableStateFlow<Set<String>>(emptySet())
-    val cacheCountLoading: StateFlow<Set<String>> = _cacheCountLoading.asStateFlow()
-    private val _cacheCountFailures = MutableStateFlow<Set<String>>(emptySet())
-    val cacheCountFailures: StateFlow<Set<String>> = _cacheCountFailures.asStateFlow()
-    private val _ledgerStates = MutableStateFlow<Map<String, String>>(emptyMap())
-    val ledgerStates: StateFlow<Map<String, String>> = _ledgerStates.asStateFlow()
+    private val _cacheRows =
+        MutableStateFlow<Map<String, EmbeddingCacheRowSnapshot>>(emptyMap())
+    internal val cacheRows: StateFlow<Map<String, EmbeddingCacheRowSnapshot>> =
+        _cacheRows.asStateFlow()
+    private val scheduledCacheWorkIds =
+        java.util.concurrent.ConcurrentHashMap<String, java.util.UUID>()
 
     @Volatile private var cacheCountRefreshJob: Job? = null
     @Volatile private var pendingRefreshModels: List<EmbeddingModelConfig>? = null
@@ -134,6 +115,11 @@ class RagManager(
             pendingReminderModelId = null
             return
         }
+        _cacheRows.update { rows ->
+            modelIds.fold(rows) { current, modelId ->
+                current + (modelId to EmbeddingCacheRowReducer.refreshRequested(current[modelId]))
+            }
+        }
         if (cacheCountRefreshJob?.isActive == true) {
             pendingRefreshModels = models
             return
@@ -143,7 +129,6 @@ class RagManager(
             context = Dispatchers.IO,
             start = CoroutineStart.LAZY,
         ) {
-            _cacheCountLoading.update { it + modelIds }
             try {
                 refreshCachePresentation(models)
             } catch (error: Exception) {
@@ -151,10 +136,7 @@ class RagManager(
                 clearPendingReminder(modelIds)
                 DebugLog.e("RagManager", "Failed to refresh semantic cache presentation", error)
             } finally {
-                _cacheCountLoading.update { it - modelIds }
-                if (takePendingRefresh(refreshJob) != null) {
-                    requestCacheCountRefresh()
-                }
+                if (takePendingRefresh(refreshJob) != null) requestCacheCountRefresh()
             }
         }
         cacheCountRefreshJob = refreshJob
@@ -167,7 +149,7 @@ class RagManager(
             .mapTo(linkedSetOf(), EmbeddingModelConfig::id)
             .intersect(requestedModelIds)
         if (configuredIds.isEmpty()) {
-            _cacheCounts.update { it - requestedModelIds }
+            _cacheRows.update { it - requestedModelIds }
             clearPendingReminder(requestedModelIds)
             return
         }
@@ -189,9 +171,20 @@ class RagManager(
         val counts = stillConfigured.associateWith { modelId ->
             (cachedByModel[modelId] ?: 0).coerceAtMost(total) to total
         }
-        _cacheCounts.update { current -> (current - requestedModelIds) + counts }
-        _ledgerStates.update { current -> (current - requestedModelIds) + ledgers }
-        _cacheCountFailures.update { it - stillConfigured }
+        _cacheRows.update { current ->
+            stillConfigured.fold(current - requestedModelIds) { rows, modelId ->
+                val count = checkNotNull(counts[modelId])
+                rows + (
+                    modelId to EmbeddingCacheRowReducer.refreshed(
+                        previous = current[modelId],
+                        cached = count.first,
+                        total = count.second,
+                        ledgerCurrent =
+                            ledgers[modelId] == SemanticIndexLedgerEntity.STATE_CURRENT,
+                    )
+                )
+            }
+        }
         takePendingReminder(requestedModelIds)?.let { modelId ->
             emitUncachedReminder(modelId, ledgers[modelId], counts[modelId])
         }
@@ -200,7 +193,11 @@ class RagManager(
     private fun markCacheCountFailure(modelIds: Set<String>) {
         val configuredIds = settings.embeddingModels.value
             .mapTo(linkedSetOf(), EmbeddingModelConfig::id)
-        _cacheCountFailures.update { it + (modelIds intersect configuredIds) }
+        _cacheRows.update { current ->
+            (modelIds intersect configuredIds).fold(current) { rows, modelId ->
+                rows + (modelId to EmbeddingCacheRowReducer.refreshFailed(rows[modelId]))
+            }
+        }
     }
 
     @Synchronized
@@ -223,12 +220,8 @@ class RagManager(
     }
 
     private fun pruneRemovedModels(modelIds: Set<String>) {
-        _cacheCounts.update { counts -> counts.filterKeys { it in modelIds } }
-        _cacheCountLoading.update { loading -> loading intersect modelIds }
-        _cacheCountFailures.update { failures -> failures intersect modelIds }
-        _ledgerStates.update { states -> states.filterKeys { it in modelIds } }
-        _cachingModels.update { active -> active intersect modelIds }
-        _cacheWorkProgress.update { progress -> progress.filterKeys { it in modelIds } }
+        _cacheRows.update { rows -> rows.filterKeys { it in modelIds } }
+        scheduledCacheWorkIds.keys.retainAll(modelIds)
     }
 
     @Synchronized
@@ -236,8 +229,6 @@ class RagManager(
         if (cacheWorkObservationJob?.isActive == true && observedModelIds == modelIds) return
         cacheWorkObservationJob?.cancel()
         observedModelIds = modelIds
-        _cachingModels.update { it intersect modelIds }
-        _cacheWorkProgress.update { it.filterKeys(modelIds::contains) }
         if (modelIds.isEmpty()) {
             cacheWorkObservationJob = null
             return
@@ -246,81 +237,73 @@ class RagManager(
             coroutineScope {
                 modelIds.forEach { modelId ->
                     launch {
-                        var wasActive = false
-                        var observedFinishedIds = emptySet<String>()
+                        var previousActiveIds = emptySet<java.util.UUID>()
                         workManager.getWorkInfosForUniqueWorkFlow(
                             EmbeddingCacheWorker.workNameFor(modelId),
                         ).collect { infos ->
+                            if (settings.embeddingModels.value.none { it.id == modelId }) {
+                                return@collect
+                            }
                             val unfinished = infos.filter { !it.state.isFinished }
-                            val active = unfinished.isNotEmpty()
-                            val finishedIds = infos.asSequence()
-                                .filter { it.state.isFinished }
-                                .mapTo(linkedSetOf()) { it.id.toString() }
-                            val configured =
-                                settings.embeddingModels.value.any { it.id == modelId }
-                            _cachingModels.update { current ->
-                                if (configured && active) current + modelId else current - modelId
-                            }
-
-                            val reportingWork = unfinished.firstOrNull {
-                                it.state == androidx.work.WorkInfo.State.RUNNING
-                            } ?: unfinished.firstOrNull()
-                            val data = reportingWork?.progress
-                            val progress = data
-                                ?.takeIf {
-                                    it.keyValueMap.containsKey(
-                                        EmbeddingCacheWorker.KEY_PROGRESS_PERMILLE,
+                            val activeIds = unfinished.mapTo(linkedSetOf()) { it.id }
+                            if (unfinished.isNotEmpty()) {
+                                val reportingWork = unfinished.firstOrNull {
+                                    it.state == androidx.work.WorkInfo.State.RUNNING
+                                } ?: unfinished.first()
+                                val progress = reportingWork.cacheProgressOrNull()
+                                _cacheRows.update { rows ->
+                                    rows + (
+                                        modelId to EmbeddingCacheRowReducer.workActive(
+                                            rows[modelId],
+                                            progress,
+                                        )
                                     )
                                 }
-                                ?.let {
-                                    CacheWorkProgress(
-                                        processed = it.getInt(
-                                            EmbeddingCacheWorker.KEY_PROCESSED,
-                                            0,
-                                        ),
-                                        workTotal = it.getInt(
-                                            EmbeddingCacheWorker.KEY_WORK_TOTAL,
-                                            0,
-                                        ),
-                                        cached = it.getInt(
-                                            EmbeddingCacheWorker.KEY_CACHED,
-                                            0,
-                                        ),
-                                        total = it.getInt(
-                                            EmbeddingCacheWorker.KEY_TOTAL,
-                                            0,
-                                        ),
-                                        progressPermille = it.getInt(
-                                            EmbeddingCacheWorker.KEY_PROGRESS_PERMILLE,
-                                            0,
-                                        ),
-                                    )
+                            } else {
+                                val scheduledId = scheduledCacheWorkIds[modelId]
+                                val scheduledFinished = scheduledId != null && infos.any {
+                                    it.id == scheduledId && it.state.isFinished
                                 }
-                            _cacheWorkProgress.update { current ->
-                                if (configured && active && progress != null) {
-                                    current + (modelId to progress)
-                                } else {
-                                    current - modelId
+                                if (previousActiveIds.isNotEmpty() || scheduledFinished) {
+                                    val completedIds = previousActiveIds + listOfNotNull(scheduledId)
+                                    val failed = infos.any {
+                                        it.id in completedIds &&
+                                            it.state != androidx.work.WorkInfo.State.SUCCEEDED
+                                    }
+                                    scheduledId?.let { scheduledCacheWorkIds.remove(modelId, it) }
+                                    _cacheRows.update { rows ->
+                                        rows + (
+                                            modelId to if (failed) {
+                                                EmbeddingCacheRowReducer.failed(
+                                                    rows[modelId],
+                                                    EmbeddingCacheFailureKind.WORK,
+                                                )
+                                            } else {
+                                                EmbeddingCacheRowReducer.finalizing(rows[modelId])
+                                            }
+                                        )
+                                    }
+                                    requestCacheCountRefresh()
                                 }
                             }
-                            if (
-                                configured && !active &&
-                                infos.any { it.state == androidx.work.WorkInfo.State.FAILED }
-                            ) {
-                                _cacheCountFailures.update { it + modelId }
-                            }
-                            val refresh = configured && (
-                                (wasActive && !active) ||
-                                    finishedIds.any { it !in observedFinishedIds }
-                                )
-                            wasActive = configured && active
-                            observedFinishedIds = finishedIds
-                            if (refresh) requestCacheCountRefresh()
+                            previousActiveIds = activeIds
                         }
                     }
                 }
             }
         }
+    }
+
+    private fun androidx.work.WorkInfo.cacheProgressOrNull(): EmbeddingCacheWorkSnapshot? {
+        val data = progress
+        return embeddingCacheWorkSnapshotOrNull(
+            generationRevision = data.getLong(EmbeddingCacheWorker.KEY_GENERATION_REVISION, -1L),
+            kind = data.getString(EmbeddingCacheWorker.KEY_GENERATION_KIND),
+            processed = data.getInt(EmbeddingCacheWorker.KEY_PROCESSED, -1),
+            total = data.getInt(EmbeddingCacheWorker.KEY_WORK_TOTAL, -1),
+            remaining = data.getInt(EmbeddingCacheWorker.KEY_REMAINING, -1),
+            progressPermille = data.getInt(EmbeddingCacheWorker.KEY_PROGRESS_PERMILLE, -1),
+        )
     }
 
     private suspend fun emitUncachedReminder(
@@ -445,6 +428,7 @@ class RagManager(
             settings.awaitInitialLoad()
             var model: EmbeddingModelConfig? = null
             var state: String? = null
+            var workRequested = false
             EmbeddingCacheLocks.forModel(modelId).withLock {
                 val current = settings.embeddingModels.value.find { it.id == modelId }
                     ?: return@withLock
@@ -455,13 +439,13 @@ class RagManager(
                 } else {
                     conversations.getOrAdmitSemanticLedgerState(modelId)
                 }
-                _ledgerStates.update { it + (modelId to checkNotNull(state)) }
                 if (recache || state != SemanticIndexLedgerEntity.STATE_CURRENT) {
-                    EmbeddingCacheWorker.schedule(modelId, workManager)
+                    workRequested = scheduleCacheWork(modelId)
                 }
             }
             val configuredModel = model ?: return@launch
             if (!recache && state == SemanticIndexLedgerEntity.STATE_CURRENT) return@launch
+            if (!workRequested) return@launch
             val models = settings.embeddingModels.value
             observeCacheWork(models.mapTo(linkedSetOf(), EmbeddingModelConfig::id))
             requestCacheCountRefresh(models = models)
@@ -482,16 +466,54 @@ class RagManager(
         EmbeddingCacheLocks.forModel(modelId).withLock {
             if (settings.embeddingModels.value.none { it.id == modelId }) return@withLock
             val state = conversations.getOrAdmitSemanticLedgerState(modelId)
-            _ledgerStates.update { it + (modelId to state) }
             if (state == SemanticIndexLedgerEntity.STATE_CURRENT) return@withLock
             if (autoCacheOverride ?: settings.getAutoCacheEnabled()) {
-                EmbeddingCacheWorker.schedule(modelId, workManager)
+                scheduleCacheWork(modelId)
             } else if (settings.getShowUncachedNotification()) {
                 requestCacheCountRefresh(
                     reminderModelId = modelId,
                     models = settings.embeddingModels.value,
                 )
             }
+        }
+    }
+
+    private suspend fun scheduleCacheWork(modelId: String): Boolean {
+        val alreadyActive = _cacheRows.value[modelId]?.workActive == true
+        if (!alreadyActive) {
+            _cacheRows.update { rows ->
+                rows + (
+                    modelId to EmbeddingCacheRowReducer.workActive(rows[modelId], progress = null)
+                )
+            }
+        }
+        return runCatching {
+            EmbeddingCacheWorker.schedule(modelId, workManager) {
+                scheduledCacheWorkIds[modelId] = it
+            }
+            true
+        }.getOrElse { error ->
+            scheduledCacheWorkIds.remove(modelId)
+            if (!alreadyActive) {
+                _cacheRows.update { rows ->
+                    rows + (
+                        modelId to EmbeddingCacheRowReducer.failed(
+                            rows[modelId],
+                            EmbeddingCacheFailureKind.WORK,
+                        )
+                    )
+                }
+            }
+            DebugLog.e("RagManager", "Failed to schedule semantic cache work for $modelId", error)
+            false
+        }
+    }
+
+    fun retryCacheRow(modelId: String) {
+        if (_cacheRows.value[modelId]?.failure == EmbeddingCacheFailureKind.WORK) {
+            cacheMessagesForModel(modelId)
+        } else {
+            loadCacheCounts()
         }
     }
 
@@ -509,7 +531,7 @@ class RagManager(
                 ) {
                     // Enqueueing is a wake-up, not a cache mutation, and must never wait behind
                     // remote/JNI embedding work.
-                    EmbeddingCacheWorker.schedule(modelId, workManager)
+                    scheduleCacheWork(modelId)
                 }
             }
         }

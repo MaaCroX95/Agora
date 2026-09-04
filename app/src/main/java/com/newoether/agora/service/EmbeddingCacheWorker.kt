@@ -425,9 +425,6 @@ class EmbeddingCacheWorker(
         const val KEY_PROCESSED = "processed"
         const val KEY_WORK_TOTAL = "work_total"
         const val KEY_REMAINING = "remaining"
-        // Removed with the atomic presentation-state migration in Checkpoint B.
-        const val KEY_CACHED = "cached"
-        const val KEY_TOTAL = "total"
         const val KEY_PROGRESS_PERMILLE = "progress_permille"
         const val KEY_FAILED = "failed"
         const val KEY_ERROR = "error"
@@ -441,14 +438,17 @@ class EmbeddingCacheWorker(
         suspend fun schedule(
             modelId: String,
             workManager: WorkManager,
+            onScheduled: (java.util.UUID) -> Unit = {},
         ) {
             require(modelId.isNotBlank())
             schedulingLock.withLock {
                 val infos = workManager.getWorkInfosForUniqueWorkFlow(workNameFor(modelId)).first()
+                infos.firstOrNull { !it.state.isFinished }?.id?.let(onScheduled)
                 enqueueForDecision(
                     modelId = modelId,
                     workManager = workManager,
                     decision = embeddingCacheScheduleDecision(infos.map { it.state }),
+                    onScheduled = onScheduled,
                 )
             }
         }
@@ -478,6 +478,7 @@ class EmbeddingCacheWorker(
             modelId: String,
             workManager: WorkManager,
             decision: EmbeddingCacheScheduleDecision,
+            onScheduled: (java.util.UUID) -> Unit = {},
         ) {
             if (decision == EmbeddingCacheScheduleDecision.NO_OP) return
             val request = OneTimeWorkRequestBuilder<EmbeddingCacheWorker>()
@@ -492,6 +493,7 @@ class EmbeddingCacheWorker(
                     ExistingWorkPolicy.REPLACE
                 EmbeddingCacheScheduleDecision.NO_OP -> return
             }
+            onScheduled(request.id)
             workManager.enqueueUniqueWork(workNameFor(modelId), policy, request).await()
         }
     }

@@ -233,7 +233,7 @@ class SemanticIndexMutationSourceContractTest {
             "EmbeddingCacheLocks.forModel(modelId).withLock",
             "settings.embeddingModels.value.find { it.id == modelId }",
             "conversations.getOrAdmitSemanticLedgerState(modelId)",
-            "EmbeddingCacheWorker.schedule(modelId, workManager)",
+            "scheduleCacheWork(modelId)",
         )
         val admission = rag.section(
             "private suspend fun admitActiveModel(",
@@ -244,13 +244,13 @@ class SemanticIndexMutationSourceContractTest {
             "EmbeddingCacheLocks.forModel(modelId).withLock",
             "settings.embeddingModels.value.none { it.id == modelId }",
             "conversations.getOrAdmitSemanticLedgerState(modelId)",
-            "EmbeddingCacheWorker.schedule(modelId, workManager)",
+            "scheduleCacheWork(modelId)",
         )
         val incremental = rag.section(
             "fun indexMessageForRag(",
             "fun resolveEmbeddingApiKey(): String? {",
         )
-        assertTrue(incremental.contains("EmbeddingCacheWorker.schedule(modelId, workManager)"))
+        assertTrue(incremental.contains("scheduleCacheWork(modelId)"))
         assertFalse(incremental.contains("computeEmbedding"))
     }
 

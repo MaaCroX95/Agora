@@ -708,6 +708,7 @@
     <string name="embedding_type_local">Local</string>
     <string name="cached">Cached</string>
     <string name="not_cached">Not cached</string>
+    <string name="cache_work_remaining">%1$d remaining (%2$d/%3$d)</string>
     <string name="advanced_title">Advanced</string>
     <string name="search_context_label">Context messages per search hit</string>
     <string name="search_context_desc">%1$d messages</string>

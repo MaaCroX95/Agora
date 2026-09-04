@@ -29,7 +29,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
 import com.newoether.agora.api.ProviderDefaults
-import com.newoether.agora.data.local.SemanticIndexLedgerEntity
+import com.newoether.agora.viewmodel.EmbeddingCacheRowPhase
+import com.newoether.agora.viewmodel.EmbeddingCacheRowSnapshot
 import com.newoether.agora.ui.common.PersistedSliderFeedbackGate
 import com.newoether.agora.ui.components.clearFocusOnTap
 import com.newoether.agora.util.Constants
@@ -40,29 +41,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private data class SearchMethodOption(val key: String, @androidx.annotation.StringRes val labelRes: Int)
-
-internal enum class EmbeddingCacheActionState {
-    LOADING,
-    CACHING,
-    RETRY,
-    CACHE,
-    RECACHE,
-}
-
-internal fun embeddingCacheActionState(
-    hasSnapshot: Boolean,
-    countLoading: Boolean,
-    countFailed: Boolean,
-    workerActive: Boolean,
-    ledgerCurrent: Boolean,
-): EmbeddingCacheActionState = when {
-    workerActive -> EmbeddingCacheActionState.CACHING
-    !hasSnapshot && countLoading -> EmbeddingCacheActionState.LOADING
-    !hasSnapshot && countFailed -> EmbeddingCacheActionState.RETRY
-    !hasSnapshot -> EmbeddingCacheActionState.LOADING
-    ledgerCurrent -> EmbeddingCacheActionState.RECACHE
-    else -> EmbeddingCacheActionState.CACHE
-}
 
 private val searchMethods = listOf(
     SearchMethodOption("keyword", R.string.search_method_keyword),
@@ -79,12 +57,7 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     val manualSearchMethod by viewModel.settings.manualSearchMethod.collectAsState()
     val embeddingModels by viewModel.settings.embeddingModels.collectAsState()
     val activeEmbeddingModelId by viewModel.settings.activeEmbeddingModelId.collectAsState()
-    val cachingModels by viewModel.ragManager.cachingModels.collectAsState()
-    val cacheWorkProgress by viewModel.ragManager.cacheWorkProgress.collectAsState()
-    val cacheCounts by viewModel.ragManager.cacheCounts.collectAsState()
-    val cacheCountLoading by viewModel.ragManager.cacheCountLoading.collectAsState()
-    val cacheCountFailures by viewModel.ragManager.cacheCountFailures.collectAsState()
-    val ledgerStates by viewModel.ragManager.ledgerStates.collectAsState()
+    val cacheRows by viewModel.ragManager.cacheRows.collectAsState()
     val searchContextWindow by viewModel.settings.searchContextWindow.collectAsState()
     val searchMatchLimit by viewModel.settings.searchMatchLimit.collectAsState()
     val ragThreshold by viewModel.settings.ragThreshold.collectAsState()
@@ -315,47 +288,50 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                         embeddingModels.forEach { model ->
                             add {
                                 val isActive = model.id == activeEmbeddingModelId
-                                val isCaching = model.id in cachingModels
-                                val workProgress = cacheWorkProgress[model.id]
-                                val counts = cacheCounts[model.id]
-                                val displayCounts = workProgress
-                                    ?.let { it.cached to it.total }
-                                    ?: counts
-                                val isCountLoading = model.id in cacheCountLoading
-                                val initialFailure = counts == null && !isCountLoading &&
-                                    model.id in cacheCountFailures
-                                val ledgerCurrent = ledgerStates[model.id] ==
-                                    SemanticIndexLedgerEntity.STATE_CURRENT
+                                val cacheRow =
+                                    cacheRows[model.id] ?: EmbeddingCacheRowSnapshot.Loading
+                                val visualPhase = cacheRow.visualPhase
                                 SettingsItem(
                                     headlineContent = { Text(model.name) },
                                     supportingContent = {
                                         val typeLabel = if (model.type == com.newoether.agora.data.EmbeddingModelType.REMOTE)
                                             stringResource(R.string.embedding_type_remote)
                                         else stringResource(R.string.embedding_type_local)
-                                        val statusState = when {
-                                            displayCounts != null && ledgerCurrent && !isCaching ->
-                                                "cached"
-                                            displayCounts != null -> "counts"
-                                            initialFailure -> "failed"
-                                            else -> "loading"
+                                        val progressLabel = cacheRow.progress?.let {
+                                            stringResource(
+                                                R.string.cache_work_remaining,
+                                                it.remaining,
+                                                it.processed,
+                                                it.total,
+                                            )
                                         }
                                         Crossfade(
-                                            targetState = statusState,
+                                            targetState = visualPhase,
                                             animationSpec = tween(250),
                                             label = "embeddingCacheStatus-${model.id}",
-                                        ) { state ->
-                                            val cacheLabel = when (state) {
-                                                "cached" -> stringResource(R.string.cached)
-                                                "counts" -> {
-                                                    val snapshot = displayCounts
-                                                    val notCached = snapshot?.let {
-                                                        (it.second - it.first).coerceAtLeast(0)
-                                                    } ?: 0
-                                                    "$notCached ${stringResource(R.string.not_cached)} " +
-                                                        "(${snapshot?.first ?: 0}/${snapshot?.second ?: 0})"
+                                        ) { phase ->
+                                            val cacheLabel = when (phase) {
+                                                EmbeddingCacheRowPhase.LOADING,
+                                                EmbeddingCacheRowPhase.QUEUED ->
+                                                    stringResource(R.string.loading_label)
+                                                EmbeddingCacheRowPhase.CACHING,
+                                                EmbeddingCacheRowPhase.FINALIZING ->
+                                                    progressLabel
+                                                        ?: stringResource(R.string.loading_label)
+                                                EmbeddingCacheRowPhase.FAILED ->
+                                                    listOfNotNull(
+                                                        stringResource(R.string.tool_state_failed),
+                                                        progressLabel,
+                                                    ).joinToString(" · ")
+                                                EmbeddingCacheRowPhase.CACHE -> {
+                                                    val cached = cacheRow.cached ?: 0
+                                                    val total = cacheRow.indexableTotal ?: 0
+                                                    "${(total - cached).coerceAtLeast(0)} " +
+                                                        "${stringResource(R.string.not_cached)} " +
+                                                        "($cached/$total)"
                                                 }
-                                                "failed" -> stringResource(R.string.tool_state_failed)
-                                                else -> stringResource(R.string.loading_label)
+                                                EmbeddingCacheRowPhase.RECACHE ->
+                                                    stringResource(R.string.cached)
                                             }
                                             Text("$typeLabel · $cacheLabel")
                                         }
@@ -368,51 +344,54 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                     },
                                     trailingContent = {
                                         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                            val actionState = embeddingCacheActionState(
-                                                hasSnapshot = counts != null,
-                                                countLoading = isCountLoading,
-                                                countFailed = initialFailure,
-                                                workerActive = isCaching,
-                                                ledgerCurrent = ledgerCurrent,
-                                            )
-                                            Crossfade(
-                                                targetState = actionState,
-                                                animationSpec = tween(250),
-                                                label = "embeddingCacheAction-${model.id}",
-                                            ) { state ->
-                                                when (state) {
-                                                    EmbeddingCacheActionState.CACHING -> {
-                                                        if (workProgress != null) {
-                                                            CircularProgressIndicator(
-                                                                progress = { workProgress.fraction },
-                                                                modifier = Modifier.size(24.dp),
-                                                                strokeWidth = 3.dp,
-                                                            )
-                                                        } else {
-                                                            CircularProgressIndicator(
-                                                                modifier = Modifier.size(24.dp),
-                                                                strokeWidth = 3.dp,
-                                                            )
+                                            Box(
+                                                modifier = Modifier.width(76.dp),
+                                                contentAlignment = androidx.compose.ui.Alignment.Center,
+                                            ) {
+                                                Crossfade(
+                                                    targetState = visualPhase,
+                                                    animationSpec = tween(250),
+                                                    label = "embeddingCacheAction-${model.id}",
+                                                ) { phase ->
+                                                    when (phase) {
+                                                        EmbeddingCacheRowPhase.CACHING,
+                                                        EmbeddingCacheRowPhase.FINALIZING -> {
+                                                            val progress = cacheRow.progress
+                                                            if (progress == null) {
+                                                                CircularProgressIndicator(
+                                                                    modifier = Modifier.size(24.dp),
+                                                                    strokeWidth = 3.dp,
+                                                                )
+                                                            } else {
+                                                                CircularProgressIndicator(
+                                                                    progress = { progress.fraction },
+                                                                    modifier = Modifier.size(24.dp),
+                                                                    strokeWidth = 3.dp,
+                                                                )
+                                                            }
                                                         }
-                                                    }
-                                                    EmbeddingCacheActionState.LOADING ->
-                                                        CircularProgressIndicator(
-                                                            modifier = Modifier.size(24.dp),
-                                                            strokeWidth = 3.dp,
-                                                        )
-                                                    EmbeddingCacheActionState.RETRY -> TextButton(
-                                                        onClick = viewModel.ragManager::loadCacheCounts,
-                                                    ) { Text(stringResource(R.string.retry)) }
-                                                    EmbeddingCacheActionState.RECACHE -> TextButton(
-                                                        onClick = { showRecacheConfirm = model.id },
-                                                    ) { Text(stringResource(R.string.recache_action)) }
-                                                    EmbeddingCacheActionState.CACHE -> TextButton(
-                                                        onClick = {
-                                                            viewModel.ragManager.cacheMessagesForModel(
-                                                                model.id,
+                                                        EmbeddingCacheRowPhase.LOADING,
+                                                        EmbeddingCacheRowPhase.QUEUED ->
+                                                            CircularProgressIndicator(
+                                                                modifier = Modifier.size(24.dp),
+                                                                strokeWidth = 3.dp,
                                                             )
-                                                        },
-                                                    ) { Text(stringResource(R.string.cache_action)) }
+                                                        EmbeddingCacheRowPhase.FAILED -> TextButton(
+                                                            onClick = {
+                                                                viewModel.ragManager.retryCacheRow(model.id)
+                                                            },
+                                                        ) { Text(stringResource(R.string.retry)) }
+                                                        EmbeddingCacheRowPhase.RECACHE -> TextButton(
+                                                            onClick = { showRecacheConfirm = model.id },
+                                                        ) { Text(stringResource(R.string.recache_action)) }
+                                                        EmbeddingCacheRowPhase.CACHE -> TextButton(
+                                                            onClick = {
+                                                                viewModel.ragManager.cacheMessagesForModel(
+                                                                    model.id,
+                                                                )
+                                                            },
+                                                        ) { Text(stringResource(R.string.cache_action)) }
+                                                    }
                                                 }
                                             }
                                             Box {

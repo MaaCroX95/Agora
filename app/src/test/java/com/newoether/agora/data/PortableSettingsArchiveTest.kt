@@ -102,7 +102,7 @@ class PortableSettingsArchiveTest {
             .substringAfter("private suspend fun admitActiveModel(")
             .substringBefore("/**")
         assertTrue(admissionPolicy.contains("settings.getAutoCacheEnabled()"))
-        assertTrue(admissionPolicy.contains("EmbeddingCacheWorker.schedule(modelId, workManager)"))
+        assertTrue(admissionPolicy.contains("scheduleCacheWork(modelId)"))
         assertTrue(admissionPolicy.contains("settings.getShowUncachedNotification()"))
 
         val resourceRoot = locateDirectory("app/src/main/res", "src/main/res")
