@@ -79,3 +79,5 @@ jobs:
         run: |
           set -euo pipefail
           git push origin HEAD:sync/upstream-2026-09-04-latest
+
+# Rerun marker: 2026-09-04 latest upstream sync
