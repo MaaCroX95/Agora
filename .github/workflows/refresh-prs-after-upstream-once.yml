@@ -1,0 +1,60 @@
+name: Refresh PR branches after upstream sync
+
+on:
+  push:
+    branches:
+      - automation/refresh-prs-after-upstream-2026-09-04
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-namespaced-web-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/namespaced-web-tools
+          fetch-depth: 0
+      - name: Merge current master
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin master
+          set +e
+          git merge --no-ff --no-edit origin/master
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "Conflicts:"
+            git diff --name-only --diff-filter=U
+            exit "$status"
+          fi
+          git push origin HEAD:fix/namespaced-web-tools
+
+  refresh-permanent-signing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/permanent-apk-signing
+          fetch-depth: 0
+      - name: Merge current master
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin master
+          set +e
+          git merge --no-ff --no-edit origin/master
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "Conflicts:"
+            git diff --name-only --diff-filter=U
+            exit "$status"
+          fi
+          git push origin HEAD:chore/permanent-apk-signing
