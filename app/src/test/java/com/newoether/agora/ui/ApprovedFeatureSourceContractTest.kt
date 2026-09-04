@@ -178,6 +178,16 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(sendButton.contains("targetState = icon"))
         assertTrue(sendButton.contains("ComposerActionIcon.BUSY"))
         assertTrue(sendButton.contains("enabled = isActionable"))
+        assertTrue(sendButton.contains("val containerColor by animateColorAsState("))
+        assertTrue(sendButton.contains("val contentColor by animateColorAsState("))
+        assertEquals(
+            2,
+            sendButton.split("animationSpec = tween(durationMillis = 400)").size - 1,
+        )
+        assertTrue(sendButton.contains("label = \"fabContainer\""))
+        assertTrue(sendButton.contains("label = \"fabContent\""))
+        assertTrue(sendButton.contains("durationMillis = COMPOSER_ICON_CROSSFADE_DURATION_MS"))
+        assertTrue(sendButton.contains("easing = LinearEasing"))
         assertFalse(sendButton.contains("LocalSoftwareKeyboardController"))
         assertFalse(chatApp.contains("BindDirectAcceptedComposerEffects"))
         assertFalse(

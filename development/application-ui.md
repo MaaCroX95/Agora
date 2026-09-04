@@ -395,8 +395,10 @@ preserves Composer order while retaining only `READY` results; zero successful a
 when the frozen text independently permits Send. Tapping the spinning Send control during `WAITING`
 cancels only that Send request, keeps attachment processing alive, and releases the deletion lock.
 `SUBMITTING` and accepted-clear recovery are non-cancellable and render one coherent neutral 3 dp
-busy indicator with disabled action semantics. Failure before accepted input returns the frozen
-request to `IDLE`.
+busy indicator with disabled action semantics. Across actionable and non-actionable transitions, the
+container's primary/surface-variant colors and the content's on-primary/on-surface-variant colors each
+interpolate with the historical 400 ms tween. The icon Crossfade remains an independent 200 ms linear
+transition. Failure before accepted input returns the frozen request to `IDLE`.
 
 Authoritative acceptance clears only the frozen text and attachment membership. Revision-aware
 settlement preserves text typed after the tap, including a TextField edit that becomes visible before
@@ -535,7 +537,9 @@ user-input cancellation, and absence of delay, retry, fallback, or another auto-
 Composer-dismiss verification covers the strict greater-than-`0.5` boundary, one effect per threshold
 crossing, rearming below the boundary, shared drag/programmatic state, and unchanged Back behavior.
 Direct-Send verification covers the absence of any acceptance-owned focus, IME, or expanded-Composer
-presentation side channel while preserving accepted-clear state and confirmation haptics.
+presentation side channel while preserving accepted-clear state and confirmation haptics. Send-control
+verification also requires exactly two 400 ms color tweens for container and content while retaining
+the independent shared 200 ms LinearEasing icon Crossfade, true enabled semantics, and 3 dp busy stroke.
 Task History verification covers target observation before preview settlement, New Chat and successful-
 fork hamburger restoration, failed-fork retention, task-bound first-frame execution seeding, numeric
 scroll restoration, post-enter Room reconciliation through stable conversation IDs, and snapshot reset
