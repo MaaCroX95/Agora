@@ -202,7 +202,7 @@ class SemanticIndexMutationSourceContractTest {
         assertTrue(worker.contains("EmbeddingClient.computeEmbeddings("))
         assertTrue(worker.contains("LlamaEngine.computeEmbeddings("))
         assertTrue(worker.contains("database.commitSemanticEmbedding("))
-        assertTrue(worker.contains("expectedFingerprint = fingerprint"))
+        assertTrue(worker.contains("expectedFingerprint = candidate.fingerprint"))
         assertTrue(worker.contains("ExistingWorkPolicy.APPEND_OR_REPLACE"))
 
         assertFalse(rag.contains("EmbeddingClient"))
@@ -271,6 +271,10 @@ class SemanticIndexMutationSourceContractTest {
         assertTrue(worker.contains("SemanticIndexLedgerEntity.STATE_PENDING"))
         assertTrue(worker.contains("SemanticIndexLedgerEntity.STATE_NEEDS_RECONCILE"))
         assertTrue(worker.contains("limit = model.batchSize.coerceIn(1, MAX_BATCH_SIZE)"))
+        assertTrue(worker.contains("limit = RECONCILE_SCAN_PAGE_SIZE"))
+        assertTrue(worker.contains("candidates.chunked(embeddingBatchSize)"))
+        assertFalse(worker.contains("markSemanticEmbeddingReused"))
+        assertFalse(ledger.contains("updateEmbeddingFingerprint"))
         assertTrue(worker.countToken("yield()") >= 2)
 
         val exact = worker.section(

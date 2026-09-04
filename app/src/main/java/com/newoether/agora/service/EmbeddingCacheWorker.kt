@@ -22,7 +22,6 @@ import com.newoether.agora.data.local.EmbeddingEntity
 import com.newoether.agora.data.local.IndexableMessage
 import com.newoether.agora.data.local.ReconcileIndexableMessage
 import com.newoether.agora.data.local.SemanticIndexLedgerEntity
-import com.newoether.agora.data.local.markSemanticEmbeddingReused
 import com.newoether.agora.data.local.commitSemanticEmbedding
 import com.newoether.agora.data.local.semanticSourceFingerprint
 import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
@@ -42,6 +41,19 @@ internal enum class EmbeddingCacheScheduleDecision {
     APPEND_FOLLOWER,
     REPLACE_LEGACY_CHAIN,
     NO_OP,
+}
+
+internal fun shouldReuseReconciledEmbedding(
+    embeddingId: Long?,
+    dimension: Int?,
+    embeddingBytes: Int?,
+    existingFingerprint: String?,
+    expectedFingerprint: String,
+): Boolean {
+    val validShape =
+        dimension != null && dimension > 0 && embeddingBytes == dimension * Float.SIZE_BYTES
+    return embeddingId != null && validShape &&
+        (existingFingerprint == null || existingFingerprint == expectedFingerprint)
 }
 
 internal fun embeddingCacheScheduleDecision(
@@ -228,59 +240,47 @@ class EmbeddingCacheWorker(
         var embeddingConfigResolved = false
         var remoteConfig: Pair<String, String>? = null
         var complete = true
+        val embeddingBatchSize = model.batchSize.coerceIn(1, MAX_BATCH_SIZE)
         publishProgress(database, model.id, processed, workTotal)
         while (true) {
             val page = semanticDao.getReconcileMessagesPage(
                 modelId = model.id,
                 afterId = afterMessageId,
-                limit = model.batchSize.coerceIn(1, MAX_BATCH_SIZE),
+                limit = RECONCILE_SCAN_PAGE_SIZE,
             )
             if (page.isEmpty()) break
             afterMessageId = page.last().id
             val candidates = mutableListOf<EmbeddingCandidate>()
             page.forEach { row ->
                 val fingerprint = semanticSourceFingerprint(row.text)
-                val validShape = row.dimension != null && row.dimension > 0 &&
-                    row.embeddingBytes == row.dimension * Float.SIZE_BYTES
-                val fingerprintMatches =
-                    row.embeddingId != null && validShape &&
-                        row.embeddingFingerprint == fingerprint
-                val safeLegacyReuse =
-                    row.embeddingId != null && validShape &&
-                        row.embeddingFingerprint == null &&
-                        row.text.length <= Constants.MAX_CHUNK_TEXT_LENGTH &&
-                        row.chunkText == row.text
-                when {
-                    fingerprintMatches -> Unit
-                    safeLegacyReuse -> {
-                        val retained = database.markSemanticEmbeddingReused(
-                            embeddingId = checkNotNull(row.embeddingId),
-                            modelId = model.id,
-                            messageId = row.id,
-                            expectedFingerprint = fingerprint,
-                            expectedReconcileRevision = expectedReconcileRevision,
-                        )
-                        if (!retained) {
-                            candidates += row.toCandidate(fingerprint)
-                        }
-                    }
-                    else -> candidates += row.toCandidate(fingerprint)
-                }
+                // An extant legacy row is already source-safe: all semantic source mutations
+                // delete its embedding transactionally before enqueuing work. Rewriting a nullable
+                // fingerprint into every pre-v30 row would rewrite gigabytes of BLOB-bearing rows.
+                val reusable = shouldReuseReconciledEmbedding(
+                    embeddingId = row.embeddingId,
+                    dimension = row.dimension,
+                    embeddingBytes = row.embeddingBytes,
+                    existingFingerprint = row.embeddingFingerprint,
+                    expectedFingerprint = fingerprint,
+                )
+                if (!reusable) candidates += row.toCandidate(fingerprint)
             }
             if (candidates.isNotEmpty() && !embeddingConfigResolved) {
                 remoteConfig = resolveEmbeddingConfig(model, settingsManager)
                 embeddingConfigResolved = true
             }
-            if (
-                !embedCandidates(
-                    model = model,
-                    remoteConfig = remoteConfig,
-                    candidates = candidates,
-                    database = database,
-                    expectedReconcileRevision = expectedReconcileRevision,
-                )
-            ) {
-                complete = false
+            candidates.chunked(embeddingBatchSize).forEach { batch ->
+                if (
+                    !embedCandidates(
+                        model = model,
+                        remoteConfig = remoteConfig,
+                        candidates = batch,
+                        database = database,
+                        expectedReconcileRevision = expectedReconcileRevision,
+                    )
+                ) {
+                    complete = false
+                }
             }
             processed += page.size
             publishProgress(database, model.id, processed, max(workTotal, processed))
@@ -422,6 +422,7 @@ class EmbeddingCacheWorker(
         const val KEY_ERROR = "error"
         const val TAG = "EmbeddingCache"
         private const val MAX_BATCH_SIZE = 32
+        private const val RECONCILE_SCAN_PAGE_SIZE = 128
         private const val PROGRESS_COUNT_REFRESH_INTERVAL = 16
         private val schedulingLock = Mutex()
 

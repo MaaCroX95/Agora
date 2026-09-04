@@ -75,7 +75,6 @@ data class ReconcileIndexableMessage(
     val text: String,
     val embeddingId: Long?,
     val embeddingFingerprint: String?,
-    val chunkText: String?,
     val dimension: Int?,
     val embeddingBytes: Int?,
 )
@@ -169,7 +168,6 @@ interface SemanticIndexDao {
         SELECT m.id, m.text,
                e.id AS embeddingId,
                e.sourceFingerprint AS embeddingFingerprint,
-               e.chunkText AS chunkText,
                e.dimension AS dimension,
                LENGTH(e.embedding) AS embeddingBytes
         FROM messages m
@@ -210,20 +208,6 @@ interface SemanticIndexDao {
 
     @Upsert
     suspend fun upsertEmbedding(embedding: EmbeddingEntity)
-
-    @Query(
-        """
-        UPDATE embeddings
-        SET sourceFingerprint = :sourceFingerprint
-        WHERE id = :embeddingId AND modelId = :modelId AND messageId = :messageId
-        """,
-    )
-    suspend fun updateEmbeddingFingerprint(
-        embeddingId: Long,
-        modelId: String,
-        messageId: String,
-        sourceFingerprint: String,
-    ): Int
 
     @Query("DELETE FROM embeddings WHERE messageId IN (:messageIds)")
     suspend fun deleteEmbeddingsForMessages(messageIds: List<String>): Int
@@ -466,27 +450,6 @@ internal suspend fun <T> ChatDatabase.withSemanticEligibilityMutation(
         semanticIndexDao().requestSemanticReconcile(snapshot, updatedAt)
     }
     result
-}
-
-internal suspend fun ChatDatabase.markSemanticEmbeddingReused(
-    embeddingId: Long,
-    modelId: String,
-    messageId: String,
-    expectedFingerprint: String,
-    expectedReconcileRevision: Long,
-): Boolean = withTransaction {
-    val semanticDao = semanticIndexDao()
-    val ledger = semanticDao.getLedger(modelId) ?: return@withTransaction false
-    if (ledger.reconcileRevision != expectedReconcileRevision) return@withTransaction false
-    val currentFingerprint = semanticDao.getSearchableMessageText(messageId)
-        ?.let(::semanticSourceFingerprint)
-    if (currentFingerprint != expectedFingerprint) return@withTransaction false
-    semanticDao.updateEmbeddingFingerprint(
-        embeddingId = embeddingId,
-        modelId = modelId,
-        messageId = messageId,
-        sourceFingerprint = expectedFingerprint,
-    ) == 1
 }
 
 internal suspend fun ChatDatabase.commitSemanticEmbedding(

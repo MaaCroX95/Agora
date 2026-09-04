@@ -7,6 +7,59 @@ import org.junit.Test
 
 class EmbeddingCacheSchedulingTest {
     @Test
+    fun reconcileReusesValidLegacyAndMatchingRowsWithoutRewritingThem() {
+        assertTrue(
+            shouldReuseReconciledEmbedding(
+                embeddingId = 7L,
+                dimension = 3,
+                embeddingBytes = 12,
+                existingFingerprint = null,
+                expectedFingerprint = "current",
+            ),
+        )
+        assertTrue(
+            shouldReuseReconciledEmbedding(
+                embeddingId = 7L,
+                dimension = 3,
+                embeddingBytes = 12,
+                existingFingerprint = "current",
+                expectedFingerprint = "current",
+            ),
+        )
+    }
+
+    @Test
+    fun reconcileRegeneratesMissingCorruptOrStaleRows() {
+        assertTrue(
+            !shouldReuseReconciledEmbedding(
+                embeddingId = null,
+                dimension = null,
+                embeddingBytes = null,
+                existingFingerprint = null,
+                expectedFingerprint = "current",
+            ),
+        )
+        assertTrue(
+            !shouldReuseReconciledEmbedding(
+                embeddingId = 7L,
+                dimension = 3,
+                embeddingBytes = 8,
+                existingFingerprint = null,
+                expectedFingerprint = "current",
+            ),
+        )
+        assertTrue(
+            !shouldReuseReconciledEmbedding(
+                embeddingId = 7L,
+                dimension = 3,
+                embeddingBytes = 12,
+                existingFingerprint = "stale",
+                expectedFingerprint = "current",
+            ),
+        )
+    }
+
+    @Test
     fun idleStartsOneWorker() {
         assertEquals(
             EmbeddingCacheScheduleDecision.KEEP_NEW,
