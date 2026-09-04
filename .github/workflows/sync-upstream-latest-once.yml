@@ -71,13 +71,24 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew -p build-logic test --stacktrace
-          ./gradlew :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest verifyKotlinFileSize --stacktrace
+
+          # The current upstream tree compiles substantially more Kotlin than our previous base.
+          # Running both product-flavor test compilations concurrently exhausted the hosted runner's
+          # Kotlin daemon (GC overhead limit). Give the Kotlin compiler a bounded 3 GiB heap and run
+          # the two flavor gates sequentially; this changes only CI resources, not verification scope.
+          cp gradle.properties gradle.properties.ci-backup
+          trap 'mv -f gradle.properties.ci-backup gradle.properties 2>/dev/null || true' EXIT
+          printf '\nkotlin.daemon.jvmargs=-Xmx3072m\n' >> gradle.properties
+
+          ./gradlew -p build-logic test --max-workers=2 --stacktrace
+          ./gradlew :app:testFdroidDebugUnitTest verifyKotlinFileSize --max-workers=2 --stacktrace
+          ./gradlew :app:testPlayDebugUnitTest verifyKotlinFileSize --max-workers=2 --stacktrace
+
+          mv gradle.properties.ci-backup gradle.properties
+          trap - EXIT
 
       - name: Push synced branch
         shell: bash
         run: |
           set -euo pipefail
           git push origin HEAD:sync/upstream-2026-09-04-latest
-
-# Rerun marker: 2026-09-04 latest upstream sync
