@@ -104,7 +104,7 @@ class WebSearchToolProvider : ToolProvider {
         if (!ctx.webSearchEnabled) return emptyList()
         return listOf(
             ToolDefinition(function = ToolFunction(
-                name = "web_search",
+                name = "agora_web_search",
                 description = "Search the web for current information. Use this to find facts, news, or data not in your training set.",
                 parameters = ToolParameters(
                     properties = mapOf(
@@ -115,7 +115,7 @@ class WebSearchToolProvider : ToolProvider {
                 )
             )),
             ToolDefinition(function = ToolFunction(
-                name = "web_fetch",
+                name = "agora_web_fetch",
                 description = "Fetch and read the full text content of a web page. Use this after web_search when you need more detail from a specific page.",
                 parameters = ToolParameters(
                     properties = mapOf(
@@ -134,13 +134,13 @@ class WebSearchToolProvider : ToolProvider {
         ctx: GenerationContext,
     ): String = withContext(Dispatchers.IO) {
         when (name) {
-            "web_search" -> executeWebSearch(arguments, ctx)
-            "web_fetch" -> executeWebFetch(arguments, ctx)
+            "agora_web_search", "web_search" -> executeWebSearch(arguments, ctx)
+            "agora_web_fetch", "web_fetch" -> executeWebFetch(arguments, ctx)
             else -> "Unknown tool: $name"
         }
     }
 
-    override fun handles(name: String): Boolean = name in setOf("web_search", "web_fetch")
+    override fun handles(name: String): Boolean = name in setOf("agora_web_search", "agora_web_fetch", "web_search", "web_fetch")
 
     private fun executeWebSearch(arguments: String, ctx: GenerationContext): String {
         val argsStr = arguments.ifBlank { "{}" }
