@@ -98,7 +98,6 @@ fun ChatApp(
     val context = LocalContext.current
     val motionPolicy = LocalAgoraMotionPolicy.current
     ConversationShareEffect(viewModel, context)
-
     val latestDrawerEnabled by rememberUpdatedState(drawerEnabled)
     val drawerState = rememberDrawerState(
         initialValue = DrawerValue.Closed,
@@ -111,7 +110,6 @@ fun ChatApp(
         }
     )
     DrawerAvailabilityEffect(drawerEnabled, motionPolicy, drawerState)
-
     val conversations by viewModel.conversations.collectAsState()
     // Defer value reads to the narrow composition regions that actually render messages. The
     // State objects themselves are stable, so stream snapshots no longer recompose all ChatApp.
@@ -165,7 +163,6 @@ fun ChatApp(
     val toolCallDisplayMode by viewModel.settings.toolCallDisplayMode.collectAsState()
     val thinkingSegmentDisplayMode by viewModel.settings.thinkingSegmentDisplayMode.collectAsState()
     val autoExpandActiveGroup by viewModel.settings.autoExpandActiveGroup.collectAsState()
-
     val parseInlineDollarMath by viewModel.settings.parseInlineDollarMath.collectAsState()
     val conversationSettings by viewModel.settings.conversationSettings.collectAsState()
     val pendingSettings by viewModel.pendingConversationSettings.collectAsState()
@@ -210,7 +207,6 @@ fun ChatApp(
     // haptics there gives every accepted send exactly one confirm(), independent of which path
     // triggered it or which scroll policy applies.
     SendAcceptedHapticBindingEffect(viewModel, haptics)
-
     var isExpanded by remember { mutableStateOf(false) }
     // Composer-expand spacer collapse (44dp → 0). An Animatable driven from an effect replaces the
     // former hand-rolled clock, which wrote animation state DURING composition (Compose forbids
@@ -223,7 +219,6 @@ fun ChatApp(
     )
     val isExpandAnimating = composerSpacerAnimation.isRunning
     val outerSpacerHeightPx = composerSpacerAnimation.outerHeightPx
-
     val windowSize = LocalWindowInfo.current.containerSize
     val windowHeightDp = with(density) {
         windowSize.height.toDp().value.coerceAtLeast(1f)
@@ -302,7 +297,6 @@ fun ChatApp(
         showLaunchContent = true
         inputFocusRequester.requestFocus()
     }
-
 
     scrollCoordinator.BindTransitionEffects(
         currentConversationId = currentConversationId,
