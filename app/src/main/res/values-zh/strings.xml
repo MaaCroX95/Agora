@@ -135,9 +135,11 @@
     <string name="automation_ai_tools">访问任务与循环</string>
     <string name="automation_ai_tools_desc">允许模型创建和管理任务，或启动、停止会话循环。默认关闭。</string>
     <string name="automation_background_execution">后台运行</string>
+    <string name="automation_wake_lock">唤醒锁</string>
+    <string name="automation_wake_lock_desc">让每次任务或循环执行期间保持唤醒。WorkManager 已保障普通计划任务；开启这项额外唤醒锁会增加耗电。</string>
     <string name="automation_battery_optimization">电池优化</string>
-    <string name="automation_battery_optimization_ignored_desc">未优化；Android 允许 Agora 不受电池优化限制地运行</string>
-    <string name="automation_battery_optimization_active_desc">已优化；Android 可能限制后台运行</string>
+    <string name="automation_battery_optimization_ignored_desc">未优化；Android 可能允许更多后台工作，但厂商后台限制仍可能生效</string>
+    <string name="automation_battery_optimization_active_desc">已优化；Android 可能延迟后台工作，且厂商后台限制仍可能生效</string>
     <string name="automation_exact_execution">精确执行</string>
     <string name="automation_exact_execution_on_desc">为任务和循环使用精确闹钟；Android 仍可能施加系统限制。</string>
     <string name="automation_exact_execution_off_desc">使用更省电的非精确闹钟；开启后需授予“闹钟和提醒”权限。</string>
@@ -1319,6 +1321,10 @@
     <string name="skills_empty">暂无技能</string>
     <string name="skills_create_hint">创建一个技能或让模型通过工具调用来创建</string>
     <string name="skills_add">添加技能</string>
+    <string name="skills_add_from_markdown">从 Markdown 文件添加</string>
+    <string name="skills_add_from_markdown_desc">导入现有的 Markdown 技能文件。</string>
+    <string name="skills_add_manually">手动添加</string>
+    <string name="skills_add_manually_desc">使用名称、描述和指令创建技能。</string>
     <string name="skills_create">创建</string>
     <string name="skills_name">文件名</string>
     <string name="skills_description">描述</string>

@@ -76,6 +76,14 @@ layout, states, density, or interaction design has been approved.
 - Async labels, leading icons, counts, and connection status must change in
   place without shifting the surrounding layout.
 - Rows remain clickable as a whole and expose one clear semantic action.
+- When an Add bottom sheet launches a destination, dialog, or platform picker, the tap starts that
+  action and `sheetState.hide()` together. The sheet remains composed until hide completes; one
+  in-flight/generation guard rejects double taps and stale hide completion. Reduced Motion applies
+  both state changes immediately.
+- MCP Settings page entry reconnects every enabled server except an exact pending build or a runtime
+  currently reporting `CONNECTING`. An `ERROR` runtime sleeping in backoff is cancelled and rebuilt
+  immediately. A process-owned two-permit coroutine semaphore wraps only actual connect/tool-discovery
+  work, never backoff or UI collection; per-row tool counts are memoized by that row's tool snapshot.
 - Conversation Search keeps one fixed status slot and one fixed action slot per Embedding model.
   Both slots crossfade for 250 ms. Before the first aggregate snapshot, active loading shows an
   indeterminate progress state and no Cache/Re-cache action. Initial failure shows localized failure

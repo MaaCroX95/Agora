@@ -1,8 +1,10 @@
 package com.newoether.agora.ui.settings
 
+import android.Manifest
 import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
@@ -43,6 +45,7 @@ fun SettingsAutomationPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val toolsEnabled by viewModel.settings.automationToolsEnabled.collectAsState()
     val exactEnabled by viewModel.settings.exactExecutionEnabled.collectAsState()
+    val wakeLockEnabled by viewModel.settings.automationWakeLockEnabled.collectAsState()
     val showDocFab by viewModel.settings.showDocumentationFab.collectAsState()
     val alarmManager = remember {
         context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
@@ -78,6 +81,30 @@ fun SettingsAutomationPage(viewModel: ChatViewModel, onBack: () -> Unit) {
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    fun openBatteryOptimizationSettings() {
+        val directRequest = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = "package:${context.packageName}".toUri()
+        }
+        val canLaunchDirectRequest =
+            !batteryOptimizationIgnored &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                context.packageManager.checkPermission(
+                    Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    context.packageName,
+                ) == PackageManager.PERMISSION_GRANTED &&
+                directRequest.resolveActivity(context.packageManager) != null
+        val directRequestLaunched = canLaunchDirectRequest && runCatching {
+            context.startActivity(directRequest)
+        }.isSuccess
+        if (!directRequestLaunched) {
+            runCatching {
+                context.startActivity(
+                    Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+                )
+            }
+        }
     }
 
     fun setExactEnabled(enabled: Boolean) {
@@ -169,6 +196,33 @@ fun SettingsAutomationPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                     {
                         SettingsItem(
                             headlineContent = {
+                                Text(stringResource(R.string.automation_wake_lock))
+                            },
+                            supportingContent = {
+                                Text(stringResource(R.string.automation_wake_lock_desc))
+                            },
+                            leadingContent = {
+                                Icon(
+                                    Icons.Default.BatterySaver,
+                                    null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = wakeLockEnabled,
+                                    onCheckedChange =
+                                        viewModel.settings::setAutomationWakeLockEnabled,
+                                )
+                            },
+                            modifier = Modifier.clickable {
+                                viewModel.settings.setAutomationWakeLockEnabled(!wakeLockEnabled)
+                            },
+                        )
+                    },
+                    {
+                        SettingsItem(
+                            headlineContent = {
                                 Text(stringResource(R.string.automation_battery_optimization))
                             },
                             supportingContent = {
@@ -190,11 +244,7 @@ fun SettingsAutomationPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                 )
                             },
                             modifier = Modifier.clickable {
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                    )
-                                }
+                                openBatteryOptimizationSettings()
                             },
                         )
                     },

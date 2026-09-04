@@ -85,6 +85,8 @@ class TaskExecutionEngine(
     mcpToolProvider: McpToolProvider,
     private val generationRegistry: ConversationStateRegistry,
     private val automationExecutionGate: AutomationExecutionGate = AutomationExecutionGate(),
+    private val automationWakeLockOwner: AutomationWakeLockOwner =
+        AutomationWakeLockOwner(appContext),
     private val pauseConversationLoop: suspend (String) -> Unit = {},
 ) {
     sealed interface Result {
@@ -364,16 +366,19 @@ class TaskExecutionEngine(
         requestKind: String = "task",
     ): Result = automationExecutionGate.withExecution {
         executionCoordinator.withAutomationConversationLock(conversationId) {
-            convRepo.recoverConversationRuntime(conversationId)
-            runOnceLocked(
-                conversationId = conversationId,
-                userText = userText,
-                modelId = modelId,
-                systemPromptOverride = systemPromptOverride,
-                foregroundServiceManagedExternally = foregroundServiceManagedExternally,
-                precondition = precondition,
-                requestKind = requestKind,
-            )
+            settings.awaitInitialLoad()
+            automationWakeLockOwner.whileHeld(settings.automationWakeLockEnabled.value) {
+                convRepo.recoverConversationRuntime(conversationId)
+                runOnceLocked(
+                    conversationId = conversationId,
+                    userText = userText,
+                    modelId = modelId,
+                    systemPromptOverride = systemPromptOverride,
+                    foregroundServiceManagedExternally = foregroundServiceManagedExternally,
+                    precondition = precondition,
+                    requestKind = requestKind,
+                )
+            }
         }
     }
 
@@ -390,15 +395,20 @@ class TaskExecutionEngine(
         foregroundServiceManagedExternally: Boolean = false,
         precondition: suspend () -> Boolean = { true },
         requestKind: String = "loop",
-    ): Result = runOnceLocked(
-        conversationId = conversationId,
-        userText = userText,
-        modelId = modelId,
-        systemPromptOverride = systemPromptOverride,
-        foregroundServiceManagedExternally = foregroundServiceManagedExternally,
-        precondition = precondition,
-        requestKind = requestKind,
-    )
+    ): Result {
+        settings.awaitInitialLoad()
+        return automationWakeLockOwner.whileHeld(settings.automationWakeLockEnabled.value) {
+            runOnceLocked(
+                conversationId = conversationId,
+                userText = userText,
+                modelId = modelId,
+                systemPromptOverride = systemPromptOverride,
+                foregroundServiceManagedExternally = foregroundServiceManagedExternally,
+                precondition = precondition,
+                requestKind = requestKind,
+            )
+        }
+    }
 
     private suspend fun runOnceLocked(
         conversationId: String,

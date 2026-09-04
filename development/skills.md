@@ -97,13 +97,24 @@ loading state, a descriptive empty state, saved-file rows, and the canonical cen
 
 A saved row displays the normalized name without the `.md` suffix, uses the same medium title,
 description typography, subdued primary document icon, and right-side overflow menu as saved Memory.
-The menu exposes Edit and destructive Delete. Create and Edit are separate dialogs with the Memory
-dialog container, bold titles, 16 dp field corners, 12 dp field spacing, body-small monospace content,
-and the same bounded content heights. Delete confirmation names the target file and uses destructive
-button tint. Loading and every mutation are guarded against overlapping operations, all file I/O
-remains off Main, successful CRUD refreshes the visible list, and failures retain a usable state while
-reporting the actual error through the established fallback. Documentation-FAB bottom spacing matches
-Memory and the FAB opens `skills.md`. No Active Skill section is shown.
+The menu exposes Edit and destructive Delete. Add copies the System Prompt template bottom sheet's
+content structure exactly: the same motion-aware edge-to-edge container, top-corner shape, title
+style/padding, title-to-list gap, two `SettingsItem` rows with medium headlines and supporting text,
+primary leading icons, and bottom spacing. Only Skill-specific copy, icons, and actions differ;
+Markdown import uses Memory's `Description` icon, while manual creation uses `Edit`. Each action starts
+its picker/dialog and sheet hide from the same tap, keeps the sheet composed until hide completion,
+generation-fences stale completion, and snaps both states under Reduced Motion. Markdown import uses SAF `OpenDocument`, accepts only a
+case-insensitive `.md` display name, rejects a reported or streamed payload above 1 MiB, decodes
+strict UTF-8 off Main, normalizes the suffix, and creates through `SkillManager` with an empty
+description. Existing names fail through the manager's no-overwrite policy.
+
+Create and Edit are separate dialogs with the Memory dialog container, bold titles, 16 dp field
+corners, 12 dp field spacing, body-small monospace content, and the same bounded content heights.
+Delete confirmation names the target file and uses destructive button tint. Loading and every
+mutation are guarded against overlapping operations, all file I/O remains off Main, successful CRUD
+refreshes the visible list, and failures retain a usable state while reporting the actual error
+through the established fallback. Documentation-FAB bottom spacing matches Memory and the FAB opens
+`skills.md`. No Active Skill section is shown.
 
 Every app-owned Skills destination, switch, empty-state hint, field label, action, dialog,
 filename-bearing confirmation, error fallback, and tool-presentation string exists in every supported

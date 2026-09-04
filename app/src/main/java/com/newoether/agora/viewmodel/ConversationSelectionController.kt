@@ -242,9 +242,14 @@ internal class ConversationSelectionController(
         }
     }
 
-    fun createNewChat() {
+    fun createNewChat() = createNewChat(force = false)
+
+    /** Cancels any stale selection and republishes New Chat even when it is already projected. */
+    fun restoreNewChatDestination() = createNewChat(force = true)
+
+    private fun createNewChat(force: Boolean) {
         // Drawer and top-bar actions are the same no-op while already on New Chat.
-        if (_isNewChatMode.value) return
+        if (!force && _isNewChatMode.value) return
         abortRegeneration()
         val previousJob = switchingJob
         val request = switching.beginNewChat()
@@ -290,8 +295,27 @@ internal class ConversationSelectionController(
     fun selectConversation(
         conversationId: String,
         hapticOnCompletion: Boolean = true,
+    ) = selectConversation(
+        conversationId = conversationId,
+        hapticOnCompletion = hapticOnCompletion,
+        force = false,
+    )
+
+    /** Supersedes stale history loads even when the origin is still the published destination. */
+    fun restoreConversationDestination(conversationId: String) =
+        selectConversation(
+            conversationId = conversationId,
+            hapticOnCompletion = false,
+            force = true,
+        )
+
+    private fun selectConversation(
+        conversationId: String,
+        hapticOnCompletion: Boolean,
+        force: Boolean,
     ) {
         if (
+            !force &&
             _currentConversationId.value == conversationId &&
             !_isNewChatMode.value
         ) {

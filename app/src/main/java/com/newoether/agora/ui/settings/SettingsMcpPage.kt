@@ -694,9 +694,13 @@ private fun McpStatusText(
     snapshot: McpServerSnapshot?,
     includeError: Boolean = false,
 ) {
+    val tools = snapshot?.tools
+    val enabledToolCount = remember(tools) {
+        tools?.count { it.enabled } ?: 0
+    }
     val state = McpStatusUiState(
         status = snapshot?.status ?: McpConnectionStatus.IDLE,
-        enabledToolCount = snapshot?.tools?.count { it.enabled } ?: 0,
+        enabledToolCount = enabledToolCount,
         error = snapshot?.error?.takeIf(String::isNotBlank),
     )
     Crossfade(

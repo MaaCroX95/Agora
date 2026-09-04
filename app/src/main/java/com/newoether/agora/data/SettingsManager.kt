@@ -209,6 +209,8 @@ class SettingsManager(private val context: Context) {
     val shellEnabled: Flow<Boolean> = context.dataStore.data.map { it[SHELL_ENABLED] ?: true }
     val automationToolsEnabled: Flow<Boolean> = context.dataStore.data.map { it[AUTOMATION_TOOLS_ENABLED] ?: false }
     val exactExecutionEnabled: Flow<Boolean> = context.dataStore.data.map { it[EXACT_EXECUTION_ENABLED] ?: false }
+    val automationWakeLockEnabled: Flow<Boolean> =
+        context.dataStore.data.map { it[AUTOMATION_WAKE_LOCK_ENABLED] ?: false }
     val proxyEnabled: Flow<Boolean> = context.dataStore.data.map { it[PROXY_ENABLED] ?: false }
     val proxyType: Flow<String> = context.dataStore.data.map { it[PROXY_TYPE] ?: "http" }
     val proxyHost: Flow<String> = context.dataStore.data.map { it[PROXY_HOST] ?: DEFAULT_PROXY_HOST }
@@ -739,6 +741,9 @@ class SettingsManager(private val context: Context) {
     suspend fun saveExactExecutionEnabled(enabled: Boolean) {
         context.dataStore.edit { it[EXACT_EXECUTION_ENABLED] = enabled }
     }
+    suspend fun saveAutomationWakeLockEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[AUTOMATION_WAKE_LOCK_ENABLED] = enabled }
+    }
     suspend fun saveProxyEnabled(enabled: Boolean) { context.dataStore.edit { it[PROXY_ENABLED] = enabled } }
     suspend fun saveProxyType(type: String) { context.dataStore.edit { it[PROXY_TYPE] = type } }
     suspend fun saveProxyHost(host: String) { context.dataStore.edit { it[PROXY_HOST] = host } }
@@ -925,6 +930,7 @@ class SettingsManager(private val context: Context) {
             prefs.remove(SHELL_ENABLED)
             prefs.remove(AUTOMATION_TOOLS_ENABLED)
             prefs.remove(EXACT_EXECUTION_ENABLED)
+            prefs.remove(AUTOMATION_WAKE_LOCK_ENABLED)
             prefs.remove(PROXY_ENABLED)
             prefs.remove(PROXY_TYPE)
             prefs.remove(PROXY_HOST)

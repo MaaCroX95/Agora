@@ -53,6 +53,71 @@ class ConversationSelectionControllerTest {
     }
 
     @Test
+    fun forcedOriginRestoreSupersedesPendingHistoryEvenWhenOriginIsStillPublished() = runTest {
+        val historyGate = CompletableDeferred<Unit>()
+        val restoreGate = CompletableDeferred<Unit>()
+        var fadeInvocation = 0
+        val fixture = Fixture(
+            backgroundScope,
+            fadeDelay = {
+                if (fadeInvocation++ == 0) historyGate.await() else restoreGate.await()
+            },
+        )
+        fixture.controller.publishAcceptedConversation("origin", "current-model")
+        coEvery { fixture.conversations.getConversation("origin") } returns
+            ChatEntity("origin", "Origin", modelId = "current-model")
+
+        fixture.controller.selectConversation("history")
+        runCurrent()
+        fixture.controller.restoreConversationDestination("origin")
+        runCurrent()
+        historyGate.complete(Unit)
+        runCurrent()
+
+        assertEquals("origin", fixture.controller.currentConversationId.value)
+        coVerify(exactly = 0) { fixture.conversations.getConversation("history") }
+
+        restoreGate.complete(Unit)
+        runCurrent()
+        val request = checkNotNull(fixture.controller.switchingScrollRequest.value)
+        assertEquals("origin", request.conversationId)
+        assertTrue(request.readyForUi)
+        assertFalse(request.hapticOnCompletion)
+        assertTrue(fixture.controller.completeSwitchingScroll(request.id))
+        coVerify(exactly = 1) { fixture.conversations.getConversation("origin") }
+    }
+
+    @Test
+    fun forcedNewChatRestoreCancelsPendingHistoryWhileAlreadyInNewChat() = runTest {
+        val historyGate = CompletableDeferred<Unit>()
+        val restoreGate = CompletableDeferred<Unit>()
+        var fadeInvocation = 0
+        val fixture = Fixture(
+            backgroundScope,
+            fadeDelay = {
+                if (fadeInvocation++ == 0) historyGate.await() else restoreGate.await()
+            },
+        )
+
+        fixture.controller.selectConversation("history")
+        runCurrent()
+        fixture.controller.restoreNewChatDestination()
+        runCurrent()
+        historyGate.complete(Unit)
+        runCurrent()
+
+        assertTrue(fixture.controller.isNewChatMode.value)
+        assertNull(fixture.controller.currentConversationId.value)
+        coVerify(exactly = 0) { fixture.conversations.getConversation("history") }
+
+        restoreGate.complete(Unit)
+        runCurrent()
+        assertFalse(fixture.controller.isSwitching.value)
+        assertTrue(fixture.controller.isNewChatMode.value)
+        assertNull(fixture.controller.currentConversationId.value)
+    }
+
+    @Test
     fun acceptedNewChatSelectsOnlyTheExactStillOccupiedEntry() = runTest {
         val fixture = Fixture(backgroundScope)
         val entryId = fixture.controller.newChatEntryId.value

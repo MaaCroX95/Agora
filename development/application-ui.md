@@ -316,11 +316,20 @@ the system default notification sound and vibration so a newly created channel i
 audible heads-up presentation. Existing channel IDs and user/device channel choices are never
 deleted, recreated, migrated, or overridden; builder priority remains the pre-Android-8 counterpart.
 
-Automation Settings places Exact Execution and Battery Optimization together in one localized
-Background Execution category. Battery Optimization is a status-bearing action row, not an app-owned
-switch: it reads `PowerManager.isIgnoringBatteryOptimizations` on entry and resume and opens the
-general Android battery-optimization management screen. Agora does not request direct exemption or
-declare `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` through this entry.
+Automation Settings places Exact Execution, Wake Lock, and Battery Optimization together in one
+localized Background Execution category, in that order. Wake Lock is an app-owned, persisted,
+portable, default-off switch. When enabled, one Agora-owned partial lock spans only the actual shared
+Task or Loop execution boundary and is released on success, early return, failure, and cancellation.
+The copy states that WorkManager already keeps normal scheduled work awake and that the extra lock may
+increase battery use.
+
+Battery Optimization remains a status-bearing action row rather than an app-owned switch. It reads
+`PowerManager.isIgnoringBatteryOptimizations` on entry and resume. The F-Droid flavor alone may
+declare `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` and, while not exempt, launch the package-specific
+system confirmation after verifying the permission and resolvable intent. Play, unavailable direct
+confirmation, launch failure, and already-exempt state use the general management screen. Neither
+path claims to control OEM autostart/background restrictions, background data, or exact-alarm access;
+supporting copy keeps those layers distinct.
 
 ## 20. Local Sandbox outcome feedback
 
@@ -382,10 +391,15 @@ scaling, compression, frame extraction, PDF rendering, file text read, or additi
 Provider file reads, Base64, JSON serialization, and upload remain request encoding after accepted
 input and are not attachment import work.
 
-A `PROCESSING` tile shows its overlay and freely rotating indeterminate circular progress indicator
-through independent Crossfades. A `FAILED` tile remains in place with a gray exclamation overlay;
-tapping that overlay retries the complete import from private staging. Failed attachments do not
-disable Send and are excluded from the accepted result. `READY` tiles have no processing overlay.
+Each attachment tile has one canonical fixed-64-dp presentation Crossfade with a 200 ms duration.
+Its keyed states include a neutral initial frame, unavailable, import loading/failure, ready
+file/PDF/video placeholder, and Coil media loading/success/error. The thumbnail, placeholder, scrim,
+error action, and indeterminate progress indicator all render inside that owner; none may hard-swap
+outside it. A newly inserted `PROCESSING` attachment starts at the neutral frame so the loading
+indicator visibly crossfades in. Loading-to-ready, loading-to-failed, failed-to-retry/loading, media
+decode success/error, and every progress-indicator appearance/disappearance crossfade without a
+layout jump. Tapping the failure overlay retries the complete import from private staging. Failed
+attachments do not disable Send and are excluded from the accepted result.
 
 Tapping Send freezes that draft owner's exact text, tap-ordered model/settings snapshot, and
 attachment membership. The TextField remains enabled and editable in every submission and generation
@@ -474,9 +488,16 @@ A conversation opened from a Task execution log is a transient preview owned by 
 execution conversation. The preview first observes its selected destination before reacting to later
 navigation. Once observed, entering New Chat or successfully selecting a forked/different conversation
 ends the preview immediately, restores the Chat top-left hamburger, and enables the drawer. A failed
-or cancelled fork leaves the selected preview unchanged and retains the Task return action. A requested
-return remains owned until the Tasks overlay has fully covered Chat, then restores the pre-preview
-conversation or New Chat destination.
+or cancelled fork leaves the selected preview unchanged and retains the Task return action.
+
+Toolbar or system Back admission changes the preview to `RETURNING` and immediately starts a forced,
+non-haptic restoration of the captured pre-preview conversation or New Chat, even when the currently
+published destination still equals that origin. This supersedes a pending history selection before
+its late load can vibrate or publish stale state. Return ownership clears only after both the Tasks
+overlay fully covers Chat and that exact restoration generation is observed settled with no selection
+switch in progress. Overlay callbacks, selection results, and subsequent history taps are generation
+fenced; rapid replacement keeps the original captured origin. While a transient preview or return is
+visible, the Chat top-left action cannot fall through to the hamburger.
 
 The active Task editor session retains only the exact execution-summary list that was rendered when an
 execution was opened, together with its existing numeric scroll position. When Tasks is recomposed

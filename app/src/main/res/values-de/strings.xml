@@ -1216,6 +1216,10 @@
     <string name="skills_empty">Noch keine Skills</string>
     <string name="skills_create_hint">Erstelle einen Skill oder lasse das Modell einen per Werkzeugaufruf erstellen</string>
     <string name="skills_add">Skill hinzufügen</string>
+    <string name="skills_add_from_markdown">Aus Markdown-Datei</string>
+    <string name="skills_add_from_markdown_desc">Eine vorhandene Markdown-Skilldatei importieren.</string>
+    <string name="skills_add_manually">Manuell erstellen</string>
+    <string name="skills_add_manually_desc">Einen Skill mit Name, Beschreibung und Anweisungen erstellen.</string>
     <string name="skills_create">Erstellen</string>
     <string name="skills_name">Dateiname</string>
     <string name="skills_description">Beschreibung</string>

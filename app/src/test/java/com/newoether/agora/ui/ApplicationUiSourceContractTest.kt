@@ -85,7 +85,7 @@ class ApplicationUiSourceContractTest {
     }
 
     @Test
-    fun `Skills entry and page use Extension icon and Memory-equivalent English casing`() {
+    fun `Skills entry uses Extension while Markdown import uses Memory Description icon`() {
         val settings = sourceFile("app/src/main/java/com/newoether/agora/ui/settings/SettingsScreen.kt")
         val page = sourceFile("app/src/main/java/com/newoether/agora/ui/settings/SettingsSkillsPage.kt")
         val strings = sourceFile("app/src/main/res/values/strings.xml")
@@ -93,7 +93,7 @@ class ApplicationUiSourceContractTest {
         assertTrue(settings.contains("R.string.settings_skills, R.string.settings_skills_desc, Icons.Default.Extension"))
         assertFalse(page.contains("AutoAwesome"))
         assertTrue(page.contains("Icons.Default.Extension"))
-        assertFalse(page.contains("Icons.Default.Description"))
+        assertTrue(page.contains("Icons.Default.Description"))
         mapOf(
             "skills_access" to "Access Saved Skills",
             "skills_saved_title" to "Saved Skills",
@@ -938,7 +938,6 @@ class ApplicationUiSourceContractTest {
         assertTrue(page.contains("isIgnoringBatteryOptimizations(context.packageName)"))
         assertTrue(page.contains("Lifecycle.Event.ON_RESUME"))
         assertTrue(page.contains("Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS"))
-        assertFalse(page.contains("Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"))
         assertFalse(manifest.contains("REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"))
 
         val directories = listOf(

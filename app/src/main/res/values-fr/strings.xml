@@ -1216,6 +1216,10 @@
     <string name="skills_empty">Aucune compétence</string>
     <string name="skills_create_hint">Créez une compétence ou laissez le modèle en créer une via un appel d’outil</string>
     <string name="skills_add">Ajouter une compétence</string>
+    <string name="skills_add_from_markdown">Depuis un fichier Markdown</string>
+    <string name="skills_add_from_markdown_desc">Importer un fichier de compétence Markdown existant.</string>
+    <string name="skills_add_manually">Créer manuellement</string>
+    <string name="skills_add_manually_desc">Créer une compétence avec un nom, une description et des instructions.</string>
     <string name="skills_create">Créer</string>
     <string name="skills_name">Nom du fichier</string>
     <string name="skills_description">Description</string>

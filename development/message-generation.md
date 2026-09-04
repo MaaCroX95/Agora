@@ -150,6 +150,14 @@ Agora must not enumerate conversations or Runs, instantiate per-conversation run
 recovery validation. The ordinary orphaned-Run recovery contract begins only after the user explicitly
 opens that exact conversation and may inspect and recover only that owner.
 
+The optional Automation Wake Lock is a default-off execution-side lease, not a Run, admission,
+queue, Worker, foreground-service, or recovery owner. Both Task and Loop entry paths acquire it only
+around the shared `TaskExecutionEngine` execution boundary after serialized admission and release it
+with structured `finally` on every success, busy/early result, failure, and cancellation. Acquisition
+failure records diagnostics but does not reject, retry, or fork execution. WorkManager retains its
+independent scheduled-work wake ownership; the app setting must not create a second lifecycle or keep
+the device awake between executions.
+
 Foreground Chat terminal attention is conversation-aware. A conversation is visible only while the
 app is foreground, Chat owns top-level presentation, and that exact conversation is selected;
 Settings, Tasks, media/PDF preview, and text preview therefore hide it, while the drawer does not.

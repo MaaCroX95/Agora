@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -53,13 +55,15 @@ internal fun shouldStartMcpRuntimeBuild(
     config: McpServerConfig,
     runtimeConfig: McpServerConfig?,
     runtimeConnectionActive: Boolean,
+    runtimeStatus: McpConnectionStatus?,
     pendingConfig: McpServerConfig?,
 ): Boolean = when {
     pendingConfig == config -> false
     reason == McpRuntimeRefreshReason.RECONCILE && runtimeConfig == config -> false
     reason == McpRuntimeRefreshReason.PAGE_ENTRY &&
         runtimeConfig == config &&
-        runtimeConnectionActive -> false
+        runtimeConnectionActive &&
+        runtimeStatus == McpConnectionStatus.CONNECTING -> false
     else -> true
 }
 
@@ -90,6 +94,7 @@ class McpRegistry(
     companion object {
         private const val INITIAL_RETRY_MS = 5_000L
         private const val MAX_RETRY_MS = 5L * 60L * 1_000L
+        internal const val MAX_CONCURRENT_CONNECTIONS = 2
     }
 
     private data class Runtime(
@@ -114,6 +119,7 @@ class McpRegistry(
     private val lock = Any()
     private val runtimes = mutableMapOf<String, Runtime>()
     private val pendingBuilds = mutableMapOf<String, McpRuntimeBuildTicket>()
+    private val connectionPermits = Semaphore(permits = MAX_CONCURRENT_CONNECTIONS)
     private var nextBuildGeneration = 0L
     private val _snapshots = MutableStateFlow<Map<String, McpServerSnapshot>>(emptyMap())
     val snapshots: StateFlow<Map<String, McpServerSnapshot>> = _snapshots.asStateFlow()
@@ -284,6 +290,7 @@ class McpRegistry(
                     config = config,
                     runtimeConfig = runtime?.config,
                     runtimeConnectionActive = runtime?.connectionJob?.isActive == true,
+                    runtimeStatus = snapshots.value[config.id]?.status,
                     pendingConfig = pending?.config,
                 )
             ) {
@@ -366,7 +373,9 @@ class McpRegistry(
                 return@launch
             }
             try {
-                val remoteTools = runtime.client.listTools()
+                val remoteTools = connectionPermits.withPermit {
+                    runtime.client.listTools()
+                }
                     .distinctBy(McpRemoteTool::name)
                     .sortedBy(McpRemoteTool::name)
                 val descriptors = remoteTools.map { remote ->

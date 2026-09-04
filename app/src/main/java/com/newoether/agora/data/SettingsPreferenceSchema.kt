@@ -84,6 +84,7 @@ internal val CUSTOM_PROVIDERS_JSON = stringPreferencesKey("custom_providers_json
 internal val SHELL_ENABLED = booleanPreferencesKey("shell_enabled")
 internal val AUTOMATION_TOOLS_ENABLED = booleanPreferencesKey("automation_tools_enabled")
 internal val EXACT_EXECUTION_ENABLED = booleanPreferencesKey("exact_execution_enabled")
+internal val AUTOMATION_WAKE_LOCK_ENABLED = booleanPreferencesKey("automation_wake_lock_enabled")
 internal val PROXY_ENABLED = booleanPreferencesKey("proxy_enabled")
 internal val PROXY_TYPE = stringPreferencesKey("proxy_type")
 internal val PROXY_HOST = stringPreferencesKey("proxy_host")

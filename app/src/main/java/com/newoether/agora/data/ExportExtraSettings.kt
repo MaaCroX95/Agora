@@ -109,6 +109,8 @@ object ExportExtraSettings {
         obj["autoUpdateCheck"]?.jsonPrimitive?.boolean?.let { sm.saveAutoUpdateCheck(it) }
         obj["automationToolsEnabled"]?.jsonPrimitive?.boolean?.let { sm.saveAutomationToolsEnabled(it) }
         obj["exactExecutionEnabled"]?.jsonPrimitive?.boolean?.let { sm.saveExactExecutionEnabled(it) }
+        obj["automationWakeLockEnabled"]?.jsonPrimitive?.boolean
+            ?.let { sm.saveAutomationWakeLockEnabled(it) }
 
         obj["modelAliases"]?.jsonObject?.let { aliasesObj ->
             val map = aliasesObj.mapNotNull { (k, v) ->

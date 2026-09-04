@@ -1216,6 +1216,10 @@
     <string name="skills_empty">لا توجد مهارات بعد</string>
     <string name="skills_create_hint">أنشئ مهارة أو دع النموذج ينشئ واحدة عبر استدعاء الأداة</string>
     <string name="skills_add">إضافة مهارة</string>
+    <string name="skills_add_from_markdown">إضافة من ملف Markdown</string>
+    <string name="skills_add_from_markdown_desc">استيراد ملف مهارة Markdown موجود.</string>
+    <string name="skills_add_manually">إنشاء يدويًا</string>
+    <string name="skills_add_manually_desc">إنشاء مهارة باسم ووصف وتعليمات.</string>
     <string name="skills_create">إنشاء</string>
     <string name="skills_name">اسم الملف</string>
     <string name="skills_description">الوصف</string>
