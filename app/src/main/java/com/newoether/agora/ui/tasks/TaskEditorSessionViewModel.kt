@@ -5,7 +5,13 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import com.newoether.agora.automation.TaskManager
 import com.newoether.agora.data.local.TaskEntity
+
+internal data class TaskExecutionHistorySnapshot(
+    val taskId: String,
+    val executions: List<TaskManager.ExecutionSummary>,
+)
 
 internal class TaskEditorSessionViewModel : ViewModel() {
     var activeTaskId by mutableStateOf<String?>(null)
@@ -35,6 +41,7 @@ internal class TaskEditorSessionViewModel : ViewModel() {
         private set
     var historyPreview by mutableStateOf(TaskHistoryPreviewState.Idle)
         private set
+    private var executionHistorySnapshot by mutableStateOf<TaskExecutionHistorySnapshot?>(null)
 
     val activeTaskSnapshot: TaskEntity?
         get() = baseTask
@@ -54,6 +61,7 @@ internal class TaskEditorSessionViewModel : ViewModel() {
         detailListIndex = 0
         detailListOffset = 0
         historyPreview = TaskHistoryPreviewState.Idle
+        executionHistorySnapshot = null
     }
 
     fun updateName(value: String) {
@@ -101,10 +109,38 @@ internal class TaskEditorSessionViewModel : ViewModel() {
         detailListOffset = offset.coerceAtLeast(0)
     }
 
-    fun openHistory(currentConversationId: String?, isNewChatMode: Boolean) {
+    fun retainExecutionHistory(
+        taskId: String,
+        executions: List<TaskManager.ExecutionSummary>,
+    ) {
+        if (activeTaskId != taskId) return
+        executionHistorySnapshot = TaskExecutionHistorySnapshot(taskId, executions.toList())
+    }
+
+    fun executionHistoryFor(taskId: String): List<TaskManager.ExecutionSummary>? =
+        executionHistorySnapshot
+            ?.takeIf { it.taskId == taskId && activeTaskId == taskId }
+            ?.executions
+
+    fun openHistory(
+        previewConversationId: String,
+        currentConversationId: String?,
+        isNewChatMode: Boolean,
+    ) {
         val taskId = activeTaskId ?: return
         historyPreview = historyPreview.open(
             taskId = taskId,
+            previewConversationId = previewConversationId,
+            currentConversationId = currentConversationId,
+            isNewChatMode = isNewChatMode,
+        )
+    }
+
+    fun observeHistoryDestination(
+        currentConversationId: String?,
+        isNewChatMode: Boolean,
+    ) {
+        historyPreview = historyPreview.observeDestination(
             currentConversationId = currentConversationId,
             isNewChatMode = isNewChatMode,
         )
@@ -123,6 +159,7 @@ internal class TaskEditorSessionViewModel : ViewModel() {
         detailListIndex = 0
         detailListOffset = 0
         historyPreview = TaskHistoryPreviewState.Idle
+        executionHistorySnapshot = null
         // Field values and the base snapshot may still be read by an outgoing animation slot, but
         // no inactive session can expose, restore, or commit them. The next open replaces them.
     }

@@ -124,9 +124,9 @@ class ApprovedFeatureSourceContractTest {
             root,
             "com/newoether/agora/viewmodel/ConversationComposerSubmissionController.kt",
         )
-        val directAcceptedEffect = source(
+        val chatApp = source(
             root,
-            "com/newoether/agora/ui/chat/DirectAcceptedComposerEffect.kt",
+            "com/newoether/agora/ui/chat/ChatApp.kt",
         )
         val imageActions = source(
             root,
@@ -179,21 +179,20 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(sendButton.contains("ComposerActionIcon.BUSY"))
         assertTrue(sendButton.contains("enabled = isActionable"))
         assertFalse(sendButton.contains("LocalSoftwareKeyboardController"))
-        assertTrue(directAcceptedEffect.contains("directAcceptedEffects.collect"))
-        assertTrue(directAcceptedEffect.contains("keyboardController?.hide()"))
-        assertTrue(
-            directAcceptedEffect.contains(
-                "viewModel.newChatEntryId.value == accepted.newChatEntryId",
-            ),
+        assertFalse(chatApp.contains("BindDirectAcceptedComposerEffects"))
+        assertFalse(
+            File(root, "com/newoether/agora/ui/chat/DirectAcceptedComposerEffect.kt").exists(),
         )
+        assertFalse(submission.contains("DirectAcceptedComposerEffect"))
+        assertFalse(submission.contains("directAcceptedEffects"))
+        assertFalse(submission.contains("publishDirectAcceptedEffect"))
+        assertFalse(submission.contains("presentationDispatcher"))
         assertTrue(
             submission.contains(
                 "request.accepted = acceptance\n" +
-                    "                publishDirectAcceptedEffect(request, acceptance)\n" +
                     "                clearAccepted(owner, request)",
             ),
         )
-        assertTrue(submission.contains("if (acceptance !is SendAcceptance.Direct) return"))
         assertTrue(submission.contains("directAcceptedVersion = current.directAcceptedVersion +"))
         assertTrue(submission.contains("if (request.accepted is SendAcceptance.Direct) 1L else 0L"))
         assertTrue(composer.contains("submissionController.observeState(composerOwnerId)"))

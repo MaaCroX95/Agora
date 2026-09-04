@@ -103,6 +103,17 @@ internal fun shouldRestoreTaskDetailScroll(
     savedIndex: Int,
 ): Boolean = executionsLoaded && totalItemsCount > savedIndex.coerceAtLeast(0)
 
+internal fun taskExecutionHistoryForPresentation(
+    previewPhase: TaskHistoryPreviewPhase,
+    retained: List<com.newoether.agora.automation.TaskManager.ExecutionSummary>?,
+    live: List<com.newoether.agora.automation.TaskManager.ExecutionSummary>?,
+): List<com.newoether.agora.automation.TaskManager.ExecutionSummary>? =
+    if (previewPhase == TaskHistoryPreviewPhase.RETURNING && retained != null) {
+        retained
+    } else {
+        live ?: retained
+    }
+
 private fun ScheduleType.toEditorMode(): ScheduleEditorMode = when (this) {
     ScheduleType.ONCE -> ScheduleEditorMode.ONCE
     ScheduleType.DAILY -> ScheduleEditorMode.DAILY
@@ -168,15 +179,29 @@ internal fun TaskDetailPage(
     var executionToDelete by remember { mutableStateOf<com.newoether.agora.automation.TaskManager.ExecutionSummary?>(null) }
     val savedListIndex = remember(task.id) { editorSession.detailListIndex }
     val savedListOffset = remember(task.id) { editorSession.detailListOffset }
-    val listState = rememberLazyListState()
-    var scrollRestored by remember(task.id) { mutableStateOf(false) }
+    val previewPhase = editorSession.historyPreview.phase
+    val retainedExecutionSnapshot = editorSession.executionHistoryFor(task.id)
+    val executionHistoryFlow = remember(task.id, viewModel) {
+        viewModel.executionSummariesForTask(task.id)
+    }
+    val liveExecutionSnapshot by executionHistoryFlow.collectAsState(initial = null)
+    val executionSnapshot = taskExecutionHistoryForPresentation(
+        previewPhase = previewPhase,
+        retained = retainedExecutionSnapshot,
+        live = liveExecutionSnapshot,
+    )
+    val executions = executionSnapshot.orEmpty()
+    val executionsLoaded = executionSnapshot != null
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = savedListIndex,
+        initialFirstVisibleItemScrollOffset = savedListOffset,
+    )
+    var scrollRestored by remember(task.id) {
+        mutableStateOf(retainedExecutionSnapshot != null)
+    }
     val focusManager = LocalFocusManager.current
 
     val isRunning = task.id in running
-    val executionSnapshot by viewModel.executionSummariesForTask(task.id)
-        .collectAsState(initial = null)
-    val executions = executionSnapshot.orEmpty()
-    val executionsLoaded = executionSnapshot != null
 
     val cronValid = isScheduleDraftValid(scheduleEditorMode, cronExpr)
     val isComplete = name.isNotBlank() && prompt.isNotBlank() && cronValid
@@ -185,14 +210,22 @@ internal fun TaskDetailPage(
 
     BackHandler(enabled = backHandlingEnabled) { onBack() }
 
+    LaunchedEffect(task.id, previewPhase, liveExecutionSnapshot) {
+        val latest = liveExecutionSnapshot ?: return@LaunchedEffect
+        if (previewPhase != TaskHistoryPreviewPhase.RETURNING) {
+            editorSession.retainExecutionHistory(task.id, latest)
+        }
+    }
+
     LaunchedEffect(
         task.id,
         listState,
         savedListIndex,
         savedListOffset,
         executionsLoaded,
+        scrollRestored,
     ) {
-        if (!executionsLoaded) return@LaunchedEffect
+        if (scrollRestored || !executionsLoaded) return@LaunchedEffect
         snapshotFlow { listState.layoutInfo.totalItemsCount }
             .first { totalItemsCount ->
                 shouldRestoreTaskDetailScroll(
@@ -357,6 +390,7 @@ internal fun TaskDetailPage(
                             listState.firstVisibleItemIndex,
                             listState.firstVisibleItemScrollOffset,
                         )
+                        editorSession.retainExecutionHistory(task.id, executions)
                         onOpenConversation(execution.conversation.id)
                     },
                     menuEnabled = !isRunning,

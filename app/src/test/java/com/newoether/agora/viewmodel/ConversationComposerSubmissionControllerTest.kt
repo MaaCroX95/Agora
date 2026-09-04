@@ -16,8 +16,6 @@ import io.mockk.mockkObject
 import io.mockk.unmockkObject
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.async
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
@@ -208,31 +206,23 @@ class ConversationComposerSubmissionControllerTest {
     }
 
     @Test
-    fun directAcceptancePublishesComposerEffectBeforeClearSettlement() = runTest {
+    fun directAcceptanceClearFailureRemainsNonResendable() = runTest {
         val fixture = Fixture(
             this,
             acceptance = SendAcceptance.Direct("message", "conversation"),
             clearSucceeded = false,
         )
-        val effect = async { fixture.controller.directAcceptedEffects.first() }
+
+        assertTrue(fixture.controller.submit("conversation", "text", emptyList()))
         runCurrent()
 
-        fixture.controller.submit("conversation", "text", emptyList())
-        runCurrent()
-
-        assertEquals(
-            DirectAcceptedComposerEffect(
-                ownerId = "conversation",
-                conversationId = "conversation",
-                newChatEntryId = null,
-            ),
-            effect.await(),
-        )
         assertEquals(
             ComposerSubmissionPhase.ACCEPTED_PENDING_CLEAR,
             fixture.controller.state("conversation").value.phase,
         )
         assertEquals(0L, fixture.controller.state("conversation").value.acceptedVersion)
+        assertTrue(fixture.controller.isFrozen("conversation"))
+        assertFalse(fixture.controller.submit("conversation", "text", emptyList()))
     }
 
     @Test
@@ -485,7 +475,6 @@ class ConversationComposerSubmissionControllerTest {
                 acceptance
             },
             ioDispatcher = dispatcher,
-            presentationDispatcher = dispatcher,
         )
 
         init {

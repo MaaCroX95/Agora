@@ -332,6 +332,7 @@ fun MainNavigation(
     val taskHistoryPreview = taskEditorSession.historyPreview
     val currentConversationId by viewModel.currentConversationId.collectAsState()
     val isNewChatMode by viewModel.isNewChatMode.collectAsState()
+    com.newoether.agora.ui.tasks.TaskHistoryDestinationEffect(taskEditorSession, currentConversationId, isNewChatMode)
     val notificationTarget by notificationConversationId.collectAsState()
     LaunchedEffect(notificationTarget) {
         val id = notificationTarget ?: return@LaunchedEffect
@@ -839,6 +840,7 @@ fun MainNavigation(
                     },
                     onOpenConversation = { conversationId ->
                         taskEditorSession.openHistory(
+                            previewConversationId = conversationId,
                             currentConversationId = currentConversationId,
                             isNewChatMode = isNewChatMode,
                         )

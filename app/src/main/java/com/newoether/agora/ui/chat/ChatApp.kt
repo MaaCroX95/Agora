@@ -192,7 +192,6 @@ fun ChatApp(
     SendAcceptedHapticBindingEffect(viewModel, haptics)
 
     var isExpanded by remember { mutableStateOf(false) }
-    BindDirectAcceptedComposerEffects(viewModel) { isExpanded = false }
     // Composer-expand spacer collapse (44dp → 0). An Animatable driven from an effect replaces the
     // former hand-rolled clock, which wrote animation state DURING composition (Compose forbids
     // that — it makes the frame's output depend on when it happened to be composed) and ticked on
@@ -423,7 +422,6 @@ fun ChatApp(
                         onNavigateBack = onNavigateBack,
                         onOpenDrawer = {
                             if (drawerEnabled) {
-                                focusManager.clearFocus()
                                 scope.launch { drawerState.toggle(motionPolicy) }
                             }
                         },

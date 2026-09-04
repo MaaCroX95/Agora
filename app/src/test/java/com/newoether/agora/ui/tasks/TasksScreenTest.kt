@@ -1,7 +1,10 @@
 package com.newoether.agora.ui.tasks
 
+import com.newoether.agora.automation.TaskManager
+import com.newoether.agora.model.ChatConversation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -64,6 +67,44 @@ class TasksScreenTest {
     }
 
     @Test
+    fun returningHistoryKeepsTheExactRetainedFirstFrameWhileLiveDataBuffers() {
+        val retained = listOf(execution("history-1"))
+        val changedLive = listOf(execution("history-1"), execution("history-2"))
+
+        assertSame(
+            retained,
+            taskExecutionHistoryForPresentation(
+                previewPhase = TaskHistoryPreviewPhase.RETURNING,
+                retained = retained,
+                live = changedLive,
+            ),
+        )
+    }
+
+    @Test
+    fun settledHistoryUsesLiveDataAndFallsBackToRetainedUntilItArrives() {
+        val retained = listOf(execution("history-1"))
+        val changedLive = listOf(execution("history-2"))
+
+        assertSame(
+            retained,
+            taskExecutionHistoryForPresentation(
+                previewPhase = TaskHistoryPreviewPhase.IDLE,
+                retained = retained,
+                live = null,
+            ),
+        )
+        assertSame(
+            changedLive,
+            taskExecutionHistoryForPresentation(
+                previewPhase = TaskHistoryPreviewPhase.IDLE,
+                retained = retained,
+                live = changedLive,
+            ),
+        )
+    }
+
+    @Test
     fun countdown_clampsExpiredRunsToZero() {
         assertEquals("0:00", formatTaskCountdown(-1L))
         assertEquals("0:00", formatTaskCountdown(0L))
@@ -111,4 +152,11 @@ class TasksScreenTest {
         assertEquals(30, daysInYearlyMonth(4))
         assertEquals(31, daysInYearlyMonth(12))
     }
+
+    private fun execution(id: String) = TaskManager.ExecutionSummary(
+        conversation = ChatConversation(id = id, title = id),
+        preview = id,
+        status = null,
+        timestamp = 123L,
+    )
 }

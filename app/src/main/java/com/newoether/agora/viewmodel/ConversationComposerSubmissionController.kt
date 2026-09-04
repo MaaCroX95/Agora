@@ -10,11 +10,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -45,12 +42,6 @@ internal data class ConversationComposerSubmissionSnapshot(
         get() = phase == ComposerSubmissionPhase.ACCEPTED_PENDING_CLEAR
 }
 
-internal data class DirectAcceptedComposerEffect(
-    val ownerId: String,
-    val conversationId: String,
-    val newChatEntryId: Long?,
-)
-
 internal typealias ComposerSubmissionTargetCapture =
     (ownerId: String) -> ForegroundSendTarget?
 internal typealias ComposerSubmissionPrepare =
@@ -75,7 +66,6 @@ internal class ConversationComposerSubmissionController(
         retry: () -> Unit,
     ) -> Unit = { _, _ -> },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val presentationDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
 ) {
     private class OwnerSubmission {
         val state = MutableStateFlow(ConversationComposerSubmissionSnapshot())
@@ -106,9 +96,6 @@ internal class ConversationComposerSubmissionController(
     private val nextRequestId = AtomicLong(0L)
     private val _activeOwnerIds = MutableStateFlow<Set<String>>(emptySet())
     val activeOwnerIds: StateFlow<Set<String>> = _activeOwnerIds.asStateFlow()
-    private val _directAcceptedEffects = MutableSharedFlow<DirectAcceptedComposerEffect>()
-    val directAcceptedEffects: SharedFlow<DirectAcceptedComposerEffect> =
-        _directAcceptedEffects.asSharedFlow()
 
     fun state(ownerId: String): StateFlow<ConversationComposerSubmissionSnapshot> =
         owner(ownerId).state
@@ -271,7 +258,6 @@ internal class ConversationComposerSubmissionController(
             send(acceptedAdmission, request.text, readyAttachments) { acceptance ->
                 if (!request.acceptanceStarted.compareAndSet(false, true)) return@send
                 request.accepted = acceptance
-                publishDirectAcceptedEffect(request, acceptance)
                 clearAccepted(owner, request)
             }
         } catch (cancelled: CancellationException) {
@@ -324,22 +310,6 @@ internal class ConversationComposerSubmissionController(
         }
         if (reclaimable.isNotEmpty() && acceptance.hasDurableAttachmentOwner()) {
             scope.launch(ioDispatcher) { drafts.reclaimAttachments(reclaimable) }
-        }
-    }
-
-    private suspend fun publishDirectAcceptedEffect(
-        request: FrozenRequest,
-        acceptance: SendAcceptance,
-    ) {
-        if (acceptance !is SendAcceptance.Direct) return
-        withContext(presentationDispatcher) {
-            _directAcceptedEffects.emit(
-                DirectAcceptedComposerEffect(
-                    ownerId = request.ownerId,
-                    conversationId = acceptance.conversationId,
-                    newChatEntryId = request.target.newChatEntryId,
-                ),
-            )
         }
     }
 

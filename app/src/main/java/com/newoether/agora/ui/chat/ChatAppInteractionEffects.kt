@@ -48,6 +48,10 @@ import java.io.File
 private const val INLINE_SHARE_LIMIT_BYTES = 256 * 1024
 private const val SHARE_ERROR_DETAIL_TOKEN = "__AGORA_SHARE_ERROR_DETAIL__"
 private const val STREAM_SCROLL_RESUME_DELAY_MS = 160L
+internal const val DRAWER_COMPOSER_DISMISS_THRESHOLD = 0.5f
+
+internal fun drawerPastComposerDismissThreshold(progress: Float): Boolean =
+    progress > DRAWER_COMPOSER_DISMISS_THRESHOLD
 
 internal data class NewChatMotionPolicy(
     val animateBackground: Boolean,
@@ -301,10 +305,10 @@ internal fun ChatNavigationEffects(
         conversationInteraction.dismissShareSelection()
     }
     LaunchedEffect(drawerState) {
-        snapshotFlow { drawerState.isVisible }
+        snapshotFlow { drawerPastComposerDismissThreshold(drawerState.progress) }
             .distinctUntilChanged()
-            .collect { visible ->
-                if (visible) {
+            .collect { pastThreshold ->
+                if (pastThreshold) {
                     onCollapseComposer()
                     focusManager.clearFocus()
                 }

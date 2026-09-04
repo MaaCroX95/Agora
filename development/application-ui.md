@@ -402,10 +402,10 @@ Authoritative acceptance clears only the frozen text and attachment membership. 
 settlement preserves text typed after the tap, including a TextField edit that becomes visible before
 its asynchronous draft observer reaches the controller. A durable acceptance whose draft clear fails
 enters a non-resendable accepted-clear state and exposes a clear-only Retry; it never resubmits the
-already durable input. At the instant a foreground Send receives durable Direct acceptance, the exact
-still-visible origin clears focus, hides the IME, and collapses the Composer without waiting for the
-following revision-aware draft-clear settlement. Queue placement, later queue drain, and stale New
-Chat acceptance do none of those presentation effects.
+already durable input. Direct and queued acceptance do not clear focus, hide the IME, or collapse an
+expanded Composer. Accepted draft clearing is state-only and does not own presentation focus.
+Keyboard and Composer dismissal remain owned by explicit navigation, user gestures, and the drawer
+greater-than-`0.5` threshold described below.
 
 Switching conversations cannot cancel, redirect, duplicate, or clear the frozen request. From Send
 tap through authoritative acceptance and exact-owner clearing, Delete Conversation is disabled for
@@ -466,6 +466,33 @@ boundary while retaining the component-owned `200 ms` opacity Crossfade.
 title padding, 16 dp actions gap, 98 dp actions width, ellipsis, icon geometry, search transition,
 title resolution, click behavior, and persistence remain unchanged.
 
+## 25. Task History return continuity and drawer focus threshold
+
+A conversation opened from a Task execution log is a transient preview owned by that exact task and
+execution conversation. The preview first observes its selected destination before reacting to later
+navigation. Once observed, entering New Chat or successfully selecting a forked/different conversation
+ends the preview immediately, restores the Chat top-left hamburger, and enables the drawer. A failed
+or cancelled fork leaves the selected preview unchanged and retains the Task return action. A requested
+return remains owned until the Tasks overlay has fully covered Chat, then restores the pre-preview
+conversation or New Chat destination.
+
+The active Task editor session retains only the exact execution-summary list that was rendered when an
+execution was opened, together with its existing numeric scroll position. When Tasks is recomposed
+during return, that task-bound snapshot seeds the first frame and the LazyColumn starts at the retained
+position. Room remains authoritative and continues collecting in parallel. While the overlay enters,
+live results are buffered; after entry completes, the page presents the latest Room list. Existing
+stable execution conversation IDs and Compose structural equality perform reconciliation. Agora adds
+no manual list-diff engine, durable history cache, duplicate repository flow, page-wide composition
+retention, or cross-task/process snapshot restoration. Switching tasks, clearing the editor session,
+or process death discards the snapshot.
+
+Drawer-driven Chat focus loss and full-screen Composer collapse use one strict progress threshold.
+Progress at or below `0.5` preserves focus and expanded state. A false-to-true crossing of
+`progress > 0.5` triggers the effect once; remaining above the threshold does not repeat it, and
+closing back to `0.5` or below rearms the next opening. Dragged and programmatic openings share this
+state. Existing Back handling remains independent. Direct and queued Send preserve focus, IME
+visibility, and expanded Composer state.
+
 ## 15. Verification
 
 Focused verification must cover the onboarding action's fixed 32 dp inset and 48 dp height, absence
@@ -505,7 +532,15 @@ scroll, and unchanged initial-load, count-changing insertion or deletion, and se
 Drawer first-Send verification separately covers the durable published event, both current-conversation
 guards, readiness at item `0`, canonical `SendFeedbackScrollSpec`, Reduced Motion direct positioning,
 user-input cancellation, and absence of delay, retry, fallback, or another auto-top trigger. Drawer
-title verification covers one `200 ms` `FastOutSlowInEasing` Crossfade keyed only by the resolved
+Composer-dismiss verification covers the strict greater-than-`0.5` boundary, one effect per threshold
+crossing, rearming below the boundary, shared drag/programmatic state, and unchanged Back behavior.
+Direct-Send verification covers the absence of any acceptance-owned focus, IME, or expanded-Composer
+presentation side channel while preserving accepted-clear state and confirmation haptics.
+Task History verification covers target observation before preview settlement, New Chat and successful-
+fork hamburger restoration, failed-fork retention, task-bound first-frame execution seeding, numeric
+scroll restoration, post-enter Room reconciliation through stable conversation IDs, and snapshot reset
+on task switch, session clear, and process recreation without a manual diff or durable shadow cache.
+Drawer title verification covers one `200 ms` `FastOutSlowInEasing` Crossfade keyed only by the resolved
 visible title, stable initial composition, latest-value interruption, retained Reduced Motion opacity,
 and unchanged row geometry, ellipsis, colors, indicators, and menu values. Tasks Once verification covers the fixed 568 dp Material modal
 height, Material3 ownership of display mode and keyboard interaction, and absence of shadow mode,
