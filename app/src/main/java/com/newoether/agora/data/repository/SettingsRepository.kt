@@ -198,6 +198,8 @@ class SettingsRepository(
     val shellEnabled: StateFlow<Boolean> = hot(settingsManager.shellEnabled, false)
     val automationToolsEnabled: StateFlow<Boolean> = hot(settingsManager.automationToolsEnabled, false)
     val exactExecutionEnabled: StateFlow<Boolean> = hot(settingsManager.exactExecutionEnabled, false)
+    val automationWakeLockEnabled: StateFlow<Boolean> =
+        hot(settingsManager.automationWakeLockEnabled, false)
     val proxyEnabled: StateFlow<Boolean> = hot(settingsManager.proxyEnabled, false)
     val proxyType: StateFlow<String> = hot(settingsManager.proxyType, "http")
     val proxyHost: StateFlow<String> = hot(settingsManager.proxyHost, com.newoether.agora.data.SettingsManager.DEFAULT_PROXY_HOST)
@@ -656,6 +658,8 @@ class SettingsRepository(
     fun setShellEnabled(enabled: Boolean) = scope.launch { settingsManager.saveShellEnabled(enabled) }
     fun setAutomationToolsEnabled(enabled: Boolean) = scope.launch { settingsManager.saveAutomationToolsEnabled(enabled) }
     fun setExactExecutionEnabled(enabled: Boolean) = scope.launch { settingsManager.saveExactExecutionEnabled(enabled) }
+    fun setAutomationWakeLockEnabled(enabled: Boolean) =
+        scope.launch { settingsManager.saveAutomationWakeLockEnabled(enabled) }
     fun setProxyEnabled(enabled: Boolean) = scope.launch { settingsManager.saveProxyEnabled(enabled) }
     fun setProxyType(type: String) = scope.launch { settingsManager.saveProxyType(type) }
     fun setProxyHost(host: String) = scope.launch { settingsManager.saveProxyHost(host) }

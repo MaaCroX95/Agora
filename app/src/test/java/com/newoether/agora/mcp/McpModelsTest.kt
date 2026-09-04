@@ -77,11 +77,12 @@ class McpModelsTest {
     }
 
     @Test
-    fun pageEntryRefreshSelectsOnlyEnabledReadyServers() {
+    fun pageEntryRefreshSelectsEveryEnabledServerExceptCurrentlyConnecting() {
         val configs = listOf(
             McpServerConfig(id = "connected", enabled = true, url = "https://one.example/mcp"),
             McpServerConfig(id = "new", enabled = true, url = "https://two.example/mcp"),
             McpServerConfig(id = "connecting", enabled = true, url = "https://three.example/mcp"),
+            McpServerConfig(id = "error", enabled = true, url = "https://error.example/mcp"),
             McpServerConfig(id = "disabled", enabled = false, url = "https://four.example/mcp"),
             McpServerConfig(id = "blank", enabled = true, url = ""),
         )
@@ -94,16 +95,20 @@ class McpModelsTest {
                 serverId = "connecting",
                 status = McpConnectionStatus.CONNECTING,
             ),
+            "error" to McpServerSnapshot(
+                serverId = "error",
+                status = McpConnectionStatus.ERROR,
+            ),
         )
 
         assertEquals(
-            listOf("connected", "new"),
+            listOf("connected", "new", "error"),
             mcpServerIdsForPageEntryRefresh(configs, snapshots),
         )
     }
 
     @Test
-    fun pageEntryRuntimeBuildsAreSingleFlightPerConfig() {
+    fun pageEntryRuntimeBuildsSkipOnlyConnectingOrExactPendingConfig() {
         val config = McpServerConfig(
             id = "server",
             enabled = true,
@@ -116,6 +121,7 @@ class McpModelsTest {
                 config = config,
                 runtimeConfig = config,
                 runtimeConnectionActive = true,
+                runtimeStatus = McpConnectionStatus.CONNECTING,
                 pendingConfig = null,
             ),
         )
@@ -125,6 +131,7 @@ class McpModelsTest {
                 config = config,
                 runtimeConfig = null,
                 runtimeConnectionActive = false,
+                runtimeStatus = McpConnectionStatus.CONNECTING,
                 pendingConfig = config,
             ),
         )
@@ -133,10 +140,26 @@ class McpModelsTest {
                 reason = McpRuntimeRefreshReason.PAGE_ENTRY,
                 config = config,
                 runtimeConfig = config,
-                runtimeConnectionActive = false,
+                runtimeConnectionActive = true,
+                runtimeStatus = McpConnectionStatus.ERROR,
                 pendingConfig = null,
             ),
         )
+        assertTrue(
+            shouldStartMcpRuntimeBuild(
+                reason = McpRuntimeRefreshReason.PAGE_ENTRY,
+                config = config,
+                runtimeConfig = config,
+                runtimeConnectionActive = false,
+                runtimeStatus = McpConnectionStatus.CONNECTED,
+                pendingConfig = null,
+            ),
+        )
+    }
+
+    @Test
+    fun mcpConnectionsAreCappedToTwoConcurrentAttempts() {
+        assertEquals(2, McpRegistry.MAX_CONCURRENT_CONNECTIONS)
     }
 
     @Test

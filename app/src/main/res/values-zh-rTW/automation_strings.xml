@@ -68,9 +68,11 @@
     <string name="automation_ai_tools">存取任務與迴圈</string>
     <string name="automation_ai_tools_desc">允許模型建立和管理任務，或啟動、停止對話迴圈。預設關閉。</string>
     <string name="automation_background_execution">背景執行</string>
+    <string name="automation_wake_lock">喚醒鎖</string>
+    <string name="automation_wake_lock_desc">讓每次任務或迴圈執行期間保持喚醒。WorkManager 已保障一般排程工作；開啟這項額外喚醒鎖會增加耗電。</string>
     <string name="automation_battery_optimization">電池最佳化</string>
-    <string name="automation_battery_optimization_ignored_desc">未最佳化；Android 允許 Agora 不受電池最佳化限制地執行</string>
-    <string name="automation_battery_optimization_active_desc">已最佳化；Android 可能限制背景執行</string>
+    <string name="automation_battery_optimization_ignored_desc">未最佳化；Android 可能允許更多背景工作，但製造商的背景限制仍可能生效</string>
+    <string name="automation_battery_optimization_active_desc">已最佳化；Android 可能延遲背景工作，且製造商的背景限制仍可能生效</string>
     <string name="automation_exact_execution">精確執行</string>
     <string name="automation_exact_execution_on_desc">為任務和迴圈使用精確鬧鐘；Android 仍可能套用系統限制。</string>
     <string name="automation_exact_execution_off_desc">使用較省電的非精確鬧鐘；開啟後需授予「鬧鐘與提醒」權限。</string>

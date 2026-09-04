@@ -62,11 +62,25 @@ class TaskEditorSourceContractTest {
         val session = source("ui/tasks/TaskEditorSessionViewModel.kt")
 
         assertTrue(activity.contains("val taskEditorSession: TaskEditorSessionViewModel = viewModel()"))
-        assertTrue(activity.contains("TaskHistoryDestinationEffect(taskEditorSession"))
+        assertTrue(activity.contains("TaskHistoryDestinationEffect("))
+        assertTrue(activity.contains("editorSession = taskEditorSession"))
         assertTrue(activity.contains("previewConversationId = conversationId"))
+        assertTrue(activity.contains("restoreConversationDestination"))
+        assertTrue(activity.contains("restoreNewChatDestination"))
+        val returnHandler = activity
+            .substringAfter("taskEditorSession.requestHistoryReturn()")
+            .substringBefore("drawerEnabled = !taskHistoryPreview.active")
+        assertTrue(
+            returnHandler.indexOf("beginHistoryReturnRestore()") <
+                returnHandler.indexOf("topLevelPresentation.present(TopLevelPresentation.TASKS)"),
+        )
         assertTrue(tasks.contains("editorSession: TaskEditorSessionViewModel"))
         assertTrue(preview.contains("destinationObserved"))
         assertTrue(preview.contains("!destinationObserved && previewIsSelected"))
+        assertTrue(preview.contains("returnOverlayCovered"))
+        assertTrue(preview.contains("returnDestinationObserved"))
+        assertTrue(preview.contains("restoreRequested"))
+        assertTrue(preview.contains("generation == expectedGeneration"))
         assertTrue(session.contains("TaskExecutionHistorySnapshot"))
         assertTrue(session.contains("activeTaskId == taskId"))
         assertTrue(editor.contains("previewPhase == TaskHistoryPreviewPhase.RETURNING"))

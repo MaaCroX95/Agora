@@ -50,6 +50,8 @@ fun SettingsPromptsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     var editingEntry by remember { mutableStateOf<SystemPromptEntry?>(null) }
     var showDeletePromptConfirm by remember { mutableStateOf<SystemPromptEntry?>(null) }
     var showTemplatePicker by remember { mutableStateOf(false) }
+    var templateActionInFlight by remember { mutableStateOf(false) }
+    var templateActionGeneration by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val motionPolicy = LocalAgoraMotionPolicy.current
@@ -59,19 +61,28 @@ fun SettingsPromptsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
         DUPLICATE_TITLE_TOKEN,
     )
 
-    // Animate the sheet closed first, then flip to the editor page — avoids the sheet popping away
-    // at the same instant the page transition starts.
+    // Start the destination transition and sheet dismissal from the same tap. Keep the sheet
+    // composed until its hide animation completes so neither surface pops out mid-transition.
     val pickTemplate: (SystemPromptEntry) -> Unit = { entry ->
-        if (motionPolicy.allowSpatialTransitions) {
-            scope.launch { templateSheetState.hide() }.invokeOnCompletion {
-                if (!templateSheetState.isVisible) {
-                    showTemplatePicker = false
-                    editingEntry = entry
-                }
-            }
-        } else {
-            showTemplatePicker = false
+        if (!templateActionInFlight) {
+            templateActionInFlight = true
+            val actionGeneration = ++templateActionGeneration
             editingEntry = entry
+            if (motionPolicy.allowSpatialTransitions) {
+                scope.launch {
+                    try {
+                        templateSheetState.hide()
+                    } finally {
+                        if (templateActionGeneration == actionGeneration) {
+                            showTemplatePicker = false
+                            templateActionInFlight = false
+                        }
+                    }
+                }
+            } else {
+                showTemplatePicker = false
+                templateActionInFlight = false
+            }
         }
     }
 
@@ -121,7 +132,11 @@ fun SettingsPromptsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                     )
                     editingEntry = entry.duplicateAsDraft(copyTitle)
                 },
-                onAdd = { showTemplatePicker = true },
+                onAdd = {
+                    templateActionGeneration += 1
+                    templateActionInFlight = false
+                    showTemplatePicker = true
+                },
                 onDeleteRequest = { showDeletePromptConfirm = it },
                 onBack = onBack
             )
@@ -130,7 +145,11 @@ fun SettingsPromptsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
 
     if (showTemplatePicker) {
         ModalBottomSheet(
-            onDismissRequest = { showTemplatePicker = false },
+            onDismissRequest = {
+                templateActionGeneration += 1
+                templateActionInFlight = false
+                showTemplatePicker = false
+            },
             sheetState = templateSheetState,
             shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainer
@@ -149,7 +168,9 @@ fun SettingsPromptsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                 leadingContent = {
                     Icon(Icons.Default.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 },
-                modifier = Modifier.fillMaxWidth().clickable {
+                modifier = Modifier.fillMaxWidth().clickable(
+                    enabled = !templateActionInFlight,
+                ) {
                     pickTemplate(SystemPromptEntry(title = ""))
                 }
             )
@@ -159,8 +180,12 @@ fun SettingsPromptsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                 leadingContent = {
                     Icon(Icons.Default.Psychology, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 },
-                modifier = Modifier.fillMaxWidth().clickable {
-                    pickTemplate(DefaultSystemPrompt.create(java.util.Locale.getDefault()))
+                modifier = Modifier.fillMaxWidth().clickable(
+                    enabled = !templateActionInFlight,
+                ) {
+                    pickTemplate(
+                        DefaultSystemPrompt.create(java.util.Locale.getDefault()).copy(title = ""),
+                    )
                 }
             )
             Spacer(modifier = Modifier.height(24.dp))

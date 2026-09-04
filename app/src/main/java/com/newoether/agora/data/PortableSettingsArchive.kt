@@ -116,6 +116,7 @@ internal object PortableSettingsArchive {
         putEncoded("shellDevices", sm.shellDevices.first().map(ShellDeviceConfig::withoutSecrets))
         put("automationToolsEnabled", JsonPrimitive(sm.automationToolsEnabled.first()))
         put("exactExecutionEnabled", JsonPrimitive(sm.exactExecutionEnabled.first()))
+        put("automationWakeLockEnabled", JsonPrimitive(sm.automationWakeLockEnabled.first()))
         putEncoded("customProviders", sm.customProviders.first())
         putEncoded("mcpServers", sm.mcpServers.first().map(McpServerConfig::withoutSecrets))
 
@@ -391,6 +392,9 @@ internal object PortableSettingsArchive {
         }
         obj.boolean("automationToolsEnabled")?.let { sm.saveAutomationToolsEnabled(it) }
         obj.boolean("exactExecutionEnabled")?.let { sm.saveExactExecutionEnabled(it) }
+        obj.boolean("automationWakeLockEnabled")?.let {
+            sm.saveAutomationWakeLockEnabled(it)
+        }
 
         if (obj.containsKey("customProviders")) {
             val value = if (replace) {

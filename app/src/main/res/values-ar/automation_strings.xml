@@ -68,9 +68,11 @@
     <string name="automation_ai_tools">الوصول إلى المهام والحلقات</string>
     <string name="automation_ai_tools_desc">السماح للنموذج بإنشاء المهام وإدارتها أو بدء حلقات المحادثة وإيقافها. معطّل افتراضيًا.</string>
     <string name="automation_background_execution">التنفيذ في الخلفية</string>
+    <string name="automation_wake_lock">قفل التنشيط</string>
+    <string name="automation_wake_lock_desc">إبقاء كل تنفيذ لمهمة أو حلقة نشطًا. يدير WorkManager العمل المجدول العادي بالفعل؛ وقد يؤدي قفل التنشيط الإضافي هذا إلى زيادة استهلاك البطارية.</string>
     <string name="automation_battery_optimization">تحسين البطارية</string>
-    <string name="automation_battery_optimization_ignored_desc">غير محسّن؛ يسمح Android بتشغيل Agora دون قيود تحسين البطارية</string>
-    <string name="automation_battery_optimization_active_desc">محسّن؛ قد يقيّد Android التنفيذ في الخلفية</string>
+    <string name="automation_battery_optimization_ignored_desc">غير محسّن؛ قد يسمح Android بمزيد من العمل في الخلفية، لكن قيود الشركة المصنّعة قد تظل مطبّقة</string>
+    <string name="automation_battery_optimization_active_desc">محسّن؛ قد يؤخّر Android العمل في الخلفية، وقد تظل قيود الشركة المصنّعة مطبّقة</string>
     <string name="automation_exact_execution">التنفيذ الدقيق</string>
     <string name="automation_exact_execution_on_desc">استخدام منبّهات دقيقة للمهام والحلقات. قد يظل Android يطبق قيود النظام.</string>
     <string name="automation_exact_execution_off_desc">استخدام منبّهات تقريبية موفرة للبطارية. فعّل هذا الخيار لطلب صلاحية المنبّهات والتذكيرات.</string>

@@ -1,5 +1,10 @@
 package com.newoether.agora.ui.settings
 
+import android.content.Context
+import android.net.Uri
+import com.newoether.agora.ui.components.DialogWindowEdgeToEdge
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,10 +12,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
@@ -18,6 +25,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +33,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,6 +45,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -43,12 +53,21 @@ import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
 import com.newoether.agora.data.SkillManager
 import com.newoether.agora.ui.components.clearFocusOnTap
+import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
+import com.newoether.agora.ui.motion.MotionAwareModalBottomSheet as ModalBottomSheet
 import com.newoether.agora.util.DebugLog
+import com.newoether.agora.util.FileValidator
 import com.newoether.agora.viewmodel.ChatViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 
+private const val MAX_SKILL_IMPORT_BYTES = 1_048_576
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsSkillsPage(
     viewModel: ChatViewModel,
@@ -58,6 +77,9 @@ fun SettingsSkillsPage(
     val catalogRevision by viewModel.skillManager.catalogRevision.collectAsState()
     val showDocumentationFab by viewModel.settings.showDocumentationFab.collectAsState()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val motionPolicy = LocalAgoraMotionPolicy.current
+    val addSkillSheetState = rememberModalBottomSheetState()
     val unknownError = stringResource(R.string.unknown_error)
 
     var skillFiles by remember {
@@ -70,6 +92,9 @@ fun SettingsSkillsPage(
     var fileEditorContent by remember { mutableStateOf("") }
     var fileEditorDescription by remember { mutableStateOf("") }
 
+    var showAddSkillSheet by remember { mutableStateOf(false) }
+    var addSkillActionInFlight by remember { mutableStateOf(false) }
+    var addSkillActionGeneration by remember { mutableStateOf(0L) }
     var showNewFileDialog by remember { mutableStateOf(false) }
     var newFileName by remember { mutableStateOf("") }
     var newFileDescription by remember { mutableStateOf("") }
@@ -86,6 +111,55 @@ fun SettingsSkillsPage(
         withContext(Dispatchers.IO) {
             runCatching { viewModel.skillManager.listFiles() }
         }
+
+    val markdownPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null && !skillOperationInFlight) {
+            skillOperationInFlight = true
+            scope.launch {
+                val imported = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val (fileName, content) = readSkillMarkdown(context, uri)
+                        viewModel.skillManager.createFile(
+                            name = fileName,
+                            content = content,
+                            description = "",
+                        )
+                        viewModel.skillManager.listFiles()
+                    }
+                }
+                imported.onSuccess { files ->
+                    skillFiles = files
+                }.onFailure { error ->
+                    reportSkillFailure("Unable to import skill file", error)
+                }
+                skillOperationInFlight = false
+            }
+        }
+    }
+
+    fun runAddSkillAction(action: () -> Unit) {
+        if (addSkillActionInFlight || skillOperationInFlight) return
+        addSkillActionInFlight = true
+        val actionGeneration = ++addSkillActionGeneration
+        action()
+        if (motionPolicy.allowSpatialTransitions) {
+            scope.launch {
+                try {
+                    addSkillSheetState.hide()
+                } finally {
+                    if (addSkillActionGeneration == actionGeneration) {
+                        showAddSkillSheet = false
+                        addSkillActionInFlight = false
+                    }
+                }
+            }
+        } else {
+            showAddSkillSheet = false
+            addSkillActionInFlight = false
+        }
+    }
 
     LaunchedEffect(catalogRevision) {
         loadSkills()
@@ -306,7 +380,11 @@ fun SettingsSkillsPage(
                         SettingsAddItem(
                             label = stringResource(R.string.skills_add),
                             enabled = skillsLoaded && !skillOperationInFlight,
-                            onClick = { showNewFileDialog = true },
+                            onClick = {
+                                addSkillActionGeneration += 1
+                                addSkillActionInFlight = false
+                                showAddSkillSheet = true
+                            },
                         )
                     }
                 },
@@ -314,6 +392,87 @@ fun SettingsSkillsPage(
         }
         if (showDocumentationFab) {
             Spacer(modifier = Modifier.height(80.dp))
+        }
+    }
+
+    if (showAddSkillSheet) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                addSkillActionGeneration += 1
+                addSkillActionInFlight = false
+                showAddSkillSheet = false
+            },
+            sheetState = addSkillSheetState,
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
+            DialogWindowEdgeToEdge()
+            Text(
+                text = stringResource(R.string.skills_add),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            SettingsItem(
+                headlineContent = {
+                    Text(
+                        stringResource(R.string.skills_add_from_markdown),
+                        fontWeight = FontWeight.Medium,
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        stringResource(R.string.skills_add_from_markdown_desc),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                leadingContent = {
+                    Icon(
+                        Icons.Default.Description,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = !addSkillActionInFlight) {
+                        runAddSkillAction {
+                            markdownPicker.launch(
+                                arrayOf("text/markdown", "text/plain", "application/octet-stream"),
+                            )
+                        }
+                    },
+            )
+            SettingsItem(
+                headlineContent = {
+                    Text(
+                        stringResource(R.string.skills_add_manually),
+                        fontWeight = FontWeight.Medium,
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        stringResource(R.string.skills_add_manually_desc),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                leadingContent = {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = !addSkillActionInFlight) {
+                        runAddSkillAction {
+                            showNewFileDialog = true
+                        }
+                    },
+            )
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 
@@ -603,4 +762,44 @@ fun SettingsSkillsPage(
             },
         )
     }
+}
+
+private fun readSkillMarkdown(
+    context: Context,
+    uri: Uri,
+): Pair<String, String> {
+    val reportedSize = FileValidator.resolveFileSize(context, uri)
+    require(reportedSize == null || reportedSize <= MAX_SKILL_IMPORT_BYTES) {
+        "Skill file must be 1 MB or smaller"
+    }
+    val sourceFileName = FileValidator.resolveFileName(context, uri)
+        ?.takeIf(String::isNotBlank)
+        ?: "skill-${System.currentTimeMillis()}.md"
+    require(sourceFileName.endsWith(".md", ignoreCase = true)) {
+        "Select a Markdown (.md) file"
+    }
+    val fileName = sourceFileName.dropLast(3) + ".md"
+    val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+        val output = ByteArrayOutputStream(
+            minOf(reportedSize?.toInt() ?: 8_192, MAX_SKILL_IMPORT_BYTES),
+        )
+        val buffer = ByteArray(8_192)
+        var total = 0
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            total += read
+            require(total <= MAX_SKILL_IMPORT_BYTES) {
+                "Skill file must be 1 MB or smaller"
+            }
+            output.write(buffer, 0, read)
+        }
+        output.toByteArray()
+    } ?: error("Unable to open skill file")
+    val content = Charsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT)
+        .decode(ByteBuffer.wrap(bytes))
+        .toString()
+    return fileName to content
 }

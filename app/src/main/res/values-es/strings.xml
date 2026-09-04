@@ -1217,6 +1217,10 @@
     <string name="skills_empty">Aún no hay habilidades</string>
     <string name="skills_create_hint">Crea una habilidad o deja que el modelo cree una mediante una llamada a herramienta</string>
     <string name="skills_add">Añadir habilidad</string>
+    <string name="skills_add_from_markdown">Desde un archivo Markdown</string>
+    <string name="skills_add_from_markdown_desc">Importa un archivo de habilidad Markdown existente.</string>
+    <string name="skills_add_manually">Crear manualmente</string>
+    <string name="skills_add_manually_desc">Crea una habilidad con nombre, descripción e instrucciones.</string>
     <string name="skills_create">Crear</string>
     <string name="skills_name">Nombre del archivo</string>
     <string name="skills_description">Descripción</string>

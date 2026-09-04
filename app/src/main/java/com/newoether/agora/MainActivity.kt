@@ -332,7 +332,13 @@ fun MainNavigation(
     val taskHistoryPreview = taskEditorSession.historyPreview
     val currentConversationId by viewModel.currentConversationId.collectAsState()
     val isNewChatMode by viewModel.isNewChatMode.collectAsState()
-    com.newoether.agora.ui.tasks.TaskHistoryDestinationEffect(taskEditorSession, currentConversationId, isNewChatMode)
+    val isConversationSwitching by viewModel.isSwitching.collectAsState()
+    com.newoether.agora.ui.tasks.TaskHistoryDestinationEffect(
+        editorSession = taskEditorSession,
+        currentConversationId = currentConversationId,
+        isNewChatMode = isNewChatMode,
+        isSwitching = isConversationSwitching,
+    )
     val notificationTarget by notificationConversationId.collectAsState()
     LaunchedEffect(notificationTarget) {
         val id = notificationTarget ?: return@LaunchedEffect
@@ -737,6 +743,15 @@ fun MainNavigation(
                         {
                             taskToOpen = taskId
                             taskEditorSession.requestHistoryReturn()
+                            taskEditorSession.beginHistoryReturnRestore()?.let { restore ->
+                                if (restore.originWasNewChat) {
+                                    viewModel.restoreNewChatDestination()
+                                } else {
+                                    restore.originConversationId?.let(
+                                        viewModel::restoreConversationDestination,
+                                    )
+                                }
+                            }
                             topLevelPresentation.present(TopLevelPresentation.TASKS)
                             showTasks = true
                         }
@@ -813,17 +828,7 @@ fun MainNavigation(
                 onEnterFinished = {
                     val preview = taskEditorSession.historyPreview
                     if (preview.phase == TaskHistoryPreviewPhase.RETURNING) {
-                        if (preview.originWasNewChat) {
-                            viewModel.createNewChat()
-                        } else {
-                            preview.originConversationId?.let { conversationId ->
-                                viewModel.selectConversation(
-                                    id = conversationId,
-                                    hapticOnCompletion = false,
-                                )
-                            }
-                        }
-                        taskEditorSession.finishHistoryReturn()
+                        taskEditorSession.markHistoryReturnOverlayCovered(preview.generation)
                     }
                 },
             ) {

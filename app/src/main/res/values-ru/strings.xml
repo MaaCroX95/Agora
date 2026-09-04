@@ -1217,6 +1217,10 @@
     <string name="skills_empty">Навыков пока нет</string>
     <string name="skills_create_hint">Создайте навык или позвольте модели создать его через вызов инструмента</string>
     <string name="skills_add">Добавить навык</string>
+    <string name="skills_add_from_markdown">Из файла Markdown</string>
+    <string name="skills_add_from_markdown_desc">Импортировать существующий Markdown-файл навыка.</string>
+    <string name="skills_add_manually">Создать вручную</string>
+    <string name="skills_add_manually_desc">Создать навык с названием, описанием и инструкциями.</string>
     <string name="skills_create">Создать</string>
     <string name="skills_name">Имя файла</string>
     <string name="skills_description">Описание</string>

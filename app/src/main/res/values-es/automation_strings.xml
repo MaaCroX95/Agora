@@ -68,9 +68,11 @@
     <string name="automation_ai_tools">Acceder a tareas y bucles</string>
     <string name="automation_ai_tools_desc">Permite que el modelo cree y administre tareas o inicie y detenga bucles de conversación. Desactivado de forma predeterminada.</string>
     <string name="automation_background_execution">Ejecución en segundo plano</string>
+    <string name="automation_wake_lock">Bloqueo de activación</string>
+    <string name="automation_wake_lock_desc">Mantiene activo cada proceso de tarea o bucle. WorkManager ya gestiona el trabajo programado normal; este bloqueo adicional puede aumentar el consumo de batería.</string>
     <string name="automation_battery_optimization">Optimización de batería</string>
-    <string name="automation_battery_optimization_ignored_desc">Sin optimizar; Android permite que Agora se ejecute sin optimización de batería</string>
-    <string name="automation_battery_optimization_active_desc">Optimizada; Android puede limitar la ejecución en segundo plano</string>
+    <string name="automation_battery_optimization_ignored_desc">Sin optimizar; Android puede permitir más trabajo en segundo plano, pero aún pueden aplicarse restricciones del fabricante</string>
+    <string name="automation_battery_optimization_active_desc">Optimizada; Android puede retrasar el trabajo en segundo plano y aún pueden aplicarse restricciones del fabricante</string>
     <string name="automation_exact_execution">Ejecución exacta</string>
     <string name="automation_exact_execution_on_desc">Usar alarmas exactas para tareas y bucles. Android aún puede aplicar límites del sistema.</string>
     <string name="automation_exact_execution_off_desc">Usar alarmas inexactas que ahorran batería. Activa esta opción para solicitar acceso a Alarmas y recordatorios.</string>

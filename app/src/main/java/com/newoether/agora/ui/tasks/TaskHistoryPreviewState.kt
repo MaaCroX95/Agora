@@ -12,18 +12,22 @@ internal enum class TaskHistoryPreviewPhase {
 /**
  * Navigation state for a Task History conversation.
  *
- * A history conversation is a transient preview: opening another history entry must keep the
- * original chat destination, and returning to Tasks does not release the preview until the Tasks
- * overlay has completely covered the chat. Destination observation is two-step so the origin-to-
- * preview selection cannot be mistaken for leaving the preview.
+ * A history conversation is a transient preview. Return ownership is retained until both the
+ * Tasks overlay fully covers Chat and a generation-fenced, non-haptic restoration request has
+ * settled on the captured origin. Opening another history item supersedes an in-flight return
+ * without replacing that origin.
  */
 internal data class TaskHistoryPreviewState(
     val phase: TaskHistoryPreviewPhase = TaskHistoryPreviewPhase.IDLE,
+    val generation: Long = 0L,
     val taskId: String? = null,
     val originConversationId: String? = null,
     val originWasNewChat: Boolean = true,
     val previewConversationId: String? = null,
     val destinationObserved: Boolean = false,
+    val restoreRequested: Boolean = false,
+    val returnOverlayCovered: Boolean = false,
+    val returnDestinationObserved: Boolean = false,
 ) {
     val active: Boolean
         get() = phase != TaskHistoryPreviewPhase.IDLE
@@ -37,13 +41,18 @@ internal data class TaskHistoryPreviewState(
         if (active) {
             copy(
                 phase = TaskHistoryPreviewPhase.VIEWING,
+                generation = generation + 1L,
                 taskId = taskId,
                 previewConversationId = previewConversationId,
                 destinationObserved = false,
+                restoreRequested = false,
+                returnOverlayCovered = false,
+                returnDestinationObserved = false,
             )
         } else {
             TaskHistoryPreviewState(
                 phase = TaskHistoryPreviewPhase.VIEWING,
+                generation = generation + 1L,
                 taskId = taskId,
                 originConversationId = currentConversationId,
                 originWasNewChat = isNewChatMode || currentConversationId == null,
@@ -54,38 +63,103 @@ internal data class TaskHistoryPreviewState(
     fun observeDestination(
         currentConversationId: String?,
         isNewChatMode: Boolean,
+        isSwitching: Boolean,
     ): TaskHistoryPreviewState {
-        if (phase != TaskHistoryPreviewPhase.VIEWING) return this
-        val previewId = previewConversationId ?: return this
-        val previewIsSelected = !isNewChatMode && currentConversationId == previewId
-        return when {
-            !destinationObserved && previewIsSelected -> copy(destinationObserved = true)
-            !destinationObserved -> this
-            previewIsSelected -> this
-            else -> Idle
+        return when (phase) {
+            TaskHistoryPreviewPhase.IDLE -> this
+            TaskHistoryPreviewPhase.VIEWING -> {
+                val previewId = previewConversationId ?: return this
+                val previewIsSelected = !isNewChatMode && currentConversationId == previewId
+                when {
+                    !destinationObserved && previewIsSelected ->
+                        copy(destinationObserved = true)
+                    !destinationObserved -> this
+                    previewIsSelected -> this
+                    else -> settledIdle()
+                }
+            }
+            TaskHistoryPreviewPhase.RETURNING -> {
+                if (!restoreRequested || isSwitching) return this
+                val originIsRestored = if (originWasNewChat) {
+                    isNewChatMode && currentConversationId == null
+                } else {
+                    !isNewChatMode &&
+                        originConversationId != null &&
+                        currentConversationId == originConversationId
+                }
+                if (!originIsRestored) {
+                    this
+                } else {
+                    copy(returnDestinationObserved = true).settleReturnIfComplete()
+                }
+            }
         }
     }
 
     fun requestReturn(): TaskHistoryPreviewState =
-        if (active) copy(phase = TaskHistoryPreviewPhase.RETURNING) else this
+        if (phase == TaskHistoryPreviewPhase.VIEWING) {
+            copy(
+                phase = TaskHistoryPreviewPhase.RETURNING,
+                generation = generation + 1L,
+                restoreRequested = false,
+                returnOverlayCovered = false,
+                returnDestinationObserved = false,
+            )
+        } else {
+            this
+        }
+
+    fun beginReturnRestore(): TaskHistoryPreviewState =
+        if (phase == TaskHistoryPreviewPhase.RETURNING && !restoreRequested) {
+            copy(restoreRequested = true)
+        } else {
+            this
+        }
+
+    fun markReturnOverlayCovered(expectedGeneration: Long): TaskHistoryPreviewState =
+        if (
+            phase == TaskHistoryPreviewPhase.RETURNING &&
+            generation == expectedGeneration
+        ) {
+            copy(returnOverlayCovered = true).settleReturnIfComplete()
+        } else {
+            this
+        }
+
+    private fun settleReturnIfComplete(): TaskHistoryPreviewState =
+        if (returnOverlayCovered && returnDestinationObserved) settledIdle() else this
+
+    private fun settledIdle(): TaskHistoryPreviewState = copy(
+        phase = TaskHistoryPreviewPhase.IDLE,
+        taskId = null,
+        originConversationId = null,
+        originWasNewChat = true,
+        previewConversationId = null,
+        destinationObserved = false,
+        restoreRequested = false,
+        returnOverlayCovered = false,
+        returnDestinationObserved = false,
+    )
 
     companion object {
         val Idle = TaskHistoryPreviewState()
     }
 }
 
-/**
- * Settles Task History preview ownership only after its exact destination has first been selected.
- * New Chat or a successfully selected fork then restores ordinary Chat navigation immediately.
- */
+/** Observes both the destination and switching settlement for the current return generation. */
 @Composable
 internal fun TaskHistoryDestinationEffect(
     editorSession: TaskEditorSessionViewModel,
     currentConversationId: String?,
     isNewChatMode: Boolean,
+    isSwitching: Boolean,
 ) {
     val preview = editorSession.historyPreview
-    LaunchedEffect(editorSession, preview, currentConversationId, isNewChatMode) {
-        editorSession.observeHistoryDestination(currentConversationId, isNewChatMode)
+    LaunchedEffect(editorSession, preview, currentConversationId, isNewChatMode, isSwitching) {
+        editorSession.observeHistoryDestination(
+            currentConversationId = currentConversationId,
+            isNewChatMode = isNewChatMode,
+            isSwitching = isSwitching,
+        )
     }
 }

@@ -1223,6 +1223,10 @@
     <string name="skills_empty">Chưa có kỹ năng</string>
     <string name="skills_create_hint">Tạo một kỹ năng hoặc để mô hình tự tạo qua lệnh gọi công cụ</string>
     <string name="skills_add">Thêm kỹ năng</string>
+    <string name="skills_add_from_markdown">Từ tệp Markdown</string>
+    <string name="skills_add_from_markdown_desc">Nhập tệp kỹ năng Markdown hiện có.</string>
+    <string name="skills_add_manually">Tạo thủ công</string>
+    <string name="skills_add_manually_desc">Tạo kỹ năng với tên, mô tả và hướng dẫn.</string>
     <string name="skills_create">Tạo</string>
     <string name="skills_name">Tên tệp</string>
     <string name="skills_description">Mô tả</string>

@@ -70,9 +70,11 @@
     <string name="automation_ai_tools">Access Tasks and Loops</string>
     <string name="automation_ai_tools_desc">Let the model create and manage tasks or start and stop conversation loops. Disabled by default.</string>
     <string name="automation_background_execution">Background Execution</string>
+    <string name="automation_wake_lock">Wake Lock</string>
+    <string name="automation_wake_lock_desc">Keep each Task or Loop execution awake. WorkManager already handles normal scheduled work; this extra wake lock can increase battery use.</string>
     <string name="automation_battery_optimization">Battery Optimization</string>
-    <string name="automation_battery_optimization_ignored_desc">Not optimized; Android allows Agora to run without battery optimization</string>
-    <string name="automation_battery_optimization_active_desc">Optimized; Android may limit background execution</string>
+    <string name="automation_battery_optimization_ignored_desc">Not optimized; Android may allow more background work, but manufacturer restrictions can still apply</string>
+    <string name="automation_battery_optimization_active_desc">Optimized; Android may delay background work, and manufacturer restrictions can still apply</string>
     <string name="automation_exact_execution">Exact Execution</string>
     <string name="automation_exact_execution_on_desc">Use exact alarms for Tasks and Loops. Android may still apply system limits.</string>
     <string name="automation_exact_execution_off_desc">Use battery-friendly inexact alarms. Enable to request Alarms &amp; reminders access.</string>

@@ -1225,6 +1225,10 @@
     <string name="skills_empty">尚無技能</string>
     <string name="skills_create_hint">建立一個技能或讓模型透過工具呼叫來建立</string>
     <string name="skills_add">新增技能</string>
+    <string name="skills_add_from_markdown">從 Markdown 檔案新增</string>
+    <string name="skills_add_from_markdown_desc">匯入現有的 Markdown 技能檔案。</string>
+    <string name="skills_add_manually">手動新增</string>
+    <string name="skills_add_manually_desc">使用名稱、描述和指令建立技能。</string>
     <string name="skills_create">建立</string>
     <string name="skills_name">檔案名稱</string>
     <string name="skills_description">描述</string>

@@ -33,12 +33,26 @@ class TaskHistoryPreviewStateTest {
         assertEquals("history-1", session.historyPreview.previewConversationId)
         assertFalse(session.historyPreview.originWasNewChat)
 
-        session.observeHistoryDestination("history-1", isNewChatMode = false)
+        session.observeHistoryDestination(
+            "history-1",
+            isNewChatMode = false,
+            isSwitching = false,
+        )
         session.requestHistoryReturn()
+        val restore = requireNotNull(session.beginHistoryReturnRestore())
         assertEquals(TaskHistoryPreviewPhase.RETURNING, session.historyPreview.phase)
-        session.observeHistoryDestination("conversation-1", isNewChatMode = false)
+        session.markHistoryReturnOverlayCovered(restore.generation)
+        session.observeHistoryDestination(
+            "conversation-1",
+            isNewChatMode = false,
+            isSwitching = true,
+        )
         assertEquals(TaskHistoryPreviewPhase.RETURNING, session.historyPreview.phase)
-        session.finishHistoryReturn()
+        session.observeHistoryDestination(
+            "conversation-1",
+            isNewChatMode = false,
+            isSwitching = false,
+        )
 
         val current = requireNotNull(session.current(original.copy(nextRunAt = 999L)))
         assertEquals("Edited name", current.name)
@@ -49,7 +63,7 @@ class TaskHistoryPreviewStateTest {
         assertEquals(999L, current.nextRunAt)
         assertEquals(7, session.detailListIndex)
         assertEquals(42, session.detailListOffset)
-        assertEquals(TaskHistoryPreviewState.Idle, session.historyPreview)
+        assertEquals(TaskHistoryPreviewPhase.IDLE, session.historyPreview.phase)
     }
 
     @Test
@@ -62,17 +76,25 @@ class TaskHistoryPreviewStateTest {
             isNewChatMode = false,
         )
 
-        session.observeHistoryDestination("origin", isNewChatMode = false)
+        session.observeHistoryDestination("origin", isNewChatMode = false, isSwitching = false)
         assertFalse(session.historyPreview.destinationObserved)
         assertTrue(session.historyPreview.active)
 
-        session.observeHistoryDestination("history-1", isNewChatMode = false)
+        session.observeHistoryDestination(
+            "history-1",
+            isNewChatMode = false,
+            isSwitching = false,
+        )
         assertTrue(session.historyPreview.destinationObserved)
-        session.observeHistoryDestination("history-1", isNewChatMode = false)
+        session.observeHistoryDestination(
+            "history-1",
+            isNewChatMode = false,
+            isSwitching = false,
+        )
         assertTrue(session.historyPreview.active)
 
-        session.observeHistoryDestination("fork-1", isNewChatMode = false)
-        assertEquals(TaskHistoryPreviewState.Idle, session.historyPreview)
+        session.observeHistoryDestination("fork-1", isNewChatMode = false, isSwitching = false)
+        assertEquals(TaskHistoryPreviewPhase.IDLE, session.historyPreview.phase)
     }
 
     @Test
@@ -85,12 +107,107 @@ class TaskHistoryPreviewStateTest {
             isNewChatMode = true,
         )
 
-        session.observeHistoryDestination(null, isNewChatMode = true)
+        session.observeHistoryDestination(null, isNewChatMode = true, isSwitching = false)
         assertTrue(session.historyPreview.active)
 
-        session.observeHistoryDestination("history-1", isNewChatMode = false)
-        session.observeHistoryDestination("history-1", isNewChatMode = true)
-        assertEquals(TaskHistoryPreviewState.Idle, session.historyPreview)
+        session.observeHistoryDestination(
+            "history-1",
+            isNewChatMode = false,
+            isSwitching = false,
+        )
+        session.observeHistoryDestination(
+            "history-1",
+            isNewChatMode = true,
+            isSwitching = false,
+        )
+        assertEquals(TaskHistoryPreviewPhase.IDLE, session.historyPreview.phase)
+    }
+
+    @Test
+    fun returnNeedsBothOverlayCoverageAndSettledRestoration() {
+        var state = TaskHistoryPreviewState.Idle.open(
+            taskId = "task",
+            previewConversationId = "history",
+            currentConversationId = "origin",
+            isNewChatMode = false,
+        )
+        state = state.observeDestination("history", isNewChatMode = false, isSwitching = false)
+        state = state.requestReturn().beginReturnRestore()
+        val generation = state.generation
+
+        state = state.markReturnOverlayCovered(generation)
+        assertEquals(TaskHistoryPreviewPhase.RETURNING, state.phase)
+        state = state.observeDestination("origin", isNewChatMode = false, isSwitching = true)
+        assertEquals(TaskHistoryPreviewPhase.RETURNING, state.phase)
+        state = state.observeDestination("origin", isNewChatMode = false, isSwitching = false)
+
+        assertEquals(TaskHistoryPreviewPhase.IDLE, state.phase)
+    }
+
+    @Test
+    fun oneHundredAdversarialHistoryReturnCyclesNeverReleaseToHistory() {
+        var state = TaskHistoryPreviewState.Idle
+        repeat(100) { index ->
+            val originWasNewChat = index % 2 == 0
+            val originId = if (originWasNewChat) null else "origin-$index"
+            val historyId = "history-$index"
+            state = state.open(
+                taskId = "task",
+                previewConversationId = historyId,
+                currentConversationId = originId,
+                isNewChatMode = originWasNewChat,
+            )
+            state = state.observeDestination(
+                historyId,
+                isNewChatMode = false,
+                isSwitching = false,
+            )
+            state = state.requestReturn().beginReturnRestore()
+            val returnGeneration = state.generation
+            state = state.markReturnOverlayCovered(returnGeneration)
+            state = state.observeDestination(
+                historyId,
+                isNewChatMode = false,
+                isSwitching = false,
+            )
+            assertEquals(TaskHistoryPreviewPhase.RETURNING, state.phase)
+            state = state.observeDestination(
+                currentConversationId = originId,
+                isNewChatMode = originWasNewChat,
+                isSwitching = true,
+            )
+            assertEquals(TaskHistoryPreviewPhase.RETURNING, state.phase)
+            state = state.observeDestination(
+                currentConversationId = originId,
+                isNewChatMode = originWasNewChat,
+                isSwitching = false,
+            )
+            assertEquals(TaskHistoryPreviewPhase.IDLE, state.phase)
+        }
+    }
+
+    @Test
+    fun newHistorySupersedesPriorReturnWithoutReplacingCapturedOrigin() {
+        var state = TaskHistoryPreviewState.Idle.open(
+            taskId = "task",
+            previewConversationId = "history-1",
+            currentConversationId = "origin",
+            isNewChatMode = false,
+        )
+        state = state.requestReturn().beginReturnRestore()
+        val staleReturnGeneration = state.generation
+        state = state.open(
+            taskId = "task",
+            previewConversationId = "history-2",
+            currentConversationId = "history-1",
+            isNewChatMode = false,
+        )
+
+        assertEquals(TaskHistoryPreviewPhase.VIEWING, state.phase)
+        assertEquals("origin", state.originConversationId)
+        assertEquals("history-2", state.previewConversationId)
+        assertFalse(state.restoreRequested)
+        assertEquals(state, state.markReturnOverlayCovered(staleReturnGeneration))
     }
 
     @Test
@@ -108,9 +225,19 @@ class TaskHistoryPreviewStateTest {
             currentConversationId = "origin",
             isNewChatMode = false,
         )
-        session.observeHistoryDestination("history-1", isNewChatMode = false)
+        session.observeHistoryDestination(
+            "history-1",
+            isNewChatMode = false,
+            isSwitching = false,
+        )
         session.requestHistoryReturn()
-        session.finishHistoryReturn()
+        val restore = requireNotNull(session.beginHistoryReturnRestore())
+        session.markHistoryReturnOverlayCovered(restore.generation)
+        session.observeHistoryDestination(
+            "origin",
+            isNewChatMode = false,
+            isSwitching = false,
+        )
         assertEquals(1, session.executionHistoryFor("task-1")?.size)
 
         session.open(task(id = "task-2"), isNew = false)
@@ -152,7 +279,7 @@ class TaskHistoryPreviewStateTest {
         assertNull(session.executionHistoryFor(original.id))
         assertEquals(0, session.detailListIndex)
         assertEquals(0, session.detailListOffset)
-        assertEquals(TaskHistoryPreviewState.Idle, session.historyPreview)
+        assertEquals(TaskHistoryPreviewPhase.IDLE, session.historyPreview.phase)
 
         session.open(original, isNew = false)
         assertEquals(original.name, session.name)
@@ -175,7 +302,7 @@ class TaskHistoryPreviewStateTest {
         assertNull(newProcess.executionHistoryFor("task-1"))
         assertEquals(0, newProcess.detailListIndex)
         assertEquals(0, newProcess.detailListOffset)
-        assertEquals(TaskHistoryPreviewState.Idle, newProcess.historyPreview)
+        assertEquals(TaskHistoryPreviewPhase.IDLE, newProcess.historyPreview.phase)
     }
 
     private fun task(id: String = "task-1") = TaskEntity(

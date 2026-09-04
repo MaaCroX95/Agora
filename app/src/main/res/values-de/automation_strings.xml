@@ -68,9 +68,11 @@
     <string name="automation_ai_tools">Auf Aufgaben und Schleifen zugreifen</string>
     <string name="automation_ai_tools_desc">Dem Modell erlauben, Aufgaben zu erstellen und zu verwalten oder Unterhaltungsschleifen zu starten und zu stoppen. Standardmäßig deaktiviert.</string>
     <string name="automation_background_execution">Hintergrundausführung</string>
+    <string name="automation_wake_lock">Aktivierungssperre</string>
+    <string name="automation_wake_lock_desc">Jede Aufgaben- oder Schleifenausführung aktiv halten. WorkManager hält normale geplante Arbeit bereits wach; diese zusätzliche Aktivierungssperre kann den Akkuverbrauch erhöhen.</string>
     <string name="automation_battery_optimization">Akkuoptimierung</string>
-    <string name="automation_battery_optimization_ignored_desc">Nicht optimiert; Android lässt Agora ohne Akkuoptimierung ausführen</string>
-    <string name="automation_battery_optimization_active_desc">Optimiert; Android kann die Hintergrundausführung einschränken</string>
+    <string name="automation_battery_optimization_ignored_desc">Nicht optimiert; Android lässt eventuell mehr Hintergrundarbeit zu, aber Herstellerbeschränkungen können weiterhin gelten</string>
+    <string name="automation_battery_optimization_active_desc">Optimiert; Android kann Hintergrundarbeit verzögern, und Herstellerbeschränkungen können weiterhin gelten</string>
     <string name="automation_exact_execution">Genaue Ausführung</string>
     <string name="automation_exact_execution_on_desc">Genaue Alarme für Aufgaben und Schleifen verwenden. Android kann weiterhin Systembeschränkungen anwenden.</string>
     <string name="automation_exact_execution_off_desc">Akkuschonende ungenaue Alarme verwenden. Aktivieren, um den Zugriff auf Alarme und Erinnerungen anzufordern.</string>

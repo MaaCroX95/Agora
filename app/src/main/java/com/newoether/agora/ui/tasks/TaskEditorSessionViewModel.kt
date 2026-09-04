@@ -139,10 +139,12 @@ internal class TaskEditorSessionViewModel : ViewModel() {
     fun observeHistoryDestination(
         currentConversationId: String?,
         isNewChatMode: Boolean,
+        isSwitching: Boolean,
     ) {
         historyPreview = historyPreview.observeDestination(
             currentConversationId = currentConversationId,
             isNewChatMode = isNewChatMode,
+            isSwitching = isSwitching,
         )
     }
 
@@ -150,8 +152,16 @@ internal class TaskEditorSessionViewModel : ViewModel() {
         historyPreview = historyPreview.requestReturn()
     }
 
-    fun finishHistoryReturn() {
-        historyPreview = TaskHistoryPreviewState.Idle
+    fun beginHistoryReturnRestore(): TaskHistoryPreviewState? {
+        val current = historyPreview
+        val restoring = current.beginReturnRestore()
+        if (restoring == current) return null
+        historyPreview = restoring
+        return restoring
+    }
+
+    fun markHistoryReturnOverlayCovered(expectedGeneration: Long) {
+        historyPreview = historyPreview.markReturnOverlayCovered(expectedGeneration)
     }
 
     fun clear() {

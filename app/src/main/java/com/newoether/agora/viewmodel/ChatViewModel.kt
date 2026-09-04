@@ -867,10 +867,16 @@ class ChatViewModel(
 
     fun createNewChat() = selectionController.createNewChat()
 
+    internal fun restoreNewChatDestination() =
+        selectionController.restoreNewChatDestination()
+
     fun selectConversation(
         id: String,
         hapticOnCompletion: Boolean = true,
     ) = selectionController.selectConversation(id, hapticOnCompletion)
+
+    internal fun restoreConversationDestination(id: String) =
+        selectionController.restoreConversationDestination(id)
 
     fun forkConversationFrom(messageId: String? = null) =
         conversationForkShareController.fork(messageId)

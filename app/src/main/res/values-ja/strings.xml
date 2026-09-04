@@ -1217,6 +1217,10 @@
     <string name="skills_empty">スキルはまだありません</string>
     <string name="skills_create_hint">スキルを作成するか、モデルにツール呼び出しで作成させます</string>
     <string name="skills_add">スキルを追加</string>
+    <string name="skills_add_from_markdown">Markdown ファイルから</string>
+    <string name="skills_add_from_markdown_desc">既存の Markdown スキルファイルを読み込みます。</string>
+    <string name="skills_add_manually">手動で作成</string>
+    <string name="skills_add_manually_desc">名前、説明、手順を入力してスキルを作成します。</string>
     <string name="skills_create">作成</string>
     <string name="skills_name">ファイル名</string>
     <string name="skills_description">説明</string>

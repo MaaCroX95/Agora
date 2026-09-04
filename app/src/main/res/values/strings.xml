@@ -1224,6 +1224,10 @@
     <string name="skills_empty">No Skills Yet</string>
     <string name="skills_create_hint">Create a Skill or let the model create one via tool calling</string>
     <string name="skills_add">Add Skill</string>
+    <string name="skills_add_from_markdown">From Markdown File</string>
+    <string name="skills_add_from_markdown_desc">Import an existing Markdown skill file.</string>
+    <string name="skills_add_manually">Create Manually</string>
+    <string name="skills_add_manually_desc">Create a skill with a name, description, and instructions.</string>
     <string name="skills_create">Create</string>
     <string name="skills_name">File name</string>
     <string name="skills_description">Description</string>
