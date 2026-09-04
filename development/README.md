@@ -1,78 +1,139 @@
-# Development Contracts
+# Agora Development Contracts
 
-Status: authoritative development process contract.
+Status: authoritative mandatory development entry, 2026-08-13.
 
-This directory contains subsystem-specific contracts for Agora. The root repository guidance defines
-which documents are authoritative and when they must be consulted; these files define durable behavior
-and ownership for concrete subsystems.
+Every Agora development task must read this document before planning or editing. It then must read
+each module contract whose code, data, UI, persistence, automation, or behavior is in scope. These
+documents are executable product/architecture contracts, not optional background material.
 
-## 1. Scope and authority
+## 1. Authority and update rule
 
-Use this registry to identify the applicable module contract before editing behavior covered by one of
-the listed scopes. Module documents are authoritative for their subsystem unless a higher-level
-repository instruction explicitly overrides them.
+Current explicit user requirements have the highest product authority. The applicable documents
+under this folder persist those requirements across tasks. Production code, tests, older
+architecture prose, and historical behavior must align with them.
 
-A module contract should describe:
+When a user changes a contract:
 
-- current code ownership and entry points;
-- allowed and forbidden responsibilities;
-- important state/data flow and persistence behavior;
-- concurrency, cancellation, transaction, and rollback boundaries;
-- user-visible failure behavior;
-- required verification for changes.
+1. update the applicable module contract before or together with implementation;
+2. map the requirement to one owning module and focused verification;
+3. update conflicting code, tests, and older documentation;
+4. do not preserve the conflict through a feature-local exception or a parallel contract.
 
-Do not duplicate normative behavior between module contracts. Link to the owner document instead.
-Historical notes and migration baselines may preserve evidence, but they do not override current
-contracts.
+Runtime source remains evidence of current implementation, but current implementation does not
+override an explicit contract.
 
-## 2. Change discipline
+## 2. Mandatory core contracts
 
-Before modifying a governed subsystem:
+- Reuse the ordinary pipeline, state owners, durable transactions, concepts, and objects to the
+  maximum practical extent.
+- All software behavior must match its core contracts in normal, concurrent, cancelled, failed,
+  stopped, recovered, automated, and legacy-compatible paths.
+- Room is durable truth. A streaming overlay or UI projection is not a second graph or state owner.
+- One conversation has one process lifecycle authority and at most one durable live Run.
+- Every newly admitted send/generation receives a fresh identity. Terminal work is never reopened.
+- Asynchronous results are accepted only with exact conversation/owner/Run/pass/effect identity.
+- Checks and writes that establish one invariant belong in one atomic transaction or one serialized
+  decision boundary.
+- Pure policies stay pure. UI grouping, context assembly, state transition, Provider execution, and
+  persistence are separate responsibilities.
+- Fail closed on stale identity, graph drift, unsafe legacy state, missing/cyclic ancestry, partial
+  transaction results, and ambiguous ownership.
+- Protect user data first: never lose, duplicate, reorder, broaden-delete, or silently overwrite
+  messages, queue entries, attachments, branches, or terminal output.
 
-1. identify and read the applicable module contract;
-2. inspect the current implementation rather than relying on stale assumptions;
-3. preserve existing invariants unless the requested behavior explicitly changes them;
-4. make the smallest coherent change that satisfies the accepted behavior;
-5. update the owner contract when accepted behavior or ownership changes.
+## 3. Concurrency and robustness invariants
 
-## 3. Testing expectations
+1. The conversation mailbox/reducer is the single in-process transition authority.
+2. The Room active-slot constraint and transaction predicates are the durable concurrency fence.
+3. External Provider/tool work starts only after the exact durable Run binds successfully.
+4. Stop and natural completion obey their defined coroutine and persistence barriers.
+5. Checkpoint work closes before terminal persistence so an old snapshot cannot resurrect streaming.
+6. Queue ownership is explicit; claim failure returns the exact batch and successful commit
+   transfers it once.
+7. Locks protect only bounded decisions/transactions and are not held across network, Provider,
+   tool, UI, or long-running suspension.
+8. UI-derived graph targets and selections are re-read at the serialized/transactional boundary.
+9. Replacement/deletion transactions modify only their declared target and structurally necessary
+   metadata.
+10. Cancellation, process death, retries, duplicate callbacks, and out-of-order completion must
+    converge to a deterministic durable state.
 
-Verification should match the risk of the change. Prefer focused tests around the exact behavior first,
-then run the repository-defined full gate after the final code change. When asynchronous state or
-persistence is involved, cover success plus meaningful failure/race/cancellation/non-mutation paths.
+The design goal is to minimize failure surface and failure modes: one execution path, one state
+authority, narrow mutation capabilities, short lock scopes, fresh identities, atomic graph
+changes, bounded persistence, and explicit stale-result rejection.
 
-Do not report device UI behavior as verified unless it was actually exercised on a device or emulator.
-Build and unit-test evidence should be described as build/test evidence only.
+## 4. Global lazy loading and load-performance invariants
 
-## 4. UI authority
+Interactive application entry loads only the minimum conversation-list projection required to render
+the list. Before the user explicitly opens a conversation, application startup must not load complete
+conversation rows, message graphs, Composer drafts, attachment JSON, branch or Run state, generated
+media, or any other conversation-owned payload. It must not enumerate conversation owners to decide
+whether validation or recovery work exists, validate files or durable references, create per-owner
+runtime or Composer sessions, or resume conversation-owned jobs. After that list is visibly available,
+the sole automatic data-maintenance exception is the semantic-index ledger check defined in
+[semantic-search.md](semantic-search.md): it reads only one lightweight row for the active Embedding
+model and may admit one bounded low-priority cache worker. It never authorizes a startup message,
+conversation, embedding, attachment, Run, or owner scan.
 
-Application-wide UI behavior should follow the established design system and the applicable UI module
-contract. Avoid introducing one-off visual or interaction patterns when an existing shared component or
-contract already owns the behavior.
+Explicitly opening one conversation is the admission boundary for its state. That action may load,
+deserialize, validate, and recover only the selected owner. Opening conversation A must not read,
+validate, restore, cache, or schedule work for conversation B. Durable state for an unopened owner
+remains dormant after process death. Work already admitted for an opened owner may continue in the
+same process after the user switches away, but this never authorizes a new global scan.
 
-When a user provides an explicit approved reference or page specification, treat that as the target for
-the governed surface. If implementation details are missing, preserve established surrounding behavior
-rather than inventing unrelated changes.
+Load performance is a primary architecture, implementation, and review constraint. Startup and page
+entry queries must use narrow projections, avoid unused large columns, and keep database, JSON, file,
+CPU, bitmap, memory, and coroutine work demand-driven and bounded. Shared locks must not make the
+selected owner's page load wait behind unrelated owners. Verification must prove that startup performs
+no conversation validation or recovery, selected-owner work has priority, unrelated owners remain
+untouched, and worst-case recovery concurrency and retained state are bounded. Compilation and small
+functional tests alone are not load-performance evidence.
 
-## 5. Data and compatibility
+## 5. Abstraction and growth principles
 
-Changes to persisted user data, exports/imports, provider payloads, signing identity, package identity,
-or other compatibility-sensitive surfaces require an explicit compatibility story. Existing data and
-installed builds must not be silently invalidated unless the migration requirement is clearly documented.
+- Do not create a new concept, state machine, controller, interface, wrapper, factory, or data
+  object when an existing owner plus a parameter can express the behavior safely.
+- Extract only for a cohesive invariant, a real side-effect/transaction boundary, or multiple
+  genuine consumers.
+- This is a mandatory review gate: every proposed abstraction must name which of those three
+  conditions it satisfies, why the existing owner plus parameters is insufficient, and which
+  existing responsibility or duplication the new abstraction removes. Missing evidence blocks the
+  change.
+- "Reuse" does not authorize speculative `Descriptor`, `Capabilities`, `Policy`, `Strategy`,
+  `Adapter`, configuration-wrapper, or pass-through objects. Do not introduce a data object merely
+  to rename, regroup, or shuttle fields already owned safely by an existing object.
+- Prefer a direct protocol-local branch or one additional parameter when it is clearer and has one
+  owner. Generalize only after real shared behavior exists; do not build an object model for
+  hypothetical Providers, transports, models, or future consumers.
+- Do not allow a simple controller/manager to accumulate unrelated admission, context, Provider,
+  persistence, and UI responsibilities. Split along ownership boundaries, not arbitrary style.
+- Prefer generic rules driven by durable fields over feature names, message prefixes, or UI
+  location. Type prefixes may select rendering/protocol decoding, not a second lifecycle.
+- Compatibility logic stays narrow and read-side/transactional. New writes always obey current
+  contracts.
+- Comments state ownership and invariants. Tests assert behavior, race/failure outcomes, and
+  non-mutation guarantees rather than source spelling.
+- Simpler architecture means fewer authorities and paths, not fewer safety checks.
 
-## 6. Completion standard
-
-A change is not complete just because it compiles. Completion includes the required tests, relevant
-contract updates, and verification that no unintended temporary files, debug behavior, secrets, or
-migration scaffolding remain in the final diff.
+## 6. Universal prohibited behaviors
 
 Never:
 
-- commit API keys, signing private keys, passwords, or user secrets;
-- weaken a safety/compatibility invariant simply to make a test pass;
-- claim runtime behavior that was not actually exercised;
-- keep stale workaround code after the underlying issue is resolved;
-- bypass an applicable owner contract because the change seems small.
+- create a parallel generation, queue, Stop, settlement, context, or branch pipeline for a feature;
+- infer Provider context from UI generation grouping, or infer Regenerate scope from context
+  truncation;
+- generate on a terminal/old Run ID;
+- accept a stale or partially identified asynchronous result;
+- hold a shared lock while awaiting external or long-running work;
+- mutate suffix/neighbor messages as an implementation shortcut;
+- turn a partial database update into a successful result;
+- add a feature-specific merge/boundary exception when a global durable rule exists;
+- weaken validators or tests to make an implementation pass;
+- claim runtime/UI correctness from compilation alone;
+- invent, accept, or refine an unconstrained autogenerated UI merely to produce
+  an implementation or satisfy a checklist; every material UI decision must be
+  governed by an applicable UI contract, an owner-approved page specification,
+  or an established owner-approved reference, and missing authority is a blocker.
 
 ## 7. Module contract registry
 
