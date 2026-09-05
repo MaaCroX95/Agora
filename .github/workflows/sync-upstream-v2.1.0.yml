@@ -94,6 +94,40 @@ jobs:
           resolve_one("app/src/main/java/com/newoether/agora/data/DefaultSystemPrompt.kt", ours_resolver)
           resolve_one("app/src/main/java/com/newoether/agora/data/SettingsManager.kt", settings_resolver)
           resolve_one("app/src/test/java/com/newoether/agora/data/DefaultSystemPromptTest.kt", ours_resolver)
+
+          # Upstream v2.1.0 extracted stock prompt migrations to SystemPromptMigration.kt.
+          # Re-add Agora Dev's fork-only legacy runtime-context migration, then chain it
+          # after upstream's migration and before the fork-only web-search guidance migration.
+          settings_path = Path("app/src/main/java/com/newoether/agora/data/SettingsManager.kt")
+          settings_text = settings_path.read_text()
+          if "private fun migrateOldRuntimeContext(" not in settings_text:
+              needle = "    suspend fun setActiveSystemPromptId(id: String?) {"
+              if needle not in settings_text:
+                  raise SystemExit("Could not find SettingsManager insertion point")
+              helper = '''    private fun migrateOldRuntimeContext(
+              prompts: List<SystemPromptEntry>,
+              locale: Locale
+          ): List<SystemPromptEntry> {
+              if (prompts.isEmpty()) return prompts
+              val newDefault = DefaultSystemPrompt.create(locale)
+              return prompts.map { entry ->
+                  if (DefaultSystemPrompt.hasOldRuntimeContext(entry)) {
+                      entry.copy(
+                          systemItems = newDefault.systemItems,
+                          userItems = newDefault.resolvedUserItems,
+                          assistantItems = newDefault.resolvedAssistantItems,
+                          userPrependItems = emptyList(),
+                          userPostpendItems = emptyList(),
+                      )
+                  } else {
+                      entry
+                  }
+              }
+          }
+
+'''
+              settings_text = settings_text.replace(needle, helper + needle, 1)
+              settings_path.write_text(settings_text)
           PY
 
           git add .github/workflows/build.yml \
@@ -124,6 +158,7 @@ jobs:
           grep -q 'minSdk = 26' app/build.gradle.kts
           grep -q 'OPENAI_WEB_SEARCH_ENABLED' app/src/main/java/com/newoether/agora/data/SettingsManager.kt
           grep -q 'saveOpenAiWebSearchEnabled' app/src/main/java/com/newoether/agora/data/SettingsManager.kt
+          grep -q 'private fun migrateOldRuntimeContext' app/src/main/java/com/newoether/agora/data/SettingsManager.kt
           grep -q 'migrateLegacyWebSearchGuidance' app/src/main/java/com/newoether/agora/data/SettingsManager.kt
           grep -q 'openAiWebSearchEnabled' app/src/main/java/com/newoether/agora/data/PortableSettingsArchive.kt
           grep -q 'agora_web_search' app/src/main/java/com/newoether/agora/tool/WebSearchToolProvider.kt
