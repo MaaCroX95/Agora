@@ -143,9 +143,9 @@ layout, states, density, or interaction design has been approved.
 - Loading a legacy session applies the same newest-complete-event FIFO boundary,
   deletes the evicted durable files, and preserves monotonic sequence. A legacy
   capacity marker is cleared; a pause caused by that marker resumes capture,
-  while a manually paused session remains paused. API 26 and newer enumerate
-  event files through a streaming directory iterator; API 24-25 use the approved
-  `File.listFiles()` compatibility fallback.
+  while a manually paused session remains paused. All supported Android versions
+  enumerate event files through a streaming directory iterator. Android 7 support
+  was removed by the minimum-platform decision in `application-ui.md`.
 - Clear removes retained events and resets dropped, evicted, and truncated
   counters while preserving the session identity, current running or paused
   state, and monotonic sequence.

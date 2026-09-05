@@ -6,6 +6,10 @@ This document owns durable application-level UI behavior that is not part of mes
 citations, semantic search, or Web Search. Current explicit user requirements override older
 presentation code and translations.
 
+The minimum supported Android version is Android 8.0 (API 26). Android 7 (API 24/25) is no longer
+supported. The default Mi Outfit family retains one variable font resource with its five explicit
+weights; every supported platform must apply those variation settings.
+
 ## Global English UI title capitalization
 English title-like UI copy must use conventional Title Case. This is a hard UI constraint, not a
 page-specific preference. It applies to page and sheet titles, section and group headings, setting

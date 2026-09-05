@@ -9,6 +9,13 @@ import org.junit.Test
 
 class MiOutfitVariableFontSourceContractTest {
     @Test
+    fun `minimum Android version supports variable font weights`() {
+        val build = sourceFile("app/build.gradle.kts").readText()
+        val minimum = Regex("minSdk\\s*=\\s*(\\d+)").find(build)!!.groupValues[1].toInt()
+        assertEquals(26, minimum)
+    }
+
+    @Test
     fun `default type family uses one variable font with five explicit weights`() {
         val source = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/theme/Type.kt",

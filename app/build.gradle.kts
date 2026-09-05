@@ -25,7 +25,7 @@ android {
 
     defaultConfig {
         applicationId = "com.newoether.agora"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 36
         versionCode = 30
         versionName = "2.0.0"
