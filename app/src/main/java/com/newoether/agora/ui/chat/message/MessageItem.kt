@@ -52,6 +52,7 @@ import com.newoether.agora.model.ToolCallDisplayModes
 import com.newoether.agora.model.ThinkingSegmentDisplayModes
 import com.newoether.agora.ui.chat.ConversationSearchMatch
 import com.newoether.agora.ui.chat.conversationSearchMatchRanges
+import com.newoether.agora.ui.chat.deletionRemovesEntireConversation
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.ui.components.*
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
@@ -60,11 +61,17 @@ import kotlinx.coroutines.flow.StateFlow
 
 
 
-private data class PendingMessageDeletion(
+internal data class PendingMessageDeletion(
     val targetMessageId: String,
     val deletesConversation: Boolean,
     val expectedConversationMessageIds: Set<String>,
-)
+) {
+    constructor(messages: List<ChatMessage>, targetMessageId: String, compactOnly: Boolean) : this(
+        targetMessageId = targetMessageId,
+        deletesConversation = deletionRemovesEntireConversation(messages, targetMessageId, compactOnly),
+        expectedConversationMessageIds = messages.mapTo(linkedSetOf(), ChatMessage::id),
+    )
+}
 
 internal enum class ContextCompactPillPresentation {
     IN_PROGRESS,
@@ -125,8 +132,7 @@ internal fun MessageItem(
     onFork: (String) -> Unit = {},
     onShare: (String) -> Unit = {},
     deleteTargetMessageId: String = message.id,
-    deletesConversation: Boolean = false,
-    conversationMessageIds: Set<String> = emptySet(),
+    conversationMessages: () -> List<ChatMessage> = { emptyList() },
     onRecompact: (String) -> Unit = {},
     onDelete: (String, (Boolean) -> Unit) -> Boolean = { _, _ -> false },
     onDeleteConversation: (Set<String>, (Boolean) -> Unit) -> Boolean = { _, _ -> false },
@@ -159,6 +165,13 @@ internal fun MessageItem(
     var showUserTextSelection by remember(message.id) { mutableStateOf(false) }
     var pendingDelete by remember(message.id) { mutableStateOf<PendingMessageDeletion?>(null) }
     var confirmedDelete by remember(message.id) { mutableStateOf<PendingMessageDeletion?>(null) }
+    val onShowDelete = {
+        pendingDelete = PendingMessageDeletion(
+            messages = conversationMessages(),
+            targetMessageId = deleteTargetMessageId,
+            compactOnly = message.isContextCompact(),
+        )
+    }
     var showCompactDetail by remember(message.id) { mutableStateOf(false) }
     val haptics = LocalAgoraHaptics.current
     val motionPolicy = LocalAgoraMotionPolicy.current
@@ -183,6 +196,7 @@ internal fun MessageItem(
         withFrameNanos { }
         val onResult: (Boolean) -> Unit = { deleted ->
             if (deleted) haptics.destructiveConfirmed()
+            else pendingDelete = confirmed
             confirmedDelete = null
         }
         val accepted = if (confirmed.deletesConversation) {
@@ -190,7 +204,7 @@ internal fun MessageItem(
         } else {
             onDelete(confirmed.targetMessageId, onResult)
         }
-        if (!accepted) confirmedDelete = null
+        if (!accepted) onResult(false)
     }
 
     pendingDelete?.let { pending ->
@@ -336,13 +350,7 @@ internal fun MessageItem(
                             actionsEnabled = compactActionsEnabled && !compactInProgress,
                             onClick = { showCompactDetail = true },
                             onRecompact = { onRecompact(message.id) },
-                            onDelete = {
-                                pendingDelete = PendingMessageDeletion(
-                                    targetMessageId = deleteTargetMessageId,
-                                    deletesConversation = deletesConversation,
-                                    expectedConversationMessageIds = conversationMessageIds,
-                                )
-                            },
+                            onDelete = onShowDelete,
                         )
                     }
                 } else if (message.participant == Participant.USER) {
@@ -370,13 +378,7 @@ internal fun MessageItem(
                         onFileContentClick = onFileContentClick,
                         onPdfPagesClick = onPdfPagesClick,
                         onShowInfo = { showInfoDialog = true },
-                        onShowDelete = {
-                            pendingDelete = PendingMessageDeletion(
-                                targetMessageId = deleteTargetMessageId,
-                                deletesConversation = deletesConversation,
-                                expectedConversationMessageIds = conversationMessageIds,
-                            )
-                        },
+                        onShowDelete = onShowDelete,
                         searchHighlight = searchHighlight,
                     )
                 } else {
@@ -413,13 +415,7 @@ internal fun MessageItem(
                         onShare = { onShare(message.id) },
                         onMediaClick = onMediaClick,
                         onShowInfo = { showInfoDialog = true },
-                        onShowDelete = {
-                            pendingDelete = PendingMessageDeletion(
-                                targetMessageId = deleteTargetMessageId,
-                                deletesConversation = deletesConversation,
-                                expectedConversationMessageIds = conversationMessageIds,
-                            )
-                        },
+                        onShowDelete = onShowDelete,
                         onSegmentSelected = { indices, showListFirst ->
                             onSegmentDetailRequest(message.id, indices, showListFirst)
                         },

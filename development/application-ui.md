@@ -251,6 +251,10 @@ warns that the whole conversation will be removed. The dialog freezes the exact 
 visible when it opens; confirmation uses canonical conversation deletion only if Room still matches
 that topology. A later graph change rejects the stale confirmation, keeps the dialog open, and emits
 no destructive-success haptic.
+Deletion classification and confirmation ID collection run only when the existing delete action
+opens that confirmation, never as per-row message composition work. The confirmation retains its
+copied topology after failed or rejected admission; reopening through a new delete action captures
+the then-current topology. Ordinary message rendering performs no deletion graph traversal.
 
 ## 17. Model alias display fallback
 

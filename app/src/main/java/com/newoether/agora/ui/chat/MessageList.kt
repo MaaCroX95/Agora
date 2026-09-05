@@ -751,8 +751,6 @@ internal fun MessageList(
             ?: Modifier
 
         val deleteTargetMessageId = presentation?.deleteTargetMessageId ?: message.id
-        val conversationMessageIds = allMessages.list.mapTo(linkedSetOf()) { it.id }
-        val deletesConversation = deletionRemovesEntireConversation(allMessages.list, deleteTargetMessageId, message.isContextCompact())
         MessageItem(
             message = message,
             segmentAppearanceRegistry = segmentAppearanceRegistry,
@@ -851,9 +849,8 @@ internal fun MessageList(
             onShare = onShare,
             onRecompact = onRecompact,
             deleteTargetMessageId = deleteTargetMessageId,
-            deletesConversation = deletesConversation,
             onDelete = onDelete,
-            conversationMessageIds = conversationMessageIds,
+            conversationMessages = { allMessages.list },
             onDeleteConversation = onDeleteConversation,
             onMediaClick = onMediaClick,
             onFileContentClick = onFileContentClick,
