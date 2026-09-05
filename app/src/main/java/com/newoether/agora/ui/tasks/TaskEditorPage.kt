@@ -44,6 +44,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -177,7 +178,24 @@ internal fun TaskDetailPage(
     val enabled = editorSession.enabled
     val isNew = editorSession.isNew
     var showModelPicker by remember { mutableStateOf(false) }
-    var executionToDelete by remember { mutableStateOf<com.newoether.agora.automation.TaskManager.ExecutionSummary?>(null) }
+    var executionToDelete by remember(task.id) { mutableStateOf<com.newoether.agora.automation.TaskManager.ExecutionSummary?>(null) }
+    val executionDeleteId = executionToDelete?.conversation?.id
+    var executionDeletePhase by remember(executionDeleteId) {
+        mutableStateOf(ChatDeleteDialogPhase.CONFIRM)
+    }
+    LaunchedEffect(executionDeleteId, executionDeletePhase) {
+        if (executionDeleteId == null || executionDeletePhase != ChatDeleteDialogPhase.PENDING) {
+            return@LaunchedEffect
+        }
+        withFrameNanos { }
+        val accepted = viewModel.deleteConversation(executionDeleteId) { deleted ->
+            if (executionToDelete?.conversation?.id == executionDeleteId) {
+                if (deleted) executionToDelete = null
+                else executionDeletePhase = ChatDeleteDialogPhase.FAILED
+            }
+        }
+        if (!accepted) executionDeletePhase = ChatDeleteDialogPhase.FAILED
+    }
     val savedListIndex = remember(task.id) { editorSession.detailListIndex }
     val savedListOffset = remember(task.id) { editorSession.detailListOffset }
     val previewPhase = editorSession.historyPreview.phase
@@ -418,14 +436,17 @@ internal fun TaskDetailPage(
             onDismiss = { showModelPicker = false },
         )
     }
-    executionToDelete?.let { execution ->
+    executionToDelete?.let {
         ChatDeleteConfirmDialog(
-            phase = ChatDeleteDialogPhase.CONFIRM,
+            phase = executionDeletePhase,
             onConfirm = {
-                viewModel.deleteConversation(execution.conversation.id)
-                executionToDelete = null
+                if (executionDeletePhase != ChatDeleteDialogPhase.PENDING) {
+                    executionDeletePhase = ChatDeleteDialogPhase.PENDING
+                }
             },
-            onDismiss = { executionToDelete = null },
+            onDismiss = {
+                if (executionDeletePhase != ChatDeleteDialogPhase.PENDING) executionToDelete = null
+            },
         )
     }
 }
