@@ -572,6 +572,10 @@ title resolution, click behavior, and persistence remain unchanged.
 
 ## 25. Task History return continuity and drawer focus threshold
 
+Each task-list card has a 24 dp leading Repeat icon, matching the existing Tasks entry glyph,
+with primary tint, vertical centering and 16 dp spacing before the text. The icon is decorative;
+the existing card click action and trailing controls retain their ownership and behavior.
+
 Task-list cards Crossfade their Last Run status line over 200 ms between Loading, Running, the last-run
 timestamp, and Never Run. Before the first real execution-history snapshot, the line shows localized
 Loading rather than treating missing data as empty; a known Running state retains priority. The Flow

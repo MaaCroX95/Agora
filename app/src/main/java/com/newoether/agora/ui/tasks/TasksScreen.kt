@@ -355,6 +355,13 @@ private fun TaskCard(
             modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 6.dp, top = 14.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Icon(
+                imageVector = Icons.Default.Repeat,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = task.name.ifBlank { stringResource(R.string.task_name_hint) },
