@@ -256,6 +256,13 @@ internal class SettingsModelPreferenceStore(
             }.replaceCustomModelAlias(oldModelId, newModelId, alias)
             prefs[MODEL_ALIASES_JSON] = json.encodeToString(aliases)
 
+            val visibility = json.decodeFromString<MutableMap<String, Boolean>>(
+                prefs[MODEL_PROVIDER_NAMES_JSON] ?: "{}",
+            )
+            val showProviderName = visibility.remove(oldModelId) ?: true
+            if (newModelId != null) visibility[newModelId] = showProviderName
+            prefs[MODEL_PROVIDER_NAMES_JSON] = json.encodeToString(visibility)
+
             if (prefs[SELECTED_MODEL] == oldModelId) {
                 prefs[SELECTED_MODEL] =
                     newModelId ?: updatedEnabled.firstOrNull().orEmpty()
@@ -349,7 +356,7 @@ internal class SettingsModelPreferenceStore(
         }
     }
 
-    /** Removes only aliases owned by [providerId], preserving concurrent unrelated edits. */
+    /** Removes only display preferences owned by [providerId], preserving unrelated edits. */
     suspend fun removeModelAliasesForProvider(providerId: String) {
         val prefix = "$providerId:"
         dataStore.edit { prefs ->
@@ -357,6 +364,11 @@ internal class SettingsModelPreferenceStore(
             if (aliases.keys.removeAll { it.startsWith(prefix) }) {
                 prefs[MODEL_ALIASES_JSON] = json.encodeToString(aliases)
             }
+            val visibility = json.decodeFromString<MutableMap<String, Boolean>>(
+                prefs[MODEL_PROVIDER_NAMES_JSON] ?: "{}",
+            )
+            visibility.keys.removeAll { it.startsWith(prefix) }
+            prefs[MODEL_PROVIDER_NAMES_JSON] = json.encodeToString(visibility)
         }
     }
 
@@ -509,9 +521,9 @@ internal class SettingsModelPreferenceStore(
             val aliases = runCatching {
                 json.decodeFromString<Map<String, String>>(prefs[MODEL_ALIASES_JSON] ?: "{}")
             }.getOrNull()
-            val remappedAliases = aliases?.let { remapModelAliases(it, migrationMap) }
+            val remappedAliases = aliases?.let { remapModelPreferenceKeys(it, migrationMap) }
             val repairedAliases = remappedAliases?.let {
-                repairOrphanedCustomProviderAliases(
+                repairOrphanedCustomProviderPreferenceKeys(
                     aliases = it,
                     knownModelReferences = buildList {
                         addAll(customModels)
@@ -528,6 +540,18 @@ internal class SettingsModelPreferenceStore(
             if (repairedAliases != null) {
                 prefs[MODEL_ALIASES_JSON] = json.encodeToString(repairedAliases)
             }
+            val visibility = json.decodeFromString<Map<String, Boolean>>(
+                prefs[MODEL_PROVIDER_NAMES_JSON] ?: "{}",
+            )
+            val remappedVisibility = remapModelPreferenceKeys(visibility, migrationMap)
+            prefs[MODEL_PROVIDER_NAMES_JSON] = json.encodeToString(
+                repairOrphanedCustomProviderPreferenceKeys(
+                    aliases = remappedVisibility,
+                    knownModelReferences = customModels + enabledModels + transcriptionModels +
+                        scalarModels + remappedCatalogs.orEmpty().values.flatten(),
+                    activeProviderIds = normalization.providers.mapTo(linkedSetOf()) { it.providerId },
+                ),
+            )
             if (
                 providersChanged || modelReferencesChanged ||
                 repairedAliases != aliases
@@ -566,7 +590,24 @@ internal class SettingsModelPreferenceStore(
     }
 
     suspend fun saveLocalChatModels(models: List<LocalChatModelConfig>) {
-        dataStore.edit { it[LOCAL_CHAT_MODELS_JSON] = json.encodeToString(models) }
+        dataStore.edit { prefs ->
+            val previous = json.decodeFromString<List<LocalChatModelConfig>>(
+                prefs[LOCAL_CHAT_MODELS_JSON] ?: "[]",
+            )
+            val visibility = json.decodeFromString<MutableMap<String, Boolean>>(
+                prefs[MODEL_PROVIDER_NAMES_JSON] ?: "{}",
+            )
+            val byId = models.associateBy(LocalChatModelConfig::id)
+            previous.forEach { old ->
+                val replacement = byId[old.id]
+                if (replacement?.modelId != old.modelId) {
+                    val showProviderName = visibility.remove("Local:${old.modelId}") ?: true
+                    if (replacement != null) visibility["Local:${replacement.modelId}"] = showProviderName
+                }
+            }
+            prefs[LOCAL_CHAT_MODELS_JSON] = json.encodeToString(models)
+            prefs[MODEL_PROVIDER_NAMES_JSON] = json.encodeToString(visibility)
+        }
     }
     suspend fun saveCustomProviders(providers: List<CustomProviderConfig>) {
         val normalized = CustomProviderIdentityPolicy.normalize(

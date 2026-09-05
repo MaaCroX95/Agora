@@ -72,7 +72,7 @@ The following JSON field names are the complete current portable allowlist.
 
 | Group | Portable fields |
 | --- | --- |
-| Model selection | `selectedModel`, `customModels`, `enabledModels`, `modelAliases` |
+| Model selection | `selectedModel`, `customModels`, `enabledModels`, `modelAliases`, `modelProviderNames` |
 | Context | `contextTokenBudget`, `visualizeContextRollout`, `contextCompactEnabled`, `contextCompactModel`, `contextCompactPrompt`, `contextCompactRetainCount`, `contextCompactThresholdPercent` |
 | Provider and reasoning | `codeExecutionEnabled`, `googleSearchEnabled`, `thinkingEnabled`, `thinkingLevel`, `thinkingBudgetEnabled`, `thinkingBudgetTokens`, `openAiServiceTierEnabled`, `openAiServiceTier`, `openAiResponsesApiEnabled`, `providerBaseUrls` |
 | Title generation | `titleGenerationEnabled`, `titleGenerationModel`, `titleGenerationPrompt`, `titleGenerationNotificationsEnabled` |
@@ -89,6 +89,13 @@ The following JSON field names are the complete current portable allowlist.
 
 Nullable fields are deliberately emitted as JSON null when unset. Their presence distinguishes
 "clear this portable value" from an older archive that has no opinion about the field.
+
+`modelProviderNames` maps complete model IDs to booleans independently of aliases. False explicitly
+hides the Provider suffix; absent model IDs default to true. Export preserves both values. Import
+remaps the keys through the same custom-Provider identity policy as aliases. MERGE preserves this
+setting when the field is absent and preserves unrelated IDs when present. REPLACE resets the map
+to an initialized empty map, including for older archives; restarting must not reinterpret imported
+aliases as a request to hide Provider names. This preference contains no credentials or file paths.
 
 `amoledEnabled` is a default-false boolean. MERGE leaves it unchanged when absent; REPLACE clears
 its portable key before restore, so older archives resolve to false without redefining Theme Mode semantics.

@@ -1,12 +1,57 @@
 package com.newoether.agora.data
 
 import java.io.File
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PortableSettingsArchiveTest {
+    @Test
+    fun providerNamePreferencesRestoreWithIdentityRemappingAndAbsencePreservation() = runTest {
+        val providerId = "custom-provider-00000000-0000-4000-8000-000000000001"
+        val manager = mockk<SettingsManager>(relaxed = true)
+        every { manager.shellDevices } returns flowOf(emptyList())
+        every { manager.mcpServers } returns flowOf(emptyList())
+        every { manager.embeddingModels } returns flowOf(emptyList())
+        every { manager.activeEmbeddingModelId } returns flowOf("")
+        every { manager.customFontPath } returns flowOf("")
+        every { manager.customFontName } returns flowOf("")
+        every { manager.customProviders } returns flowOf(listOf(CustomProviderConfig("Relay", id = providerId)))
+        val writes = mutableListOf<Pair<Map<String, Boolean>, Boolean>>()
+        coEvery { manager.saveModelProviderNames(any(), any()) } answers {
+            writes += firstArg<Map<String, Boolean>>() to secondArg<Boolean>()
+        }
+        val archive = Json.parseToJsonElement(
+            """{"customProviders":[{"name":"Relay"}],"modelProviderNames":{"Relay:a":false,"OpenAI:b":true}}""",
+        ) as kotlinx.serialization.json.JsonObject
+        PortableSettingsArchive.restoreFromJsonObject(archive, manager, false, false, null) { it }
+        assertEquals(listOf(mapOf("$providerId:a" to false, "OpenAI:b" to true) to false), writes)
+        PortableSettingsArchive.restoreFromJsonObject(archive, manager, true, false, null) { it }
+        assertEquals(true, writes.last().second)
+        assertEquals(false, writes.last().first.entries.single { it.key.endsWith(":a") }.value)
+        assertEquals(true, writes.last().first["OpenAI:b"])
+        val empty = kotlinx.serialization.json.JsonObject(emptyMap())
+        PortableSettingsArchive.restoreFromJsonObject(empty, manager, false, false, null) { it }
+        assertEquals(2, writes.size)
+        PortableSettingsArchive.restoreFromJsonObject(empty, manager, true, false, null) { it }
+        assertEquals(2, writes.size)
+        coVerify(exactly = 2) { manager.resetPortableSettingsForImport() }
+        val root = locateDirectory("app/src/main/java", "src/main/java")
+        val export = File(root, "com/newoether/agora/data/PortableSettingsArchive.kt").readText()
+        val storage = File(root, "com/newoether/agora/data/SettingsManager.kt").readText()
+        assertTrue(export.contains("putEncoded(\"modelProviderNames\", sm.modelProviderNames.first())"))
+        assertTrue(storage.contains("prefs[MODEL_PROVIDER_NAMES_JSON] = \"{}\""))
+        assertTrue(storage.contains("produceMigrations = { listOf(modelProviderNamesMigration) }"))
+    }
+
     @Test
     fun amoledIsDefaultOffPortableAndAvailableInEveryTheme() {
         val root = locateDirectory("app/src/main/java", "src/main/java")

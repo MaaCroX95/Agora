@@ -893,6 +893,7 @@ class SettingsManager(private val context: Context) {
             prefs.remove(ENABLED_MODELS)
             prefs.remove(ACTIVE_SYSTEM_PROMPT_ID)
             prefs.remove(MODEL_ALIASES_JSON)
+            prefs[MODEL_PROVIDER_NAMES_JSON] = "{}"
             prefs.remove(CONTEXT_TOKEN_BUDGET)
             prefs.remove(MAX_CONTEXT_WINDOW)
             prefs.remove(VISUALIZE_CONTEXT_ROLLOUT)

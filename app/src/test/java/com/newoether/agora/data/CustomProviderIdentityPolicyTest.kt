@@ -76,7 +76,7 @@ class CustomProviderIdentityPolicyTest {
 
         assertEquals(
             mapOf("$id:model" to "Current alias"),
-            remapModelAliases(
+            remapModelPreferenceKeys(
                 aliases = linkedMapOf(
                     "Relay:model" to "Legacy alias",
                     "$id:model" to "Current alias",
@@ -273,7 +273,7 @@ class CustomProviderIdentityPolicyTest {
 
         assertEquals(
             aliases,
-            repairOrphanedCustomProviderAliases(
+            repairOrphanedCustomProviderPreferenceKeys(
                 aliases = aliases,
                 knownModelReferences = listOf("$first:model", "$second:model"),
                 activeProviderIds = setOf(first, second),

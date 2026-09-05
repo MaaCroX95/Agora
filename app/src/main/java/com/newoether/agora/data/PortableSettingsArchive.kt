@@ -47,6 +47,7 @@ internal object PortableSettingsArchive {
         putEncoded("customModels", sm.customModels.first())
         putEncoded("enabledModels", sm.enabledModels.first())
         putEncoded("modelAliases", sm.modelAliases.first())
+        putEncoded("modelProviderNames", sm.modelProviderNames.first())
         put("contextTokenBudget", JsonPrimitive(sm.maxContextWindow.first()))
         put("visualizeContextRollout", JsonPrimitive(sm.visualizeContextRollout.first()))
         put("contextCompactEnabled", JsonPrimitive(sm.contextCompactEnabled.first()))
@@ -218,6 +219,12 @@ internal object PortableSettingsArchive {
             }
             val value = if (replace) remapped else sm.modelAliases.first() + remapped
             sm.saveModelAliases(value)
+        }
+        obj.decode<Map<String, Boolean>>("modelProviderNames")?.let { imported ->
+            sm.saveModelProviderNames(
+                remapModelPreferenceKeys(imported, importedProviderIdentities.modelReferenceRemap),
+                replace = replace,
+            )
         }
 
         (obj.int("contextTokenBudget") ?: obj.int("maxContextWindow"))
