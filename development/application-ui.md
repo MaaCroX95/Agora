@@ -229,6 +229,14 @@ attachment.
 
 ## 16. Drawer conversation-list loading and search progress
 
+Opening an existing conversation binds covered layout settlement to that destination's scroll
+coordinator. Selection publication and switching readiness may arrive in either order; the previous
+destination must not begin waiting on its own hydration registry for the incoming page. Completion
+still requires the current destination's loaded conversation, context projection and stable layout.
+Send consumes its scroll request only after the target turn has a measured message index. The final
+absolute-bottom sentinel is excluded from this range, so a new turn cannot match the old sentinel
+before the list has measured the insertion.
+
 The conversation drawer observes only the conversation fields required by navigation, selection, display, and the system-prompt dialog; it never materializes draft text, draft attachment metadata, or branch-selection blobs for that list. Its first emitted snapshot is loading, distinct from a genuinely empty library, and a motion-aware circular indicator fades in and out over the list area.
 
 Conversation search exposes a separate in-flight state from the moment a nonblank query is accepted through debounce and the existing literal/semantic query. Its circular indicator fades in and out in the search field, does not alter query debounce or ranking, and cancellation, clearing, or failure cannot leave a stuck indicator. The retained prior result may remain visible while a new query is pending.

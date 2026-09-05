@@ -256,11 +256,22 @@ internal class ChatScrollCoordinator internal constructor(
         val switchingScrollRequest by viewModel.switchingScrollRequest.collectAsState()
         val contextProjection by viewModel.conversationContextProjection.collectAsState()
         val latestContextProjection by rememberUpdatedState(contextProjection)
-        LaunchedEffect(switchingScrollRequest?.id, switchingScrollRequest?.readyForUi) {
+        LaunchedEffect(
+            switchingScrollRequest?.id,
+            switchingScrollRequest?.readyForUi,
+            currentConversationId,
+        ) {
             val request = switchingScrollRequest ?: return@LaunchedEffect
             if (!request.readyForUi || request.kind == SwitchingRequestKind.NEW_CHAT) {
                 return@LaunchedEffect
             }
+            // Selection and request flows may reach composition in either order. Start only on
+            // the destination's coordinator, whose measurements and hydration belong to this page.
+            if (
+                request.kind == SwitchingRequestKind.CONVERSATION &&
+                request.conversationId != null &&
+                request.conversationId != currentConversationId
+            ) return@LaunchedEffect
             var terminalized = false
             try {
                 val targetConversationId = request.conversationId
@@ -671,10 +682,12 @@ internal class ChatScrollCoordinator internal constructor(
         messages: State<List<ChatMessage>>,
         targetMessageId: String?,
     ): Boolean = withTimeoutOrNull(SCROLL_SETTLE_TIMEOUT_MS) {
+        // The final item is the bottom sentinel, never a committed message turn. A newly
+        // appended turn initially occupies that old index until LazyColumn remeasures.
         snapshotFlow {
             val index = resolveScrollTargetIndex(messages.value, targetMessageId)
             index to listState.layoutInfo.totalItemsCount
-        }.first { (index, itemCount) -> index >= 0 && index < itemCount }
+        }.first { (index, itemCount) -> index >= 0 && index < itemCount - 1 }
         true
     } == true
 
