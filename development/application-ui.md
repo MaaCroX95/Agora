@@ -331,6 +331,13 @@ while Cancel, Back and outside dismissal commit neither. Clearing or changing an
 that switch. Complete-name surfaces append the current Provider name only when the preference is on;
 alias-only labels in Provider-grouped model lists retain their existing presentation.
 
+The shared Provider-name switch row uses a white primary label, 8 dp of outer top spacing, and a
+16 dp rounded-rectangle clip around its toggleable ripple. The top gap is outside the hit region.
+The ripple and its single toggleable hit region extend 8 dp beyond each horizontal edge of the row's
+original layout bounds. Matching inner padding preserves the switch position and surrounding spacing
+in both layout directions. The title and description share an additional 8 dp start inset and retain
+12 dp end spacing toward the switch; text wraps naturally within that inset area.
+
 New models default to showing the Provider. A one-time Preferences DataStore migration preserves
 existing presentation by recording off for existing nonblank explicit aliases; all other model IDs
 default on. Subsequent display never infers visibility from alias presence. The initialization runs
