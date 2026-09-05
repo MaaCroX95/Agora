@@ -581,7 +581,8 @@ unchanged countdown ticks do not restart this transition. Reduced Motion retains
 feedback. The card's controls and task execution lifecycle are not part of this transition.
 
 Task execution-history rows render Failed status and its timestamp with the neutral
-`onSurfaceVariant` color. Success retains `primary`; the global theme error role remains available
+`onSurfaceVariant` color at 70% alpha for a more muted appearance. Success retains `primary`;
+the global theme error role remains available
 for other feedback, including destructive actions and input validation.
 
 A conversation opened from a Task execution log is a transient preview owned by that exact task and

@@ -506,6 +506,7 @@ internal fun ExecutionRow(
                             .joinToString(" · "),
                         style = MaterialTheme.typography.labelMedium,
                         color = when (execution.status) {
+                            MessageStatus.ERROR -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             MessageStatus.SUCCESS -> MaterialTheme.colorScheme.primary
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         },
