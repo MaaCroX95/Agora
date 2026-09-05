@@ -421,6 +421,34 @@ class SemanticIndexMutationSourceContractTest {
         )
     }
 
+    @Test
+    fun headlessAutomationWakesAutoCacheForBothDurableTurnRows() {
+        val engine = source(
+            "app/src/main/java/com/newoether/agora/automation/TaskExecutionEngine.kt",
+        )
+        val generationManager = engine.section(
+            "private val generationManager = GenerationManager(",
+            "/**\n     * Injects [userText]",
+        )
+        assertTrue(
+            generationManager.contains(
+                "it.onMessagePersisted = ragManager::indexMessageForRag",
+            ),
+        )
+
+        val admission = engine.section(
+            "val persistToken = generationState.nextPersistId()",
+            "bindingOutcome = withContext(NonCancellable)",
+        )
+        assertOrdered(
+            admission,
+            "acceptedInputGraphWriter.commit(",
+            "runCreated = true",
+            "if (userText.isNotBlank())",
+            "ragManager.indexMessageForRag(userMessageId, userText)",
+        )
+    }
+
     private fun String.countToken(token: String): Int = split(token).size - 1
 
     private fun String.section(start: String, end: String): String =

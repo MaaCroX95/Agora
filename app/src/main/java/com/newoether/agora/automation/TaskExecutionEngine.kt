@@ -344,6 +344,7 @@ class TaskExecutionEngine(
         // Foreground Task/Loop executions share the exact same prompt and session trust state as
         // Chat. ShellConfirmationController itself fails fast when no Activity is visible.
         it.onConfirmShellCommand = shellConfirmation::confirm
+        it.onMessagePersisted = ragManager::indexMessageForRag
     }
 
     /**
@@ -598,6 +599,16 @@ class TaskExecutionEngine(
                 ),
             )
             runCreated = true
+            if (userText.isNotBlank()) {
+                runCatching { ragManager.indexMessageForRag(userMessageId, userText) }
+                    .onFailure { error ->
+                        DebugLog.w(
+                            "TaskExecutionEngine",
+                            "Failed to enqueue user-message indexing for $userMessageId",
+                            error,
+                        )
+                    }
+            }
             bindingOutcome = withContext(NonCancellable) {
                 generationState.finishInputPersistence(acceptedInputEffect.identity)
             }
