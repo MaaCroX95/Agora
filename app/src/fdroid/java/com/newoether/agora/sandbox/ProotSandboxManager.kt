@@ -706,10 +706,11 @@ class ProotSandboxManager(
         }
         catch (e: Throwable) { onProgress("FAIL: ${e.javaClass.simpleName}: ${e.message}"); lastError = "${e.javaClass.simpleName}: ${e.message}"; return@withContext false }
 
+        val installed = readInstalledVersions()
         val repoPkgs: Map<String, FullPkgEntry>
         val soToPkg: Map<String, String>
         try {
-            val (r, s) = parseFullApkIndex(indexFile)
+            val (r, s) = parseFullApkIndex(indexFile, preferredPackages = installed.keys)
             repoPkgs = r; soToPkg = s
         } catch (e: Throwable) {
             onProgress("FAIL: parse index — ${e.javaClass.simpleName}: ${e.message}")
@@ -721,29 +722,11 @@ class ProotSandboxManager(
             lastError = "Not found: $requested"; return@withContext false
         }
 
-        // 2. Read installed DB — don't reinstall/downgrade existing packages
-        val installed = readInstalledVersions()
-
         // 3. Recursively resolve target + transitive deps.
         // Install if missing; upgrade if repo is newer; NEVER downgrade.
         // Downgrading breaks version constraints of packages that were
         // compiled against a newer version in the rootfs.
-        val toInstall = linkedSetOf<String>()
-        fun resolve(name: String, visited: MutableSet<String> = mutableSetOf()) {
-            if (name in visited || name !in repoPkgs) return
-            visited.add(name)
-            val instVer = installed[name]
-            val repoVer = repoPkgs[name]!!.version
-            if (instVer == null || compareAlpineVersions(repoVer, instVer) > 0) toInstall.add(name)
-            for (dep in repoPkgs[name]!!.deps) {
-                val dn = dep.takeWhile { it != '=' && it != '>' && it != '<' && it != '~' }
-                if (dn.isNotEmpty()) {
-                    if (dn in repoPkgs) resolve(dn, visited)
-                    else soToPkg[dn]?.let { resolve(it, visited) }
-                }
-            }
-        }
-        resolve(requested)
+        val toInstall = collectAlpinePackageChanges(listOf(requested), repoPkgs, soToPkg, installed)
         onProgress("${toInstall.size} packages to install")
 
         if (toInstall.isEmpty()) {
@@ -869,17 +852,15 @@ class ProotSandboxManager(
             conn.inputStream.use { i -> indexFile.outputStream().use { o -> i.copyTo(o) } }
         } catch (e: Throwable) { onProgress("FAIL: ${e.message}"); lastError = e.message; return@withContext 0 }
 
+        val installed = readInstalledVersions()
         val repoPkgs: Map<String, FullPkgEntry>
         val soToPkg: Map<String, String>
         try {
-            val (r, s) = parseFullApkIndex(indexFile)
+            val (r, s) = parseFullApkIndex(indexFile, preferredPackages = installed.keys)
             repoPkgs = r; soToPkg = s
         } catch (e: Throwable) {
             onProgress("FAIL: parse index — ${e.javaClass.simpleName}: ${e.message}"); lastError = "Parse index: ${e.message}"; indexFile.delete(); return@withContext 0
         } finally { indexFile.delete() }
-
-        // 2. Read installed DB
-        val installed = readInstalledVersions()
 
         // 3. Collect installed packages where repo has a newer version
         val toUpgrade = linkedSetOf<String>()
@@ -890,22 +871,7 @@ class ProotSandboxManager(
         if (toUpgrade.isEmpty()) { onProgress("All packages up to date."); return@withContext 0 }
 
         // 4. Recursively add transitive deps of upgradable packages
-        val visited = mutableSetOf<String>()
-        val toInstall = linkedSetOf<String>()
-        fun collect(name: String) {
-            if (name in visited || name !in repoPkgs) return
-            visited.add(name)
-            val instVer = installed[name]
-            if (instVer == null || compareAlpineVersions(repoPkgs[name]!!.version, instVer) > 0) toInstall.add(name)
-            for (dep in repoPkgs[name]!!.deps) {
-                val dn = dep.takeWhile { it != '=' && it != '>' && it != '<' && it != '~' }
-                if (dn.isNotEmpty()) {
-                    if (dn in repoPkgs) collect(dn)
-                    else soToPkg[dn]?.let { collect(it) }
-                }
-            }
-        }
-        for (name in toUpgrade) collect(name)
+        val toInstall = collectAlpinePackageChanges(toUpgrade, repoPkgs, soToPkg, installed)
         onProgress("${toInstall.size} packages to upgrade")
 
         // 5. Download + install (same pattern as apkInstall)

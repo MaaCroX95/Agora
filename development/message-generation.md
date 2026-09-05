@@ -880,6 +880,13 @@ foreground continuation after the client wait budget, and `view_image` are expli
 than baseline behavior that Local must imitate. SSH may implement the transport-neutral interfaces,
 but it is not the authority for the Local/Conch baseline.
 
+Local Sandbox package installation and upgrade share one dependency download closure. APKINDEX
+records are read completely through their blank-line boundary or EOF. Virtual dependency providers
+prefer an already-installed candidate present in the index, otherwise the highest repository
+provider priority, with stable name ordering for ties. Index order must not pull a competing shell
+provider into a transaction. Existing newer packages are never downloaded for downgrade; Alpine's
+`apk` remains responsible for validating and applying the complete transaction.
+
 Structured Provider citations follow [citations.md](citations.md). Protocol routers emit structured
 citation events rather than answer `TextChunk` or tool events. The existing streaming segment
 overlay and bounded checkpoint/terminal persistence retain accepted citation segments for the

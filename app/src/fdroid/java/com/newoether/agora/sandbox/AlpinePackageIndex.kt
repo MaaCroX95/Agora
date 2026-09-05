@@ -72,45 +72,88 @@ internal fun compareAlpineVersions(a: String, b: String): Int {
     return revA.compareTo(revB)
 }
 
-internal fun parseFullApkIndex(indexFile: File): Pair<Map<String, FullPkgEntry>, Map<String, String>> {
+internal fun parseFullApkIndex(
+    indexFile: File,
+    preferredPackages: Set<String> = emptySet(),
+): Pair<Map<String, FullPkgEntry>, Map<String, String>> {
     val result = mutableMapOf<String, FullPkgEntry>()
+    val provides = mutableMapOf<String, List<String>>()
+    val priorities = mutableMapOf<String, Int>()
     val soToPkg = mutableMapOf<String, String>()
     java.util.zip.GZIPInputStream(indexFile.inputStream()).use { gz ->
         org.apache.commons.compress.archivers.tar.TarArchiveInputStream(gz).use { tar ->
             var entry = tar.nextEntry
             while (entry != null) {
                 if (entry.name == "APKINDEX") {
-                    val lines = tar.readBytes().toString(Charsets.UTF_8).lines()
-                    for (i in lines.indices) {
-                        val line = lines[i].trim()
-                        if (!line.startsWith("P:")) continue
-                        val name = line.substring(2).trim()
-                        var version = ""; var provider = ""
-                        val deps = mutableListOf<String>()
-                        val isSoEntry = name.startsWith("so:")
-                        for (j in i + 1 until minOf(i + 30, lines.size)) {
-                            val n = lines[j].trim()
-                            if (n.startsWith("C:")) break
-                            if (n.startsWith("V:")) version = n.substring(2).trim()
-                            if (n.startsWith("p:")) {
-                                provider = n.substring(2).trim()
-                                if (!isSoEntry) {
-                                    // p: lists all provides (so:libfoo.so.1=1.0 so:libbar.so.1=1.0)
-                                    for (prov in provider.split(Regex("\\s+"))) {
-                                        val pn = prov.takeWhile { it != '=' }
-                                        if (pn.isNotEmpty()) soToPkg[pn] = name
-                                    }
-                                }
-                            }
-                            if (n.startsWith("D:")) deps.addAll(n.substring(2).trim().split(Regex("\\s+")).filter { it.isNotEmpty() })
+                    val fields = mutableMapOf<Char, String>()
+                    fun flushRecord() {
+                        val name = fields['P'].orEmpty()
+                        val version = fields['V'].orEmpty()
+                        val provided = fields['p'].orEmpty()
+                        if (name.startsWith("so:") && provided.isNotEmpty()) {
+                            soToPkg[name] = provided
+                        } else if (name.isNotEmpty() && version.isNotEmpty()) {
+                            result[name] = FullPkgEntry(name, version, apkIndexWords(fields['D']))
+                            provides[name] = apkIndexWords(provided).map { it.substringBefore('=') }
+                            priorities[name] = fields['k']?.toIntOrNull() ?: 0
                         }
-                        if (isSoEntry && provider.isNotEmpty()) soToPkg[name] = provider
-                        else if (!isSoEntry && name.isNotEmpty() && version.isNotEmpty()) result[name] = FullPkgEntry(name, version, deps)
+                        fields.clear()
                     }
+                    tar.readBytes().toString(Charsets.UTF_8).lineSequence().forEach { raw ->
+                        val line = raw.trim()
+                        if (line.isEmpty()) flushRecord()
+                        else if (line.length >= 2 && line[1] == ':') fields[line[0]] = line.substring(2).trim()
+                    }
+                    flushRecord()
                 }
                 entry = tar.nextEntry
             }
         }
     }
+    for ((name, aliases) in provides) {
+        for (alias in aliases) {
+            val previous = soToPkg[alias]
+            val preferred = name in preferredPackages
+            val previousPreferred = previous in preferredPackages
+            val priority = priorities[name] ?: 0
+            val previousPriority = priorities[previous] ?: 0
+            val replace = when {
+                previous == null -> true
+                preferred != previousPreferred -> preferred
+                priority != previousPriority -> priority > previousPriority
+                else -> name < previous
+            }
+            if (replace) soToPkg[alias] = name
+        }
+    }
     return Pair(result, soToPkg)
+}
+
+private fun apkIndexWords(value: String?): List<String> =
+    value.orEmpty().split(Regex("\\s+")).filter(String::isNotEmpty)
+
+/** Shared download closure for install and upgrade; apk validates the final transaction. */
+internal fun collectAlpinePackageChanges(
+    requested: Collection<String>,
+    packages: Map<String, FullPkgEntry>,
+    providers: Map<String, String>,
+    installed: Map<String, String>,
+): Set<String> {
+    val changes = linkedSetOf<String>()
+    val visited = mutableSetOf<String>()
+    fun collect(name: String) {
+        if (!visited.add(name)) return
+        val entry = packages[name] ?: return
+        val installedVersion = installed[name]
+        if (installedVersion == null || compareAlpineVersions(entry.version, installedVersion) > 0) {
+            changes.add(name)
+        }
+        for (dependency in entry.deps) {
+            val dependencyName = dependency.takeWhile { it != '=' && it != '>' && it != '<' && it != '~' }
+            if (dependencyName in packages) collect(dependencyName)
+            else providers[dependencyName]?.let(::collect)
+        }
+    }
+    requested.forEach(::collect)
+    return changes
 }
