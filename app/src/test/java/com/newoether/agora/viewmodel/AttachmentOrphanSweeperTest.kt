@@ -25,6 +25,25 @@ class AttachmentOrphanSweeperTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
+    fun `message ownership arriving between reference scans must not delete the image`() = runTest {
+        val image = oldFile(temporaryFolder.root, "img_handoff")
+        var messageReferences = emptyList<MessageAttachmentReference>()
+        val conversations = mockk<ConversationRepository>()
+        coEvery { conversations.getMessageAttachmentReferencesPage(null, 64) } answers {
+            messageReferences
+        }
+        coEvery { conversations.getConversationDraftAttachmentReferencesPage(null, 64) } answers {
+            // Send commits the message, then clears its draft, between the two scans.
+            messageReferences = listOf(MessageAttachmentReference("sent", listOf(image.path), null))
+            emptyList()
+        }
+        coEvery { conversations.getNewChatDraftAttachmentReference() } returns null
+        AttachmentOrphanSweeper(conversations, temporaryFolder.root).deleteExact(image.path)
+        assertTrue(messageReferences.single().images.contains(image.path))
+        assertTrue("A persisted message still owns this image", image.exists())
+    }
+
+    @Test
     fun `sweep preserves every durable and fresh reference while deleting only eligible orphans`() =
         runTest {
             val root = temporaryFolder.root
