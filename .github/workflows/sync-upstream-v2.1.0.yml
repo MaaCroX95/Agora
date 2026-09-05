@@ -38,7 +38,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           set +e
-          git merge --no-commit --no-ff upstream/master
+          git merge --squash upstream/master
           merge_rc=$?
           set -e
           if [ "$merge_rc" -ne 0 ]; then
@@ -63,10 +63,7 @@ jobs:
               p.write_text(text)
 
           def build_resolver(ours, theirs):
-              return ours.replace(
-                  "verifyKotlinFileSize -Pkotlin.daemon.jvmargs=-Xmx3584m",
-                  "verifyKotlinFileSize --no-daemon --max-workers=1 -Pkotlin.daemon.jvmargs=-Xmx3584m",
-              )
+              return ours
 
           def gradle_resolver(ours, theirs):
               indent = "        "
@@ -128,6 +125,11 @@ jobs:
               settings_path.write_text(settings_text)
           PY
 
+          # Keep the production build workflow byte-for-byte from Agora Dev master.
+          # The Actions token cannot push workflow-file changes, and none are needed
+          # for the v2.1.0 application sync.
+          git checkout origin/master -- .github/workflows/build.yml
+
           git add .github/workflows/build.yml \
             app/build.gradle.kts \
             app/src/main/java/com/newoether/agora/data/DefaultSystemPrompt.kt \
@@ -177,5 +179,5 @@ jobs:
         run: |
           set -euo pipefail
           git add -A
-          git commit -m "Merge upstream v2.1.0"
+          git commit -m "sync: import upstream v2.1.0"
           git push --force origin HEAD:refs/heads/sync/upstream-v2.1.0-final
