@@ -26,7 +26,7 @@ class HistoricalMessageHydrationSourceContractTest {
     }
 
     @Test
-    fun historicalRowsKeepTheViewportCoveredAndAnchoredUntilRenderedMarkdownIsReady() {
+    fun historicalRowsExposePayloadBeforeMarkdownSettlementAndKeepViewportAnchored() {
         val start = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
         val root = generateSequence(start) { it.parentFile }
             .first { File(it, "app/src/main").isDirectory }
@@ -45,11 +45,15 @@ class HistoricalMessageHydrationSourceContractTest {
         val incremental = source(
             "app/src/main/java/com/newoether/agora/ui/chat/message/IncrementalStreamingMarkdown.kt",
         )
+        val payloadReadyIndex =
+            list.indexOf("onMessageHydrated(conversationId, messageStub.id)")
+        val renderSettlementIndex =
+            list.indexOf("rememberHistoricalMessageViewportSettlement(")
+        assertTrue(list.contains("historicalMessagePayloadReady("))
+        assertTrue(payloadReadyIndex >= 0 && renderSettlementIndex > payloadReadyIndex)
+        assertTrue(!settlement.contains("onMessageHydrated"))
         assertTrue(settlement.contains("delay(HISTORICAL_MESSAGE_CROSSFADE_MS.toLong())"))
-        assertTrue(settlement.indexOf("delay(HISTORICAL_MESSAGE_CROSSFADE_MS.toLong())") <
-            settlement.indexOf("currentOnSettled(messageId)"))
         assertTrue(settlement.contains("withFrameNanos { }"))
-        assertTrue(list.contains("rememberHistoricalMessageViewportSettlement("))
         assertTrue(list.contains("onRenderReady = {") &&
             list.contains("finishHydrationAfterRenderedContent()"))
         assertTrue(item.contains("onContentReady = onRenderReady"))

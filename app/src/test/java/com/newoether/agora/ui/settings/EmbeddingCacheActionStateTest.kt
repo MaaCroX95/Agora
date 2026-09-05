@@ -6,7 +6,9 @@ import com.newoether.agora.viewmodel.EmbeddingCacheRowReducer
 import com.newoether.agora.viewmodel.EmbeddingCacheRowSnapshot
 import com.newoether.agora.viewmodel.EmbeddingCacheWorkSnapshot
 import com.newoether.agora.viewmodel.embeddingCacheWorkSnapshotOrNull
+import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -77,6 +79,34 @@ class EmbeddingCacheActionStateTest {
         assertTrue(refreshed.progress == progress && refreshed.workActive)
         assertNull(workSnapshot(remaining = 5, permille = 400))
         assertNull(workSnapshot(remaining = 6, permille = 989))
+    }
+
+    @Test
+    fun cacheActionSlotExpandsAndEveryLabelIsSingleLine() {
+        val start = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
+        val root = generateSequence(start) { it.parentFile }
+            .first { File(it, "app/src/main").isDirectory }
+        val source = File(
+            root,
+            "app/src/main/java/com/newoether/agora/ui/settings/SettingsSearchPage.kt",
+        ).readText().replace("\r\n", "\n")
+
+        assertTrue(source.contains("Modifier.widthIn(min = 76.dp)"))
+        assertFalse(source.contains("Modifier.width(76.dp)"))
+        listOf(
+            "R.string.retry",
+            "R.string.recache_action",
+            "R.string.cache_action",
+        ).forEach { label ->
+            val startIndex = source.indexOf("stringResource($label)")
+            assertTrue("Missing $label action label", startIndex >= 0)
+            val labelBlock = source.substring(
+                startIndex,
+                (startIndex + 350).coerceAtMost(source.length),
+            )
+            assertTrue("$label must stay on one line", labelBlock.contains("maxLines = 1"))
+            assertTrue("$label must not wrap", labelBlock.contains("softWrap = false"))
+        }
     }
 
     private fun workSnapshot(remaining: Int, permille: Int) =

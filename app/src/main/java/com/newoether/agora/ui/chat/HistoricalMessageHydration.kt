@@ -31,6 +31,11 @@ internal enum class HistoricalMessageHydrationPhase {
     READY,
     FAILED,
 }
+internal fun historicalMessagePayloadReady(
+    phase: HistoricalMessageHydrationPhase,
+    streamingOverlay: Boolean,
+): Boolean = streamingOverlay || phase == HistoricalMessageHydrationPhase.READY
+
 internal data class HistoricalMessageHydrationState(
     val phase: HistoricalMessageHydrationPhase,
     val message: ChatMessage? = null,

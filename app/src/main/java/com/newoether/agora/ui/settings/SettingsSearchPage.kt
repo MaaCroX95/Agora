@@ -345,7 +345,7 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                     trailingContent = {
                                         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                             Box(
-                                                modifier = Modifier.width(76.dp),
+                                                modifier = Modifier.widthIn(min = 76.dp),
                                                 contentAlignment = androidx.compose.ui.Alignment.Center,
                                             ) {
                                                 Crossfade(
@@ -380,17 +380,35 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                                             onClick = {
                                                                 viewModel.ragManager.retryCacheRow(model.id)
                                                             },
-                                                        ) { Text(stringResource(R.string.retry)) }
+                                                        ) {
+                                                            Text(
+                                                                stringResource(R.string.retry),
+                                                                maxLines = 1,
+                                                                softWrap = false,
+                                                            )
+                                                        }
                                                         EmbeddingCacheRowPhase.RECACHE -> TextButton(
                                                             onClick = { showRecacheConfirm = model.id },
-                                                        ) { Text(stringResource(R.string.recache_action)) }
+                                                        ) {
+                                                            Text(
+                                                                stringResource(R.string.recache_action),
+                                                                maxLines = 1,
+                                                                softWrap = false,
+                                                            )
+                                                        }
                                                         EmbeddingCacheRowPhase.CACHE -> TextButton(
                                                             onClick = {
                                                                 viewModel.ragManager.cacheMessagesForModel(
                                                                     model.id,
                                                                 )
                                                             },
-                                                        ) { Text(stringResource(R.string.cache_action)) }
+                                                        ) {
+                                                            Text(
+                                                                stringResource(R.string.cache_action),
+                                                                maxLines = 1,
+                                                                softWrap = false,
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }

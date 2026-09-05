@@ -71,6 +71,34 @@ class HistoricalMessageHydrationTest {
     }
 
     @Test
+    fun conversationVisibilityWaitsForPayloadButNeverForMarkdownSettlement() {
+        assertFalse(
+            historicalMessagePayloadReady(
+                HistoricalMessageHydrationPhase.LOADING,
+                streamingOverlay = false,
+            ),
+        )
+        assertFalse(
+            historicalMessagePayloadReady(
+                HistoricalMessageHydrationPhase.FAILED,
+                streamingOverlay = false,
+            ),
+        )
+        assertTrue(
+            historicalMessagePayloadReady(
+                HistoricalMessageHydrationPhase.READY,
+                streamingOverlay = false,
+            ),
+        )
+        assertTrue(
+            historicalMessagePayloadReady(
+                HistoricalMessageHydrationPhase.LOADING,
+                streamingOverlay = true,
+            ),
+        )
+    }
+
+    @Test
     fun evictionAndRapidReentryCannotReuseAnotherRowsPayload() {
         val cache = HydratedMessagePayloadLru(
             maxEntries = 16,

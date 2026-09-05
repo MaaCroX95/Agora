@@ -672,9 +672,16 @@ internal fun MessageList(
         val observedMessage = hydrationState.message
         val message = resolveMessagePayloadForRender(messageStub, streamingMessage, observedMessage, cachedMessage)
         val hydrationPending = hydrationState.phase == HistoricalMessageHydrationPhase.LOADING
-        LaunchedEffect(hydrationState.phase, observedMessage, cachedMessage) {
-            if (hydrationState.phase == HistoricalMessageHydrationPhase.READY) {
+        LaunchedEffect(
+            messageStub.id,
+            hydrationState.phase,
+            observedMessage,
+            cachedMessage,
+            isStreamingOverlay,
+        ) {
+            if (historicalMessagePayloadReady(hydrationState.phase, isStreamingOverlay)) {
                 (observedMessage ?: cachedMessage)?.let(::cacheHydratedPayload)
+                onMessageHydrated(conversationId, messageStub.id)
             }
         }
         val finishHydrationAfterRenderedContent =
@@ -689,7 +696,6 @@ internal fun MessageList(
                 mutationAnchorLock = mutationAnchorLock,
                 pendingSettlements = pendingMutationSettles,
                 mutationScope = mutationScope,
-                onSettled = { id -> onMessageHydrated(conversationId, id) },
             )
 
         val isRetainedBranchReplacementExit =

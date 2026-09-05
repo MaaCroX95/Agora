@@ -34,9 +34,9 @@ internal class HistoricalMessageSettlementGate {
 }
 
 /**
- * Holds the visible viewport across payload hydration, Markdown parsing, and the payload crossfade.
- * A Room row is not visually ready merely because projection completed: its answer parser and
- * final measurement must also have published before the opening cover or anchor is released.
+ * Holds only the visible viewport anchor across payload hydration, Markdown parsing, and the
+ * row-level payload crossfade. Conversation visibility is owned by payload readiness and must
+ * never wait for Markdown parsing or this settlement job.
  */
 @Composable
 internal fun rememberHistoricalMessageViewportSettlement(
@@ -50,7 +50,6 @@ internal fun rememberHistoricalMessageViewportSettlement(
     mutationAnchorLock: MessageListMutationAnchorLock,
     pendingSettlements: MutableMap<String, Job>,
     mutationScope: CoroutineScope,
-    onSettled: (String) -> Unit,
 ): () -> Unit {
     val mutationKey = "hydrate:$messageId"
     var hadLoading by remember(messageId) {
@@ -60,7 +59,6 @@ internal fun rememberHistoricalMessageViewportSettlement(
         SideEffect { hadLoading = true }
     }
     val currentTurns by rememberUpdatedState(turns)
-    val currentOnSettled by rememberUpdatedState(onSettled)
     val settlementGate = remember(messageId) { HistoricalMessageSettlementGate() }
 
     fun finishAfterRenderedContent() {
@@ -77,7 +75,7 @@ internal fun rememberHistoricalMessageViewportSettlement(
                 }
             } finally {
                 hadLoading = false
-                if (settlementGate.settle()) currentOnSettled(messageId)
+                settlementGate.settle()
                 pendingSettlements.remove(mutationKey, settlementJob)
             }
         }
@@ -87,7 +85,7 @@ internal fun rememberHistoricalMessageViewportSettlement(
 
     LaunchedEffect(messageId, phase, isStreamingOverlay, isSwitching, isScrollInProgress) {
         if (isStreamingOverlay) {
-            if (settlementGate.settle()) currentOnSettled(messageId)
+            settlementGate.settle()
             return@LaunchedEffect
         }
         val layoutStable = messageListLayoutMode(
