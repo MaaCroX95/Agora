@@ -17,6 +17,7 @@ internal val ACTIVE_API_KEY_IDS_JSON = stringPreferencesKey("active_api_key_ids_
 internal val SYSTEM_PROMPTS_JSON = stringPreferencesKey("system_prompts_json")
 internal val ACTIVE_SYSTEM_PROMPT_ID = stringPreferencesKey("active_system_prompt_id")
 internal val MODEL_ALIASES_JSON = stringPreferencesKey("model_aliases_json")
+internal val MODEL_PROVIDER_NAMES_JSON = stringPreferencesKey("model_provider_names_json")
 internal val CONTEXT_TOKEN_BUDGET = stringPreferencesKey("context_token_budget")
 /** Legacy logical-message window, retained only as a migration source. */
 internal val MAX_CONTEXT_WINDOW = stringPreferencesKey("max_context_window")
@@ -99,7 +100,12 @@ internal val MCP_SERVERS_JSON = stringPreferencesKey("mcp_servers_json")
 internal val SANDBOX_ENABLED = booleanPreferencesKey("sandbox_enabled")
 internal val SANDBOX_SHARED_STORAGE_ENABLED =
     booleanPreferencesKey("sandbox_shared_storage_enabled")
+internal const val DEFAULT_COLOR_SCHEME = "FOREST"
+internal const val DEFAULT_SCHEME_STYLE = "TONAL_SPOT"
+internal const val DEFAULT_DYNAMIC_COLOR = false
+
 internal val THEME_MODE = stringPreferencesKey("theme_mode")
+internal val AMOLED_ENABLED = booleanPreferencesKey("amoled_enabled")
 internal val COLOR_SCHEME = stringPreferencesKey("color_scheme")
 internal val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
 internal val BLUR_EFFECTS_ENABLED = booleanPreferencesKey("blur_effects_enabled")

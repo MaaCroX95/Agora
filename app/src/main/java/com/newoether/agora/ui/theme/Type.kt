@@ -1,10 +1,12 @@
 package com.newoether.agora.ui.theme
 
 import androidx.compose.material3.Typography
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.newoether.agora.R
@@ -16,12 +18,21 @@ val MonoFamily = FontFamily(
     Font(R.font.jetbrains_mono_bolditalic, FontWeight.Bold, FontStyle.Italic),
 )
 
+@OptIn(ExperimentalTextApi::class)
+private fun miOutfitFont(weight: FontWeight) = Font(
+    resId = R.font.mioutfit_variable,
+    weight = weight,
+    variationSettings = FontVariation.Settings(
+        FontVariation.weight(weight.weight),
+    ),
+)
+
 val OutfitFamily = FontFamily(
-    Font(R.font.mioutfit_extralight, FontWeight.ExtraLight),
-    Font(R.font.mioutfit_light, FontWeight.Light),
-    Font(R.font.mioutfit_regular, FontWeight.Normal),
-    Font(R.font.mioutfit_medium, FontWeight.Medium),
-    Font(R.font.mioutfit_bold, FontWeight.Bold),
+    miOutfitFont(FontWeight.ExtraLight),
+    miOutfitFont(FontWeight.Light),
+    miOutfitFont(FontWeight.Normal),
+    miOutfitFont(FontWeight.Medium),
+    miOutfitFont(FontWeight.Bold),
 )
 
 // Geometric (modular) type scale: every distinct size is a term of a geometric

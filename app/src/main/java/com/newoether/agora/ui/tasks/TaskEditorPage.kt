@@ -44,6 +44,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -59,6 +60,7 @@ import com.newoether.agora.data.local.TaskEntity
 import com.newoether.agora.data.modelDisplayName
 import java.util.Calendar
 import com.newoether.agora.ui.chat.ChatDeleteConfirmDialog
+import com.newoether.agora.ui.chat.ChatDeleteDialogPhase
 import com.newoether.agora.ui.components.clearFocusOnTap
 import com.newoether.agora.ui.settings.AnimatedActionFab
 import com.newoether.agora.ui.settings.CollapsingSettingsLazyScaffold
@@ -165,6 +167,7 @@ internal fun TaskDetailPage(
     val running by viewModel.runningTaskIds.collectAsState()
     val enabledModels by viewModel.settings.enabledModels.collectAsState()
     val modelAliases by viewModel.settings.modelAliases.collectAsState()
+    val modelProviderNames by viewModel.settings.modelProviderNames.collectAsState()
     val customProviders by viewModel.settings.customProviders.collectAsState()
 
     val name = editorSession.name
@@ -176,7 +179,24 @@ internal fun TaskDetailPage(
     val enabled = editorSession.enabled
     val isNew = editorSession.isNew
     var showModelPicker by remember { mutableStateOf(false) }
-    var executionToDelete by remember { mutableStateOf<com.newoether.agora.automation.TaskManager.ExecutionSummary?>(null) }
+    var executionToDelete by remember(task.id) { mutableStateOf<com.newoether.agora.automation.TaskManager.ExecutionSummary?>(null) }
+    val executionDeleteId = executionToDelete?.conversation?.id
+    var executionDeletePhase by remember(executionDeleteId) {
+        mutableStateOf(ChatDeleteDialogPhase.CONFIRM)
+    }
+    LaunchedEffect(executionDeleteId, executionDeletePhase) {
+        if (executionDeleteId == null || executionDeletePhase != ChatDeleteDialogPhase.PENDING) {
+            return@LaunchedEffect
+        }
+        withFrameNanos { }
+        val accepted = viewModel.deleteConversation(executionDeleteId) { deleted ->
+            if (executionToDelete?.conversation?.id == executionDeleteId) {
+                if (deleted) executionToDelete = null
+                else executionDeletePhase = ChatDeleteDialogPhase.FAILED
+            }
+        }
+        if (!accepted) executionDeletePhase = ChatDeleteDialogPhase.FAILED
+    }
     val savedListIndex = remember(task.id) { editorSession.detailListIndex }
     val savedListOffset = remember(task.id) { editorSession.detailListOffset }
     val previewPhase = editorSession.historyPreview.phase
@@ -312,7 +332,7 @@ internal fun TaskDetailPage(
                             headlineContent = { Text(stringResource(R.string.task_model)) },
                             supportingContent = {
                                 Text(
-                                    modelId?.let { modelDisplayName(it, modelAliases, customProviders) }
+                                    modelId?.let { modelDisplayName(it, modelAliases, customProviders, modelProviderNames[it] != false) }
                                         ?: stringResource(R.string.task_model_default)
                                 )
                             },
@@ -417,13 +437,17 @@ internal fun TaskDetailPage(
             onDismiss = { showModelPicker = false },
         )
     }
-    executionToDelete?.let { execution ->
+    executionToDelete?.let {
         ChatDeleteConfirmDialog(
+            phase = executionDeletePhase,
             onConfirm = {
-                viewModel.deleteConversation(execution.conversation.id)
-                executionToDelete = null
+                if (executionDeletePhase != ChatDeleteDialogPhase.PENDING) {
+                    executionDeletePhase = ChatDeleteDialogPhase.PENDING
+                }
             },
-            onDismiss = { executionToDelete = null },
+            onDismiss = {
+                if (executionDeletePhase != ChatDeleteDialogPhase.PENDING) executionToDelete = null
+            },
         )
     }
 }

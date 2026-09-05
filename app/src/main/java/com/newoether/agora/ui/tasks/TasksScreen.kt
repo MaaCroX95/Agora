@@ -1,6 +1,8 @@
 package com.newoether.agora.ui.tasks
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -267,12 +269,15 @@ private fun TasksListPage(
             }
         } else {
             itemsIndexed(tasks, key = { _, task -> task.id }) { index, task ->
-                val executions by viewModel.executionSummariesForTask(task.id)
-                    .collectAsState(initial = emptyList())
+                val executionHistoryFlow = remember(task.id, viewModel) {
+                    viewModel.executionSummariesForTask(task.id)
+                }
+                val executions by executionHistoryFlow.collectAsState(initial = null)
                 TaskCard(
                     task = task,
                     isRunning = task.id in running,
-                    lastRunAt = executions.firstOrNull()?.timestamp?.takeIf { it > 0L },
+                    executionsLoaded = executions != null,
+                    lastRunAt = executions?.firstOrNull()?.timestamp?.takeIf { it > 0L },
                     shape = stackedShape(index, totalRows),
                     onClick = { onOpenTask(task) },
                     onRun = { viewModel.runTaskNow(task) },
@@ -318,6 +323,7 @@ private fun TasksListPage(
 private fun TaskCard(
     task: TaskEntity,
     isRunning: Boolean,
+    executionsLoaded: Boolean,
     lastRunAt: Long?,
     shape: RoundedCornerShape,
     onClick: () -> Unit,
@@ -349,6 +355,13 @@ private fun TaskCard(
             modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 6.dp, top = 14.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Icon(
+                imageVector = Icons.Default.Repeat,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = task.name.ifBlank { stringResource(R.string.task_name_hint) },
@@ -390,18 +403,26 @@ private fun TaskCard(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(3.dp))
-                Text(
-                    text = when {
-                        isRunning -> stringResource(R.string.task_running)
-                        lastRunAt != null -> stringResource(R.string.task_last_run_at, formatDateTime(lastRunAt))
-                        else -> stringResource(R.string.task_never_run)
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (isRunning) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                val lastRunText = when {
+                    isRunning -> stringResource(R.string.task_running)
+                    !executionsLoaded -> stringResource(R.string.loading_label)
+                    lastRunAt != null -> stringResource(R.string.task_last_run_at, formatDateTime(lastRunAt))
+                    else -> stringResource(R.string.task_never_run)
+                }
+                Crossfade(
+                    targetState = lastRunText to isRunning,
+                    animationSpec = tween(200),
+                    label = "taskLastRun",
+                ) { (text, running) ->
+                    Text(
+                        text = text,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (running) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Spacer(Modifier.width(8.dp))
             if (isRunning) {

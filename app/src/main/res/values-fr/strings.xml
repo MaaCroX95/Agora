@@ -574,6 +574,8 @@
     <string name="settings_appearance_desc">Thème, schéma de couleurs et couleur dynamique</string>
     <string name="appearance_title">Apparence</string>
     <string name="theme_mode">Mode du thème</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">Utiliser des fonds blancs purs dans les thèmes clairs et noirs purs dans les thèmes sombres</string>
     <string name="theme_mode_light">Clair</string>
     <string name="theme_mode_dark">Sombre</string>
     <string name="theme_mode_follow_device">Suivre l\'appareil</string>
@@ -656,6 +658,7 @@
     <string name="embedding_type_local">Local</string>
     <string name="cached">En cache</string>
     <string name="not_cached">Pas en cache</string>
+    <string name="cache_work_remaining">%1$d restants (%2$d/%3$d)</string>
     <string name="advanced_title">Avancé</string>
     <string name="search_context_label">Messages de contexte par résultat de recherche</string>
     <string name="search_context_desc">%1$d messages</string>
@@ -781,6 +784,7 @@
     <string name="about_links">Liens</string>
     <string name="about_developer">Développeur</string>
     <string name="about_developer_name">Newo Ether · Développeur indépendant</string>
+    <string name="about_website">Site web</string>
     <string name="about_github">GitHub</string>
     <string name="about_issue_tracker">Suivi des problèmes</string>
     <string name="about_contribute">Contribuer</string>
@@ -1242,4 +1246,6 @@
     <string name="delete_conversation_title">Supprimer la conversation ?</string>
     <string name="delete_conversation_from_message_confirm">La suppression de ce message supprimera toute la conversation. Cette action est irréversible.</string>
     <string name="composer_clear_failed">Le message a été envoyé, mais le brouillon n’a pas pu être effacé.</string>
+    <string name="models_show_provider_name">Afficher le nom du fournisseur</string>
+    <string name="models_show_provider_name_desc">Ajouter le nom du fournisseur après le nom du modèle.</string>
 </resources>

@@ -42,6 +42,7 @@ internal fun ChatManualCompactDialog(
     initialRetainCount: Int,
     enabledModels: Set<String>,
     modelAliases: Map<String, String>,
+    modelProviderNames: Map<String, Boolean>,
     customProviders: List<CustomProviderConfig>,
     isCompacting: Boolean,
     onCompact: (model: String, prompt: String, retainCount: Int) -> Unit,
@@ -82,7 +83,7 @@ internal fun ChatManualCompactDialog(
                     onExpandedChange = { if (!busy) modelMenu = it },
                 ) {
                     OutlinedTextField(
-                        value = modelDisplayName(model, modelAliases, customProviders),
+                        value = modelDisplayName(model, modelAliases, customProviders, modelProviderNames[model] != false),
                         onValueChange = {},
                         readOnly = true,
                         enabled = !busy,
@@ -107,7 +108,7 @@ internal fun ChatManualCompactDialog(
                         enabledModels.sorted().forEach { candidate ->
                             DropdownMenuItem(
                                 text = {
-                                    Text(modelDisplayName(candidate, modelAliases, customProviders))
+                                    Text(modelDisplayName(candidate, modelAliases, customProviders, modelProviderNames[candidate] != false))
                                 },
                                 onClick = {
                                     model = candidate

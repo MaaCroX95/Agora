@@ -34,6 +34,24 @@ internal fun MessageContextTopology.toUiChatMessageStub(): ChatMessage =
 private fun String.isSyntheticMessageId(): Boolean =
     startsWith(Constants.TOOL_MSG_PREFIX) || startsWith(Constants.RESULT_MSG_PREFIX)
 
+internal fun List<MessageSegment>?.withDurableModelAnswer(
+    participant: Participant,
+    durableText: String,
+): List<MessageSegment>? {
+    val segments = this
+    if (
+        participant != Participant.MODEL || durableText.isBlank() || segments == null ||
+        segments.any { it.type == "answer" && it.content.isNotBlank() }
+    ) {
+        return segments
+    }
+    val answerIndex = segments.indexOfFirst { it.type == "citation" || it.type == "error" }
+        .let { index -> if (index < 0) segments.size else index }
+    return segments.toMutableList().apply {
+        add(answerIndex, MessageSegment(type = "answer", content = durableText))
+    }
+}
+
 /**
  * The single projection from a durable message row into UI state.
  *
@@ -73,10 +91,16 @@ internal fun MessageEntity.toUiChatMessage(
         thoughts = thoughts,
         segments = terminalSegments,
     )
+    val formattedText = if (isSynthetic) "" else formatText(recovered.text)
+    val fallbackSegments = recovered.segments
+        ?: recovered.thoughts
+            ?.takeIf { thought -> !isSynthetic && thought.isNotBlank() }
+            ?.let { thought -> listOf(MessageSegment(type = "thought", content = thought)) }
+    val visibleSegments = fallbackSegments.withDurableModelAnswer(participant, formattedText)
     return ChatMessage(
         id = id,
         parentId = parentId,
-        text = if (isSynthetic) "" else formatText(recovered.text),
+        text = formattedText,
         images = if (isSynthetic) emptyList() else images,
         thoughts = if (isSynthetic) null else recovered.thoughts,
         thoughtTitle = if (isSynthetic) null else thoughtTitle,
@@ -99,18 +123,8 @@ internal fun MessageEntity.toUiChatMessage(
         timestamp = timestamp,
         thoughtTimeMs = if (isSynthetic) null else thoughtTimeMs,
         modelName = modelName,
-        segments = recovered.segments
-            ?: recovered.thoughts
-                ?.takeIf { thought -> !isSynthetic && thought.isNotBlank() }
-                ?.let { thought ->
-                    listOf(
-                        MessageSegment(
-                            type = "thought",
-                            content = thought,
-                        )
-                    )
-                },
-        toolCall = recovered.segments
+        segments = visibleSegments,
+        toolCall = visibleSegments
             ?.lastOrNull { segment -> segment.type == "tool" }
             ?.let { segment ->
                 ToolCallData(

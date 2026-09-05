@@ -57,6 +57,9 @@ the same predefined variable. For ordinary generation, the catalog enters the sy
 an explicitly placed variable; the request builder must never append or restore it implicitly. Empty,
 disabled, or absent catalog projection resolves to an empty string.
 
+System Prompt Editor presents `{skill_catalog}` with the same Material `Extension` (plugin) icon
+used by the Skills settings entry.
+
 Ordinary foreground generation, queued sends, Compact projection/accounting, Tasks, and Loops reuse
 the same immutable request builder and tool executor. Skills never create a second context builder,
 Provider call, queue, Run, settlement, or automation path. Compact's own tool-disabled generation

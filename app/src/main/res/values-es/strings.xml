@@ -574,6 +574,8 @@
     <string name="settings_appearance_desc">Tema, esquema de color y color dinámico</string>
     <string name="appearance_title">Apariencia</string>
     <string name="theme_mode">Modo de tema</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">Usar fondos blancos puros en temas claros y negros puros en temas oscuros</string>
     <string name="theme_mode_light">Claro</string>
     <string name="theme_mode_dark">Oscuro</string>
     <string name="theme_mode_follow_device">Seguir el dispositivo</string>
@@ -656,6 +658,7 @@
     <string name="embedding_type_local">Local</string>
     <string name="cached">En caché</string>
     <string name="not_cached">No en caché</string>
+    <string name="cache_work_remaining">%1$d restantes (%2$d/%3$d)</string>
     <string name="advanced_title">Avanzado</string>
     <string name="search_context_label">Mensajes de contexto por resultado de búsqueda</string>
     <string name="search_context_desc">%1$d mensajes</string>
@@ -781,6 +784,7 @@
     <string name="about_links">Enlaces</string>
     <string name="about_developer">Desarrollador</string>
     <string name="about_developer_name">Newo Ether · Desarrollador independiente</string>
+    <string name="about_website">Sitio web</string>
     <string name="about_github">GitHub</string>
     <string name="about_issue_tracker">Seguimiento de problemas</string>
     <string name="about_contribute">Contribuir</string>
@@ -1242,4 +1246,6 @@
     <string name="delete_conversation_title">¿Eliminar conversación?</string>
     <string name="delete_conversation_from_message_confirm">Al eliminar este mensaje se borrará toda la conversación. Esta acción no se puede deshacer.</string>
     <string name="composer_clear_failed">El mensaje se envió, pero no se pudo borrar el borrador.</string>
+    <string name="models_show_provider_name">Mostrar nombre del proveedor</string>
+    <string name="models_show_provider_name_desc">Añadir el nombre del proveedor al nombre del modelo.</string>
 </resources>

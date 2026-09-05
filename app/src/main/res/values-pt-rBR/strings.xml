@@ -574,6 +574,8 @@
     <string name="settings_appearance_desc">Tema, esquema de cores e cor dinâmica</string>
     <string name="appearance_title">Aparência</string>
     <string name="theme_mode">Modo do tema</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">Usar fundos brancos puros em temas claros e pretos puros em temas escuros</string>
     <string name="theme_mode_light">Claro</string>
     <string name="theme_mode_dark">Escuro</string>
     <string name="theme_mode_follow_device">Seguir o dispositivo</string>
@@ -656,6 +658,7 @@
     <string name="embedding_type_local">Local</string>
     <string name="cached">Em cache</string>
     <string name="not_cached">Sem cache</string>
+    <string name="cache_work_remaining">%1$d restantes (%2$d/%3$d)</string>
     <string name="advanced_title">Avançado</string>
     <string name="search_context_label">Mensagens de contexto por resultado de pesquisa</string>
     <string name="search_context_desc">%1$d mensagens</string>
@@ -781,6 +784,7 @@
     <string name="about_links">Links</string>
     <string name="about_developer">Desenvolvedor</string>
     <string name="about_developer_name">Newo Ether · Desenvolvedor solo</string>
+    <string name="about_website">Site</string>
     <string name="about_github">GitHub</string>
     <string name="about_issue_tracker">Rastreador de problemas</string>
     <string name="about_contribute">Contribuir</string>
@@ -1242,4 +1246,6 @@
     <string name="delete_conversation_title">Excluir conversa?</string>
     <string name="delete_conversation_from_message_confirm">Excluir esta mensagem removerá toda a conversa. Esta ação não pode ser desfeita.</string>
     <string name="composer_clear_failed">A mensagem foi enviada, mas não foi possível limpar o rascunho.</string>
+    <string name="models_show_provider_name">Mostrar nome do provedor</string>
+    <string name="models_show_provider_name_desc">Adicionar o nome do provedor após o nome do modelo.</string>
 </resources>

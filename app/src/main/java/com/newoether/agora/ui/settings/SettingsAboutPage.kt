@@ -200,6 +200,20 @@ fun SettingsAboutPage(viewModel: ChatViewModel, onBack: () -> Unit) {
             // -- Links --
             SettingsGroup(title = stringResource(R.string.about_links), items = listOf({
                 SettingsItem(
+                    headlineContent = { Text(stringResource(R.string.about_website)) },
+                    supportingContent = { Text("agora.newoether.com") },
+                    leadingContent = { Icon(Icons.Default.Language, contentDescription = null) },
+                    trailingContent = {
+                        Icon(
+                            Icons.Default.OpenInNew,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    modifier = Modifier.clickable { openUrl("https://agora.newoether.com") }
+                )
+            }, {
+                SettingsItem(
                     headlineContent = { Text(stringResource(R.string.about_github), modifier = Modifier.padding(vertical = 6.dp)) },
                     leadingContent = { Icon(Icons.Default.Code, contentDescription = null) },
                     trailingContent = {

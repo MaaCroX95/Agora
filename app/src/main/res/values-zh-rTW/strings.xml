@@ -477,6 +477,8 @@
     <string name="settings_appearance_desc">主題、配色方案和動態顏色</string>
     <string name="appearance_title">外觀</string>
     <string name="theme_mode">主題模式</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">淺色主題使用純白背景，深色主題使用純黑背景</string>
     <string name="theme_mode_light">淺色</string>
     <string name="theme_mode_dark">深色</string>
     <string name="theme_mode_follow_device">跟隨系統</string>
@@ -578,6 +580,7 @@
     <string name="embedding_type_local">本機</string>
     <string name="cached">已快取</string>
     <string name="not_cached">未快取</string>
+    <string name="cache_work_remaining">剩餘 %1$d（%2$d/%3$d）</string>
     <string name="advanced_title">進階</string>
     <string name="search_context_label">每筆搜尋結果的上下文字數</string>
     <string name="search_context_desc">%1$d 則訊息</string>
@@ -848,6 +851,7 @@
     <string name="about_links">連結</string>
     <string name="about_developer">開發者</string>
     <string name="about_developer_name">Newo Ether · 獨立開發者</string>
+    <string name="about_website">官方網站</string>
     <string name="about_github">GitHub</string>
     <string name="about_issue_tracker">問題追蹤</string>
     <string name="about_contribute">參與貢獻</string>
@@ -1250,4 +1254,6 @@
     <string name="delete_conversation_title">刪除對話？</string>
     <string name="delete_conversation_from_message_confirm">刪除此訊息將移除整個對話。此操作無法復原。</string>
     <string name="composer_clear_failed">訊息已傳送，但無法清除草稿。</string>
+    <string name="models_show_provider_name">顯示 Provider 名稱</string>
+    <string name="models_show_provider_name_desc">在模型名稱後附加服務供應商名稱。</string>
 </resources>

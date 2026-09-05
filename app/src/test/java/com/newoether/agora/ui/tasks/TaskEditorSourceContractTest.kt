@@ -71,7 +71,7 @@ class TaskEditorSourceContractTest {
             .substringAfter("taskEditorSession.requestHistoryReturn()")
             .substringBefore("drawerEnabled = !taskHistoryPreview.active")
         assertTrue(
-            returnHandler.indexOf("beginHistoryReturnRestore()") <
+            returnHandler.indexOf("beginHistoryReturnRestore") <
                 returnHandler.indexOf("topLevelPresentation.present(TopLevelPresentation.TASKS)"),
         )
         assertTrue(tasks.contains("editorSession: TaskEditorSessionViewModel"))

@@ -574,6 +574,8 @@
     <string name="settings_appearance_desc">السمة ونظام الألوان واللون الديناميكي</string>
     <string name="appearance_title">المظهر</string>
     <string name="theme_mode">وضع السمة</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">استخدام خلفيات بيضاء نقية في السمات الفاتحة وسوداء نقية في السمات الداكنة</string>
     <string name="theme_mode_light">فاتح</string>
     <string name="theme_mode_dark">داكن</string>
     <string name="theme_mode_follow_device">حسب الجهاز</string>
@@ -656,6 +658,7 @@
     <string name="embedding_type_local">محلي</string>
     <string name="cached">مخزّن مؤقتًا</string>
     <string name="not_cached">غير مخزّن مؤقتًا</string>
+    <string name="cache_work_remaining">متبقي: %1$d (%2$d/%3$d)</string>
     <string name="advanced_title">متقدم</string>
     <string name="search_context_label">رسائل السياق لكل نتيجة بحث</string>
     <string name="search_context_desc">%1$d رسالة</string>
@@ -781,6 +784,7 @@
     <string name="about_links">روابط</string>
     <string name="about_developer">المطوّر</string>
     <string name="about_developer_name">Newo Ether · مطوّر منفرد</string>
+    <string name="about_website">الموقع الإلكتروني</string>
     <string name="about_github">GitHub</string>
     <string name="about_issue_tracker">متتبّع المشكلات</string>
     <string name="about_contribute">المساهمة</string>
@@ -1242,4 +1246,6 @@
     <string name="delete_conversation_title">حذف المحادثة؟</string>
     <string name="delete_conversation_from_message_confirm">سيؤدي حذف هذه الرسالة إلى إزالة المحادثة بالكامل. لا يمكن التراجع عن هذا الإجراء.</string>
     <string name="composer_clear_failed">تم إرسال الرسالة، ولكن تعذر مسح المسودة.</string>
+    <string name="models_show_provider_name">إظهار اسم المزوّد</string>
+    <string name="models_show_provider_name_desc">إضافة اسم المزوّد بعد اسم النموذج.</string>
 </resources>

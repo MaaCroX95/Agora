@@ -3,8 +3,10 @@ package com.newoether.agora.ui.chat.message
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -14,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.res.stringResource
 import com.newoether.agora.R
 import com.newoether.agora.model.ChatMessage
@@ -29,13 +32,14 @@ import java.util.Locale
 internal fun MessageInfoDialog(
     message: ChatMessage,
     modelAliases: Map<String, String>,
+    showProviderName: Boolean,
     customProviders: List<CustomProviderConfig> = emptyList(),
     onDismiss: () -> Unit
 ) {
     val sdf = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
     val dateString = sdf.format(Date(message.timestamp))
     val modelDisplay = if (message.modelName != null) {
-        modelDisplayName(message.modelName, modelAliases, customProviders)
+        modelDisplayName(message.modelName, modelAliases, customProviders, showProviderName)
     } else stringResource(R.string.unknown)
     val tokenUsage = tokenUsagePresentation(message.tokenUsage)
     val inputTokens = when {
@@ -96,12 +100,17 @@ internal fun MessageInfoDialog(
 @Composable
 internal fun ContextCompactDeleteDialog(
     enabled: Boolean = true,
+    pending: Boolean = false,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!pending) onDismiss() },
+        properties = DialogProperties(
+            dismissOnBackPress = !pending,
+            dismissOnClickOutside = !pending,
+        ),
         title = {
             Text(
                 stringResource(R.string.delete_compact_message_title),
@@ -112,14 +121,20 @@ internal fun ContextCompactDeleteDialog(
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
-                enabled = enabled,
+                enabled = enabled && !pending,
                 colors = ButtonDefaults.textButtonColors(
                     contentColor = MaterialTheme.colorScheme.error,
                 ),
-            ) { Text(stringResource(R.string.delete)) }
+            ) {
+                if (pending) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 3.dp)
+                } else {
+                    Text(stringResource(R.string.delete))
+                }
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = enabled) {
+            TextButton(onClick = onDismiss, enabled = enabled && !pending) {
                 Text(stringResource(R.string.cancel))
             }
         },
@@ -131,12 +146,17 @@ internal fun ContextCompactDeleteDialog(
 internal fun MessageDeleteDialog(
     deletesConversation: Boolean = false,
     enabled: Boolean = true,
+    pending: Boolean = false,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!pending) onDismiss() },
+        properties = DialogProperties(
+            dismissOnBackPress = !pending,
+            dismissOnClickOutside = !pending,
+        ),
         title = {
             Text(
                 stringResource(
@@ -157,12 +177,18 @@ internal fun MessageDeleteDialog(
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
-                enabled = enabled,
+                enabled = enabled && !pending,
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-            ) { Text(stringResource(R.string.delete)) }
+            ) {
+                if (pending) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 3.dp)
+                } else {
+                    Text(stringResource(R.string.delete))
+                }
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = enabled) {
+            TextButton(onClick = onDismiss, enabled = enabled && !pending) {
                 Text(stringResource(R.string.cancel))
             }
         }

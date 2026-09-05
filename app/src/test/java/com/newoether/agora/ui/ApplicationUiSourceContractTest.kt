@@ -228,7 +228,9 @@ class ApplicationUiSourceContractTest {
         assertTrue(source.contains("val gradientWidthPx = with(density) { 40.dp.toPx() }"))
         assertTrue(source.contains("if (!isExpanded) Spacer(modifier = Modifier.height(12.dp))"))
         assertTrue(source.contains("expandedHeightPx = with(density) { 44.dp.toPx() }"))
-        assertTrue(source.contains("verticalBottomOverlayFade("))
+        assertTrue(source.contains("modifier = Modifier.fillMaxSize().gradientBlur("))
+        assertTrue(source.contains("blurAtTopDp = if (blurEffectsEnabled) 8f else 0f"))
+        assertTrue(masks.contains("Modifier.verticalBottomOverlayFade(fadeHeightDp, bottomOverlayHeight, renderEffect)"))
         assertTrue(source.contains("fadeHeightDp = 40f"))
         assertTrue(source.contains("bottomOverlayHeight = bottomBarHeight + with(density) { outerSpacerHeightPx.toDp() } + 12.dp"))
         assertTrue(source.contains("if (isExpanded && totalH > 0f)"))
@@ -539,8 +541,8 @@ class ApplicationUiSourceContractTest {
         assertTrue(groupIndices.zipWithNext().all { (current, next) -> current < next })
         assertFalse(appearance.contains("R.string.appearance_interface"))
         assertEquals(4, Regex("SettingsGroup\\(").findAll(appearance).count())
-        assertEquals(14, Regex("SettingsItem\\(").findAll(appearance).count())
-        assertEquals(14, Regex("leadingContent\\s*=").findAll(appearance).count())
+        assertEquals(15, Regex("SettingsItem\\(").findAll(appearance).count())
+        assertEquals(15, Regex("leadingContent\\s*=").findAll(appearance).count())
         listOf(
             "Palette",
             "Style",
@@ -819,7 +821,7 @@ class ApplicationUiSourceContractTest {
                 .count(),
         )
         assertEquals(1, Regex("if \\(!currentState && !isRunning\\)").findAll(source).count())
-        assertTrue(mediaDialog.contains("if (!currentState && !isRunning) onHidden()"))
+        assertTrue(mediaDialog.contains("if (!currentState && !isRunning && latestTarget == null) onHidden()"))
         assertTrue(source.contains(
             "topLevelPresentation.release(TopLevelPresentation.MEDIA_PREVIEW)"
         ))

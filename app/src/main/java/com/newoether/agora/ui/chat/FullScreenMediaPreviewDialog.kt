@@ -11,10 +11,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
@@ -24,6 +26,21 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.newoether.agora.ui.components.DialogWindowEdgeToEdge
 import com.newoether.agora.ui.components.DialogWindowNoSystemDim
+import java.util.UUID
+
+internal data class MediaPreviewTarget(
+    val urls: List<String>,
+    val index: Int,
+    val requestId: UUID = UUID.randomUUID(),
+)
+
+/** Retention supplies exit content only; a new open must initialize from its current target. */
+@Composable
+internal fun rememberMediaPreviewTargetForExit(current: MediaPreviewTarget?): MediaPreviewTarget? {
+    var retained by remember { mutableStateOf<MediaPreviewTarget?>(null) }
+    SideEffect { if (current != null) retained = current }
+    return current ?: retained
+}
 
 private const val MEDIA_PREVIEW_BACKDROP_ENTER_DURATION_MS = 220
 private const val MEDIA_PREVIEW_BACKDROP_EXIT_DURATION_MS = 180
@@ -34,8 +51,7 @@ private const val MEDIA_PREVIEW_BACKDROP_EXIT_DURATION_MS = 180
  */
 @Composable
 internal fun FullScreenMediaPreviewDialog(
-    currentUrls: List<String>?,
-    currentIndex: Int,
+    currentTarget: MediaPreviewTarget?,
     currentPdfPages: List<String>,
     currentPdfSelectedPages: Set<Int>,
     currentPdfSelectionEnabled: Boolean,
@@ -43,13 +59,13 @@ internal fun FullScreenMediaPreviewDialog(
     enter: EnterTransition,
     exit: ExitTransition,
     onHidden: () -> Unit,
-    onClose: () -> Unit,
-    onNavigate: (Int) -> Unit,
+    onClose: (MediaPreviewTarget) -> Unit,
+    onNavigate: (MediaPreviewTarget, Int) -> Unit,
     onMessage: (String) -> Unit,
     hapticsEnabled: Boolean,
 ) {
     val visibilityTransition = updateTransition(
-        targetState = currentUrls != null,
+        targetState = currentTarget != null,
         label = "mediaPreviewDialog",
     )
     val backdropAlpha by visibilityTransition.animateFloat(
@@ -66,23 +82,21 @@ internal fun FullScreenMediaPreviewDialog(
     ) { visible ->
         if (visible) 1f else 0f
     }
+    val latestTarget by rememberUpdatedState(currentTarget)
     LaunchedEffect(visibilityTransition) {
         snapshotFlow {
             visibilityTransition.currentState to visibilityTransition.isRunning
         }.collect { (currentState, isRunning) ->
-            if (!currentState && !isRunning) onHidden()
+            if (!currentState && !isRunning && latestTarget == null) onHidden()
         }
     }
 
-    var retainedUrls by remember { mutableStateOf<List<String>?>(null) }
-    var retainedIndex by remember { mutableIntStateOf(0) }
+    val target = rememberMediaPreviewTargetForExit(currentTarget)
     var retainedPdfPages by remember { mutableStateOf<List<String>>(emptyList()) }
     var retainedPdfSelectionEnabled by remember { mutableStateOf(false) }
     var retainedPdfTogglePage by remember { mutableStateOf<((Int) -> Unit)?>(null) }
-    LaunchedEffect(currentUrls) {
-        currentUrls?.let { urls ->
-            retainedUrls = urls
-            retainedIndex = currentIndex
+    SideEffect {
+        if (currentTarget != null) {
             retainedPdfPages = currentPdfPages
             retainedPdfSelectionEnabled = currentPdfSelectionEnabled
             retainedPdfTogglePage =
@@ -90,7 +104,7 @@ internal fun FullScreenMediaPreviewDialog(
         }
     }
 
-    val urls = retainedUrls ?: return
+    if (target == null) return
     if (
         !visibilityTransition.currentState &&
         !visibilityTransition.targetState &&
@@ -98,8 +112,13 @@ internal fun FullScreenMediaPreviewDialog(
     ) {
         return
     }
+    val pdfPages = if (currentTarget != null) currentPdfPages else retainedPdfPages
+    val pdfSelectionEnabled = if (currentTarget != null) currentPdfSelectionEnabled else retainedPdfSelectionEnabled
+    val togglePdfPage = if (currentTarget != null) {
+        currentPdfTogglePage.takeIf { currentPdfSelectionEnabled }
+    } else retainedPdfTogglePage
     Dialog(
-        onDismissRequest = onClose,
+        onDismissRequest = { onClose(target) },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
             decorFitsSystemWindows = false,
@@ -122,24 +141,21 @@ internal fun FullScreenMediaPreviewDialog(
                 exit = exit,
                 modifier = Modifier.fillMaxSize(),
             ) {
-                FullScreenMediaViewer(
-                    urls = urls,
-                    initialIndex = retainedIndex,
-                    pdfPages = retainedPdfPages,
-                    pdfSelectedPages = if (
-                        retainedPdfPages.isNotEmpty() &&
-                        retainedPdfSelectionEnabled
-                    ) {
-                        currentPdfSelectedPages
-                    } else {
-                        null
-                    },
-                    onTogglePdfPage = retainedPdfTogglePage,
-                    onClose = onClose,
-                    onNavigate = onNavigate,
-                    onMessage = onMessage,
-                    hapticsEnabled = hapticsEnabled,
-                )
+                key(target.requestId) {
+                    FullScreenMediaViewer(
+                        urls = target.urls,
+                        initialIndex = target.index,
+                        pdfPages = pdfPages,
+                        pdfSelectedPages = currentPdfSelectedPages.takeIf {
+                            pdfPages.isNotEmpty() && pdfSelectionEnabled
+                        },
+                        onTogglePdfPage = togglePdfPage,
+                        onClose = { onClose(target) },
+                        onNavigate = { onNavigate(target, it) },
+                        onMessage = onMessage,
+                        hapticsEnabled = hapticsEnabled,
+                    )
+                }
             }
         }
     }

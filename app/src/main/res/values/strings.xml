@@ -622,6 +622,8 @@
     <string name="appearance_motion_feedback">Motion &amp; Feedback</string>
     <string name="appearance_chat_display">Chat Display</string>
     <string name="theme_mode">Theme Mode</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">Use pure white backgrounds in light themes and pure black in dark themes</string>
     <string name="theme_mode_light">Light</string>
     <string name="theme_mode_dark">Dark</string>
     <string name="theme_mode_follow_device">Follow Device</string>
@@ -709,6 +711,7 @@
     <string name="embedding_type_local">Local</string>
     <string name="cached">Cached</string>
     <string name="not_cached">Not cached</string>
+    <string name="cache_work_remaining">%1$d remaining (%2$d/%3$d)</string>
     <string name="advanced_title">Advanced</string>
     <string name="search_context_label">Context messages per search hit</string>
     <string name="search_context_desc">%1$d messages</string>
@@ -840,6 +843,7 @@
     <string name="about_links">Links</string>
     <string name="about_developer">Developer</string>
     <string name="about_developer_name">Newo Ether · Solo developer</string>
+    <string name="about_website">Website</string>
     <string name="about_github">GitHub</string>
     <string name="about_issue_tracker">Issue Tracker</string>
     <string name="about_contribute">Contribute</string>
@@ -1243,4 +1247,6 @@
     <string name="learn_more">Learn more...</string>
     <string name="local_model_limitations_title">Limitations of Local Models</string>
     <string name="local_model_limitations_body">Local models are limited by the memory available on mobile devices. Context size is one of the main constraints. Context often includes the system prompt, tool or function definitions, and skills. To reduce initial context use, open the three-dot menu beside the model selector and enable Low Context Mode.</string>
+    <string name="models_show_provider_name">Show Provider name</string>
+    <string name="models_show_provider_name_desc">Append the Provider name to the model name.</string>
 </resources>

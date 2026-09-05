@@ -36,6 +36,18 @@ private enum class ComposerActionIcon {
     SEND,
 }
 
+internal fun composerSendActionEnabled(
+    submission: ConversationComposerSubmissionSnapshot,
+    isSwitching: Boolean,
+    isStopping: Boolean,
+    showStop: Boolean,
+    canSend: Boolean,
+): Boolean = when {
+    isSwitching || isStopping || submission.isSubmitting || submission.isAcceptedPendingClear -> false
+    submission.isWaiting -> true
+    else -> showStop || canSend
+}
+
 @Composable
 internal fun ComposerSendButton(
     textFieldState: TextFieldState,
@@ -58,7 +70,13 @@ internal fun ComposerSendButton(
     val canSend = snapshot.loaded &&
         (textFieldState.text.isNotBlank() || snapshot.attachments.isNotEmpty()) &&
         isModelValid && !isSwitching && !isStopping && !submission.isFrozen
-    val isActionable = submission.isWaiting || showStop || canSend
+    val isActionable = composerSendActionEnabled(
+        submission = submission,
+        isSwitching = isSwitching,
+        isStopping = isStopping,
+        showStop = showStop,
+        canSend = canSend,
+    )
     val icon = when {
         isStopping || submission.isSubmitting || submission.isAcceptedPendingClear ->
             ComposerActionIcon.BUSY
@@ -87,6 +105,7 @@ internal fun ComposerSendButton(
 
     Surface(
         onClick = {
+            if (!isActionable) return@Surface
             when {
                 submission.isWaiting -> {
                     haptics.selection()

@@ -155,13 +155,20 @@ class ChatViewModel(
             conversations = convRepo,
             scope = viewModelScope,
             stopLoop = { conversationId -> loopManager.stopLoop(conversationId) },
-            withConversationLock = { conversationId, block ->
-                conversationExecutionCoordinator.withConversationLock(conversationId) { block() }
+            tryWithConversationLock = { conversationId, block ->
+                conversationExecutionCoordinator.tryWithConversationLock(conversationId) { block() }
             },
             removeRuntime = generationRegistry::remove,
             stopVisibleGeneration = generationStopAdapter::stopVisibleConversation,
             settleDeletedSelectedConversation =
                 selectionController::settleDeletedSelectedConversation,
+            beginSelectedDeleteTransition = { conversationId ->
+                selectionController.beginTreeMutation(
+                    conversationId = conversationId,
+                    scrollToTarget = false,
+                )
+            },
+            abortSelectedDeleteTransition = selectionController::failTreeMutation,
             isDeleteLocked = { conversationId ->
                 conversationComposerSubmission.isFrozen(conversationId)
             },
@@ -746,8 +753,8 @@ class ChatViewModel(
                 }
             },
             onUserMessagePersisted = ragManager::indexMessageForRag,
-            onTreeMutationStart = { scrollToTarget ->
-                selectionController.beginTreeMutation(scrollToTarget)
+            onTreeMutationStart = { conversationId, scrollToTarget ->
+                selectionController.beginTreeMutation(conversationId, scrollToTarget)
             },
             onTreeMutationSettling = selectionController::markTreeMutationReady,
             onTreeMutationFailed = selectionController::failTreeMutation,
@@ -821,8 +828,9 @@ class ChatViewModel(
         provider: String,
         modelId: String,
         alias: String,
+        showProviderName: Boolean? = null,
     ) {
-        customModelConfiguration.updateModel(oldModelId, provider, modelId, alias)
+        customModelConfiguration.updateModel(oldModelId, provider, modelId, alias, showProviderName)
     }
 
     fun deleteCustomModel(modelId: String) {
@@ -867,16 +875,16 @@ class ChatViewModel(
 
     fun createNewChat() = selectionController.createNewChat()
 
-    internal fun restoreNewChatDestination() =
-        selectionController.restoreNewChatDestination()
+    internal fun restoreNewChatDestination(onFailure: (() -> Unit)? = null) =
+        selectionController.restoreNewChatDestination(onFailure)
 
     fun selectConversation(
         id: String,
         hapticOnCompletion: Boolean = true,
     ) = selectionController.selectConversation(id, hapticOnCompletion)
 
-    internal fun restoreConversationDestination(id: String) =
-        selectionController.restoreConversationDestination(id)
+    internal fun restoreConversationDestination(id: String, onFailure: (() -> Unit)? = null) =
+        selectionController.restoreConversationDestination(id, onFailure)
 
     fun forkConversationFrom(messageId: String? = null) =
         conversationForkShareController.fork(messageId)

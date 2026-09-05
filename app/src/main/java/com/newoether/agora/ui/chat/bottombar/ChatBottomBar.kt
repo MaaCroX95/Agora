@@ -103,6 +103,7 @@ internal fun ChatBottomBar(
     enabledModels: Set<String>,
     selectedModel: String,
     modelAliases: Map<String, String> = emptyMap(),
+    modelProviderNames: Map<String, Boolean> = emptyMap(),
     customProviders: List<CustomProviderConfig> = emptyList(),
     codeExecutionEnabled: Boolean = false,
     googleSearchEnabled: Boolean = false,
@@ -192,7 +193,7 @@ internal fun ChatBottomBar(
             withContext(NonCancellable) { composerController.release(ownerId) }
         }
     }
-    fun importUris(ownerId: String, uris: List<Uri>, forcedType: String? = null) {
+    fun importUris(ownerId: String, uris: List<Uri>, forcedType: String? = null, emitSuccessHaptic: Boolean = true) {
         if (uris.isEmpty() || submissionController.snapshot(ownerId).isFrozen) return
         activityLaunchScope.launch {
             val (attachments, rejected) = inspectAttachmentIngress(
@@ -210,7 +211,7 @@ internal fun ChatBottomBar(
                     if (submissionController.snapshot(ownerId).isFrozen) break
                     imported = composerController.importAttachment(ownerId, attachment) || imported
                 }
-            } && imported) haptics.selection()
+            } && imported && emitSuccessHaptic) haptics.selection()
         }
     }
     val clipboardImageReceiver = remember(context, composerOwnerId, composer) {
@@ -226,7 +227,7 @@ internal fun ChatBottomBar(
                     if (isImage) imageUris += uri
                     isImage
                 }
-                importUris(composerOwnerId, imageUris, "image")
+                importUris(composerOwnerId, imageUris, "image", emitSuccessHaptic = false)
                 return remaining
             }
         }
@@ -511,7 +512,7 @@ internal fun ChatBottomBar(
                 )
                 val capabilityControlsEnabled = !lowContextModeEnabled
                 val displayText = when {
-                    isModelValid -> modelDisplayName(selectedModel, modelAliases, customProviders)
+                    isModelValid -> modelDisplayName(selectedModel, modelAliases, customProviders, modelProviderNames[selectedModel] != false)
                     enabledModels.isNotEmpty() -> stringResource(R.string.select_model)
                     else -> stringResource(R.string.no_model_selected)
                 }
@@ -582,7 +583,7 @@ internal fun ChatBottomBar(
                             sortedModels.forEach { model ->
                                 DropdownMenuItem(
                                     text = {
-                                        Text(modelDisplayName(model, modelAliases, customProviders))
+                                        Text(modelDisplayName(model, modelAliases, customProviders, modelProviderNames[model] != false))
                                     },
                                     onClick = {
                                         haptics.selection()

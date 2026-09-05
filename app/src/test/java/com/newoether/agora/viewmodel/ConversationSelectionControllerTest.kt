@@ -17,6 +17,7 @@ import io.mockk.mockkObject
 import io.mockk.unmockkObject
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
@@ -29,6 +30,36 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConversationSelectionControllerTest {
+    @Test
+    fun cancelledMutationFadeReleasesItsOwnOverlay() = runTest {
+        val fixture = Fixture(backgroundScope, fadeDelay = { CompletableDeferred<Unit>().await() })
+        fixture.controller.publishAcceptedConversation("conversation", "provider:model")
+        val mutation = backgroundScope.launch { fixture.controller.beginTreeMutation() }
+        runCurrent()
+        assertTrue(fixture.controller.isSwitching.value)
+
+        mutation.cancel()
+        runCurrent()
+
+        assertFalse(fixture.controller.isSwitching.value)
+        assertEquals("conversation", fixture.controller.currentConversationId.value)
+    }
+
+    @Test
+    fun cancelledMutationFadeCannotReleaseANewerSelectionOverlay() = runTest {
+        val fixture = Fixture(backgroundScope, fadeDelay = { CompletableDeferred<Unit>().await() })
+        fixture.controller.publishAcceptedConversation("conversation", "provider:model")
+        val mutation = backgroundScope.launch { fixture.controller.beginTreeMutation() }
+        runCurrent()
+        fixture.controller.createNewChat()
+
+        mutation.cancel()
+        runCurrent()
+
+        assertTrue(fixture.controller.isSwitching.value)
+        assertTrue(fixture.controller.isNewChatMode.value)
+    }
+
     @Test
     fun selectPublishesConversationAndModelBeforeUiReadiness() = runTest {
         val fixture = Fixture(backgroundScope)
@@ -405,6 +436,23 @@ class ConversationSelectionControllerTest {
     }
 
     @Test
+    fun staleConversationMutationCannotCoverTheCurrentConversation() = runTest {
+        var fadeCount = 0
+        val fixture = Fixture(backgroundScope, fadeDelay = { fadeCount += 1 })
+        fixture.controller.publishAcceptedConversation("current", "provider:model")
+
+        val requestId = fixture.controller.beginTreeMutation(
+            conversationId = "stale",
+            scrollToTarget = false,
+        )
+
+        assertNull(requestId)
+        assertEquals(0, fadeCount)
+        assertFalse(fixture.controller.isSwitching.value)
+        assertEquals("current", fixture.controller.currentConversationId.value)
+    }
+
+    @Test
     fun deletedSelectedConversationEntersNewChatAfterSettlement() = runTest {
         val fixture = Fixture(backgroundScope)
         fixture.controller.publishAcceptedConversation("deleted", "old-model")
@@ -502,12 +550,14 @@ class ConversationSelectionControllerTest {
             fixture.controller.publishAcceptedConversation("current", "current-model")
             coEvery { fixture.conversations.getConversation("missing") } returns null
 
-            fixture.controller.selectConversation("missing")
+            var failures = 0
+            fixture.controller.restoreConversationDestination("missing") { failures += 1 }
             runCurrent()
 
             assertEquals("current", fixture.controller.currentConversationId.value)
             assertFalse(fixture.controller.isNewChatMode.value)
             assertNull(fixture.controller.switchingScrollRequest.value)
+            assertEquals(1, failures)
             coVerify(exactly = 1) { fixture.conversations.getConversation("missing") }
         } finally {
             unmockkObject(DebugLog)
@@ -523,17 +573,20 @@ class ConversationSelectionControllerTest {
             coEvery { fixture.conversations.getConversation("conversation") } returns
                 ChatEntity("conversation", "Title")
 
-            fixture.controller.selectConversation("conversation")
+            var failures = 0
+            fixture.controller.restoreConversationDestination("conversation") { failures += 1 }
             runCurrent()
             val request = checkNotNull(fixture.controller.switchingScrollRequest.value)
 
             fixture.controller.failConversationLoad("stale-conversation")
             assertEquals(request, fixture.controller.switchingScrollRequest.value)
+            assertEquals(0, failures)
 
             fixture.controller.failConversationLoad("conversation")
             assertNull(fixture.controller.switchingScrollRequest.value)
             assertEquals("conversation", fixture.controller.currentConversationId.value)
             assertFalse(fixture.controller.isNewChatMode.value)
+            assertEquals(1, failures)
         } finally {
             unmockkObject(DebugLog)
         }
@@ -615,6 +668,43 @@ class ConversationSelectionControllerTest {
             fixture.conversations.selectRunBranch(any(), any(), any(), any())
         }
         fixture.registry.remove("conversation")
+    }
+
+    @Test
+    fun navigationAfterRestorePublicationRejectsLateCompletionAndReportsCancellationOnce() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.controller.publishAcceptedConversation("history", "current-model")
+        coEvery { fixture.conversations.getConversation("origin") } returns ChatEntity("origin", "Origin")
+        var failures = 0
+        fixture.controller.restoreConversationDestination("origin") { failures += 1 }
+        runCurrent()
+        val oldRequest = requireNotNull(fixture.controller.switchingScrollRequest.value)
+        assertEquals("origin", fixture.controller.currentConversationId.value)
+        assertEquals(0, failures)
+
+        fixture.controller.createNewChat()
+        assertEquals(1, failures)
+        assertFalse(fixture.controller.completeSwitchingScroll(oldRequest.id))
+        runCurrent()
+        assertTrue(fixture.controller.isNewChatMode.value)
+        assertNull(fixture.controller.currentConversationId.value)
+        assertEquals(1, failures)
+    }
+
+    @Test
+    fun cancelledNewChatRestoreReportsFailureWithoutCancellingNewerSelection() = runTest {
+        val fadeGate = CompletableDeferred<Unit>()
+        val fixture = Fixture(backgroundScope, fadeDelay = { fadeGate.await() })
+        var failures = 0
+        fixture.controller.restoreNewChatDestination { failures += 1 }
+        runCurrent()
+        fixture.controller.selectConversation("newer")
+        coEvery { fixture.conversations.getConversation("newer") } returns ChatEntity("newer", "Newer")
+        fadeGate.complete(Unit)
+        runCurrent()
+        assertEquals("newer", fixture.controller.currentConversationId.value)
+        assertTrue(fixture.controller.isSwitching.value)
+        assertEquals(1, failures)
     }
 
     private class Fixture(

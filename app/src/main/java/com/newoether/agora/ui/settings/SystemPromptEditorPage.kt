@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -73,7 +74,7 @@ private fun variableIcon(key: String): ImageVector = when (key) {
     PredefinedVariables.SENT_TIME -> Icons.Default.History
     PredefinedVariables.SENT_DATE -> Icons.Default.CalendarMonth
     PredefinedVariables.ACTIVE_MEMORY -> Icons.Default.Memory
-    PredefinedVariables.SKILL_CATALOG -> Icons.Default.Info
+    PredefinedVariables.SKILL_CATALOG -> Icons.Default.Extension
     PredefinedVariables.CURRENT_MODEL_ID,
     PredefinedVariables.MESSAGE_MODEL_ID,
     PredefinedVariables.MODEL_ID -> Icons.Default.Info

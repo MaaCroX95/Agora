@@ -1,10 +1,12 @@
 package com.newoether.agora.ui.chat
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,7 +30,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.newoether.agora.R
+import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.ui.components.clearFocusOnTap
 import com.newoether.agora.viewmodel.ChatViewModel
@@ -73,30 +77,65 @@ internal fun ChatRenameDialog(
     )
 }
 
-/** Delete-conversation confirmation dialog. */
+/** Delete-conversation confirmation and blocker for the entire pending operation. */
 @Composable
 internal fun ChatDeleteConfirmDialog(
+    phase: ChatDeleteDialogPhase,
     onConfirm: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
 ) {
+    val pending = phase == ChatDeleteDialogPhase.PENDING
     AlertDialog(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = !pending,
+            dismissOnClickOutside = !pending,
+        ),
         title = { Text(stringResource(R.string.delete_chat), fontWeight = FontWeight.Bold) },
-        text = { Text(stringResource(R.string.delete_chat_confirm)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.delete_chat_confirm))
+                if (phase == ChatDeleteDialogPhase.FAILED) {
+                    Text(
+                        text = stringResource(R.string.tool_state_failed),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
+        },
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                enabled = !pending,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
             ) {
-                Text(stringResource(R.string.delete))
+                if (pending) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 3.dp,
+                    )
+                } else {
+                    Text(
+                        stringResource(
+                            if (phase == ChatDeleteDialogPhase.FAILED) {
+                                R.string.retry
+                            } else {
+                                R.string.delete
+                            },
+                        ),
+                    )
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, enabled = !pending) {
                 Text(stringResource(R.string.cancel))
             }
-        }
+        },
     )
 }
 

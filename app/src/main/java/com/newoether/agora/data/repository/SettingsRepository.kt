@@ -5,11 +5,14 @@ import com.newoether.agora.model.ContextBudget
 
 import com.newoether.agora.data.ApiKeyEntry
 import com.newoether.agora.data.BuiltInPrompts
+import com.newoether.agora.data.DEFAULT_COLOR_SCHEME
 import com.newoether.agora.data.DEFAULT_CONTEXT_COMPACT_ENABLED
 import com.newoether.agora.data.DEFAULT_CONTEXT_COMPACT_RETAIN_COUNT
 import com.newoether.agora.data.DEFAULT_CONTEXT_COMPACT_THRESHOLD_PERCENT
+import com.newoether.agora.data.DEFAULT_DYNAMIC_COLOR
 import com.newoether.agora.data.DEFAULT_LOCAL_MODEL_IDLE_RETENTION_MINUTES
 import com.newoether.agora.data.DEFAULT_LOCAL_LOW_CONTEXT_MODE_ENABLED
+import com.newoether.agora.data.DEFAULT_SCHEME_STYLE
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.CustomEndpointProtocol
 import com.newoether.agora.data.CustomEndpointResolution
@@ -118,6 +121,7 @@ class SettingsRepository(
     val customModels: StateFlow<Set<String>> = hot(settingsManager.customModels, emptySet())
     val enabledModels: StateFlow<Set<String>> = hot(settingsManager.enabledModels, emptySet())
     val modelAliases: StateFlow<Map<String, String>> = hot(settingsManager.modelAliases, emptyMap())
+    val modelProviderNames: StateFlow<Map<String, Boolean>> = hot(settingsManager.modelProviderNames, emptyMap())
     val apiKeys: StateFlow<List<ApiKeyEntry>> = hot(settingsManager.apiKeys, emptyList())
     val activeApiKeyIds: StateFlow<Map<String, String>> = hot(settingsManager.activeApiKeyIds, emptyMap())
     val systemPrompts: StateFlow<List<SystemPromptEntry>> = hot(settingsManager.systemPrompts, emptyList())
@@ -220,8 +224,9 @@ class SettingsRepository(
     val defaultPresencePenalty: StateFlow<Float?> = hot(settingsManager.defaultPresencePenalty, null)
     val conversationSettings: StateFlow<Map<String, ConversationSettings>> = hotConversationSettings()
     val themeMode: StateFlow<String> = hot(settingsManager.themeMode, "FOLLOW_DEVICE")
-    val colorScheme: StateFlow<String> = hot(settingsManager.colorScheme, "DEFAULT")
-    val dynamicColor: StateFlow<Boolean> = hot(settingsManager.dynamicColor, true)
+    val amoledEnabled: StateFlow<Boolean> = hot(settingsManager.amoledEnabled, false)
+    val colorScheme: StateFlow<String> = hot(settingsManager.colorScheme, DEFAULT_COLOR_SCHEME)
+    val dynamicColor: StateFlow<Boolean> = hot(settingsManager.dynamicColor, DEFAULT_DYNAMIC_COLOR)
     val blurEffectsEnabled: StateFlow<Boolean> = hot(settingsManager.blurEffectsEnabled, true)
     val reduceMotion: StateFlow<Boolean> = hot(settingsManager.reduceMotion, false)
     val stickToBottom: StateFlow<Boolean> = hot(settingsManager.stickToBottom, true)
@@ -236,7 +241,7 @@ class SettingsRepository(
     )
     val autoExpandActiveGroup: StateFlow<Boolean> =
         hot(settingsManager.autoExpandActiveGroup, true)
-    val schemeStyle: StateFlow<String> = hot(settingsManager.schemeStyle, "TONAL_SPOT")
+    val schemeStyle: StateFlow<String> = hot(settingsManager.schemeStyle, DEFAULT_SCHEME_STYLE)
     val fontPreference: StateFlow<String> = hot(settingsManager.fontPreference, "app_default")
     val customFontPath: StateFlow<String> = hot(settingsManager.customFontPath, "")
     val customFontName: StateFlow<String> = hot(settingsManager.customFontName, "")
@@ -283,19 +288,19 @@ class SettingsRepository(
         }
     }
 
-    fun updateModelAlias(model: String, alias: String) {
+    fun updateModelAlias(model: String, alias: String, showProviderName: Boolean? = null) {
         scope.launch {
-            settingsManager.updateModelAlias(model, alias)
+            settingsManager.updateModelAlias(model, alias, showProviderName)
         }
     }
 
-    fun addCustomModel(provider: String, modelName: String, alias: String = "") {
+    fun addCustomModel(provider: String, modelName: String, alias: String = "", showProviderName: Boolean = true) {
         val normalizedProvider = stableProviderReference(provider)
         val normalizedName = modelName.trim()
         if (normalizedProvider.isEmpty() || normalizedName.isEmpty()) return
         val modelId = ModelId(normalizedProvider, normalizedName).prefixed
         scope.launch {
-            settingsManager.addCustomModel(modelId, alias)
+            settingsManager.addCustomModel(modelId, alias, showProviderName)
         }
     }
 
@@ -310,7 +315,8 @@ class SettingsRepository(
         oldModelId: String,
         newModelId: String?,
         alias: String,
-    ) = settingsManager.replaceCustomModel(oldModelId, newModelId, alias)
+        showProviderName: Boolean? = null,
+    ) = settingsManager.replaceCustomModel(oldModelId, newModelId, alias, showProviderName)
 
     // API keys
     fun addApiKey(name: String, key: String, provider: String) {
@@ -688,6 +694,7 @@ class SettingsRepository(
     fun setDefaultFrequencyPenalty(v: Float?) = scope.launch { settingsManager.saveDefaultFrequencyPenalty(v) }
     fun setDefaultPresencePenalty(v: Float?) = scope.launch { settingsManager.saveDefaultPresencePenalty(v) }
     fun setThemeMode(mode: String) = scope.launch { settingsManager.saveThemeMode(mode) }
+    fun setAmoledEnabled(enabled: Boolean) = scope.launch { settingsManager.saveAmoledEnabled(enabled) }
     fun setColorScheme(scheme: String) = scope.launch { settingsManager.saveColorScheme(scheme) }
     fun setDynamicColor(enabled: Boolean) = scope.launch { settingsManager.saveDynamicColor(enabled) }
     fun setBlurEffectsEnabled(enabled: Boolean) = scope.launch { settingsManager.saveBlurEffectsEnabled(enabled) }

@@ -21,7 +21,7 @@ import org.junit.Test
 
 class UiMessageProjectionTest {
     @Test
-    fun branchMutationProjectionPreservesPersistedThoughtAndToolSegments() {
+    fun branchMutationProjectionRecoversDurableAnswerMissingFromSegments() {
         val segments = listOf(
             MessageSegment(
                 type = "thought",
@@ -47,7 +47,7 @@ class UiMessageProjectionTest {
         val projected = entity.toUiChatMessage { value -> "formatted:$value" }
 
         assertEquals("formatted:answer", projected.text)
-        assertEquals(segments, projected.segments)
+        assertEquals(segments + MessageSegment("answer", "formatted:answer"), projected.segments)
         assertEquals("shell", projected.toolCall?.toolName)
         assertEquals("""{"command":"pwd"}""", projected.toolCall?.arguments)
         assertEquals("formatted:workspace", projected.toolCall?.result)
@@ -78,8 +78,33 @@ class UiMessageProjectionTest {
 
         val projected = entity.toUiChatMessage { it }
 
-        assertEquals(listOf(segment), projected.segments)
+        assertEquals(listOf(MessageSegment("answer", answer), segment), projected.segments)
         assertEquals(citation, projected.citationRecords().single())
+    }
+
+    @Test
+    fun durableAnswerSurvivesLegacyThoughtOnlyFallback() {
+        val projected = messageEntity(
+            id = "assistant",
+            text = "durable answer",
+            thoughts = "reasoning",
+            toolCallJson = null,
+        ).toUiChatMessage { it }
+
+        assertEquals(listOf("thought", "answer"), projected.segments?.map { it.type })
+        assertEquals("durable answer", projected.segments?.last()?.content)
+    }
+
+    @Test
+    fun structuredAnswerPreventsDurableTextDuplication() {
+        val answer = MessageSegment(type = "answer", content = "structured")
+        val projected = messageEntity(
+            id = "assistant",
+            text = "durable mirror",
+            toolCallJson = Json.encodeToString(listOf(answer)),
+        ).toUiChatMessage { it }
+
+        assertEquals(listOf(answer), projected.segments)
     }
 
     @Test

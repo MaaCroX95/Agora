@@ -99,7 +99,7 @@ class SemanticIndexMutationSourceContractTest {
         assertOrdered(
             commit,
             "val ledger = semanticDao.getLedger(embedding.modelId)",
-            "expectedLedgerRevision != null",
+            "expectedReconcileRevision != null",
             "val currentFingerprint =",
             "if (currentFingerprint != expectedFingerprint) return@withTransaction false",
             "val work = if (completePendingWork)",
@@ -202,7 +202,7 @@ class SemanticIndexMutationSourceContractTest {
         assertTrue(worker.contains("EmbeddingClient.computeEmbeddings("))
         assertTrue(worker.contains("LlamaEngine.computeEmbeddings("))
         assertTrue(worker.contains("database.commitSemanticEmbedding("))
-        assertTrue(worker.contains("expectedFingerprint = fingerprint"))
+        assertTrue(worker.contains("expectedFingerprint = candidate.fingerprint"))
         assertTrue(worker.contains("ExistingWorkPolicy.APPEND_OR_REPLACE"))
 
         assertFalse(rag.contains("EmbeddingClient"))
@@ -233,7 +233,7 @@ class SemanticIndexMutationSourceContractTest {
             "EmbeddingCacheLocks.forModel(modelId).withLock",
             "settings.embeddingModels.value.find { it.id == modelId }",
             "conversations.getOrAdmitSemanticLedgerState(modelId)",
-            "EmbeddingCacheWorker.schedule(modelId, workManager)",
+            "scheduleCacheWork(modelId)",
         )
         val admission = rag.section(
             "private suspend fun admitActiveModel(",
@@ -244,13 +244,13 @@ class SemanticIndexMutationSourceContractTest {
             "EmbeddingCacheLocks.forModel(modelId).withLock",
             "settings.embeddingModels.value.none { it.id == modelId }",
             "conversations.getOrAdmitSemanticLedgerState(modelId)",
-            "EmbeddingCacheWorker.schedule(modelId, workManager)",
+            "scheduleCacheWork(modelId)",
         )
         val incremental = rag.section(
             "fun indexMessageForRag(",
             "fun resolveEmbeddingApiKey(): String? {",
         )
-        assertTrue(incremental.contains("EmbeddingCacheWorker.schedule(modelId, workManager)"))
+        assertTrue(incremental.contains("scheduleCacheWork(modelId)"))
         assertFalse(incremental.contains("computeEmbedding"))
     }
 
@@ -262,17 +262,19 @@ class SemanticIndexMutationSourceContractTest {
         val ledger = source(
             "app/src/main/java/com/newoether/agora/data/local/SemanticIndexLedger.kt",
         )
-        val chatDao = source(
-            "app/src/main/java/com/newoether/agora/data/local/ChatDao.kt",
-        )
 
         assertFalse(worker.contains("getIndexableMessageCount("))
         assertFalse(worker.contains("getEmbeddingCountByModel("))
+        assertFalse(worker.contains("lastProgressPermille"))
         assertFalse(worker.contains("getUnembeddedMessagesPage("))
         assertFalse(worker.contains("EmbeddingCacheLocks.forModel(modelId).withLock"))
         assertTrue(worker.contains("SemanticIndexLedgerEntity.STATE_PENDING"))
         assertTrue(worker.contains("SemanticIndexLedgerEntity.STATE_NEEDS_RECONCILE"))
         assertTrue(worker.contains("limit = model.batchSize.coerceIn(1, MAX_BATCH_SIZE)"))
+        assertTrue(worker.contains("limit = RECONCILE_SCAN_PAGE_SIZE"))
+        assertTrue(worker.contains("candidates.chunked(embeddingBatchSize)"))
+        assertFalse(worker.contains("markSemanticEmbeddingReused"))
+        assertFalse(ledger.contains("updateEmbeddingFingerprint"))
         assertTrue(worker.countToken("yield()") >= 2)
 
         val exact = worker.section(
@@ -281,6 +283,8 @@ class SemanticIndexMutationSourceContractTest {
         )
         assertOrdered(
             exact,
+            "semanticDao.getWorkCountThroughRevision(",
+            "publishProgress(",
             "semanticDao.getWorkPage(",
             "work.sourceFingerprint == null",
             "semanticDao.completeExactWork(work",
@@ -294,11 +298,17 @@ class SemanticIndexMutationSourceContractTest {
         )
         assertOrdered(
             reconcile,
-            "chatDao.getSearchableMessagesPage(",
-            "semanticSourceFingerprint(message.text)",
-            "expectedLedgerRevision = expectedRevision",
-            "completeReconcile(",
-            "expectedRevision = expectedRevision",
+            "semanticDao.getReconcileMessageCount(",
+            "publishProgress(",
+            "while (processed < workTotal)",
+            "semanticDao.getReconcileMessagesPage(",
+            "semanticSourceFingerprint(row.text)",
+            "!embedCandidates(",
+            "processed += page.size",
+        )
+        assertTrue(
+            reconcile.substringAfter("while (processed < workTotal)")
+                .contains("return semanticDao.completeReconcile("),
         )
         val commit = worker.section(
             "private suspend fun embedCandidates(",
@@ -307,27 +317,36 @@ class SemanticIndexMutationSourceContractTest {
         assertOrdered(
             commit,
             "database.commitSemanticEmbedding(",
-            "expectedFingerprint = fingerprint",
-            "expectedWorkRevision = workRevision",
-            "expectedLedgerRevision = expectedLedgerRevision",
-            "completePendingWork = workRevision != null",
+            "expectedFingerprint = candidate.fingerprint",
+            "expectedWorkRevision = candidate.workRevision",
+            "expectedReconcileRevision = expectedReconcileRevision",
+            "completePendingWork = candidate.workRevision != null",
         )
         assertTrue(worker.contains("ExistingWorkPolicy.APPEND_OR_REPLACE"))
         assertTrue(worker.contains("workNameFor(modelId)"))
 
         val workPage = ledger.substringBefore("suspend fun getWorkPage(")
             .substringAfterLast("@Query(")
+        assertTrue(workPage.contains("sourceRevision <= :maxSourceRevision"))
         assertTrue(workPage.contains("sourceRevision > :afterSourceRevision"))
         assertTrue(workPage.contains("sourceRevision = :afterSourceRevision"))
         assertTrue(workPage.contains("messageId > :afterMessageId"))
         assertTrue(workPage.contains("ORDER BY sourceRevision, messageId"))
         assertTrue(workPage.contains("LIMIT :limit"))
 
-        val searchablePage = chatDao.substringBefore("suspend fun getSearchableMessagesPage(")
+        val searchablePage = ledger.substringBefore("suspend fun getReconcileMessagesPage(")
             .substringAfterLast("@Query(")
         assertTrue(searchablePage.contains("SELECT m.id, m.text"))
+        assertTrue(searchablePage.contains("LEFT JOIN embeddings"))
+        assertTrue(searchablePage.contains("LEFT JOIN semantic_index_work"))
+        assertTrue(
+            searchablePage.contains(
+                "w.sourceRevision IS NULL OR w.sourceRevision <= :maxWorkRevision",
+            ),
+        )
         assertTrue(searchablePage.contains(":afterId IS NULL OR m.id > :afterId"))
-        assertTrue(searchablePage.contains("ORDER BY m.id LIMIT :limit"))
+        assertTrue(searchablePage.contains("ORDER BY m.id"))
+        assertTrue(searchablePage.contains("LIMIT :limit"))
         assertFalse(searchablePage.contains("NOT EXISTS"))
     }
 
@@ -399,6 +418,34 @@ class SemanticIndexMutationSourceContractTest {
             "finally {",
             "withContext(NonCancellable)",
             "reconcileImportedEmbeddingModels(previousEmbeddingModels)",
+        )
+    }
+
+    @Test
+    fun headlessAutomationWakesAutoCacheForBothDurableTurnRows() {
+        val engine = source(
+            "app/src/main/java/com/newoether/agora/automation/TaskExecutionEngine.kt",
+        )
+        val generationManager = engine.section(
+            "private val generationManager = GenerationManager(",
+            "/**\n     * Injects [userText]",
+        )
+        assertTrue(
+            generationManager.contains(
+                "it.onMessagePersisted = ragManager::indexMessageForRag",
+            ),
+        )
+
+        val admission = engine.section(
+            "val persistToken = generationState.nextPersistId()",
+            "bindingOutcome = withContext(NonCancellable)",
+        )
+        assertOrdered(
+            admission,
+            "acceptedInputGraphWriter.commit(",
+            "runCreated = true",
+            "if (userText.isNotBlank())",
+            "ragManager.indexMessageForRag(userMessageId, userText)",
         )
     }
 

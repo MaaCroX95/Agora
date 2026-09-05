@@ -39,6 +39,7 @@ fun SettingsContextPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     val retainCount by viewModel.settings.contextCompactRetainCount.collectAsState()
     val enabledModels by viewModel.settings.enabledModels.collectAsState()
     val aliases by viewModel.settings.modelAliases.collectAsState()
+    val modelProviderNames by viewModel.settings.modelProviderNames.collectAsState()
     val customProviders by viewModel.settings.customProviders.collectAsState()
     val showDocFab by viewModel.settings.showDocumentationFab.collectAsState()
     var modelDialog by remember { mutableStateOf(false) }
@@ -121,7 +122,7 @@ fun SettingsContextPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                             supportingContent = {
                                 Text(
                                     compactModel?.let {
-                                        modelDisplayName(it, aliases, customProviders)
+                                        modelDisplayName(it, aliases, customProviders, modelProviderNames[it] != false)
                                     } ?: stringResource(R.string.title_gen_current_model)
                                 )
                             },

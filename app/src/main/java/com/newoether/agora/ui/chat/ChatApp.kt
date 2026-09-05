@@ -50,7 +50,6 @@ import com.newoether.agora.api.DebugProvider
 import com.newoether.agora.data.forDisplay
 import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
 import com.newoether.agora.util.gradientBlur
-import com.newoether.agora.util.verticalBottomOverlayFade
 import com.newoether.agora.ui.chat.bottombar.CHAT_BOTTOM_BAR_OUTER_SHAPE
 import com.newoether.agora.ui.chat.bottombar.ChatBottomBar
 import com.newoether.agora.ui.chat.bottombar.LoopStatusBackdrop
@@ -63,7 +62,6 @@ import com.newoether.agora.ui.common.rememberAgoraHaptics
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import com.newoether.agora.model.StableMessageList
 import com.newoether.agora.model.StableModelAliases
-import com.newoether.agora.viewmodel.AnimatedScrollDestination
 import com.newoether.agora.viewmodel.ChatViewModel
 import com.newoether.agora.viewmodel.validChatModels
 import kotlinx.coroutines.launch
@@ -128,6 +126,7 @@ fun ChatApp(
     val developerOptionsEnabled by viewModel.settings.developerOptionsEnabled.collectAsState()
     val debugModelEnabled by viewModel.settings.debugModelEnabled.collectAsState()
     val modelAliases by viewModel.settings.modelAliases.collectAsState()
+    val modelProviderNames by viewModel.settings.modelProviderNames.collectAsState()
     val chatEnabledModels = validChatModels(
         enabledModels,
         developerOptionsEnabled,
@@ -150,6 +149,7 @@ fun ChatApp(
     val displayMessagesState = remember(messagesState, customProviders) { derivedStateOf { messagesState.value.map { it.forDisplay(customProviders) } } }
     val webSearchApiKeys by viewModel.settings.webSearchApiKeys.collectAsState()
     val shellDevices by viewModel.settings.shellDevices.collectAsState()
+    val amoledEnabled by viewModel.settings.amoledEnabled.collectAsState()
     val toolCallDisplayMode by viewModel.settings.toolCallDisplayMode.collectAsState()
     val thinkingSegmentDisplayMode by viewModel.settings.thinkingSegmentDisplayMode.collectAsState()
     val autoExpandActiveGroup by viewModel.settings.autoExpandActiveGroup.collectAsState()
@@ -390,14 +390,16 @@ fun ChatApp(
                 isSwitching = isSwitching,
                 newChatEntryId = newChatEntryId,
             )
-            AnimatedBlobBackground(
-                centerAlpha = ca,
-                quarterAlpha = qa,
-                blurRadius = 40f,
-                dark = dark,
-                blurEnabled = blurEffectsEnabled,
-                motionEnabled = newChatMotion.animateBackground,
-            )
+            if (!amoledEnabled) {
+                AnimatedBlobBackground(
+                    centerAlpha = ca,
+                    quarterAlpha = qa,
+                    blurRadius = 40f,
+                    dark = dark,
+                    blurEnabled = blurEffectsEnabled,
+                    motionEnabled = newChatMotion.animateBackground,
+                )
+            }
 
             Scaffold(
                 containerColor = Color.Transparent,
@@ -411,6 +413,7 @@ fun ChatApp(
                             replaceCustomProviderIdsForDisplay(it, customProviders)
                         },
                         totalTokens = contextUsage.estimatedTokenCount,
+                        contextTokenBudget = contextUsage.tokenBudget,
                         searchActive = conversationSearchActive,
                         searchQuery = conversationSearchQuery,
                         searchMatchIndex = conversationSearchMatchIndex,
@@ -506,11 +509,6 @@ fun ChatApp(
                         modifier = Modifier.fillMaxSize()
                     ) { (targetNewChat, targetShowLaunch) ->
                         if (!targetNewChat) {
-                            val messageListModifier = if (blurEffectsEnabled) {
-                                Modifier.fillMaxSize().gradientBlur(blurAtTopDp = 8f, blurAtBottomDp = 0f)
-                            } else {
-                                Modifier.fillMaxSize()
-                            }
                             val streamingFollowAvailability = streamingTailAvailability(
                                 generationActive = isLoading,
                                 blocked =
@@ -533,7 +531,9 @@ fun ChatApp(
                                 authoritativeMessages = StableMessageList(displayMessagesState.value),
                                 allMessages = StableMessageList(allMessagesState.value),
                                 conversationId = currentConversationId,
-                                modifier = messageListModifier.verticalBottomOverlayFade(
+                                modifier = Modifier.fillMaxSize().gradientBlur(
+                                    blurAtTopDp = if (blurEffectsEnabled) 8f else 0f,
+                                    blurAtBottomDp = 0f,
                                     fadeHeightDp = 40f,
                                     bottomOverlayHeight = bottomBarHeight + with(density) { outerSpacerHeightPx.toDp() } + 12.dp,
                                 ),
@@ -567,7 +567,7 @@ fun ChatApp(
                                 autoExpandActiveGroup = autoExpandActiveGroup,
                                 parseInlineDollarMath = parseInlineDollarMath,
                                 contextRetainedMessageIds = contextProjection.retainedMessageIds.orEmpty(),
-                                modelAliases = StableModelAliases(modelAliases),
+                                modelAliases = StableModelAliases(modelAliases, modelProviderNames),
                                 customProviders = customProviders,
                                 bottomBarHeight = bottomBarHeight + shareSelectionBarSpace,
                                 viewportHeight = viewportHeightPx,
@@ -899,6 +899,7 @@ fun ChatApp(
                         enabledModels = chatEnabledModels,
                         selectedModel = selectedModel,
                         modelAliases = chatModelAliases,
+                        modelProviderNames = modelProviderNames,
                         customProviders = customProviders,
                         codeExecutionEnabled = conversationControls.codeExecutionEnabled,
                         googleSearchEnabled = conversationControls.googleSearchEnabled,
@@ -990,6 +991,7 @@ fun ChatApp(
         compactRetainCount = compactRetainCount,
         enabledModels = chatEnabledModels,
         modelAliases = chatModelAliases, customProviders = customProviders,
+        modelProviderNames = modelProviderNames,
         isCompacting = isCompacting,
     )
 
