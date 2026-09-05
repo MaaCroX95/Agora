@@ -7,8 +7,11 @@ import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.util.Constants
 import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 
@@ -20,7 +23,7 @@ internal class ConversationBranchMutationService(
     private val toUiMessage: (MessageEntity) -> ChatMessage,
     private val isConversationOpen: (String) -> Boolean,
     private val projectGraph: (List<ChatMessage>, Map<String?, String>) -> Unit,
-    private val onMutationStart: suspend (scrollToTarget: Boolean) -> Long?,
+    private val onMutationStart: suspend (conversationId: String, scrollToTarget: Boolean) -> Long?,
     private val onMutationSettling: (Long?, String?) -> Unit,
     private val onMutationFailed: (Long?) -> Unit,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -49,13 +52,14 @@ internal class ConversationBranchMutationService(
         }
 
         scope.launch(ioDispatcher) {
-            val switchingRequestId = onMutationStart(!compactOnly)
+            var switchingRequestId: Long? = null
             var committed = false
             try {
+                switchingRequestId = onMutationStart(conversationId, !compactOnly)
                 state.queueMutationMutex.withLock {
                     // Recheck after the overlay fade and under the same mutex that accepts Send.
                     if (state.generating.value) return@withLock
-                    executionCoordinator.withConversationLock(conversationId) lock@ {
+                    executionCoordinator.tryWithConversationLock(conversationId) lock@ {
                         if (conversations.getLiveRun(conversationId) != null) return@lock
                         if (compactOnly) {
                             check(conversations.removeContextCompact(messageId))
@@ -118,12 +122,14 @@ internal class ConversationBranchMutationService(
                         committed = true
                     }
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 DebugLog.e("AgoraVM", "Failed to delete message branch $messageId", error)
             } finally {
-                if (!committed) onMutationFailed(switchingRequestId)
-                onResult?.let { callback ->
-                    kotlinx.coroutines.withContext(resultDispatcher) { callback(committed) }
+                withContext(NonCancellable + resultDispatcher) {
+                    if (!committed) onMutationFailed(switchingRequestId)
+                    onResult?.invoke(committed)
                 }
             }
         }

@@ -52,7 +52,7 @@ class ComposerDraftControllerTest {
                 Json.encodeToString(listOf(newAttachment)),
             )
         }
-        coVerify(exactly = 1) {
+        coVerify(exactly = 0) {
             repository.deleteUnreferencedDraftAttachmentFiles(listOf(oldAttachment))
         }
     }

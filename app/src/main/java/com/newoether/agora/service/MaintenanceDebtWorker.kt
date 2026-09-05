@@ -25,7 +25,7 @@ class MaintenanceDebtWorker(
             ?: return@withContext Result.retry()
         val debtDao = container.database.maintenanceDebtDao()
         val attachmentSweeper = AttachmentOrphanSweeper(
-            conversations = container.conversationRepository,
+            database = container.database,
             filesDirectory = applicationContext.filesDir,
         )
         val claimId = id.toString()

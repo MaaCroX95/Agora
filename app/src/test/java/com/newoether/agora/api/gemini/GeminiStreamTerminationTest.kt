@@ -14,6 +14,10 @@ import io.mockk.mockk
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -21,8 +25,58 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.net.InetSocketAddress
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 
 class GeminiStreamTerminationTest {
+    @Test
+    fun systemInstructionUsesCanonicalWireNameForTitlesAndOrdinaryChat() {
+        val requests = LinkedBlockingQueue<String>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            requests.add(exchange.requestBody.bufferedReader().use { it.readText() })
+            val response = ("data: {\"candidates\":[{\"content\":{\"role\":\"model\"," +
+                "\"parts\":[{\"text\":\"Hello\"}]},\"finishReason\":\"STOP\"}]}\n\n").toByteArray()
+            exchange.responseHeaders.add("Content-Type", "text/event-stream")
+            exchange.sendResponseHeaders(200, response.size.toLong())
+            exchange.responseBody.use { it.write(response) }
+        }
+        server.start()
+        try {
+            for (prompt in listOf("You are a title generator.", "Answer in the user's language.", null)) {
+                val events = runBlocking {
+                    withTimeout(5_000L) {
+                        GeminiProvider().generateResponse(
+                            messages = listOf(ChatMessage(text = "hi", participant = Participant.USER)),
+                            config = ProviderConfig(
+                                apiKey = "test-key",
+                                modelId = "gemini-2.5-flash",
+                                baseUrl = "http://127.0.0.1:${server.address.port}",
+                                systemPrompt = prompt,
+                            ),
+                        ).toList()
+                    }
+                }
+                assertTrue(events.none { it is StreamEvent.Error })
+                val body = Json.parseToJsonElement(
+                    checkNotNull(requests.poll(1, TimeUnit.SECONDS)),
+                ).jsonObject
+                assertFalse(body.containsKey("system_instruction"))
+                if (prompt == null) {
+                    assertFalse(body.containsKey("systemInstruction"))
+                } else {
+                    assertEquals(
+                        prompt,
+                        body.getValue("systemInstruction").jsonObject.getValue("parts")
+                            .jsonArray.single().jsonObject.getValue("text").jsonPrimitive.content,
+                    )
+                }
+            }
+        } finally {
+            server.stop(0)
+        }
+    }
+
     @Before
     fun disableAndroidLoggingForJvmNetworkTests() {
         val context = mockk<Context>()

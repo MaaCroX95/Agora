@@ -844,6 +844,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         SELECT id, images, attachmentMeta
         FROM messages
         WHERE (:afterId IS NULL OR id > :afterId)
+          AND (:pathToken IS NULL OR instr(images, :pathToken) > 0 OR instr(attachmentMeta, :pathToken) > 0)
           AND (
               (images != '' AND images != '[]')
               OR (attachmentMeta IS NOT NULL AND attachmentMeta != '')
@@ -855,6 +856,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
     suspend fun getMessageAttachmentReferencesPage(
         afterId: String?,
         limit: Int,
+        pathToken: String? = null,
     ): List<MessageAttachmentReference>
 
     @Query(
@@ -898,6 +900,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         SELECT id, draftAttachments
         FROM conversations
         WHERE (:afterId IS NULL OR id > :afterId)
+          AND (:pathToken IS NULL OR instr(draftAttachments, :pathToken) > 0)
           AND draftAttachments IS NOT NULL
           AND draftAttachments != ''
         ORDER BY id
@@ -907,6 +910,7 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
     suspend fun getConversationDraftAttachmentReferencesPage(
         afterId: String?,
         limit: Int,
+        pathToken: String? = null,
     ): List<ConversationDraftAttachmentReference>
 
     @Query(
@@ -914,11 +918,12 @@ interface ChatDao : ChatAutomationDao, ChatContextCompactDao, ChatProviderContex
         SELECT draftAttachments
         FROM new_chat_persist
         WHERE id = 0
+          AND (:pathToken IS NULL OR instr(draftAttachments, :pathToken) > 0)
           AND draftAttachments IS NOT NULL
           AND draftAttachments != ''
         """
     )
-    suspend fun getNewChatDraftAttachmentReference(): NewChatDraftAttachmentReference?
+    suspend fun getNewChatDraftAttachmentReference(pathToken: String? = null): NewChatDraftAttachmentReference?
 
     @Query("DELETE FROM conversations")
     suspend fun deleteAllConversations()

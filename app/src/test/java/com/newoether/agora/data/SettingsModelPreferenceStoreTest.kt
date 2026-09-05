@@ -7,6 +7,9 @@ import androidx.datastore.preferences.core.emptyPreferences
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
@@ -18,6 +21,156 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsModelPreferenceStoreTest {
+    @Test
+    fun providerNameMigrationPreservesExistingPresentationOnceWithoutChangingAliases() = runTest {
+        val dataStore = InMemoryPreferencesDataStore()
+        dataStore.edit {
+            it[MODEL_ALIASES_JSON] = testJson.encodeToString(
+                mapOf("OpenAI:manual" to "Work", "OpenAI:blank" to "  "),
+            )
+            it[SELECTED_MODEL] = "OpenAI:automatic"
+        }
+        val original = dataStore.data.first()
+        assertTrue(modelProviderNamesMigration.shouldMigrate(original))
+        val migrated = modelProviderNamesMigration.migrate(original)
+        assertEquals(original[MODEL_ALIASES_JSON], migrated[MODEL_ALIASES_JSON])
+        assertEquals(original[SELECTED_MODEL], migrated[SELECTED_MODEL])
+        val store = SettingsModelPreferenceStore(InMemoryPreferencesDataStore(migrated), testJson)
+        assertEquals(mapOf("OpenAI:manual" to false), store.modelProviderNames.first())
+        assertFalse(modelProviderNamesMigration.shouldMigrate(migrated))
+        store.updateModelAlias("OpenAI:manual", "")
+        store.updateModelAlias("OpenAI:automatic", "New alias")
+        assertEquals(mapOf("OpenAI:manual" to false), store.modelProviderNames.first())
+        assertEquals(migrated, modelProviderNamesMigration.migrate(migrated))
+    }
+
+    @Test
+    fun freshModelsShowProviderEvenWhenCreatedWithAnAlias() = runTest {
+        val migrated = modelProviderNamesMigration.migrate(emptyPreferences())
+        val dataStore = InMemoryPreferencesDataStore(migrated)
+        val store = SettingsModelPreferenceStore(dataStore, testJson)
+        store.addCustomModel("Gateway:new", "My alias")
+        assertTrue(store.modelProviderNames.first()["Gateway:new"] != false)
+        assertFalse(modelProviderNamesMigration.shouldMigrate(dataStore.data.first()))
+        assertEquals(mapOf("Gateway:new" to "My alias"), store.modelAliases.first())
+    }
+
+    @Test
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun aliasAndProviderSwitchPublishTogetherAndAliasOnlyUpdatesPreserveTheSwitch() = runTest {
+        val dataStore = InMemoryPreferencesDataStore()
+        val store = SettingsModelPreferenceStore(dataStore, testJson)
+        val observed = mutableListOf<Preferences>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            dataStore.data.toList(observed)
+        }
+        store.updateModelAlias("OpenAI:model", "Work", showProviderName = false)
+        assertEquals(2, observed.size)
+        val saved = SettingsModelPreferenceStore(InMemoryPreferencesDataStore(observed.last()), testJson)
+        assertEquals(mapOf("OpenAI:model" to "Work"), saved.modelAliases.first())
+        assertEquals(mapOf("OpenAI:model" to false), saved.modelProviderNames.first())
+        store.updateModelAlias("OpenAI:model", "")
+        assertTrue(store.modelAliases.first().isEmpty())
+        assertEquals(false, store.modelProviderNames.first()["OpenAI:model"])
+        store.updateModelAlias("OpenAI:model", "", showProviderName = true)
+        assertEquals(true, store.modelProviderNames.first()["OpenAI:model"])
+    }
+
+    @Test
+    fun customModelEditorSavesAliasAndProviderChoiceWithCreationAndIdentityChanges() = runTest {
+        val store = SettingsModelPreferenceStore(InMemoryPreferencesDataStore(), testJson)
+        store.addCustomModel("Gateway:old", "Work", showProviderName = false)
+        assertEquals(mapOf("Gateway:old" to false), store.modelProviderNames.first())
+        store.replaceCustomModel("Gateway:old", "Gateway:old", "Renamed", showProviderName = true)
+        assertEquals(mapOf("Gateway:old" to "Renamed"), store.modelAliases.first())
+        assertEquals(mapOf("Gateway:old" to true), store.modelProviderNames.first())
+        store.replaceCustomModel("Gateway:old", "Gateway:new", "", showProviderName = false)
+        assertEquals(setOf("Gateway:new"), store.customModels.first())
+        assertTrue(store.modelAliases.first().isEmpty())
+        assertEquals(mapOf("Gateway:new" to false), store.modelProviderNames.first())
+    }
+
+    @Test
+    fun malformedProviderPreferencesDoNotPartiallySaveAnAlias() = runTest {
+        val dataStore = InMemoryPreferencesDataStore()
+        val store = SettingsModelPreferenceStore(dataStore, testJson)
+        dataStore.edit {
+            it[MODEL_ALIASES_JSON] = "{\"OpenAI:model\":\"Original\"}"
+            it[MODEL_PROVIDER_NAMES_JSON] = "malformed"
+        }
+        val before = dataStore.data.first()
+        val result = runCatching { store.updateModelAlias("OpenAI:model", "Changed", false) }
+        assertTrue(result.isFailure)
+        assertEquals(before, dataStore.data.first())
+    }
+
+    @Test
+    fun providerPreferencesMergeAndReplacePreserveExplicitFalse() = runTest {
+        val store = SettingsModelPreferenceStore(InMemoryPreferencesDataStore(), testJson)
+        store.saveModelProviderNames(mapOf("OpenAI:a" to false))
+        store.saveModelProviderNames(mapOf("OpenAI:b" to true), replace = false)
+        assertEquals(mapOf("OpenAI:a" to false, "OpenAI:b" to true), store.modelProviderNames.first())
+        store.saveModelProviderNames(mapOf("OpenAI:b" to false))
+        assertEquals(mapOf("OpenAI:b" to false), store.modelProviderNames.first())
+        store.saveModelProviderNames(emptyMap())
+        assertTrue(store.modelProviderNames.first().isEmpty())
+    }
+
+    @Test
+    fun providerVisibilityFollowsModelReplacementAndDeletionWithoutChangingAnotherModel() = runTest {
+        val store = SettingsModelPreferenceStore(InMemoryPreferencesDataStore(), testJson)
+        store.addCustomModel("Gateway:old", "Alias")
+        store.saveModelProviderNames(mapOf("Gateway:old" to false, "Other:keep" to false))
+        store.replaceCustomModel("Gateway:old", "Gateway:old", "Renamed")
+        assertEquals(false, store.modelProviderNames.first()["Gateway:old"])
+        store.replaceCustomModel("Gateway:old", "Gateway:new", "")
+        assertEquals(mapOf("Gateway:new" to false, "Other:keep" to false), store.modelProviderNames.first())
+        store.replaceCustomModel("Gateway:new", null, "")
+        assertEquals(mapOf("Other:keep" to false), store.modelProviderNames.first())
+        store.addCustomModel("Gateway:new", "Recreated")
+        assertTrue(store.modelProviderNames.first()["Gateway:new"] != false)
+    }
+
+    @Test
+    fun providerVisibilityRemapsLegacyKeysPreservesCanonicalChoicesAndSurvivesRestart() = runTest {
+        val dataStore = InMemoryPreferencesDataStore()
+        val store = SettingsModelPreferenceStore(dataStore, testJson)
+        val id = "custom-provider-00000000-0000-4000-8000-000000000001"
+        store.saveCustomProviders(listOf(CustomProviderConfig("Relay", id = id)))
+        store.saveModelProviderNames(mapOf("Relay:a" to false, "Relay:b" to false, "$id:b" to true))
+        store.normalizeCustomProviderIdentities()
+        assertEquals(mapOf("$id:a" to false, "$id:b" to true), store.modelProviderNames.first())
+        val restarted = SettingsModelPreferenceStore(dataStore, testJson)
+        restarted.saveCustomProviders(listOf(CustomProviderConfig("Renamed", id = id)))
+        restarted.normalizeCustomProviderIdentities()
+        assertEquals(store.modelProviderNames.first(), restarted.modelProviderNames.first())
+        restarted.saveModelProviderNames(mapOf("Other:c" to false), replace = false)
+        restarted.removeModelAliasesForProvider(id)
+        assertEquals(mapOf("Other:c" to false), restarted.modelProviderNames.first())
+    }
+
+    @Test
+    fun initializedResetAndLaterAliasRestoreCannotReapplyLegacyMigration() = runTest {
+        val dataStore = InMemoryPreferencesDataStore()
+        val store = SettingsModelPreferenceStore(dataStore, testJson)
+        store.saveModelProviderNames(emptyMap())
+        store.saveModelAliases(mapOf("OpenAI:model" to "Imported old alias"))
+        assertFalse(modelProviderNamesMigration.shouldMigrate(dataStore.data.first()))
+        assertTrue(store.modelProviderNames.first()["OpenAI:model"] != false)
+    }
+
+    @Test
+    fun localModelIdentityChangesCarryVisibilityAndDeletionRestoresNewModelDefault() = runTest {
+        val store = SettingsModelPreferenceStore(InMemoryPreferencesDataStore(), testJson)
+        val model = LocalChatModelConfig(id = "device-model", modelId = "old", alias = "Local alias")
+        store.saveLocalChatModels(listOf(model))
+        store.saveModelProviderNames(mapOf("Local:old" to false, "OpenAI:keep" to false))
+        store.saveLocalChatModels(listOf(model.copy(modelId = "new")))
+        assertEquals(mapOf("Local:new" to false, "OpenAI:keep" to false), store.modelProviderNames.first())
+        store.saveLocalChatModels(emptyList())
+        assertEquals(mapOf("OpenAI:keep" to false), store.modelProviderNames.first())
+    }
+
     @Test
     fun blankProviderBaseUrlRestoresDefaultByRemovingOverride() = runTest {
         val dataStore = InMemoryPreferencesDataStore()

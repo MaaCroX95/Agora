@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -19,51 +20,55 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.RenderEffect as ComposeRenderEffect
 
 private const val MAX_GRADIENT_BLUR_DP = 5f
 
 /**
- * Two-pass separable Gaussian-ish blur whose radius varies along the Y axis.
+ * Two-pass top-edge blur with an optional bottom alpha fade in the same drawing layer.
  *
- * The shader samples the input texture N times with increasing offsets controlled
- * by [blurAtTop] (top blur radius in px) and [blurAtBottom] (bottom blur radius in px).
- * Intermediate rows are linearly interpolated.
+ * The larger requested radius is capped at 5 dp and falls to zero over the top 150 dp.
+ * Both radius parameters retain their existing maximum-only semantics.
  *
- * Requires Android 13+ (API 33). Falls back to no-op on older devices.
- *
- * @param blurAtTop    blur radius in density-independent pixels at the top edge.
- * @param blurAtBottom blur radius in density-independent pixels at the bottom edge.
+ * Android 13+ applies the blur after the optional foreground alpha mask. Older devices
+ * and a zero radius retain only that mask, without creating a RuntimeShader.
  */
-fun Modifier.gradientBlur(blurAtTopDp: Float, blurAtBottomDp: Float): Modifier = composed {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return@composed this
-
+fun Modifier.gradientBlur(
+    blurAtTopDp: Float,
+    blurAtBottomDp: Float,
+    fadeHeightDp: Float = 0f,
+    bottomOverlayHeight: Dp = 0.dp,
+): Modifier = composed {
     val density = LocalDensity.current.density
     val maxBlurPx = maxOf(blurAtTopDp, blurAtBottomDp)
         .coerceAtMost(MAX_GRADIENT_BLUR_DP) * density
-    if (maxBlurPx <= 0f) return@composed this
-
     val fadeRangePx = 150f * density
 
-    val horizontalShader = remember(maxBlurPx, fadeRangePx) {
-        RuntimeShader(VARIABLE_BLUR_SHADER).apply {
-            setFloatUniform("uParams", maxBlurPx, fadeRangePx)
-            setFloatUniform("uDirection", 1f, 0f)
+    val renderEffect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && maxBlurPx > 0f) {
+        val horizontalShader = remember(maxBlurPx, fadeRangePx) {
+            RuntimeShader(VARIABLE_BLUR_SHADER).apply {
+                setFloatUniform("uParams", maxBlurPx, fadeRangePx)
+                setFloatUniform("uDirection", 1f, 0f)
+            }
         }
-    }
-    val verticalShader = remember(maxBlurPx, fadeRangePx) {
-        RuntimeShader(VARIABLE_BLUR_SHADER).apply {
-            setFloatUniform("uParams", maxBlurPx, fadeRangePx)
-            setFloatUniform("uDirection", 0f, 1f)
+        val verticalShader = remember(maxBlurPx, fadeRangePx) {
+            RuntimeShader(VARIABLE_BLUR_SHADER).apply {
+                setFloatUniform("uParams", maxBlurPx, fadeRangePx)
+                setFloatUniform("uDirection", 0f, 1f)
+            }
         }
+
+        remember(horizontalShader, verticalShader) {
+            val horizontal = RenderEffect.createRuntimeShaderEffect(horizontalShader, "content")
+            val vertical = RenderEffect.createRuntimeShaderEffect(verticalShader, "content")
+            RenderEffect.createChainEffect(vertical, horizontal).asComposeRenderEffect()
+        }
+    } else {
+        null
     }
 
-    val renderEffect = remember(horizontalShader, verticalShader) {
-        val horizontal = RenderEffect.createRuntimeShaderEffect(horizontalShader, "content")
-        val vertical = RenderEffect.createRuntimeShaderEffect(verticalShader, "content")
-        RenderEffect.createChainEffect(vertical, horizontal).asComposeRenderEffect()
-    }
-
-    Modifier.graphicsLayer { this.renderEffect = renderEffect }
+    Modifier.verticalBottomOverlayFade(fadeHeightDp, bottomOverlayHeight, renderEffect)
 }
 
 /**
@@ -112,7 +117,7 @@ fun Modifier.gradientBlurEdges(maxBlurDp: Float, edgeFadeDp: Float = 20f, topWei
 }
 
 /**
- * Sets both top and bottom blur to the same value (uniform blur).
+ * Applies the same top-edge falloff with a single requested radius.
  */
 fun Modifier.gradientBlur(radiusDp: Float): Modifier =
     gradientBlur(radiusDp, radiusDp)
@@ -132,38 +137,45 @@ internal fun bottomOverlayFadeStops(
 
 /**
  * Fades foreground content through the top edge of a bottom overlay while leaving the real
- * background beneath this layer untouched.
+ * background beneath this layer untouched. An optional effect processes the masked content
+ * in this same layer, avoiding an additional full-viewport offscreen layer.
  */
 fun Modifier.verticalBottomOverlayFade(
     fadeHeightDp: Float,
     bottomOverlayHeight: Dp,
+    renderEffect: ComposeRenderEffect? = null,
 ): Modifier = composed {
     val density = LocalDensity.current.density
     val fadeHeightPx = fadeHeightDp.coerceAtLeast(0f) * density
     val bottomOverlayHeightPx = bottomOverlayHeight.value.coerceAtLeast(0f) * density
-    if (fadeHeightPx <= 0f || bottomOverlayHeightPx <= 0f) return@composed this
+    val hasFade = fadeHeightPx > 0f && bottomOverlayHeightPx > 0f
+    if (!hasFade && renderEffect == null) return@composed this
 
-    Modifier
-        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-        .drawWithContent {
+    val layer = Modifier.graphicsLayer {
+        this.renderEffect = renderEffect
+        compositingStrategy = if (hasFade) CompositingStrategy.Offscreen else CompositingStrategy.Auto
+    }
+    if (!hasFade) return@composed layer
+
+    layer.drawWithCache {
+        val (fadeStart, fadeEnd) = bottomOverlayFadeStops(
+            canvasHeightPx = size.height,
+            fadeHeightPx = fadeHeightPx,
+            bottomOverlayHeightPx = bottomOverlayHeightPx,
+        )
+        val fadeBrush = Brush.verticalGradient(
+            colorStops = arrayOf(
+                0f to Color.Black,
+                fadeStart to Color.Black,
+                fadeEnd to Color.Transparent,
+                1f to Color.Transparent,
+            ),
+        )
+        onDrawWithContent {
             drawContent()
-            val (fadeStart, fadeEnd) = bottomOverlayFadeStops(
-                canvasHeightPx = size.height,
-                fadeHeightPx = fadeHeightPx,
-                bottomOverlayHeightPx = bottomOverlayHeightPx,
-            )
-            drawRect(
-                brush = Brush.verticalGradient(
-                    colorStops = arrayOf(
-                        0f to Color.Black,
-                        fadeStart to Color.Black,
-                        fadeEnd to Color.Transparent,
-                        1f to Color.Transparent,
-                    ),
-                ),
-                blendMode = BlendMode.DstIn,
-            )
+            drawRect(brush = fadeBrush, blendMode = BlendMode.DstIn)
         }
+    }
 }
 
 /**

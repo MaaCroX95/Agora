@@ -205,4 +205,7 @@ fun ChatMessage.isSuccessfulContextCompact(): Boolean =
 data class StableMessageList(val list: List<ChatMessage> = emptyList())
 
 @Immutable
-data class StableModelAliases(val map: Map<String, String> = emptyMap())
+data class StableModelAliases(
+    val map: Map<String, String> = emptyMap(),
+    val providerNames: Map<String, Boolean> = emptyMap(),
+)

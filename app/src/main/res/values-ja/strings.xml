@@ -574,6 +574,8 @@
     <string name="settings_appearance_desc">テーマ、配色、ダイナミックカラー</string>
     <string name="appearance_title">外観</string>
     <string name="theme_mode">テーマモード</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">ライトテーマでは純白、ダークテーマでは純黒の背景を使用</string>
     <string name="theme_mode_light">ライト</string>
     <string name="theme_mode_dark">ダーク</string>
     <string name="theme_mode_follow_device">デバイスに合わせる</string>
@@ -656,6 +658,7 @@
     <string name="embedding_type_local">ローカル</string>
     <string name="cached">キャッシュ済み</string>
     <string name="not_cached">未キャッシュ</string>
+    <string name="cache_work_remaining">残り%1$d件（%2$d/%3$d）</string>
     <string name="advanced_title">詳細</string>
     <string name="search_context_label">検索ヒットごとのコンテキストメッセージ数</string>
     <string name="search_context_desc">%1$d 件のメッセージ</string>
@@ -781,6 +784,7 @@
     <string name="about_links">リンク</string>
     <string name="about_developer">開発者</string>
     <string name="about_developer_name">Newo Ether · 個人開発者</string>
+    <string name="about_website">公式サイト</string>
     <string name="about_github">GitHub</string>
     <string name="about_issue_tracker">課題トラッカー</string>
     <string name="about_contribute">貢献する</string>
@@ -1242,4 +1246,6 @@
     <string name="delete_conversation_title">会話を削除しますか？</string>
     <string name="delete_conversation_from_message_confirm">このメッセージを削除すると、会話全体が削除されます。この操作は元に戻せません。</string>
     <string name="composer_clear_failed">メッセージは送信されましたが、下書きを消去できませんでした。</string>
+    <string name="models_show_provider_name">プロバイダー名を表示</string>
+    <string name="models_show_provider_name_desc">モデル名の後にプロバイダー名を追加します。</string>
 </resources>

@@ -574,6 +574,8 @@
     <string name="settings_appearance_desc">Design, Farbschema und dynamische Farbe</string>
     <string name="appearance_title">Erscheinungsbild</string>
     <string name="theme_mode">Design-Modus</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">Reinweiße Hintergründe im hellen Design und tiefschwarze im dunklen Design verwenden</string>
     <string name="theme_mode_light">Hell</string>
     <string name="theme_mode_dark">Dunkel</string>
     <string name="theme_mode_follow_device">Gerät folgen</string>
@@ -656,6 +658,7 @@
     <string name="embedding_type_local">Lokal</string>
     <string name="cached">Zwischengespeichert</string>
     <string name="not_cached">Nicht zwischengespeichert</string>
+    <string name="cache_work_remaining">%1$d verbleibend (%2$d/%3$d)</string>
     <string name="advanced_title">Erweitert</string>
     <string name="search_context_label">Kontextnachrichten pro Suchtreffer</string>
     <string name="search_context_desc">%1$d Nachrichten</string>
@@ -781,6 +784,7 @@
     <string name="about_links">Links</string>
     <string name="about_developer">Entwickler</string>
     <string name="about_developer_name">Newo Ether · Einzelentwickler</string>
+    <string name="about_website">Website</string>
     <string name="about_github">GitHub</string>
     <string name="about_issue_tracker">Issue-Tracker</string>
     <string name="about_contribute">Mitwirken</string>
@@ -1242,4 +1246,6 @@
     <string name="delete_conversation_title">Unterhaltung löschen?</string>
     <string name="delete_conversation_from_message_confirm">Durch das Löschen dieser Nachricht wird die gesamte Unterhaltung entfernt. Diese Aktion kann nicht rückgängig gemacht werden.</string>
     <string name="composer_clear_failed">Nachricht gesendet, aber der Entwurf konnte nicht gelöscht werden.</string>
+    <string name="models_show_provider_name">Anbieternamen anzeigen</string>
+    <string name="models_show_provider_name_desc">Den Anbieternamen an den Modellnamen anhängen.</string>
 </resources>

@@ -63,7 +63,7 @@ fun rememberAgoraHaptics(enabled: Boolean): AgoraHaptics {
     return haptics
 }
 
-private class PlatformAgoraHaptics(
+internal class PlatformAgoraHaptics(
     private val view: View,
     private val enabled: () -> Boolean
 ) : AgoraHaptics {
@@ -99,8 +99,9 @@ private class PlatformAgoraHaptics(
     }
 
     private fun performTerminalFeedback() {
-        stopAnsweringTexture()
-        performDiscrete(HapticFeedbackConstants.CONTEXT_CLICK, resumeTexture = false)
+        // Only the current Chat effect owns the texture request. This action may concern
+        // another conversation, so its discrete feedback must not revoke that request.
+        performDiscrete(HapticFeedbackConstants.CONTEXT_CLICK)
     }
 
     override fun startAnsweringTexture() {
@@ -140,7 +141,7 @@ private class PlatformAgoraHaptics(
         vibrator?.cancel()
     }
 
-    private fun performDiscrete(type: Int, resumeTexture: Boolean = true) {
+    private fun performDiscrete(type: Int) {
         if (!isAllowed()) return
         view.removeCallbacks(resumeAnsweringTexture)
         textureResumeScheduled = false
@@ -149,7 +150,7 @@ private class PlatformAgoraHaptics(
             vibrator?.cancel()
         }
         view.performHapticFeedback(type)
-        if (resumeTexture && answeringTextureRequested) {
+        if (answeringTextureRequested) {
             textureResumeScheduled = true
             view.postDelayed(resumeAnsweringTexture, TEXTURE_RESUME_DELAY_MS)
         }

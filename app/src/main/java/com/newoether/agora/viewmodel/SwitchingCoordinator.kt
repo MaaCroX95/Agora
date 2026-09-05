@@ -33,6 +33,7 @@ internal class SwitchingCoordinator {
     private val ids = AtomicLong(0L)
     private val _isSwitching = MutableStateFlow(false)
     private val _request = MutableStateFlow<SwitchingScrollRequest?>(null)
+    private var onFailure: (() -> Unit)? = null
 
     val isSwitching: StateFlow<Boolean> = _isSwitching.asStateFlow()
     val request: StateFlow<SwitchingScrollRequest?> = _request.asStateFlow()
@@ -40,6 +41,7 @@ internal class SwitchingCoordinator {
     fun beginConversation(
         conversationId: String,
         hapticOnCompletion: Boolean = true,
+        onFailure: (() -> Unit)? = null,
     ): SwitchingScrollRequest =
         begin(
             conversationId = conversationId,
@@ -48,6 +50,7 @@ internal class SwitchingCoordinator {
             kind = SwitchingRequestKind.CONVERSATION,
             readyForUi = false,
             hapticOnCompletion = hapticOnCompletion,
+            onFailure = onFailure,
         )
 
     fun beginTreeMutation(
@@ -63,7 +66,7 @@ internal class SwitchingCoordinator {
             hapticOnCompletion = false,
         )
 
-    fun beginNewChat(): SwitchingScrollRequest =
+    fun beginNewChat(onFailure: (() -> Unit)? = null): SwitchingScrollRequest =
         begin(
             conversationId = null,
             targetMessageId = null,
@@ -71,6 +74,7 @@ internal class SwitchingCoordinator {
             kind = SwitchingRequestKind.NEW_CHAT,
             readyForUi = false,
             hapticOnCompletion = false,
+            onFailure = onFailure,
         )
 
     private fun begin(
@@ -80,6 +84,7 @@ internal class SwitchingCoordinator {
         kind: SwitchingRequestKind,
         readyForUi: Boolean,
         hapticOnCompletion: Boolean,
+        onFailure: (() -> Unit)? = null,
     ): SwitchingScrollRequest {
         val next = SwitchingScrollRequest(
             id = ids.incrementAndGet(),
@@ -90,8 +95,11 @@ internal class SwitchingCoordinator {
             readyForUi = readyForUi,
             hapticOnCompletion = hapticOnCompletion,
         )
+        val supersededFailure = this.onFailure
+        this.onFailure = onFailure
         _request.value = next
         _isSwitching.value = true
+        supersededFailure?.invoke()
         return next
     }
 
@@ -129,10 +137,13 @@ internal class SwitchingCoordinator {
      * Completes only [requestId]. A cancelled/stale transition can therefore never uncover a
      * newer transition that superseded it.
      */
-    fun complete(requestId: Long): Boolean {
+    fun complete(requestId: Long, successful: Boolean = true): Boolean {
         if (_request.value?.id != requestId) return false
+        val failed = onFailure
+        onFailure = null
         _request.value = null
         _isSwitching.value = false
+        if (!successful) failed?.invoke()
         return true
     }
 }

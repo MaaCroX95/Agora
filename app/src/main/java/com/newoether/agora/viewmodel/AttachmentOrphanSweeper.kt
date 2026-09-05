@@ -1,18 +1,21 @@
 package com.newoether.agora.viewmodel
 
-import com.newoether.agora.data.repository.ConversationRepository
+import androidx.room.withTransaction
+import com.newoether.agora.data.local.ChatDatabase
 import com.newoether.agora.model.AttachmentMeta
 import com.newoether.agora.model.SelectedAttachment
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import java.io.File
 
-/** Reclaims old private attachment files only after scanning every durable reference source. */
+/** Reclaims private attachments only while their durable ownership is transactionally stable. */
 internal class AttachmentOrphanSweeper(
-    private val conversations: ConversationRepository,
+    private val database: ChatDatabase,
     private val filesDirectory: File,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
+    private val chatDao = database.chatDao()
+
     suspend fun sweep() {
         val referenced = collectReferences()
         val cutoffNow = now()
@@ -33,8 +36,16 @@ internal class AttachmentOrphanSweeper(
         require(file != root && file.path.startsWith(root.path + File.separator)) {
             "Attachment debt is outside app-private storage"
         }
-        if (normalized in collectReferences()) return
-        check(!file.exists() || file.delete()) { "Unable to delete attachment file $normalized" }
+        // An ASCII token also matches legacy/raw and escaped JSON. Only canonical full paths
+        // decide ownership; equal basenames in different directories are not equal references.
+        val pathToken = Regex("[A-Za-z0-9._-]+").findAll(file.name)
+            .maxByOrNull { it.value.length }?.value.orEmpty()
+        database.withTransaction {
+            if (normalized in collectReferences(pathToken)) return@withTransaction
+            // Keep reference verification and unlink in one transaction with Send's ownership
+            // transfer. Separate message/draft snapshots can miss both sides of that transfer.
+            check(!file.exists() || file.delete()) { "Unable to delete attachment file $normalized" }
+        }
         val sandboxRoot = File(root, "sandbox-home").canonicalFile
         val parent = file.parentFile?.canonicalFile
         if (parent != null && parent != sandboxRoot && parent.path.startsWith(sandboxRoot.path)) {
@@ -42,22 +53,26 @@ internal class AttachmentOrphanSweeper(
         }
     }
 
-    private suspend fun collectReferences(): Set<String> = HashSet<String>().also { referenced ->
-        collectMessageReferences(referenced)
-        collectDraftReferences(referenced)
+    private suspend fun collectReferences(pathToken: String? = null): Set<String> = HashSet<String>().also { referenced ->
+        collectMessageReferences(referenced, pathToken)
+        collectDraftReferences(referenced, pathToken)
     }
 
-    private suspend fun collectMessageReferences(referenced: MutableSet<String>) {
+    private suspend fun collectMessageReferences(referenced: MutableSet<String>, pathToken: String?) {
         var afterMessageId: String? = null
         while (true) {
-            val page = conversations.getMessageAttachmentReferencesPage(
+            val page = chatDao.getMessageAttachmentReferencesPage(
                 afterId = afterMessageId,
                 limit = DATABASE_SCAN_PAGE_SIZE,
+                pathToken = pathToken,
             )
             page.forEach { message ->
                 message.images.forEach { referenced.add(normalizePath(it)) }
                 message.attachmentMeta?.let { json ->
-                    runCatching { Json.decodeFromString<AttachmentMeta>(json) }.getOrNull()
+                    runCatching { Json.decodeFromString<AttachmentMeta>(json) }.getOrElse {
+                        if (pathToken != null) throw it
+                        null
+                    }
                         ?.items?.forEach { item ->
                             item.originalUri?.takeIf { it.startsWith("file://") }
                                 ?.let { referenced.add(normalizePath(it)) }
@@ -70,17 +85,21 @@ internal class AttachmentOrphanSweeper(
         }
     }
 
-    private suspend fun collectDraftReferences(referenced: MutableSet<String>) {
+    private suspend fun collectDraftReferences(referenced: MutableSet<String>, pathToken: String?) {
         var afterConversationId: String? = null
         while (true) {
-            val page = conversations.getConversationDraftAttachmentReferencesPage(
+            val page = chatDao.getConversationDraftAttachmentReferencesPage(
                 afterId = afterConversationId,
                 limit = DATABASE_SCAN_PAGE_SIZE,
+                pathToken = pathToken,
             )
             page.forEach { conversation ->
                 runCatching {
                     Json.decodeFromString<List<SelectedAttachment>>(conversation.draftAttachments)
-                }.getOrNull()?.forEach { attachment ->
+                }.getOrElse {
+                    if (pathToken != null) throw it
+                    null
+                }?.forEach { attachment ->
                     attachment.localPath?.let { referenced.add(normalizePath(it)) }
                     attachment.processedFrames?.forEach { referenced.add(normalizePath(it)) }
                     attachment.preRenderedPaths?.forEach { referenced.add(normalizePath(it)) }
@@ -91,10 +110,13 @@ internal class AttachmentOrphanSweeper(
             yield()
         }
 
-        conversations.getNewChatDraftAttachmentReference()?.let { newChat ->
+        chatDao.getNewChatDraftAttachmentReference(pathToken)?.let { newChat ->
             runCatching {
                 Json.decodeFromString<List<SelectedAttachment>>(newChat.draftAttachments)
-            }.getOrNull()?.forEach { attachment ->
+            }.getOrElse {
+                if (pathToken != null) throw it
+                null
+            }?.forEach { attachment ->
                 attachment.localPath?.let { referenced.add(normalizePath(it)) }
                 attachment.processedFrames?.forEach { referenced.add(normalizePath(it)) }
                 attachment.preRenderedPaths?.forEach { referenced.add(normalizePath(it)) }
@@ -102,7 +124,7 @@ internal class AttachmentOrphanSweeper(
         }
     }
 
-    private fun deleteOldUnreferencedRootAttachments(
+    private suspend fun deleteOldUnreferencedRootAttachments(
         referenced: Set<String>,
         cutoffNow: Long,
     ) {
@@ -114,7 +136,7 @@ internal class AttachmentOrphanSweeper(
         }
     }
 
-    private fun deleteOldUnreferencedFiles(
+    private suspend fun deleteOldUnreferencedFiles(
         directory: File,
         requiredPrefix: String?,
         referenced: Set<String>,
@@ -132,7 +154,7 @@ internal class AttachmentOrphanSweeper(
         return runCatching { File(raw).canonicalPath }.getOrElse { File(raw).absolutePath }
     }
 
-    private fun deleteIfOldAndUnreferenced(
+    private suspend fun deleteIfOldAndUnreferenced(
         file: File,
         referenced: Set<String>,
         cutoffNow: Long,
@@ -141,7 +163,7 @@ internal class AttachmentOrphanSweeper(
             normalizePath(file.absolutePath) !in referenced &&
             cutoffNow - file.lastModified() > MINIMUM_FILE_AGE_MS
         ) {
-            check(!file.exists() || file.delete()) { "Unable to delete attachment file ${file.path}" }
+            deleteExact(file.absolutePath)
         }
     }
 

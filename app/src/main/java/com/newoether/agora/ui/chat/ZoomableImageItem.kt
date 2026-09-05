@@ -2,9 +2,13 @@ package com.newoether.agora.ui.chat
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.layout.*
 import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BrokenImage
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -53,6 +57,8 @@ internal fun ZoomableImageItem(
     var offsetY by remember(url) { mutableFloatStateOf(0f) }
     var containerSize by remember { mutableStateOf(Size.Zero) }
     var imageSize by remember(url) { mutableStateOf(Size.Zero) }
+    var loadState by remember(url) { mutableStateOf(MediaLoadPresentation.LOADING) }
+    var presentedState by remember(url) { mutableStateOf(MediaLoadPresentation.LOADING) }
     var animationJob by remember(url) { mutableStateOf<Job?>(null) }
     var lastCentroid by remember(url) { mutableStateOf(Offset.Unspecified) }
     val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -99,6 +105,9 @@ internal fun ZoomableImageItem(
 
     LaunchedEffect(Unit) {
         snapshotFlow { visualScale(scale) }.collect { onScaleChanged(it) }
+    }
+    LaunchedEffect(loadState) {
+        presentedState = loadState
     }
 
     Box(
@@ -182,7 +191,12 @@ internal fun ZoomableImageItem(
         coil.compose.AsyncImage(
             model = url,
             contentDescription = null,
-            onSuccess = { state -> imageSize = state.painter.intrinsicSize },
+            onLoading = { loadState = MediaLoadPresentation.LOADING },
+            onSuccess = { state ->
+                imageSize = state.painter.intrinsicSize
+                loadState = MediaLoadPresentation.LOADED
+            },
+            onError = { loadState = MediaLoadPresentation.FAILED },
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(url, motionPolicy.allowSpatialTransitions) {
@@ -321,8 +335,39 @@ internal fun ZoomableImageItem(
                 ),
             contentScale = ContentScale.Fit
         )
-        if (imageSize == Size.Zero) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = Color.White, strokeWidth = 2.dp)
+        Crossfade(
+            targetState = presentedState,
+            animationSpec = tween(MEDIA_STATE_CROSSFADE_MILLIS),
+            label = "zoomableImageState",
+            modifier = Modifier.fillMaxSize(),
+        ) { state ->
+            when (state) {
+                MediaLoadPresentation.LOADING -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
+                    )
+                }
+                MediaLoadPresentation.LOADED -> Spacer(Modifier.fillMaxSize())
+                MediaLoadPresentation.FAILED -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.BrokenImage,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.65f),
+                        modifier = Modifier.size(44.dp),
+                    )
+                }
+            }
         }
     }
 }

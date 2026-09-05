@@ -47,6 +47,7 @@ internal object PortableSettingsArchive {
         putEncoded("customModels", sm.customModels.first())
         putEncoded("enabledModels", sm.enabledModels.first())
         putEncoded("modelAliases", sm.modelAliases.first())
+        putEncoded("modelProviderNames", sm.modelProviderNames.first())
         put("contextTokenBudget", JsonPrimitive(sm.maxContextWindow.first()))
         put("visualizeContextRollout", JsonPrimitive(sm.visualizeContextRollout.first()))
         put("contextCompactEnabled", JsonPrimitive(sm.contextCompactEnabled.first()))
@@ -129,6 +130,7 @@ internal object PortableSettingsArchive {
 
         put("showDocumentationFab", JsonPrimitive(sm.showDocumentationFab.first()))
         put("themeMode", JsonPrimitive(sm.themeMode.first()))
+        put("amoledEnabled", JsonPrimitive(sm.amoledEnabled.first()))
         put("colorScheme", JsonPrimitive(sm.colorScheme.first()))
         put("dynamicColor", JsonPrimitive(sm.dynamicColor.first()))
         put("blurEffectsEnabled", JsonPrimitive(sm.blurEffectsEnabled.first()))
@@ -218,6 +220,12 @@ internal object PortableSettingsArchive {
             }
             val value = if (replace) remapped else sm.modelAliases.first() + remapped
             sm.saveModelAliases(value)
+        }
+        obj.decode<Map<String, Boolean>>("modelProviderNames")?.let { imported ->
+            sm.saveModelProviderNames(
+                remapModelPreferenceKeys(imported, importedProviderIdentities.modelReferenceRemap),
+                replace = replace,
+            )
         }
 
         (obj.int("contextTokenBudget") ?: obj.int("maxContextWindow"))
@@ -434,6 +442,7 @@ internal object PortableSettingsArchive {
 
         obj.boolean("showDocumentationFab")?.let { sm.saveShowDocumentationFab(it) }
         obj.string("themeMode")?.let { sm.saveThemeMode(it) }
+        obj.boolean("amoledEnabled")?.let { sm.saveAmoledEnabled(it) }
         obj.string("colorScheme")?.let { sm.saveColorScheme(it) }
         obj.boolean("dynamicColor")?.let { sm.saveDynamicColor(it) }
         obj.boolean("blurEffectsEnabled")?.let { sm.saveBlurEffectsEnabled(it) }

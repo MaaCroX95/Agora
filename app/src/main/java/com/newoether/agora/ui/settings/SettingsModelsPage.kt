@@ -9,8 +9,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -33,6 +36,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -150,6 +155,7 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     val customModels by viewModel.settings.customModels.collectAsState()
     val customProviders by viewModel.settings.customProviders.collectAsState()
     val modelAliases by viewModel.settings.modelAliases.collectAsState()
+    val modelProviderNames by viewModel.settings.modelProviderNames.collectAsState()
     val selectedModel by viewModel.settings.selectedModel.collectAsState()
     val isSyncingModels by viewModel.isSyncingModels.collectAsState()
     var showActiveModelDialog by remember { mutableStateOf(false) }
@@ -585,6 +591,9 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
         val unchangedDisplayAlias = originalModelId?.let { model ->
             modelAliasDisplayName(model, modelAliases, customProviders)
         }.orEmpty()
+        var showProviderName by remember(originalModelId) {
+            mutableStateOf(modelProviderNames[originalModelId] != false)
+        }
         val aliasToPersist = if (originalModelId != null) {
             modelAliasToPersist(
                 rawAlias = customModelRawAlias,
@@ -728,6 +737,7 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
+                    ModelProviderNameSwitch(showProviderName) { showProviderName = it }
                 }
             },
             confirmButton = {
@@ -769,6 +779,7 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                     provider = normalizedProvider,
                                     modelName = normalizedModelId,
                                     alias = aliasToPersist,
+                                    showProviderName = showProviderName,
                                 )
                             } else {
                                 viewModel.updateCustomModel(
@@ -776,6 +787,7 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                     provider = normalizedProvider,
                                     modelId = normalizedModelId,
                                     alias = aliasToPersist,
+                                    showProviderName = showProviderName,
                                 )
                             }
                             customModelProviderMenuExpanded = false
@@ -842,6 +854,7 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
         val rawAlias = modelAliases[model].orEmpty()
         val displayAlias = modelAliasDisplayName(model, modelAliases, customProviders)
         val aliasState = rememberTextFieldState(displayAlias)
+        var showProviderName by remember(model) { mutableStateOf(modelProviderNames[model] != false) }
 
         AlertDialog(
             modifier = Modifier.clearFocusOnTap(),
@@ -862,6 +875,7 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                             placeholder = { Text(displayApiModelName) }
                         )
                     }
+                    ModelProviderNameSwitch(showProviderName) { showProviderName = it }
                 }
             },
             confirmButton = {
@@ -874,11 +888,46 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                             initialDisplayAlias = displayAlias,
                             editedAlias = editedAlias,
                         ),
+                        showProviderName = showProviderName,
                     )
                     showModelAliasDialog = null
                 }) { Text(stringResource(R.string.provider_save)) }
             },
             dismissButton = { TextButton(onClick = { showModelAliasDialog = null }) { Text(stringResource(R.string.provider_cancel)) } }
         )
+    }
+}
+
+@Composable
+private fun ModelProviderNameSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    val rippleOutset = 8.dp
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .padding(top = 8.dp)
+            .layout { measurable, constraints ->
+                val outset = rippleOutset.roundToPx()
+                val placeable = measurable.measure(constraints.offset(horizontal = outset * 2))
+                layout(placeable.width - outset * 2, placeable.height) {
+                    placeable.placeRelative(-outset, 0)
+                }
+            }
+            .clip(RoundedCornerShape(16.dp))
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+            .padding(horizontal = rippleOutset, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(start = 8.dp, end = 12.dp)) {
+            Text(
+                stringResource(R.string.models_show_provider_name),
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.White,
+            )
+            Text(
+                stringResource(R.string.models_show_provider_name_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = checked, onCheckedChange = null)
     }
 }

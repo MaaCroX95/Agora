@@ -110,7 +110,7 @@ class ChatBottomBarControlOrderTest {
         assertTrue(create >= 0 && create < flexible && flexible < cancel)
         assertTrue(cancel < fixed && fixed < save)
         assertTrue(host.contains(
-            "onCreate = { promptDraft = DefaultSystemPrompt.create() }",
+            "onCreate = { promptDraft = DefaultSystemPrompt.create().copy(title = \"\") }",
         ))
         assertTrue(host.contains("isNew = true"))
         assertTrue(host.contains("addSystemPromptAndAwait("))

@@ -89,10 +89,16 @@ class SemanticIndexDaoTest {
     }
 
     @Test
-    fun exactInvalidationDoesNotMultiplyWorkDuringReconcile() = runTest {
+    fun exactInvalidationPersistsNewestWorkDuringReconcile() = runTest {
         val dao = mockk<SemanticIndexDao>()
         val admitted = needsReconcile(revision = 2, completedRevision = 1, updatedAt = 10)
-        val advanced = needsReconcile(revision = 3, completedRevision = 1, updatedAt = 20)
+        val advanced = needsReconcile(
+            revision = 3,
+            completedRevision = 1,
+            reconcileRevision = 2,
+            updatedAt = 20,
+        )
+        val work = work("fingerprint", revision = 3, updatedAt = 20)
         coEvery { dao.enqueueExactWork(any(), any(), any(), any()) } coAnswers { callOriginal() }
         coEvery { dao.admitModel(any(), any()) } coAnswers { callOriginal() }
         coEvery {
@@ -100,13 +106,14 @@ class SemanticIndexDaoTest {
         } returns -1L
         coEvery { dao.getLedger(MODEL_ID) } returnsMany listOf(admitted, advanced)
         coEvery { dao.advanceForExactWork(MODEL_ID, 20) } returns 1
+        coEvery { dao.upsertWork(work) } returns Unit
 
         assertEquals(
             advanced,
             dao.enqueueExactWork(MODEL_ID, MESSAGE_ID, "fingerprint", updatedAt = 20),
         )
 
-        coVerify(exactly = 0) { dao.upsertWork(any()) }
+        coVerify(exactly = 1) { dao.upsertWork(work) }
     }
 
     @Test
@@ -176,11 +183,11 @@ class SemanticIndexDaoTest {
     fun reconcileCompletionUsesExpectedRevisionCas() = runTest {
         val dao = mockk<SemanticIndexDao>()
         coEvery { dao.completeReconcile(any(), any(), any()) } coAnswers { callOriginal() }
-        coEvery { dao.markCurrentAfterReconcile(MODEL_ID, 7, 30) } returns 1
-        coEvery { dao.markCurrentAfterReconcile(MODEL_ID, 6, 31) } returns 0
+        coEvery { dao.markAfterReconcile(MODEL_ID, 7, 30) } returns 1
+        coEvery { dao.markAfterReconcile(MODEL_ID, 6, 31) } returns 0
 
-        assertTrue(dao.completeReconcile(MODEL_ID, expectedRevision = 7, updatedAt = 30))
-        assertFalse(dao.completeReconcile(MODEL_ID, expectedRevision = 6, updatedAt = 31))
+        assertTrue(dao.completeReconcile(MODEL_ID, expectedReconcileRevision = 7, updatedAt = 30))
+        assertFalse(dao.completeReconcile(MODEL_ID, expectedReconcileRevision = 6, updatedAt = 31))
     }
 
     @Test
@@ -193,12 +200,12 @@ class SemanticIndexDaoTest {
         assertIllegalArgument { dao.admitModel("", updatedAt = 1) }
         assertIllegalArgument { dao.enqueueExactWork(MODEL_ID, "", "fingerprint", 1) }
         assertIllegalArgument { dao.enqueueExactWork(MODEL_ID, MESSAGE_ID, "", 1) }
-        assertIllegalArgument { dao.completeReconcile("", expectedRevision = 0, updatedAt = 1) }
-        assertIllegalArgument { dao.completeReconcile(MODEL_ID, expectedRevision = -1, updatedAt = 1) }
+        assertIllegalArgument { dao.completeReconcile("", expectedReconcileRevision = 0, updatedAt = 1) }
+        assertIllegalArgument { dao.completeReconcile(MODEL_ID, expectedReconcileRevision = -1, updatedAt = 1) }
 
         coVerify(exactly = 0) { dao.insertLedger(any()) }
         coVerify(exactly = 0) { dao.advanceForExactWork(any(), any()) }
-        coVerify(exactly = 0) { dao.markCurrentAfterReconcile(any(), any(), any()) }
+        coVerify(exactly = 0) { dao.markAfterReconcile(any(), any(), any()) }
     }
 
     @Test
@@ -210,7 +217,7 @@ class SemanticIndexDaoTest {
             .substringAfterLast("@Query(")
         val exactCurrent = source.substringBefore("suspend fun markCurrentAfterExactWork")
             .substringAfterLast("@Query(")
-        val reconcileCurrent = source.substringBefore("suspend fun markCurrentAfterReconcile")
+        val reconcileCurrent = source.substringBefore("suspend fun markAfterReconcile")
             .substringAfterLast("@Query(")
 
         assertTrue(delete.contains("sourceRevision = :sourceRevision"))
@@ -219,18 +226,23 @@ class SemanticIndexDaoTest {
         assertTrue(exactCurrent.contains("sourceRevision = :sourceRevision"))
         assertTrue(exactCurrent.contains("NOT EXISTS"))
         assertTrue(reconcileCurrent.contains("state = 'NEEDS_RECONCILE'"))
-        assertTrue(reconcileCurrent.contains("sourceRevision = :expectedRevision"))
+        assertTrue(
+            reconcileCurrent.contains("reconcileRevision = :expectedReconcileRevision"),
+        )
+        assertTrue(reconcileCurrent.contains("sourceRevision = :expectedReconcileRevision"))
         assertTrue(reconcileCurrent.contains("NOT EXISTS"))
     }
 
     private fun needsReconcile(
         revision: Long,
         completedRevision: Long = 0,
+        reconcileRevision: Long = revision,
         updatedAt: Long,
     ) = SemanticIndexLedgerEntity(
         modelId = MODEL_ID,
         sourceRevision = revision,
         completedRevision = completedRevision,
+        reconcileRevision = reconcileRevision,
         updatedAt = updatedAt,
     )
 

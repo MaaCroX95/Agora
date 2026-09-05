@@ -572,6 +572,8 @@
     <string name="appearance_motion_feedback">Chuyển động &amp; phản hồi</string>
     <string name="appearance_chat_display">Hiển thị trò chuyện</string>
     <string name="theme_mode">Chế độ chủ đề</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">Dùng nền trắng thuần trong giao diện sáng và đen thuần trong giao diện tối</string>
     <string name="theme_mode_light">Sáng</string>
     <string name="theme_mode_dark">Tối</string>
     <string name="theme_mode_follow_device">Theo hệ thống</string>
@@ -659,6 +661,7 @@
     <string name="embedding_type_local">Cục bộ</string>
     <string name="cached">Đã lưu bộ đệm</string>
     <string name="not_cached">Chưa lưu bộ đệm</string>
+    <string name="cache_work_remaining">Còn lại %1$d (%2$d/%3$d)</string>
     <string name="advanced_title">Nâng cao</string>
     <string name="search_context_label">Tin nhắn ngữ cảnh cho mỗi kết quả tìm kiếm</string>
     <string name="search_context_desc">%1$d tin nhắn</string>
@@ -784,6 +787,7 @@
     <string name="about_links">Liên kết</string>
     <string name="about_developer">Nhà phát triển</string>
     <string name="about_developer_name">Newo Ether · Nhà phát triển độc lập</string>
+    <string name="about_website">Trang web</string>
     <string name="about_github">GitHub</string>
     <string name="about_issue_tracker">Theo dõi lỗi</string>
     <string name="about_contribute">Đóng góp</string>
@@ -1248,4 +1252,6 @@
     <string name="delete_conversation_title">Xóa cuộc trò chuyện?</string>
     <string name="delete_conversation_from_message_confirm">Xóa tin nhắn này sẽ xóa toàn bộ cuộc trò chuyện. Bạn không thể hoàn tác thao tác này.</string>
     <string name="composer_clear_failed">Đã gửi tin nhắn nhưng không thể xóa bản nháp.</string>
+    <string name="models_show_provider_name">Hiện tên nhà cung cấp</string>
+    <string name="models_show_provider_name_desc">Thêm tên nhà cung cấp sau tên mô hình.</string>
 </resources>

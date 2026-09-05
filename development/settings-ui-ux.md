@@ -48,6 +48,32 @@ layout, states, density, or interaction design has been approved.
   `SettingsAnimations.kt` for page transitions. Copy their behavior through the
   shared APIs rather than recreating their dimensions or motion locally.
 
+## Appearance defaults
+
+- When no appearance preference has been persisted, the app uses the Forest color scheme with the
+  Tonal Spot scheme style and keeps Dynamic Color disabled.
+- Startup placeholders, invalid stored color-scheme fallbacks, and theme defaults must resolve to
+  the same appearance. An explicitly persisted valid user choice remains authoritative.
+
+## AMOLED appearance
+
+- Appearance places an `AMOLED` switch immediately after Theme Mode. It is always available,
+  defaults off, and applies and persists immediately through the existing Settings owner.
+- AMOLED preserves Light, Dark, and Follow Device selection. It sets the effective light theme's
+  base background and surface to pure white and the dark theme's to pure black. Surface dim/bright
+  bounds remain ordered. Container levels, content colors, accents, errors, and dynamic color stay
+  owned by the selected Material palette; AMOLED never flattens every container or changes brightness.
+- While enabled, the chat background owner omits its decorative blobs and gradients. Disabling
+  AMOLED restores the existing decoration and theme without overwriting Blur Effects or motion settings.
+- Custom seed palettes map every Compose color role from the same MaterialKolor scheme, including
+  surface containers, inverse and fixed colors. No role may silently inherit the library's seed palette.
+- Small readable status text uses full semantic content colors. PDF warning text in a user bubble
+  uses the theme error color; its contrast against primaryContainer must remain at least 4.5:1 for
+  all shipped palettes. Advanced generation's unspecified labels use full onSurfaceVariant.
+- AMOLED follows the portable Settings contract in `import-export.md`. Verification covers both
+  endpoints, unchanged container/content roles, all presets/styles, default-off behavior, locale
+  parity, and complete export/restore/Replace wiring. Device visual acceptance remains owner-tested.
+
 ## Structure and spacing
 
 - Use the shared settings page scaffold and `SettingsItem` for standard rows.
@@ -64,6 +90,11 @@ layout, states, density, or interaction design has been approved.
 - External links use the external-link icon, not a next-page chevron.
 
 ## Documentation entry point
+
+- About places Website first in its Links group, with `agora.newoether.com` as supporting text,
+  a globe icon, and the established external-link action icon. The whole row opens
+  `https://agora.newoether.com` through the existing external URL launcher. The public homepage
+  remains separate from the documentation destination and its visibility setting.
 
 - Reuse the shared `DocumentationFab` exactly; do not create page-specific styling, iconography, shape, animation, or spacing.
 - The FAB belongs on the actionable configuration surface that the manual explains. For list/detail flows, place it on the Add/Edit detail editor and not on a root list that cannot configure the documented fields.
@@ -117,9 +148,9 @@ layout, states, density, or interaction design has been approved.
 - Loading a legacy session applies the same newest-complete-event FIFO boundary,
   deletes the evicted durable files, and preserves monotonic sequence. A legacy
   capacity marker is cleared; a pause caused by that marker resumes capture,
-  while a manually paused session remains paused. API 26 and newer enumerate
-  event files through a streaming directory iterator; API 24-25 use the approved
-  `File.listFiles()` compatibility fallback.
+  while a manually paused session remains paused. All supported Android versions
+  enumerate event files through a streaming directory iterator. Android 7 support
+  was removed by the minimum-platform decision in `application-ui.md`.
 - Clear removes retained events and resets dropped, evicted, and truncated
   counters while preserving the session identity, current running or paused
   state, and monotonic sequence.

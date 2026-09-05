@@ -183,6 +183,10 @@ an independently sampled ID/snapshot pair must never drive answering haptics. Co
 non-Answer message, Settings, Tasks, media/PDF preview, text preview, app background, or disabling
 haptics makes the texture ineligible and must stop it immediately, including when the effect leaves
 composition. The drawer remains part of Chat presentation and does not suppress the texture.
+Citation metadata never ends an Answer phase; an actual tool or thought segment still does, even
+when its renderer hides it. Discrete confirmation, interruption and deletion feedback may pause the
+actuator but do not revoke the current Chat effect's texture request. Its existing pending resume
+must be cancelled when that effect stops, so a stale callback cannot revive an inactive texture.
 Generation code and overlay code must not start or stop the waveform independently or introduce a
 second haptic owner, shadow state, delay, compensation, or fallback path.
 
@@ -249,9 +253,9 @@ durable message identity and cannot become a parallel message graph.
   typed after the tap even when that visible edit reaches the controller after freeze begins.
 - One accepted Send creates one fresh Run, durable USER input, and MODEL placeholder atomically. A
   durable acceptance whose draft clear fails enters a non-resendable clear-only recovery state.
-- Only a direct foreground Send for the exact still-visible origin may clear focus, hide the IME, and
-  collapse the Composer after accepted clearing. Queue placement, a later FIFO drain, and stale New
-  Chat acceptance must not cause those presentation effects.
+- Direct and queued Send acceptance preserve focus, IME visibility, and expanded Composer state.
+  Accepted draft clearing owns no presentation dismissal. Explicit navigation, user gestures, and
+  the drawer threshold retain the dismissal ownership defined in application-ui.md.
 - One claimed FIFO drain enters the same Send transaction and creates a fresh Run.
 - Input queued while another generation owns the slot stays memory-owned until a legal boundary.
 - Claim failure returns the exact batch to the front; durable success transfers ownership exactly
@@ -816,11 +820,14 @@ target traversal lasts `1,300 ms`, twice the prior motion speed. Normal motion c
 target-to-target while Pending. The minimum dot radius remains `0.7 dp` and the maximum is `3.9 dp`;
 the existing center bounds account for that maximum so complete dot edges still retain the full
 `16 dp` inset. Reduced Motion freezes the anchor at the center
-without removing the opacity transition. A terminal failure shows a centered Material `BrokenImage`.
+without removing the opacity transition. Pending, decoded, and failed content are the only semantic
+states of one full-`300 x 300 dp` 200 ms Crossfade owner. A terminal failure fills that complete
+slot and shows a centered Material `BrokenImage`; it never first paints a corner-sized failure icon.
 For a completed attachment, the Coil request receives the explicit pixel size derived from the
 `300 dp` slot so decoding never waits for the painter's first draw; the Pending matrix remains until
 decode succeeds, then Crossfades to a `ContentScale.Crop` image that reuses the ordinary media-open
-callback.
+callback. Tool-detail image previews follow the same full-viewport loading/success/failure Crossfade
+and use the shared 4 dp indeterminate loading stroke.
 
 In the Tool detail Bottom Sheet, a `generate_image` result keeps the same `24 dp` outer horizontal
 content padding as ordinary Tool text. Its rounded preview is centered and fills that padded content
@@ -836,6 +843,13 @@ truncation metadata, regex failures, and line-content bounds. Conch durable back
 foreground continuation after the client wait budget, and `view_image` are explicit extensions rather
 than baseline behavior that Local must imitate. SSH may implement the transport-neutral interfaces,
 but it is not the authority for the Local/Conch baseline.
+
+Local Sandbox package installation and upgrade share one dependency download closure. APKINDEX
+records are read completely through their blank-line boundary or EOF. Virtual dependency providers
+prefer an already-installed candidate present in the index, otherwise the highest repository
+provider priority, with stable name ordering for ties. Index order must not pull a competing shell
+provider into a transaction. Existing newer packages are never downloaded for downgrade; Alpine's
+`apk` remains responsible for validating and applying the complete transaction.
 
 Structured Provider citations follow [citations.md](citations.md). Protocol routers emit structured
 citation events rather than answer `TextChunk` or tool events. The existing streaming segment
@@ -1028,6 +1042,10 @@ changes database materialization and object lifetime only; it does not change Pr
 ordering, attachment projection, protocol validation, context selection, or failure semantics.
 
 ### 9.2 Ordinary-generation system prompt ownership
+Gemini serializes the compiled system prompt under the canonical REST JSON field
+`systemInstruction`, shared by ordinary chat and dedicated internal generations. It must emit
+only that field spelling, never both protobuf and JSON aliases; absent prompts omit the field.
+
 For ordinary conversation generation, the complete Provider-visible system prompt is owned by the
 user-selected structured System Prompt template. The request builder may compile that template and
 resolve only the predefined variables that the user explicitly placed in it. It must not append,
@@ -1052,6 +1070,10 @@ message-scoped: ordinary User and Assistant wrappers resolve it independently fr
 message's model identity, using an empty value when none exists. It is not a request-wide substitute.
 Editor previews may use explicit example values only for presentation and must never persist them as
 resolved prompt content.
+Startup migrations preserve user-edited System Prompt content and all message wrappers. Only a
+complete match to a known unmodified built-in template permits replacement with a newer default;
+the presence of a legacy runtime tag alone never authorizes replacing a stored template. Legacy
+wrapper storage may be normalized without changing its resolved content.
 Context rollout and token accounting for a dispatched request must consume the exact late-bound system
 prompt instance that the transport serializes. They must not estimate from an earlier resolution and
 then dispatch a newly resolved prompt. Provider adapters receive the compiled prompt and must not
@@ -1115,7 +1137,10 @@ progress, presentation metadata, and attachment metadata that is not serialized 
 The Chat top-bar token subtitle and Bottom Bar context indicator report the same full selected canonical
 context estimate plus fixed request cost; neither surface replaces that number with the already-retained
 Provider window or with a sum of historical message usage. The top-bar subtitle is absent when no
-canonical usage is available. The rollout projection maps the shared canonical window back to one
+canonical usage is available. When visible, it shows `~used / budget tokens`, reusing the Bottom Bar's
+localized context-usage resource and `ContextBudget.compactLabel` for both numbers. The subtitle retains
+the existing title measurement, clipping, and motion ownership; it never calculates context itself.
+The rollout projection maps the shared canonical window back to one
 contiguous eligible durable suffix on the selected branch, including complete protocol units.
 Automatic Compact eligibility and retained verbatim text consume the complete selected canonical path,
 not an already-rolled Provider suffix.

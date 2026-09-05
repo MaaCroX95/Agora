@@ -28,32 +28,34 @@ class ApprovedFeatureSourceContractTest {
         assertFalse(rag.contains("runCacheLoop"))
         assertFalse(rag.contains("ExistingWorkPolicy.REPLACE"))
         assertFalse(rag.contains("_cachingProgress"))
+        assertTrue(rag.contains("EmbeddingCacheRowSnapshot") && rag.contains("scheduledCacheWorkIds"))
+        listOf("EmbeddingCacheRowReducer.finalizing", "_cacheCountLoading", "_cacheCountFailures", "_ledgerStates").let {
+            assertTrue(rag.contains(it.first()) && it.drop(1).none(rag::contains))
+        }
 
-        assertTrue(settings.contains("viewModel.ragManager.cachingModels.collectAsState()"))
-        assertTrue(settings.contains("viewModel.ragManager.cacheCountLoading.collectAsState()"))
-        assertTrue(settings.contains("viewModel.ragManager.cacheCountFailures.collectAsState()"))
-        assertTrue(settings.contains("viewModel.ragManager.ledgerStates.collectAsState()"))
-        assertTrue(settings.contains("LaunchedEffect(Unit) { viewModel.ragManager.loadCacheCounts() }"))
-        assertTrue(settings.contains("SemanticIndexLedgerEntity.STATE_CURRENT"))
-        assertTrue(settings.contains("stringResource(R.string.loading_label)"))
-        assertTrue(settings.contains("stringResource(R.string.tool_state_failed)"))
-        assertTrue(settings.contains("onClick = viewModel.ragManager::loadCacheCounts"))
+        assertTrue(settings.contains("viewModel.ragManager.cacheRows.collectAsState()") &&
+            settings.contains("LaunchedEffect(embeddingModelIds) { viewModel.ragManager.loadCacheCounts() }"))
+        assertTrue(settings.contains("EmbeddingCacheRowPhase.RECACHE"))
+        assertTrue(listOf("stringResource(R.string.loading_label)", "stringResource(R.string.tool_state_failed)",
+            "viewModel.ragManager.retryCacheRow(model.id)").all(settings::contains))
         assertTrue(settings.split("animationSpec = tween(250)").size - 1 >= 2)
+        assertTrue(settings.contains("modifier = Modifier.widthIn(min = 76.dp)"))
         assertTrue(settings.contains("modifier = Modifier.size(24.dp)"))
         assertTrue(settings.contains("viewModel.ragManager.setAutoCacheEnabled"))
-        assertFalse(settings.contains("cachingProgress"))
-        assertFalse(settings.contains("val allCached ="))
+        assertTrue(listOf("cachingProgress", "val allCached =", "embeddingCacheActionState(")
+            .none(settings::contains))
 
         assertTrue(dao.contains("GROUP BY e.modelId"))
         assertTrue(dao.contains("getEmbeddingCountsByModels"))
         assertTrue(entities.contains("Index(value = [\"modelId\"])"))
-        assertTrue(database.contains("CURRENT_VERSION = 29"))
+        assertTrue(database.contains("CURRENT_VERSION = 31"))
         assertTrue(database.contains("MIGRATION_23_24"))
         assertTrue(database.contains("MIGRATION_24_25"))
         assertTrue(database.contains("MIGRATION_25_26"))
         assertTrue(database.contains("MIGRATION_26_27"))
         assertTrue(database.contains("MIGRATION_27_28"))
         assertTrue(database.contains("MIGRATION_28_29"))
+        assertTrue(database.contains("MIGRATION_29_30"))
     }
 
     @Test
@@ -144,7 +146,7 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(composer.contains(".contentReceiver(clipboardImageReceiver)"))
         assertTrue(composer.contains("transferableContent.consume"))
         assertTrue(composer.contains("hasMediaType(MediaType.Image)"))
-        assertTrue(composer.contains("importUris(composerOwnerId, imageUris, \"image\")"))
+        assertTrue(composer.contains("importUris(composerOwnerId, imageUris, \"image\", emitSuccessHaptic = false)"))
         assertTrue(composer.contains("inspectAttachmentIngress("))
         assertTrue(composer.contains(
             "composerController.importAttachment(ownerId, attachment) || imported",

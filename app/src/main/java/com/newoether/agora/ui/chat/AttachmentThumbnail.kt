@@ -1,12 +1,15 @@
 package com.newoether.agora.ui.chat
 
 import android.content.Context
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
@@ -14,12 +17,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -212,21 +222,10 @@ fun AttachmentThumbnailItem(
             val clickMod = if (originalUri != null && handlers.onMediaClick != null)
                 Modifier.clip(RoundedCornerShape(8.dp)).clickable { handlers.onMediaClick(allMediaUrls, mediaIndex) } else Modifier
             Box(modifier = clickMod) {
-                coil.compose.AsyncImage(
-                    model = imagePath,
-                    contentDescription = null,
+                MessageMediaThumbnail(
+                    imagePath = imagePath,
                     modifier = thumbModifier,
-                    contentScale = ContentScale.Crop
-                )
-                Icon(
-                    Icons.Default.PlayArrow,
-                    contentDescription = "Play",
-                    tint = Color.White,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(28.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                        .padding(4.dp)
+                    showPlay = true,
                 )
             }
         }
@@ -241,11 +240,9 @@ fun AttachmentThumbnailItem(
                             hapticFeedbackEnabled = false,
                         )
                 ) {
-                    coil.compose.AsyncImage(
-                        model = imagePath,
-                        contentDescription = null,
+                    MessageMediaThumbnail(
+                        imagePath = imagePath,
                         modifier = thumbModifier,
-                        contentScale = ContentScale.Crop
                     )
                 }
             } else {
@@ -265,6 +262,93 @@ fun AttachmentThumbnailItem(
                     if (showFileName && fileName != null) {
                         Text(fileName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageMediaThumbnail(
+    imagePath: String,
+    modifier: Modifier,
+    showPlay: Boolean = false,
+) {
+    var loadState by remember(imagePath) {
+        mutableStateOf(MediaLoadPresentation.LOADING)
+    }
+    val loadingVisible = rememberMediaLoadingVisible(imagePath, loadState == MediaLoadPresentation.LOADING)
+    var presentedState by remember(imagePath) {
+        mutableStateOf(MediaLoadPresentation.LOADING to false)
+    }
+    LaunchedEffect(imagePath, loadState, loadingVisible) {
+        presentedState = loadState to loadingVisible
+    }
+
+    Box(
+        modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        coil.compose.AsyncImage(
+            model = imagePath,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            onLoading = { loadState = MediaLoadPresentation.LOADING },
+            onSuccess = { loadState = MediaLoadPresentation.LOADED },
+            onError = { loadState = MediaLoadPresentation.FAILED },
+            modifier = Modifier.fillMaxSize(),
+        )
+        Crossfade(
+            targetState = presentedState,
+            animationSpec = tween(MEDIA_STATE_CROSSFADE_MILLIS),
+            label = "messageMediaThumbnail",
+            modifier = Modifier.fillMaxSize(),
+        ) { (state, showLoading) ->
+            when (state) {
+                MediaLoadPresentation.LOADING -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (showLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                MediaLoadPresentation.LOADED -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (showPlay) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = "Play",
+                            tint = Color.White,
+                            modifier = Modifier
+                                .size(28.dp)
+                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                .padding(4.dp),
+                        )
+                    }
+                }
+                MediaLoadPresentation.FAILED -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Default.BrokenImage,
+                        contentDescription = androidx.compose.ui.res.stringResource(
+                            com.newoether.agora.R.string.attachment_copy_failed_image,
+                        ),
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(32.dp),
+                    )
                 }
             }
         }

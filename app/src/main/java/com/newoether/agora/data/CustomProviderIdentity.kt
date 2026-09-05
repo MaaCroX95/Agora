@@ -115,11 +115,11 @@ internal fun String.remapProviderReference(
     return match.value + removePrefix(match.key)
 }
 
-internal fun remapModelAliases(
-    aliases: Map<String, String>,
+internal fun <T> remapModelPreferenceKeys(
+    aliases: Map<String, T>,
     migrations: Map<String, String>,
-): Map<String, String> {
-    val result = linkedMapOf<String, String>()
+): Map<String, T> {
+    val result = linkedMapOf<String, T>()
     aliases.forEach { (modelId, alias) ->
         if (modelId.remapProviderReference(migrations) == modelId) result[modelId] = alias
     }
@@ -146,11 +146,11 @@ internal fun canonicalCustomModelId(
  * is intentionally conservative: an orphan namespace moves only when the current model catalog
  * identifies exactly one active custom provider. Ambiguous aliases remain untouched.
  */
-internal fun repairOrphanedCustomProviderAliases(
-    aliases: Map<String, String>,
+internal fun <T> repairOrphanedCustomProviderPreferenceKeys(
+    aliases: Map<String, T>,
     knownModelReferences: Collection<String>,
     activeProviderIds: Set<String>,
-): Map<String, String> {
+): Map<String, T> {
     val activeModels = knownModelReferences.asSequence()
         .map(ModelId::parse)
         .filter { it.providerName in activeProviderIds }
@@ -172,7 +172,7 @@ internal fun repairOrphanedCustomProviderAliases(
     }.toMap()
     if (recoveredProviders.isEmpty()) return aliases
 
-    val result = linkedMapOf<String, String>()
+    val result = linkedMapOf<String, T>()
     aliases.forEach { (modelId, alias) ->
         val parsed = ModelId.parse(modelId)
         if (parsed.providerName !in recoveredProviders) result[modelId] = alias
@@ -446,10 +446,10 @@ fun modelDisplayName(
     modelId: String,
     aliases: Map<String, String>,
     customProviders: List<CustomProviderConfig>,
+    showProviderName: Boolean,
 ): String {
-    aliases[modelId]?.takeIf(String::isNotBlank)?.let {
-        return modelAliasDisplayName(modelId, aliases, customProviders)
-    }
+    val alias = modelAliasDisplayName(modelId, aliases, customProviders)
+    if (!showProviderName) return alias
     val parsed = ModelId.parse(modelId)
-    return "${modelAliasDisplayName(modelId, aliases, customProviders)} (${providerDisplayName(parsed.providerName, customProviders)})"
+    return "$alias (${providerDisplayName(parsed.providerName, customProviders)})"
 }

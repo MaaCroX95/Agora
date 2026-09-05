@@ -14,7 +14,7 @@ internal enum class TaskHistoryPreviewPhase {
  *
  * A history conversation is a transient preview. Return ownership is retained until both the
  * Tasks overlay fully covers Chat and a generation-fenced, non-haptic restoration request has
- * settled on the captured origin. Opening another history item supersedes an in-flight return
+ * settled on the captured origin or reported failure. Opening another history item supersedes a return
  * without replacing that origin.
  */
 internal data class TaskHistoryPreviewState(
@@ -28,6 +28,7 @@ internal data class TaskHistoryPreviewState(
     val restoreRequested: Boolean = false,
     val returnOverlayCovered: Boolean = false,
     val returnDestinationObserved: Boolean = false,
+    val returnRestoreFailed: Boolean = false,
 ) {
     val active: Boolean
         get() = phase != TaskHistoryPreviewPhase.IDLE
@@ -48,6 +49,7 @@ internal data class TaskHistoryPreviewState(
                 restoreRequested = false,
                 returnOverlayCovered = false,
                 returnDestinationObserved = false,
+                returnRestoreFailed = false,
             )
         } else {
             TaskHistoryPreviewState(
@@ -104,6 +106,7 @@ internal data class TaskHistoryPreviewState(
                 restoreRequested = false,
                 returnOverlayCovered = false,
                 returnDestinationObserved = false,
+                returnRestoreFailed = false,
             )
         } else {
             this
@@ -126,8 +129,22 @@ internal data class TaskHistoryPreviewState(
             this
         }
 
+    fun markReturnRestoreFailed(expectedGeneration: Long): TaskHistoryPreviewState =
+        if (
+            phase == TaskHistoryPreviewPhase.RETURNING && restoreRequested &&
+            generation == expectedGeneration
+        ) {
+            copy(returnRestoreFailed = true).settleReturnIfComplete()
+        } else {
+            this
+        }
+
     private fun settleReturnIfComplete(): TaskHistoryPreviewState =
-        if (returnOverlayCovered && returnDestinationObserved) settledIdle() else this
+        if (returnOverlayCovered && (returnDestinationObserved || returnRestoreFailed)) {
+            settledIdle()
+        } else {
+            this
+        }
 
     private fun settledIdle(): TaskHistoryPreviewState = copy(
         phase = TaskHistoryPreviewPhase.IDLE,
@@ -139,6 +156,7 @@ internal data class TaskHistoryPreviewState(
         restoreRequested = false,
         returnOverlayCovered = false,
         returnDestinationObserved = false,
+        returnRestoreFailed = false,
     )
 
     companion object {

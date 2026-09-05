@@ -88,7 +88,7 @@ internal class ConversationComposerSubmissionController(
         var accepted: SendAcceptance? = null
         var frozenRevision: Long? = null
         var expectedNewChatWorkspace: NewChatPersistEntity? = null
-        var runtimeAttachmentIds: Set<String> = emptySet()
+        var durableAttachmentIds: Set<String> = emptySet()
     }
 
     private val ownersLock = Any()
@@ -252,8 +252,9 @@ internal class ConversationComposerSubmissionController(
                 }
             if (request.text.isBlank() && readyAttachments.isEmpty()) return
             if (!startSubmitting(owner, request)) return
-            request.runtimeAttachmentIds = readyAttachments.asSequence()
-                .filterNot { it.storage.reclaimWhenAbandoned }
+            // Every canonical artifact passed to Send becomes message/queue-owned at acceptance.
+            // It must never re-enter abandoned-draft reclamation after that ownership transfer.
+            request.durableAttachmentIds = readyAttachments
                 .mapTo(hashSetOf(), SelectedAttachment::localId)
             send(acceptedAdmission, request.text, readyAttachments) { acceptance ->
                 if (!request.acceptanceStarted.compareAndSet(false, true)) return@send
@@ -306,7 +307,7 @@ internal class ConversationComposerSubmissionController(
         }
         request.acceptedAndCleared.set(true)
         val reclaimable = clearResult.attachments.filterNot { attachment ->
-            attachment.localId in request.runtimeAttachmentIds
+            attachment.localId in request.durableAttachmentIds
         }
         if (reclaimable.isNotEmpty() && acceptance.hasDurableAttachmentOwner()) {
             scope.launch(ioDispatcher) { drafts.reclaimAttachments(reclaimable) }

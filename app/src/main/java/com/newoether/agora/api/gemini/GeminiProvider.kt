@@ -87,7 +87,7 @@ private fun ChatMessage.isGeminiToolRoundCompatible(
 @Serializable
 internal data class ApiGenerateContentRequest(
     val contents: List<ApiRequestContent>,
-    @SerialName("system_instruction") val systemInstruction: ApiRequestContent? = null,
+    val systemInstruction: ApiRequestContent? = null,
     val tools: List<ApiTool>? = null,
     @SerialName("toolConfig") val toolConfig: ApiToolConfig? = null,
     @SerialName("generationConfig") val generationConfig: ApiGenerationConfig? = null

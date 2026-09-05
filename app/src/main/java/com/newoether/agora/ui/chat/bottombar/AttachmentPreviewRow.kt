@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
@@ -49,15 +50,13 @@ import com.newoether.agora.R
 import com.newoether.agora.model.AttachmentImportState
 import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.ui.chat.FileThumbnail
+import com.newoether.agora.ui.chat.MEDIA_LOADING_INDICATOR_STROKE_WIDTH
+import com.newoether.agora.ui.chat.MediaLoadPresentation
+import com.newoether.agora.ui.chat.rememberMediaLoadingVisible
+import com.newoether.agora.ui.chat.toMediaLoadPresentation
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 
 private const val ATTACHMENT_STATUS_CROSSFADE_MS = 200
-
-internal enum class AttachmentMediaLoadState {
-    LOADING,
-    SUCCESS,
-    ERROR,
-}
 
 internal enum class AttachmentPreviewPresentation {
     INITIAL,
@@ -77,7 +76,7 @@ internal fun attachmentPreviewPresentation(
     importState: AttachmentImportState,
     type: String,
     hasVideoFrame: Boolean,
-    mediaLoadState: AttachmentMediaLoadState,
+    mediaLoadState: MediaLoadPresentation,
 ): AttachmentPreviewPresentation = when {
     unavailable -> AttachmentPreviewPresentation.UNAVAILABLE
     importState == AttachmentImportState.PROCESSING ->
@@ -88,9 +87,9 @@ internal fun attachmentPreviewPresentation(
     type == "pdf" -> AttachmentPreviewPresentation.READY_PDF
     type == "video" && !hasVideoFrame ->
         AttachmentPreviewPresentation.READY_VIDEO_PLACEHOLDER
-    mediaLoadState == AttachmentMediaLoadState.SUCCESS ->
+    mediaLoadState == MediaLoadPresentation.LOADED ->
         AttachmentPreviewPresentation.MEDIA_SUCCESS
-    mediaLoadState == AttachmentMediaLoadState.ERROR ->
+    mediaLoadState == MediaLoadPresentation.FAILED ->
         AttachmentPreviewPresentation.MEDIA_ERROR
     else -> AttachmentPreviewPresentation.MEDIA_LOADING
 }
@@ -140,12 +139,7 @@ internal fun AttachmentPreviewRow(
                 else -> attachment.localPath ?: uriString
             }
             val mediaPainter = rememberAsyncImagePainter(model = mediaModel)
-            val mediaLoadState = when (mediaPainter.state) {
-                is AsyncImagePainter.State.Success -> AttachmentMediaLoadState.SUCCESS
-                is AsyncImagePainter.State.Error -> AttachmentMediaLoadState.ERROR
-                is AsyncImagePainter.State.Empty,
-                is AsyncImagePainter.State.Loading -> AttachmentMediaLoadState.LOADING
-            }
+            val mediaLoadState = mediaPainter.state.toMediaLoadPresentation()
             val targetPresentation = attachmentPreviewPresentation(
                 unavailable = attachment.unavailable,
                 importState = attachment.importState,
@@ -153,11 +147,18 @@ internal fun AttachmentPreviewRow(
                 hasVideoFrame = attachment.processedFrames?.isNotEmpty() == true,
                 mediaLoadState = mediaLoadState,
             )
+            val isLoading = targetPresentation == AttachmentPreviewPresentation.IMPORT_LOADING ||
+                targetPresentation == AttachmentPreviewPresentation.MEDIA_LOADING
+            val delayedLoadingVisible = rememberMediaLoadingVisible(
+                loadingKey = attachment.localId,
+                isLoading = isLoading && attachment.type == "image",
+            )
+            val loadingVisible = isLoading && (attachment.type != "image" || delayedLoadingVisible)
             var presentedState by remember(attachment.localId) {
-                mutableStateOf(AttachmentPreviewPresentation.INITIAL)
+                mutableStateOf(AttachmentPreviewPresentation.INITIAL to false)
             }
-            LaunchedEffect(targetPresentation) {
-                presentedState = targetPresentation
+            LaunchedEffect(attachment.localId, targetPresentation, loadingVisible) {
+                presentedState = targetPresentation to loadingVisible
             }
 
             Column(
@@ -209,9 +210,10 @@ internal fun AttachmentPreviewRow(
                             .size(64.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .then(clickableModifier),
-                    ) { presentation ->
+                    ) { (presentation, showLoading) ->
                         AttachmentPresentationContent(
                             presentation = presentation,
+                            showLoading = showLoading,
                             attachment = attachment,
                             mediaPainter = mediaPainter,
                             editable = editable,
@@ -243,7 +245,7 @@ internal fun AttachmentPreviewRow(
                     }
                 }
                 Crossfade(
-                    targetState = presentedState,
+                    targetState = presentedState.first,
                     animationSpec = tween(ATTACHMENT_STATUS_CROSSFADE_MS),
                     label = "attachmentCaption",
                 ) { presentation ->
@@ -282,6 +284,7 @@ internal fun AttachmentPreviewRow(
 @Composable
 private fun AttachmentPresentationContent(
     presentation: AttachmentPreviewPresentation,
+    showLoading: Boolean,
     attachment: SelectedAttachment,
     mediaPainter: AsyncImagePainter,
     editable: Boolean,
@@ -318,11 +321,13 @@ private fun AttachmentPresentationContent(
                         .clip(shape)
                         .background(Color.Black.copy(alpha = 0.4f)),
                 )
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    strokeWidth = 2.dp,
-                    color = Color.White,
-                )
+                if (showLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
             AttachmentPreviewPresentation.IMPORT_FAILED,
             AttachmentPreviewPresentation.MEDIA_ERROR -> {
@@ -336,17 +341,31 @@ private fun AttachmentPresentationContent(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.Default.ErrorOutline,
+                        if (attachment.type == "image") Icons.Default.BrokenImage
+                        else Icons.Default.ErrorOutline,
                         contentDescription = stringResource(R.string.retry),
                         tint = Color(0xFFB0B0B0),
                         modifier = Modifier.size(28.dp),
                     )
                 }
             }
-            AttachmentPreviewPresentation.MEDIA_LOADING -> CircularProgressIndicator(
-                modifier = Modifier.size(24.dp),
-                strokeWidth = 2.dp,
-            )
+            AttachmentPreviewPresentation.MEDIA_LOADING -> {
+                // AsyncImagePainter must stay attached to an Image while its request is running.
+                // Rendering only the spinner can leave size-sensitive requests permanently Loading.
+                Image(
+                    painter = mediaPainter,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+                if (showLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
             AttachmentPreviewPresentation.MEDIA_SUCCESS -> {
                 Image(
                     painter = mediaPainter,

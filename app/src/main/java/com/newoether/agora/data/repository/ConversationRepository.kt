@@ -4,7 +4,6 @@ import androidx.room.withTransaction
 import com.newoether.agora.data.local.ChatDao
 import com.newoether.agora.data.local.ChatDatabase
 import com.newoether.agora.data.local.ChatEntity
-import com.newoether.agora.data.local.ConversationDraftAttachmentReference
 import com.newoether.agora.data.local.ConversationSettingsImportTransferEntity
 import com.newoether.agora.data.local.ConversationSettingsTransferEntity
 import com.newoether.agora.data.local.EmbeddingEntity
@@ -17,7 +16,6 @@ import com.newoether.agora.data.local.MessageAttachmentReference
 import com.newoether.agora.data.local.MessageContextTopology
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.data.local.MessageStreamCheckpoint
-import com.newoether.agora.data.local.NewChatDraftAttachmentReference
 import com.newoether.agora.data.local.NewChatPersistEntity
 import com.newoether.agora.data.local.ProviderContextTopologySnapshot
 import com.newoether.agora.data.local.RunEntity
@@ -788,21 +786,6 @@ class ConversationRepository(
     } else {
         chatDao.getSearchableConversationsPageAscending(offset, limit)
     }
-
-    suspend fun getMessageAttachmentReferencesPage(
-        afterId: String?,
-        limit: Int,
-    ): List<MessageAttachmentReference> =
-        chatDao.getMessageAttachmentReferencesPage(afterId, limit)
-
-    suspend fun getConversationDraftAttachmentReferencesPage(
-        afterId: String?,
-        limit: Int,
-    ): List<ConversationDraftAttachmentReference> =
-        chatDao.getConversationDraftAttachmentReferencesPage(afterId, limit)
-
-    suspend fun getNewChatDraftAttachmentReference(): NewChatDraftAttachmentReference? =
-        chatDao.getNewChatDraftAttachmentReference()
 
     /** Persists the composer draft (text + serialized attachments) for a conversation. */
     suspend fun updateDraft(

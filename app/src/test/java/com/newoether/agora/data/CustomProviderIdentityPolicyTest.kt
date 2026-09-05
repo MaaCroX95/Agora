@@ -76,7 +76,7 @@ class CustomProviderIdentityPolicyTest {
 
         assertEquals(
             mapOf("$id:model" to "Current alias"),
-            remapModelAliases(
+            remapModelPreferenceKeys(
                 aliases = linkedMapOf(
                     "Relay:model" to "Legacy alias",
                     "$id:model" to "Current alias",
@@ -103,13 +103,20 @@ class CustomProviderIdentityPolicyTest {
     }
 
     @Test
-    fun customModelDisplayUsesCurrentProviderNameUnlessAliasOverridesIt() {
+    fun customModelDisplayUsesIndependentProviderPreferenceWithAnyAlias() {
         val id = "custom-provider-00000000-0000-4000-8000-000000000001"
         val model = "$id:gemini-3.1-pro"
         val providers = listOf(CustomProviderConfig(name = "Relay X", id = id))
 
-        assertEquals("Gemini 3.1 Pro (Relay X)", modelDisplayName(model, emptyMap(), providers))
-        assertEquals("Fast", modelDisplayName(model, mapOf(model to "Fast"), providers))
+        assertEquals("Gemini 3.1 Pro (Relay X)", modelDisplayName(model, emptyMap(), providers, true))
+        assertEquals("Gemini 3.1 Pro", modelDisplayName(model, emptyMap(), providers, false))
+        assertEquals("Fast (Relay X)", modelDisplayName(model, mapOf(model to "Fast"), providers, true))
+        assertEquals("Fast", modelDisplayName(model, mapOf(model to "Fast"), providers, false))
+        assertEquals("Gemini 3.1 Pro", modelDisplayName(model, mapOf(model to "  "), providers, false))
+        assertEquals(
+            "Fast (Renamed)",
+            modelDisplayName(model, mapOf(model to "Fast"), listOf(providers.single().copy(name = "Renamed")), true),
+        )
     }
 
     @Test
@@ -232,7 +239,7 @@ class CustomProviderIdentityPolicyTest {
         val id = "custom-provider-00000000-0000-4000-8000-000000000001"
 
         assertEquals("Custom", providerDisplayName(id, emptyList()))
-        assertEquals("Model (Custom)", modelDisplayName("$id:model", emptyMap(), emptyList()))
+        assertEquals("Model (Custom)", modelDisplayName("$id:model", emptyMap(), emptyList(), true))
     }
 
     @Test
@@ -273,7 +280,7 @@ class CustomProviderIdentityPolicyTest {
 
         assertEquals(
             aliases,
-            repairOrphanedCustomProviderAliases(
+            repairOrphanedCustomProviderPreferenceKeys(
                 aliases = aliases,
                 knownModelReferences = listOf("$first:model", "$second:model"),
                 activeProviderIds = setOf(first, second),

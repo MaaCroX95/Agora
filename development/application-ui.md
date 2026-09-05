@@ -6,6 +6,10 @@ This document owns durable application-level UI behavior that is not part of mes
 citations, semantic search, or Web Search. Current explicit user requirements override older
 presentation code and translations.
 
+The minimum supported Android version is Android 8.0 (API 26). Android 7 (API 24/25) is no longer
+supported. The default Mi Outfit family retains one variable font resource with its five explicit
+weights; every supported platform must apply those variation settings.
+
 ## Global English UI title capitalization
 English title-like UI copy must use conventional Title Case. This is a hard UI constraint, not a
 page-specific preference. It applies to page and sheet titles, section and group headings, setting
@@ -81,6 +85,14 @@ mode must not sample, duplicate, freeze, or paint over that dynamic background. 
 IME/navigation insets, composer-expansion spacer ownership, and scroll ownership remain unchanged.
 Expanded composer mode receives no lift and retains its exact background-color cover with 20 dp
 compact-at-screen-top gradient geometry.
+
+The top gradient blur and bottom alpha mask share one viewport graphics layer. The layer records
+the existing `DstIn` mask before applying the remembered horizontal/vertical RenderEffect chain;
+ChatApp must not stack a second offscreen mask layer inside a blur layer. The blur retains its
+full-resolution 9-tap passes, 5 dp maximum scale, 150 dp top falloff, and sub-0.5-pixel bypass.
+Blur Effects off and Android below API 33 retain the same mask without constructing RuntimeShader.
+The mask caches its brush and stops until drawing size or fade geometry changes. Content redraws
+must not reconstruct them, and composer geometry changes must not recompile the blur shaders.
 
 ## 6. MCP page-entry refresh
 
@@ -229,6 +241,14 @@ attachment.
 
 ## 16. Drawer conversation-list loading and search progress
 
+Opening an existing conversation binds covered layout settlement to that destination's scroll
+coordinator. Selection publication and switching readiness may arrive in either order; the previous
+destination must not begin waiting on its own hydration registry for the incoming page. Completion
+still requires the current destination's loaded conversation, context projection and stable layout.
+Send consumes its scroll request only after the target turn has a measured message index. The final
+absolute-bottom sentinel is excluded from this range, so a new turn cannot match the old sentinel
+before the list has measured the insertion.
+
 The conversation drawer observes only the conversation fields required by navigation, selection, display, and the system-prompt dialog; it never materializes draft text, draft attachment metadata, or branch-selection blobs for that list. Its first emitted snapshot is loading, distinct from a genuinely empty library, and a motion-aware circular indicator fades in and out over the list area.
 
 Conversation search exposes a separate in-flight state from the moment a nonblank query is accepted through debounce and the existing literal/semantic query. Its circular indicator fades in and out in the search field, does not alter query debounce or ranking, and cancellation, clearing, or failure cannot leave a stuck indicator. The retained prior result may remain visible while a new query is pending.
@@ -245,12 +265,31 @@ A New Chat first Send is the sole automatic-top exception. Only after the accept
 
 After durable deletion and runtime cleanup of the conversation that was selected when deletion was admitted, the canonical selection owner enters New Chat unless a newer explicit selection targets another conversation. A pending or completed newer conversation selection remains authoritative. Deleting a nonselected conversation or a deletion that fails before cleanup does not change the visible page.
 
+Conversation deletion from both the Drawer and Task execution history, message-subtree deletion and
+Compact deletion share the same confirmation flow. Clicking Delete
+keeps the dialog visible and replaces the Delete action text with a loading indicator throughout
+the pending operation. It blocks repeat confirmation, Cancel, Back, and outside dismissal.
+Only successful completion closes the dialog; rejection or failure keeps it open and restores its
+controls with the original target. The selected-page transition may proceed behind the dialog, but
+does not replace the dialog as the interaction blocker. Late results cannot reopen a finished dialog.
+
 If a message action would remove every durable message in the current tree, including the
 single-Compact case, its action is presented as `Delete Conversation` and the confirmation explicitly
 warns that the whole conversation will be removed. The dialog freezes the exact message-id topology
 visible when it opens; confirmation uses canonical conversation deletion only if Room still matches
 that topology. A later graph change rejects the stale confirmation, keeps the dialog open, and emits
 no destructive-success haptic.
+Deletion classification and confirmation ID collection run only when the existing delete action
+opens that confirmation, never as per-row message composition work. The confirmation retains its
+copied topology after failed or rejected admission; reopening through a new delete action captures
+the then-current topology. Ordinary message rendering performs no deletion graph traversal.
+
+Conversation deletion attempts immediate admission through the existing conversation execution
+coordinator after the selected-page cover is visible. If generation already owns or awaits that
+conversation, deletion reports failure and releases its own cover without waiting for generation
+to finish or stopping it. Successful admission validates the captured topology under that same
+ownership before storage mutation. Cancellation still delivers the completion callback and clears
+only the cancelled request's cover, including cancellation during the cover fade.
 
 ## 17. Model alias display fallback
 
@@ -285,6 +324,25 @@ results. Existing-model alias editors are seeded with the resolved fallback when
 exists. Saving that seed unchanged does not materialize it in DataStore; editing it creates an
 explicit alias, while clearing an explicit alias restores fallback behavior. The new-custom-model
 form remains blank until the user enters an alias.
+
+Provider-name visibility is a separate preference keyed by the complete model ID. Rename and the
+custom model editor place a Show Provider name switch below the alias field. Save commits both values in one DataStore edit,
+while Cancel, Back and outside dismissal commit neither. Clearing or changing an alias never changes
+that switch. Complete-name surfaces append the current Provider name only when the preference is on;
+alias-only labels in Provider-grouped model lists retain their existing presentation.
+
+The shared Provider-name switch row uses a white primary label, 8 dp of outer top spacing, and a
+16 dp rounded-rectangle clip around its toggleable ripple. The top gap is outside the hit region.
+The ripple and its single toggleable hit region extend 8 dp beyond each horizontal edge of the row's
+original layout bounds. Matching inner padding preserves the switch position and surrounding spacing
+in both layout directions. The title and description share an additional 8 dp start inset and retain
+12 dp end spacing toward the switch; text wraps naturally within that inset area.
+
+New models default to showing the Provider. A one-time Preferences DataStore migration preserves
+existing presentation by recording off for existing nonblank explicit aliases; all other model IDs
+default on. Subsequent display never infers visibility from alias presence. The initialization runs
+before settings reads or writes, does not scan messages, and requires no Room schema migration.
+The setting follows model identity remapping/replacement/deletion and portable Settings transport.
 
 ## 18. Models sync progress and attempt fingerprint
 
@@ -399,7 +457,25 @@ outside it. A newly inserted `PROCESSING` attachment starts at the neutral frame
 indicator visibly crossfades in. Loading-to-ready, loading-to-failed, failed-to-retry/loading, media
 decode success/error, and every progress-indicator appearance/disappearance crossfade without a
 layout jump. Tapping the failure overlay retries the complete import from private staging. Failed
-attachments do not disable Send and are excluded from the accepted result.
+attachments do not disable Send and are excluded from the accepted result. Attachment admission owns
+one selection haptic after the processing tile is inserted; decode/import completion, rejection, and
+failure do not emit a second haptic.
+
+Composer image attachments and durable message media thumbnails initially suppress their progress
+indicator. It becomes visible only after 200 ms of continuous loading, through the existing 200 ms
+presentation Crossfade. Image import-to-decode processing shares the same delay for one Composer
+attachment. Fast success/error never displays a progress indicator; image requests and painters remain
+active during the waiting period. Loading completion, failure, retry, source-identity replacement and
+composition disposal reset or cancel the keyed visibility timer. Ordinary file/PDF import feedback,
+full-screen media and tool previews retain their existing timing.
+
+Durable message-bubble thumbnails and the full-screen image viewport use the same explicit media
+loading/success/failure semantics. Their image remains composed under one fixed-geometry, full-size
+200 ms Crossfade owner. Composer attachments, message thumbnails, tool image previews and full-screen
+media share a primary-colored 3 dp indeterminate stroke. Image failures use the Material BrokenImage
+icon, preserving the surface's existing retry/close actions. Success reveals the image without a
+layout change, and failure replaces the whole viewport with its error presentation; no corner icon,
+blank thumbnail, hard swap, or zero-size proxy may leave a failed image looking indefinitely active.
 
 Tapping Send freezes that draft owner's exact text, tap-ordered model/settings snapshot, and
 attachment membership. The TextField remains enabled and editable in every submission and generation
@@ -441,6 +517,18 @@ Attachment paging preserves occurrence identity. Send emits successful attachmen
 metadata in one traversal of Composer order. Composer and durable-message viewers assign pager
 indices while constructing their filtered media sequence; they never recover an occurrence with
 `indexOf` on a URI or path, so duplicate values and mixed attachment types open the tapped item.
+The current preview target initializes the viewer in its first composition. Retained content is used
+only for exit; every new open owns a fresh request identity, while pager navigation preserves that
+identity. Late Close/Navigate callbacks from an earlier request cannot change the current preview.
+Multi-item and PDF pagers keep their composition while each child resolves its media type.
+
+Attachment cleanup verifies current message, conversation-draft and New Chat draft references and
+deletes an unowned file inside the same Room transaction. Reconciliation must repeat this atomic
+check immediately before unlinking each candidate. Candidate queries use the covering attachment
+index; canonical full paths determine ownership. Unreadable candidate metadata prevents deletion.
+Draft persistence schedules removed durable paths once; transient removals remain explicitly owned
+by the Composer. Schema 31 builds the covering index once on upgrade without rewriting message or
+attachment content.
 
 ## Local Low Context controls
 
@@ -484,6 +572,23 @@ title resolution, click behavior, and persistence remain unchanged.
 
 ## 25. Task History return continuity and drawer focus threshold
 
+Each task-list card has a 24 dp leading Repeat icon, matching the existing Tasks entry glyph,
+with primary tint, vertical centering and 16 dp spacing before the text. The icon is decorative;
+the existing card click action and trailing controls retain their ownership and behavior.
+
+Task-list cards Crossfade their Last Run status line over 200 ms between Loading, Running, the last-run
+timestamp, and Never Run. Before the first real execution-history snapshot, the line shows localized
+Loading rather than treating missing data as empty; a known Running state retains priority. The Flow
+is remembered per task identity and ViewModel, and later updates retain the last emitted snapshot.
+Each transition snapshot includes its own text and running-status color;
+unchanged countdown ticks do not restart this transition. Reduced Motion retains this opacity-only
+feedback. The card's controls and task execution lifecycle are not part of this transition.
+
+Task execution-history rows render Failed status and its timestamp with the neutral
+`onSurfaceVariant` color at 70% alpha for a more muted appearance. Success retains `primary`;
+the global theme error role remains available
+for other feedback, including destructive actions and input validation.
+
 A conversation opened from a Task execution log is a transient preview owned by that exact task and
 execution conversation. The preview first observes its selected destination before reacting to later
 navigation. Once observed, entering New Chat or successfully selecting a forked/different conversation
@@ -498,6 +603,15 @@ overlay fully covers Chat and that exact restoration generation is observed sett
 switch in progress. Overlay callbacks, selection results, and subsequent history taps are generation
 fenced; rapid replacement keeps the original captured origin. While a transient preview or return is
 visible, the Chat top-left action cannot fall through to the hamburger.
+
+If restoration fails because its origin disappeared, loading/projection fails, or a newer navigation
+supersedes it, the existing switching coordinator reports that exact request's failure once. The
+matching return generation releases preview ownership after the Tasks overlay covers Chat and
+resumes live history reconciliation without replacing the selection owner's current destination.
+A stale failure cannot release a newer preview or return, and no retry, timeout, or replacement
+conversation is created to settle a failed return.
+Return generations remain monotonic across task changes and session clearing within the same editor
+ViewModel lifetime, so callbacks from a previous task cannot collide with a new task's return.
 
 The active Task editor session retains only the exact execution-summary list that was rendered when an
 execution was opened, together with its existing numeric scroll position. When Tasks is recomposed

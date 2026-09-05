@@ -165,6 +165,23 @@ class SettingsModelsPageTest {
         )
     }
 
+    @Test
+    fun `both model editors keep provider choice local until the explicit save action`() {
+        val page = sourceFile("app/src/main/java/com/newoether/agora/ui/settings/SettingsModelsPage.kt")
+        assertEquals(2, Regex("ModelProviderNameSwitch\\(showProviderName\\)").findAll(page).count())
+        assertEquals(3, Regex("showProviderName = showProviderName,").findAll(page).count())
+        val rename = page.substringAfter("showModelAliasDialog?.let { model ->")
+            .substringBefore("@Composable")
+        val beforeSave = rename.substringBefore("confirmButton =")
+        assertTrue(beforeSave.contains("onDismissRequest = { showModelAliasDialog = null }"))
+        assertFalse(beforeSave.contains("updateModelAlias("))
+        assertEquals(1, Regex("updateModelAlias\\(").findAll(rename).count())
+        assertTrue(rename.contains("R.string.provider_save"))
+        val switch = page.substringAfter("private fun ModelProviderNameSwitch(")
+        assertFalse(switch.contains("viewModel"))
+        assertTrue(switch.contains("role = Role.Switch"))
+    }
+
     private fun sourceFile(relativePath: String): String {
         var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
         repeat(8) {

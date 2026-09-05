@@ -42,6 +42,7 @@ internal class CustomModelConfigurationController(
         provider: String,
         modelId: String,
         alias: String,
+        showProviderName: Boolean? = null,
     ) {
         val normalizedProvider = settings.stableProviderReference(provider)
         val normalizedModelId = modelId.trim()
@@ -54,7 +55,7 @@ internal class CustomModelConfigurationController(
                 if (oldModelId !in customModels) return@withLock
                 if (newModelId != oldModelId && newModelId in customModels) return@withLock
 
-                settings.replaceCustomModel(oldModelId, newModelId, alias)
+                settings.replaceCustomModel(oldModelId, newModelId, alias, showProviderName)
                 conversations.replaceConfiguredModelReferences(oldModelId, newModelId)
                 onModelReferenceReplaced(oldModelId, newModelId)
             }

@@ -6,12 +6,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Contrast
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.LightMode
@@ -32,6 +34,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,6 +56,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun SettingsAppearancePage(viewModel: ChatViewModel, onBack: () -> Unit) {
     val themeMode by viewModel.settings.themeMode.collectAsState()
+    val amoledEnabled by viewModel.settings.amoledEnabled.collectAsState()
     val colorSchemeName by viewModel.settings.colorScheme.collectAsState()
     val schemeStyleName by viewModel.settings.schemeStyle.collectAsState()
     val dynamicColor by viewModel.settings.dynamicColor.collectAsState()
@@ -123,7 +127,7 @@ fun SettingsAppearancePage(viewModel: ChatViewModel, onBack: () -> Unit) {
     }
 
     val isDynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val currentPreset = try { ColorSchemePreset.valueOf(colorSchemeName) } catch (_: Exception) { ColorSchemePreset.MIDNIGHT }
+    val currentPreset = try { ColorSchemePreset.valueOf(colorSchemeName) } catch (_: Exception) { ColorSchemePreset.FOREST }
     val currentStyle = try { SchemeStyle.valueOf(schemeStyleName) } catch (_: Exception) { SchemeStyle.TONAL_SPOT }
     val systemDark = isSystemInDarkTheme()
     val isDark = when (themeMode) {
@@ -205,6 +209,26 @@ fun SettingsAppearancePage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                 modifier = Modifier.clickable { expanded = true }
                             )
                         }
+                    add {
+                        SettingsItem(
+                            headlineContent = { Text(stringResource(R.string.amoled_mode)) },
+                            supportingContent = { Text(stringResource(R.string.amoled_mode_desc)) },
+                            leadingContent = {
+                                Icon(
+                                    Icons.Default.Contrast,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            },
+                            trailingContent = { Switch(checked = amoledEnabled, onCheckedChange = null) },
+                            modifier = Modifier.toggleable(
+                                value = amoledEnabled,
+                                role = Role.Switch,
+                                onValueChange = viewModel.settings::setAmoledEnabled,
+                            ),
+                        )
+                    }
                     if (isDynamicAvailable) {
                         add {
                             SettingsItem(

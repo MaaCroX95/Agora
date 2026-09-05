@@ -50,7 +50,9 @@ internal fun migrateUnmodifiedBuiltInDefault(
     }
 }
 
-private val Context.dataStore by preferencesDataStore(name = "settings")
+private val Context.dataStore by preferencesDataStore(
+    name = "settings", produceMigrations = { listOf(modelProviderNamesMigration) },
+)
 
 class SettingsManager(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -71,6 +73,7 @@ class SettingsManager(private val context: Context) {
     val customModels: Flow<Set<String>> = modelPreferenceStore.customModels
     val enabledModels: Flow<Set<String>> = modelPreferenceStore.enabledModels
     val modelAliases: Flow<Map<String, String>> = modelPreferenceStore.modelAliases
+    val modelProviderNames: Flow<Map<String, Boolean>> = modelPreferenceStore.modelProviderNames
     val apiKeys: Flow<List<ApiKeyEntry>> = modelPreferenceStore.apiKeys
     val activeApiKeyIds: Flow<Map<String, String>> = modelPreferenceStore.activeApiKeyIds
 
@@ -238,8 +241,13 @@ class SettingsManager(private val context: Context) {
         context.dataStore.data.map { it[SANDBOX_SHARED_STORAGE_ENABLED] ?: false }
 
     val themeMode: Flow<String> = context.dataStore.data.map { it[THEME_MODE] ?: "FOLLOW_DEVICE" }
-    val colorScheme: Flow<String> = context.dataStore.data.map { it[COLOR_SCHEME] ?: "DEFAULT" }
-    val dynamicColor: Flow<Boolean> = context.dataStore.data.map { it[DYNAMIC_COLOR] ?: true }
+    val amoledEnabled: Flow<Boolean> = context.dataStore.data.map { it[AMOLED_ENABLED] ?: false }
+    val colorScheme: Flow<String> = context.dataStore.data.map {
+        it[COLOR_SCHEME] ?: DEFAULT_COLOR_SCHEME
+    }
+    val dynamicColor: Flow<Boolean> = context.dataStore.data.map {
+        it[DYNAMIC_COLOR] ?: DEFAULT_DYNAMIC_COLOR
+    }
     val blurEffectsEnabled: Flow<Boolean> = context.dataStore.data.map { it[BLUR_EFFECTS_ENABLED] ?: true }
     val reduceMotion: Flow<Boolean> = context.dataStore.data.map { it[REDUCE_MOTION] ?: false }
     val stickToBottom: Flow<Boolean> = context.dataStore.data.map { it[STICK_TO_BOTTOM] ?: true }
@@ -254,7 +262,9 @@ class SettingsManager(private val context: Context) {
     }
     val autoExpandActiveGroup: Flow<Boolean> =
         context.dataStore.data.map { it[AUTO_EXPAND_ACTIVE_GROUP] ?: true }
-    val schemeStyle: Flow<String> = context.dataStore.data.map { it[SCHEME_STYLE] ?: "TONAL_SPOT" }
+    val schemeStyle: Flow<String> = context.dataStore.data.map {
+        it[SCHEME_STYLE] ?: DEFAULT_SCHEME_STYLE
+    }
     val fontPreference: Flow<String> = context.dataStore.data.map { it[FONT_PREFERENCE] ?: "app_default" }
     val customFontPath: Flow<String> = context.dataStore.data.map { it[CUSTOM_FONT_PATH] ?: "" }
     val customFontName: Flow<String> = context.dataStore.data.map { it[CUSTOM_FONT_NAME] ?: "" }
@@ -297,14 +307,15 @@ class SettingsManager(private val context: Context) {
     suspend fun saveCustomModels(models: Set<String>) =
         modelPreferenceStore.saveCustomModels(models)
 
-    suspend fun addCustomModel(modelId: String, alias: String) =
-        modelPreferenceStore.addCustomModel(modelId, alias)
+    suspend fun addCustomModel(modelId: String, alias: String, showProviderName: Boolean = true) =
+        modelPreferenceStore.addCustomModel(modelId, alias, showProviderName)
 
     suspend fun replaceCustomModel(
         oldModelId: String,
         newModelId: String?,
         alias: String,
-    ) = modelPreferenceStore.replaceCustomModel(oldModelId, newModelId, alias)
+        showProviderName: Boolean? = null,
+    ) = modelPreferenceStore.replaceCustomModel(oldModelId, newModelId, alias, showProviderName)
 
     suspend fun saveEnabledModels(models: Set<String>) =
         modelPreferenceStore.saveEnabledModels(models)
@@ -312,8 +323,11 @@ class SettingsManager(private val context: Context) {
     suspend fun saveModelAliases(aliases: Map<String, String>) =
         modelPreferenceStore.saveModelAliases(aliases)
 
-    suspend fun updateModelAlias(modelId: String, alias: String) =
-        modelPreferenceStore.updateModelAlias(modelId, alias)
+    suspend fun updateModelAlias(modelId: String, alias: String, showProviderName: Boolean? = null) =
+        modelPreferenceStore.updateModelAlias(modelId, alias, showProviderName)
+
+    suspend fun saveModelProviderNames(values: Map<String, Boolean>, replace: Boolean = true) =
+        modelPreferenceStore.saveModelProviderNames(values, replace)
 
     suspend fun synchronizeLocalModelAliases(aliases: Map<String, String>) =
         modelPreferenceStore.synchronizeLocalModelAliases(aliases)
@@ -351,9 +365,8 @@ class SettingsManager(private val context: Context) {
             } catch (_: Exception) {
                 emptyList()
             }
-            val defaultMigrated = migrateUnmodifiedBuiltInDefault(currentPrompts, locale)
-            val migratedPrompts = migrateLegacyDefaultPromptTitle(defaultMigrated, locale)
-            val runtimeMigrated = migrateOldRuntimeContext(migratedPrompts, locale)
+            val messageTemplatesMigrated = migrateSystemPromptsOnStartup(currentPrompts, locale)
+            val runtimeMigrated = migrateOldRuntimeContext(messageTemplatesMigrated, locale)
             val webSearchGuidanceMigrated =
                 runtimeMigrated.map(DefaultSystemPrompt::migrateLegacyWebSearchGuidance)
             if (webSearchGuidanceMigrated != currentPrompts) {
@@ -392,58 +405,6 @@ class SettingsManager(private val context: Context) {
         }
     }
 
-    private fun migrateLegacyMessageTemplates(
-        prompts: List<SystemPromptEntry>,
-    ): List<SystemPromptEntry> = prompts.map { entry ->
-        val normalizedUserItems = entry.resolvedUserItems
-        val normalizedAssistantItems = entry.resolvedAssistantItems
-        if (
-            entry.userItems != normalizedUserItems ||
-            entry.assistantItems != normalizedAssistantItems ||
-            entry.userPrependItems.isNotEmpty() ||
-            entry.userPostpendItems.isNotEmpty()
-        ) {
-            entry.copy(
-                userItems = normalizedUserItems,
-                assistantItems = normalizedAssistantItems,
-                userPrependItems = emptyList(),
-                userPostpendItems = emptyList(),
-            )
-        } else {
-            entry
-        }
-    }
-
-    private fun migrateLegacyDefaultPromptTitle(
-        prompts: List<SystemPromptEntry>,
-        locale: Locale
-    ): List<SystemPromptEntry> {
-        if (prompts.isEmpty()) return prompts
-        val localizedTitle = DefaultSystemPrompt.titleForLocale(locale)
-        val defaultPrompt = DefaultSystemPrompt.create(locale)
-        return prompts.map { entry ->
-            val legacyLowercaseEnglish = entry.title == "default"
-            val legacySimplifiedTitleInTraditionalLocale =
-                entry.title == "\u9ed8\u8ba4" && localizedTitle == "\u9810\u8a2d"
-            if ((legacyLowercaseEnglish || legacySimplifiedTitleInTraditionalLocale) &&
-                entry.sameTemplateAs(defaultPrompt)
-            ) {
-                entry.copy(title = localizedTitle)
-            } else {
-                entry
-            }
-        }
-    }
-
-    private fun SystemPromptEntry.sameTemplateAs(other: SystemPromptEntry): Boolean =
-        resolvedSystemItems.sameTemplateItems(other.resolvedSystemItems) &&
-            resolvedUserItems.sameTemplateItems(other.resolvedUserItems) &&
-            resolvedAssistantItems.sameTemplateItems(other.resolvedAssistantItems)
-
-    private fun List<PromptTemplateItem>.sameTemplateItems(other: List<PromptTemplateItem>): Boolean =
-        size == other.size && zip(other).all { (left, right) ->
-            left.type == right.type && left.value == right.value
-        }
     suspend fun setActiveSystemPromptId(id: String?) {
         context.dataStore.edit { 
             if (id == null) it.remove(ACTIVE_SYSTEM_PROMPT_ID) else it[ACTIVE_SYSTEM_PROMPT_ID] = id 
@@ -779,6 +740,9 @@ class SettingsManager(private val context: Context) {
     suspend fun saveThemeMode(mode: String) {
         context.dataStore.edit { it[THEME_MODE] = mode }
     }
+    suspend fun saveAmoledEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[AMOLED_ENABLED] = enabled }
+    }
     suspend fun saveColorScheme(scheme: String) {
         context.dataStore.edit { it[COLOR_SCHEME] = scheme }
     }
@@ -883,6 +847,7 @@ class SettingsManager(private val context: Context) {
             prefs.remove(ENABLED_MODELS)
             prefs.remove(ACTIVE_SYSTEM_PROMPT_ID)
             prefs.remove(MODEL_ALIASES_JSON)
+            prefs[MODEL_PROVIDER_NAMES_JSON] = "{}"
             prefs.remove(CONTEXT_TOKEN_BUDGET)
             prefs.remove(MAX_CONTEXT_WINDOW)
             prefs.remove(VISUALIZE_CONTEXT_ROLLOUT)
@@ -946,6 +911,7 @@ class SettingsManager(private val context: Context) {
             prefs.remove(PROXY_BYPASS)
             prefs.remove(SHELL_CONFIRM_ENABLED)
             prefs.remove(THEME_MODE)
+            prefs.remove(AMOLED_ENABLED)
             prefs.remove(COLOR_SCHEME)
             prefs.remove(DYNAMIC_COLOR)
             prefs.remove(BLUR_EFFECTS_ENABLED)

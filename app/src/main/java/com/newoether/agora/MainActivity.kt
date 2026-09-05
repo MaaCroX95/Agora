@@ -1,6 +1,5 @@
 package com.newoether.agora
 import android.Manifest
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -16,7 +15,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.runtime.key
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
@@ -61,6 +59,7 @@ import com.newoether.agora.service.AgoraForegroundService
 import com.newoether.agora.service.AppForegroundTracker
 import com.newoether.agora.ui.chat.ChatApp
 import com.newoether.agora.ui.chat.FullScreenMediaPreviewDialog
+import com.newoether.agora.ui.chat.MediaPreviewTarget
 import com.newoether.agora.ui.chat.message.ChatMarkdownCodeBlock
 import com.newoether.agora.ui.onboarding.WelcomeScreen
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
@@ -73,6 +72,7 @@ import com.newoether.agora.util.CrashReporter
 import com.newoether.agora.viewmodel.ChatViewModel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
+
 private fun fullScreenPreviewEnterTransition(allowSpatialTransitions: Boolean): EnterTransition = fadeIn(tween(durationMillis = 220)) + (if (allowSpatialTransitions) scaleIn(tween(durationMillis = 300, easing = FastOutSlowInEasing), initialScale = 0.96f) else EnterTransition.None)
 private fun fullScreenPreviewExitTransition(allowSpatialTransitions: Boolean): ExitTransition = fadeOut(tween(durationMillis = 180)) + (if (allowSpatialTransitions) scaleOut(tween(durationMillis = 220, easing = FastOutLinearInEasing), targetScale = 0.96f) else ExitTransition.None)
 class MainActivity : ComponentActivity() {
@@ -147,15 +147,16 @@ class MainActivity : ComponentActivity() {
             }
             setContent {
             val themeMode by settingsManager.themeMode.collectAsState(initial = "FOLLOW_DEVICE")
-            val colorSchemeName by settingsManager.colorScheme.collectAsState(initial = "DEFAULT")
-            val schemeStyleName by settingsManager.schemeStyle.collectAsState(initial = "TONAL_SPOT")
-            val dynamicColor by settingsManager.dynamicColor.collectAsState(initial = true)
+            val amoledEnabled by settingsManager.amoledEnabled.collectAsState(initial = false)
+            val colorSchemeName by settingsManager.colorScheme.collectAsState(initial = com.newoether.agora.data.DEFAULT_COLOR_SCHEME)
+            val schemeStyleName by settingsManager.schemeStyle.collectAsState(initial = com.newoether.agora.data.DEFAULT_SCHEME_STYLE)
+            val dynamicColor by settingsManager.dynamicColor.collectAsState(initial = com.newoether.agora.data.DEFAULT_DYNAMIC_COLOR)
             val fontPreference by settingsManager.fontPreference.collectAsState(initial = "app_default")
             val customFontPath by settingsManager.customFontPath.collectAsState(initial = "")
             val appReduceMotion by settingsManager.reduceMotion.collectAsState(initial = false)
 
             val themeModeEnum = try { com.newoether.agora.ui.theme.ThemeMode.valueOf(themeMode) } catch (_: Exception) { com.newoether.agora.ui.theme.ThemeMode.FOLLOW_DEVICE }
-            val colorSchemePreset = try { com.newoether.agora.ui.theme.ColorSchemePreset.valueOf(colorSchemeName) } catch (_: Exception) { com.newoether.agora.ui.theme.ColorSchemePreset.MIDNIGHT }
+            val colorSchemePreset = try { com.newoether.agora.ui.theme.ColorSchemePreset.valueOf(colorSchemeName) } catch (_: Exception) { com.newoether.agora.ui.theme.ColorSchemePreset.FOREST }
             val schemeStyle = try { com.newoether.agora.ui.theme.SchemeStyle.valueOf(schemeStyleName) } catch (_: Exception) { com.newoether.agora.ui.theme.SchemeStyle.TONAL_SPOT }
 
             val systemDark = isSystemInDarkTheme()
@@ -174,6 +175,7 @@ class MainActivity : ComponentActivity() {
 
             AgoraTheme(
                 themeMode = themeModeEnum,
+                amoledEnabled = amoledEnabled,
                 colorSchemePreset = colorSchemePreset,
                 schemeStyle = schemeStyle,
                 dynamicColor = dynamicColor,
@@ -360,8 +362,7 @@ fun MainNavigation(
             onNotificationConversationConsumed(id)
         }
     }
-    var fullScreenMediaUrls by remember { mutableStateOf<List<String>?>(null) }
-    var fullScreenMediaIndex by remember { mutableIntStateOf(0) }
+    var mediaPreviewTarget by remember { mutableStateOf<MediaPreviewTarget?>(null) }
     var pdfViewerSelection by remember { mutableStateOf(setOf<Int>()) }
     val onTogglePdfSelection: (Int) -> Unit = { page ->
         pdfViewerSelection = if (page in pdfViewerSelection) pdfViewerSelection - page else pdfViewerSelection + page
@@ -372,9 +373,6 @@ fun MainNavigation(
     var pdfPreviewFromDialog by remember { mutableStateOf(false) }
     val hapticsEnabled by viewModel.settings.hapticsEnabled.collectAsState()
     val pdfPages by viewModel.previewPdfPages.collectAsState()
-    val pdfIndex by viewModel.previewPdfIndex.collectAsState()
-    var savedPdfPages by remember { mutableStateOf<List<String>>(emptyList()) }
-    if (pdfPages.isNotEmpty()) { savedPdfPages = pdfPages } else { savedPdfPages = emptyList() }
     val snackbarHostState = remember { SnackbarHostState() }
     var snackbarVersion by remember { mutableIntStateOf(0) }
     val accessibilityManager = LocalAccessibilityManager.current
@@ -383,7 +381,7 @@ fun MainNavigation(
     // Full-screen media viewer (and settings) drop the snackbar to the bottom (nav-bar inset only);
     // in chat it floats above the bottom bar. The animateDpAsState below turns the change into a
     // rise/fall animation as the viewer opens/closes.
-    val targetSnackbarPadding = if (showSettings || fullScreenMediaUrls != null) navBarPadding else chatSnackbarOffset
+    val targetSnackbarPadding = if (showSettings || mediaPreviewTarget != null) navBarPadding else chatSnackbarOffset
     val snackbarBottomPadding by animateDpAsState(
         targetValue = targetSnackbarPadding,
         animationSpec = if (motionPolicy.allowSpatialTransitions) {
@@ -743,13 +741,13 @@ fun MainNavigation(
                         {
                             taskToOpen = taskId
                             taskEditorSession.requestHistoryReturn()
-                            taskEditorSession.beginHistoryReturnRestore()?.let { restore ->
+                            taskEditorSession.beginHistoryReturnRestore { restore, onRestoreFailure ->
                                 if (restore.originWasNewChat) {
-                                    viewModel.restoreNewChatDestination()
+                                    viewModel.restoreNewChatDestination(onRestoreFailure)
                                 } else {
-                                    restore.originConversationId?.let(
-                                        viewModel::restoreConversationDestination,
-                                    )
+                                    restore.originConversationId?.let { origin ->
+                                        viewModel.restoreConversationDestination(origin, onRestoreFailure)
+                                    }
                                 }
                             }
                             topLevelPresentation.present(TopLevelPresentation.TASKS)
@@ -768,9 +766,8 @@ fun MainNavigation(
                 },
                 onMediaClick = { urls, index ->
                     focusManager.clearFocus()
+                    mediaPreviewTarget = MediaPreviewTarget(urls, index)
                     topLevelPresentation.present(TopLevelPresentation.MEDIA_PREVIEW)
-                    fullScreenMediaUrls = urls
-                    fullScreenMediaIndex = index
                 },
                 onFileContentClick = { name, content ->
                     focusManager.clearFocus()
@@ -779,24 +776,22 @@ fun MainNavigation(
                 },
                 onPdfPagesClick = { pages, idx ->
                     focusManager.clearFocus()
-                    topLevelPresentation.present(TopLevelPresentation.MEDIA_PREVIEW)
                     viewModel.showPdfPreview(pages, idx)
-                    fullScreenMediaUrls = pages
-                    fullScreenMediaIndex = idx
+                    mediaPreviewTarget = MediaPreviewTarget(pages, idx)
                     pdfPreviewFromDialog = false
+                    topLevelPresentation.present(TopLevelPresentation.MEDIA_PREVIEW)
                 },
                 onPdfPreviewSelect = { pages, idx ->
                     focusManager.clearFocus()
-                    topLevelPresentation.present(TopLevelPresentation.MEDIA_PREVIEW)
                     viewModel.showPdfPreview(pages, idx)
-                    fullScreenMediaUrls = pages
-                    fullScreenMediaIndex = idx
+                    mediaPreviewTarget = MediaPreviewTarget(pages, idx)
                     pdfPreviewFromDialog = true
+                    topLevelPresentation.present(TopLevelPresentation.MEDIA_PREVIEW)
                 },
                 pdfViewerSelection = pdfViewerSelection,
                 onTogglePdfSelection = onTogglePdfSelection,
                 onInitPdfSelection = onInitPdfSelection,
-                fullScreenViewerUrls = fullScreenMediaUrls,
+                fullScreenViewerUrls = mediaPreviewTarget?.urls,
                 topLevelPresentation = topLevelPresentation.owner,
                 onSnackbarOffsetChanged = { chatSnackbarOffset = it }
             )
@@ -857,9 +852,8 @@ fun MainNavigation(
 
             // A dedicated dialog gives the media viewer its own window above source sheets.
             FullScreenMediaPreviewDialog(
-                currentUrls = fullScreenMediaUrls,
-                currentIndex = fullScreenMediaIndex,
-                currentPdfPages = savedPdfPages,
+                currentTarget = mediaPreviewTarget,
+                currentPdfPages = pdfPages,
                 currentPdfSelectedPages = pdfViewerSelection,
                 currentPdfSelectionEnabled = pdfPreviewFromDialog,
                 currentPdfTogglePage = onTogglePdfSelection,
@@ -868,12 +862,17 @@ fun MainNavigation(
                 onHidden = {
                     topLevelPresentation.release(TopLevelPresentation.MEDIA_PREVIEW)
                 },
-                onClose = {
+                onClose = { target ->
+                    if (mediaPreviewTarget?.requestId != target.requestId) return@FullScreenMediaPreviewDialog
                     viewModel.clearPreviews()
-                    fullScreenMediaUrls = null
+                    mediaPreviewTarget = null
                     pdfPreviewFromDialog = false
                 },
-                onNavigate = { idx -> fullScreenMediaIndex = idx },
+                onNavigate = { target, idx ->
+                    if (mediaPreviewTarget?.requestId == target.requestId) {
+                        mediaPreviewTarget = target.copy(index = idx)
+                    }
+                },
                 onMessage = { viewModel.emitSnackbar(it) },
                 hapticsEnabled = hapticsEnabled,
             )

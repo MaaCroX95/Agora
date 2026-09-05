@@ -1,12 +1,41 @@
 package com.newoether.agora.viewmodel
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SwitchingCoordinatorTest {
+    @Test
+    fun failureIsDeliveredOnceAfterItsRequestEnds() {
+        val coordinator = SwitchingCoordinator()
+        var failures = 0
+        val request = coordinator.beginConversation("missing", onFailure = {
+            assertFalse(coordinator.isSwitching.value)
+            assertNull(coordinator.request.value)
+            failures += 1
+        })
+        coordinator.complete(request.id, successful = false)
+        coordinator.complete(request.id, successful = false)
+        coordinator.beginNewChat()
+        assertEquals(1, failures)
+    }
+
+    @Test
+    fun replacementFailsOnlyTheSupersededRequestAndSuccessClearsItsCallback() {
+        val coordinator = SwitchingCoordinator()
+        val failures = mutableListOf<String>()
+        val old = coordinator.beginNewChat { failures += "old" }
+        val current = coordinator.beginConversation("current", onFailure = { failures += "current" })
+        assertEquals(listOf("old"), failures)
+        assertFalse(coordinator.complete(old.id, successful = false))
+        assertTrue(coordinator.isCurrent(current.id))
+        assertTrue(coordinator.complete(current.id))
+        coordinator.beginNewChat()
+        assertEquals(listOf("old"), failures)
+    }
 
     @Test
     fun sameConversation_stillCreatesANewOwnedTransition() {

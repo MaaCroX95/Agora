@@ -25,7 +25,7 @@ Semantic search cannot be selected until at least one embedding model is configu
 
 Add remote embedding endpoints or import local GGUF embedding models. One model is active at a time. Each row shows whether the model is local or remote and how many searchable messages are cached for it.
 
-Use **Cache** to fill missing embeddings. When every current message is cached, the action becomes **Re-cache** and asks for confirmation before rebuilding that model's cache. Changing the active model can also fill missing entries when Auto-Cache is enabled.
+Use **Cache** to fill missing embeddings. A queued cache with no trustworthy total shows **Loading**. Once work starts, the row shows one generation's remaining count and determinate progress until the final count and ledger refresh completes. A failed worker keeps its last reliable remaining count and offers **Retry**. Successful completion settles directly to **Re-cache**, which asks for confirmation before rebuilding that model's cache. Changing the active model can also fill missing entries when Auto-Cache is enabled.
 
 Remote embedding models receive the text that must be embedded. The index and cache metadata are stored locally.
 
