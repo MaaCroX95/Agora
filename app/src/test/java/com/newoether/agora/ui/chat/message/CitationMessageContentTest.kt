@@ -334,7 +334,7 @@ class CitationMessageContentTest {
     }
 
     @Test
-    fun repeatedSameSourceWrappersWithoutAnchorsRemainAmbiguous() {
+    fun citedAnswersNormalizeEveryRepeatedParenthesizedSourceLink() {
         val url = "https://youtube.com/watch?v=source"
         val wrapper = "([youtube.com]($url))"
         val answer = "$wrapper and $wrapper"
@@ -348,9 +348,10 @@ class CitationMessageContentTest {
         )
 
         val projection = projectCitationMarkdown(answer, listOf(source))
+        val marker = projection.markers.single()
 
-        assertEquals(answer, projection.markdown)
-        assertTrue(projection.markers.isEmpty())
+        assertEquals("${marker.token} and ${marker.token}", projection.markdown)
+        assertEquals(url, marker.source.url)
     }
 
     @Test
@@ -428,8 +429,9 @@ class CitationMessageContentTest {
     }
 
     @Test
-    fun parenthesizedLinkToAnotherTargetIsNotReplaced() {
-        val cited = "([example.com](https://example.com/not-the-source))"
+    fun parenthesizedLinkToAnotherTargetGetsItsOwnPresentationSource() {
+        val linkedUrl = "https://example.com/not-the-source"
+        val cited = "([example.com]($linkedUrl))"
         val source = requireNotNull(
             CitationPolicy.create(
                 provider = "openai",
@@ -443,8 +445,8 @@ class CitationMessageContentTest {
 
         val projection = projectCitationMarkdown(cited, listOf(source))
 
-        assertEquals(cited, projection.markdown)
-        assertTrue(projection.markers.isEmpty())
+        assertFalse(projection.markdown.contains(cited))
+        assertEquals(linkedUrl, projection.markers.single().source.url)
     }
 
     @Test
@@ -725,6 +727,63 @@ class CitationMessageContentTest {
             ),
         )
         assertTrue(citationProjectionRequiresTerminalHandoff(null, streaming))
+    }
+
+    @Test
+    fun taskHistoryUsesCapsulesForEveryParenthesizedSourceLink() {
+        val authoredUrl = "https://www.reuters.com/world/example"
+        val structuredUrl = "https://example.com/provider"
+        val authored = "（[Reuters]($authoredUrl)）"
+        val structured = "([example.com]($structuredUrl))"
+        val earlierAnswer = "Earlier tool progress."
+        val finalAnswer = "Claim $authored. $structured"
+        val fullAnswer = earlierAnswer + finalAnswer
+        val structuredStart = fullAnswer.indexOf(structured)
+        val source = citation(
+            answer = fullAnswer,
+            title = "Provider source",
+            url = structuredUrl,
+            ranges = arrayOf(structuredStart until structuredStart + structured.length),
+        )
+        val finalSliceSources = citationRecordsForAnswerSlice(
+            citations = listOf(source),
+            sliceStart = earlierAnswer.length,
+            sliceText = finalAnswer,
+        )
+
+        val projection = projectCitationMarkdown(finalAnswer, finalSliceSources)
+
+        assertFalse(projection.markdown.contains(authored))
+        assertFalse(projection.markdown.contains(structured))
+        assertFalse(projection.markdown.contains("]("))
+        assertEquals(2, projection.markers.size)
+        assertEquals(
+            setOf(authoredUrl, structuredUrl),
+            projection.markers.flatMap { marker -> marker.sources }.mapNotNull { it.url }.toSet(),
+        )
+    }
+
+    @Test
+    fun structuredCitationsDoNotReclassifyOrdinaryInlineLinks() {
+        val authoredUrl = "https://www.reuters.com/world/example"
+        val structuredUrl = "https://example.com/provider"
+        val authored = "[details]($authoredUrl)"
+        val structured = "([example.com]($structuredUrl))"
+        val answer = "Read $authored. Claim $structured"
+        val structuredStart = answer.indexOf(structured)
+        val source = citation(
+            answer = answer,
+            title = "Provider source",
+            url = structuredUrl,
+            ranges = arrayOf(structuredStart until structuredStart + structured.length),
+        )
+
+        val projection = projectCitationMarkdown(answer, listOf(source))
+
+        assertTrue(projection.markdown.contains(authored))
+        assertFalse(projection.markdown.contains(structured))
+        assertEquals(1, projection.markers.size)
+        assertEquals(structuredUrl, projection.markers.single().source.url)
     }
 
     @Test

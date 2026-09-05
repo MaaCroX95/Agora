@@ -166,14 +166,14 @@ internal fun projectCitationMarkdown(
     answerText: String,
     citations: List<CitationRecord>,
 ): CitationMarkdownProjection {
-    val normalized = CitationPolicy.deduplicate(citations, answerText)
-    if (answerText.isEmpty()) {
-        return CitationMarkdownProjection(answerText, emptyList())
-    }
+    if (answerText.isEmpty()) return CitationMarkdownProjection(answerText, emptyList())
+    val citationWrappers = parenthesizedCitationLinkWrappers(answerText)
+    val linkedSources =
+        parenthesizedMarkdownLinkPresentationSources(answerText, citationWrappers, citations)
+    val normalized = CitationPolicy.deduplicate(citations + linkedSources, answerText)
     val unsupported by lazy(LazyThreadSafetyMode.NONE) {
         unsupportedMarkdownRanges(answerText)
     }
-    val citationWrappers = parenthesizedCitationLinkWrappers(answerText)
     val candidates = normalized.flatMapIndexed { sourceIndex, source ->
         val matchingWrappers = source.url?.let(CitationPolicy::safeHttpUrl)?.let { safeSourceUrl ->
             citationWrappers.filter { wrapper -> wrapper.safeUrl == safeSourceUrl }

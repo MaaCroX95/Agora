@@ -1,6 +1,8 @@
 package com.newoether.agora.ui.chat.message
 
+import com.newoether.agora.model.CitationAnchor
 import com.newoether.agora.model.CitationPolicy
+import com.newoether.agora.model.CitationRecord
 import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
@@ -19,6 +21,29 @@ internal fun parenthesizedCitationLinkWrappers(
     buildList { root.collectParenthesizedCitationLinkWrappers(markdown, this) }
 }.getOrDefault(emptyList())
 
+internal fun parenthesizedMarkdownLinkPresentationSources(
+    markdown: String,
+    wrappers: List<CitationMarkdownLinkWrapper>,
+    structuredCitations: List<CitationRecord>,
+): List<CitationRecord> {
+    if (structuredCitations.isEmpty()) return emptyList()
+    return wrappers.mapNotNull { wrapper ->
+        CitationPolicy.create(
+            provider = "markdown",
+            kind = "url",
+            url = wrapper.safeUrl,
+            anchors = listOf(
+                CitationAnchor(
+                    startIndex = wrapper.startIndex,
+                    endIndex = wrapper.endIndex,
+                    citedText = markdown.substring(wrapper.startIndex, wrapper.endIndex),
+                ),
+            ),
+            answerText = markdown,
+        )
+    }
+}
+
 private fun ASTNode.collectParenthesizedCitationLinkWrappers(
     markdown: String,
     target: MutableList<CitationMarkdownLinkWrapper>,
@@ -31,8 +56,10 @@ private fun ASTNode.collectParenthesizedCitationLinkWrappers(
             destination != null &&
             wrapperStart >= 0 &&
             wrapperEnd <= markdown.length &&
-            markdown[wrapperStart] == '(' &&
-            markdown[wrapperEnd - 1] == ')'
+            (
+                markdown[wrapperStart] == '(' && markdown[wrapperEnd - 1] == ')' ||
+                    markdown[wrapperStart] == '（' && markdown[wrapperEnd - 1] == '）'
+                )
         ) {
             CitationPolicy.safeHttpUrl(
                 markdown.substring(destination.startOffset, destination.endOffset),
