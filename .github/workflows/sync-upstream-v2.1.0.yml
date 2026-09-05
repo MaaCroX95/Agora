@@ -32,9 +32,11 @@ jobs:
             echo "::group::Unmerged paths"
             git diff --name-only --diff-filter=U
             echo "::endgroup::"
-            echo "::group::Status"
-            git status --short
-            echo "::endgroup::"
+            for f in $(git diff --name-only --diff-filter=U); do
+              echo "::group::Conflict diff: $f"
+              git diff --cc -- "$f" || true
+              echo "::endgroup::"
+            done
             exit 1
           fi
           echo "Merge completed cleanly in diagnostic checkout."
