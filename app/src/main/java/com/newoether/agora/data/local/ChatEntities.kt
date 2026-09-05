@@ -216,7 +216,11 @@ data class EmbeddingEntity(
 
 @Entity(
     tableName = "messages",
-    indices = [Index(value = ["conversationId"]), Index(value = ["runId"])],
+    indices = [
+        Index(value = ["conversationId"]),
+        Index(value = ["runId"]),
+        Index(value = ["id", "images", "attachmentMeta"]),
+    ],
     foreignKeys = [
         ForeignKey(
             entity = ChatEntity::class,
