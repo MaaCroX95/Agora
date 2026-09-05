@@ -1,0 +1,40 @@
+name: Diagnose upstream v2.1.0 sync
+
+on:
+  push:
+    branches:
+      - sync/upstream-v2.1.0-auto
+
+permissions:
+  contents: read
+
+jobs:
+  merge-diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream and diagnose merge
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/newo-ether/Agora.git
+          git fetch upstream master
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          set +e
+          git merge --no-commit --no-ff upstream/master
+          merge_rc=$?
+          set -e
+          echo "merge_rc=$merge_rc"
+          if [ "$merge_rc" -ne 0 ]; then
+            echo "::group::Unmerged paths"
+            git diff --name-only --diff-filter=U
+            echo "::endgroup::"
+            echo "::group::Status"
+            git status --short
+            echo "::endgroup::"
+            exit 1
+          fi
+          echo "Merge completed cleanly in diagnostic checkout."
