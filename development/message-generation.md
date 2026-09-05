@@ -249,9 +249,9 @@ durable message identity and cannot become a parallel message graph.
   typed after the tap even when that visible edit reaches the controller after freeze begins.
 - One accepted Send creates one fresh Run, durable USER input, and MODEL placeholder atomically. A
   durable acceptance whose draft clear fails enters a non-resendable clear-only recovery state.
-- Only a direct foreground Send for the exact still-visible origin may clear focus, hide the IME, and
-  collapse the Composer after accepted clearing. Queue placement, a later FIFO drain, and stale New
-  Chat acceptance must not cause those presentation effects.
+- Direct and queued Send acceptance preserve focus, IME visibility, and expanded Composer state.
+  Accepted draft clearing owns no presentation dismissal. Explicit navigation, user gestures, and
+  the drawer threshold retain the dismissal ownership defined in application-ui.md.
 - One claimed FIFO drain enters the same Send transaction and creates a fresh Run.
 - Input queued while another generation owns the slot stays memory-owned until a legal boundary.
 - Claim failure returns the exact batch to the front; durable success transfers ownership exactly

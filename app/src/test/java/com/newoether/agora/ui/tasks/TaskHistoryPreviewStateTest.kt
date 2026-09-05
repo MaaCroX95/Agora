@@ -11,6 +11,75 @@ import org.junit.Test
 
 class TaskHistoryPreviewStateTest {
     @Test
+    fun failedRestoreWaitsForCoverageThenResumesLiveHistoryInEitherOrder() {
+        for (coverFirst in listOf(false, true)) {
+            val session = TaskEditorSessionViewModel()
+            session.open(task(), isNew = false)
+            val retained = listOf(execution("history"))
+            val live = retained + execution("new-result")
+            session.retainExecutionHistory("task-1", retained)
+            session.openHistory("history", "deleted-origin", false)
+            session.observeHistoryDestination("history", false, false)
+            session.requestHistoryReturn()
+            var onFailure: () -> Unit = { error("Restoration was not requested") }
+            val restore = requireNotNull(session.beginHistoryReturnRestore { _, failure ->
+                onFailure = failure
+            })
+            if (coverFirst) session.markHistoryReturnOverlayCovered(restore.generation)
+            else onFailure()
+            assertEquals(TaskHistoryPreviewPhase.RETURNING, session.historyPreview.phase)
+            assertEquals(
+                retained,
+                taskExecutionHistoryForPresentation(session.historyPreview.phase, retained, live),
+            )
+
+            if (coverFirst) onFailure()
+            else session.markHistoryReturnOverlayCovered(restore.generation)
+            assertEquals(TaskHistoryPreviewPhase.IDLE, session.historyPreview.phase)
+            assertEquals(
+                live,
+                taskExecutionHistoryForPresentation(session.historyPreview.phase, retained, live),
+            )
+        }
+    }
+
+    @Test
+    fun staleRestoreFailureCannotReleaseANewerPreviewOrReturn() {
+        var state = TaskHistoryPreviewState.Idle.open("task", "history", "origin", false)
+            .requestReturn().beginReturnRestore()
+        val staleGeneration = state.generation
+        state = state.open("task", "new-history", "history", false)
+        assertEquals(state, state.markReturnRestoreFailed(staleGeneration))
+        state = state.requestReturn().beginReturnRestore()
+            .markReturnOverlayCovered(state.generation + 1)
+        assertEquals(state, state.markReturnRestoreFailed(staleGeneration))
+        assertEquals("origin", state.originConversationId)
+    }
+
+    @Test
+    fun previousTaskFailureCannotSettleReturnAfterSessionReset() {
+        val session = TaskEditorSessionViewModel()
+        session.open(task(), isNew = false)
+        session.openHistory("history-1", "origin-1", false)
+        session.requestHistoryReturn()
+        var oldFailure: () -> Unit = { error("Restoration was not requested") }
+        session.beginHistoryReturnRestore { _, failure -> oldFailure = failure }
+        session.clear()
+        session.open(task("task-2"), isNew = false)
+        session.openHistory("history-2", "origin-2", false)
+        session.requestHistoryReturn()
+        val restoring = requireNotNull(session.beginHistoryReturnRestore())
+        session.markHistoryReturnOverlayCovered(restoring.generation)
+        val expected = session.historyPreview
+
+        oldFailure()
+
+        assertEquals(expected, session.historyPreview)
+        assertEquals(TaskHistoryPreviewPhase.RETURNING, session.historyPreview.phase)
+        assertEquals("task-2", session.historyPreview.taskId)
+    }
+
+    @Test
     fun historyRoundTripRetainsConfigurationScrollAndOriginalConversation() {
         val session = TaskEditorSessionViewModel()
         val original = task()

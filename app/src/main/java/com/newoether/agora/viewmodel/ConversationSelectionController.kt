@@ -245,28 +245,31 @@ internal class ConversationSelectionController(
     fun createNewChat() = createNewChat(force = false)
 
     /** Cancels any stale selection and republishes New Chat even when it is already projected. */
-    fun restoreNewChatDestination() = createNewChat(force = true)
+    fun restoreNewChatDestination(onFailure: (() -> Unit)? = null) =
+        createNewChat(force = true, onFailure = onFailure)
 
-    private fun createNewChat(force: Boolean) {
+    private fun createNewChat(force: Boolean, onFailure: (() -> Unit)? = null) {
         // Drawer and top-bar actions are the same no-op while already on New Chat.
         if (!force && _isNewChatMode.value) return
         abortRegeneration()
         val previousJob = switchingJob
-        val request = switching.beginNewChat()
+        val request = switching.beginNewChat(onFailure)
         previousJob?.cancel()
         _newChatEntryId.value += 1L
         _isNewChatMode.value = true
         _isTransitioningToNewChat.value = true
         scrollRequests.clear()
         switchingJob = scope.launch {
+            var completed = false
             try {
                 fadeDelay()
                 if (!switching.isCurrent(request.id)) return@launch
                 publishSelectedConversation(null)
                 _activeModelOverride.value = null
                 clearConversationGraph()
+                completed = true
             } finally {
-                if (switching.complete(request.id)) {
+                if (switching.complete(request.id, successful = completed)) {
                     _isTransitioningToNewChat.value = false
                 }
             }
@@ -302,17 +305,22 @@ internal class ConversationSelectionController(
     )
 
     /** Supersedes stale history loads even when the origin is still the published destination. */
-    fun restoreConversationDestination(conversationId: String) =
+    fun restoreConversationDestination(
+        conversationId: String,
+        onFailure: (() -> Unit)? = null,
+    ) =
         selectConversation(
             conversationId = conversationId,
             hapticOnCompletion = false,
             force = true,
+            onFailure = onFailure,
         )
 
     private fun selectConversation(
         conversationId: String,
         hapticOnCompletion: Boolean,
         force: Boolean,
+        onFailure: (() -> Unit)? = null,
     ) {
         if (
             !force &&
@@ -323,7 +331,7 @@ internal class ConversationSelectionController(
         }
         abortRegeneration()
         val previousJob = switchingJob
-        val request = switching.beginConversation(conversationId, hapticOnCompletion)
+        val request = switching.beginConversation(conversationId, hapticOnCompletion, onFailure)
         previousJob?.cancel()
         _isTransitioningToNewChat.value = false
         scrollRequests.clear()
@@ -467,7 +475,7 @@ internal class ConversationSelectionController(
     fun failSwitchingScroll(requestId: Long, reason: String) {
         if (!switching.isCurrent(requestId)) return
         DebugLog.e("ConversationSelection", "Switching scroll did not settle: $reason")
-        switching.complete(requestId)
+        switching.complete(requestId, successful = false)
     }
 
     fun failConversationLoad(conversationId: String) {

@@ -60,7 +60,7 @@ internal class TaskEditorSessionViewModel : ViewModel() {
         enabled = task.enabled
         detailListIndex = 0
         detailListOffset = 0
-        historyPreview = TaskHistoryPreviewState.Idle
+        historyPreview = TaskHistoryPreviewState.Idle.copy(generation = historyPreview.generation + 1L)
         executionHistorySnapshot = null
     }
 
@@ -152,11 +152,14 @@ internal class TaskEditorSessionViewModel : ViewModel() {
         historyPreview = historyPreview.requestReturn()
     }
 
-    fun beginHistoryReturnRestore(): TaskHistoryPreviewState? {
+    fun beginHistoryReturnRestore(
+        onRestore: (TaskHistoryPreviewState, () -> Unit) -> Unit = { _, _ -> },
+    ): TaskHistoryPreviewState? {
         val current = historyPreview
         val restoring = current.beginReturnRestore()
         if (restoring == current) return null
         historyPreview = restoring
+        onRestore(restoring) { markHistoryReturnRestoreFailed(restoring.generation) }
         return restoring
     }
 
@@ -164,11 +167,15 @@ internal class TaskEditorSessionViewModel : ViewModel() {
         historyPreview = historyPreview.markReturnOverlayCovered(expectedGeneration)
     }
 
+    fun markHistoryReturnRestoreFailed(expectedGeneration: Long) {
+        historyPreview = historyPreview.markReturnRestoreFailed(expectedGeneration)
+    }
+
     fun clear() {
         activeTaskId = null
         detailListIndex = 0
         detailListOffset = 0
-        historyPreview = TaskHistoryPreviewState.Idle
+        historyPreview = TaskHistoryPreviewState.Idle.copy(generation = historyPreview.generation + 1L)
         executionHistorySnapshot = null
         // Field values and the base snapshot may still be read by an outgoing animation slot, but
         // no inactive session can expose, restore, or commit them. The next open replaces them.

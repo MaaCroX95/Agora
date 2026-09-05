@@ -519,12 +519,14 @@ class ConversationSelectionControllerTest {
             fixture.controller.publishAcceptedConversation("current", "current-model")
             coEvery { fixture.conversations.getConversation("missing") } returns null
 
-            fixture.controller.selectConversation("missing")
+            var failures = 0
+            fixture.controller.restoreConversationDestination("missing") { failures += 1 }
             runCurrent()
 
             assertEquals("current", fixture.controller.currentConversationId.value)
             assertFalse(fixture.controller.isNewChatMode.value)
             assertNull(fixture.controller.switchingScrollRequest.value)
+            assertEquals(1, failures)
             coVerify(exactly = 1) { fixture.conversations.getConversation("missing") }
         } finally {
             unmockkObject(DebugLog)
@@ -540,17 +542,20 @@ class ConversationSelectionControllerTest {
             coEvery { fixture.conversations.getConversation("conversation") } returns
                 ChatEntity("conversation", "Title")
 
-            fixture.controller.selectConversation("conversation")
+            var failures = 0
+            fixture.controller.restoreConversationDestination("conversation") { failures += 1 }
             runCurrent()
             val request = checkNotNull(fixture.controller.switchingScrollRequest.value)
 
             fixture.controller.failConversationLoad("stale-conversation")
             assertEquals(request, fixture.controller.switchingScrollRequest.value)
+            assertEquals(0, failures)
 
             fixture.controller.failConversationLoad("conversation")
             assertNull(fixture.controller.switchingScrollRequest.value)
             assertEquals("conversation", fixture.controller.currentConversationId.value)
             assertFalse(fixture.controller.isNewChatMode.value)
+            assertEquals(1, failures)
         } finally {
             unmockkObject(DebugLog)
         }
@@ -632,6 +637,43 @@ class ConversationSelectionControllerTest {
             fixture.conversations.selectRunBranch(any(), any(), any(), any())
         }
         fixture.registry.remove("conversation")
+    }
+
+    @Test
+    fun navigationAfterRestorePublicationRejectsLateCompletionAndReportsCancellationOnce() = runTest {
+        val fixture = Fixture(backgroundScope)
+        fixture.controller.publishAcceptedConversation("history", "current-model")
+        coEvery { fixture.conversations.getConversation("origin") } returns ChatEntity("origin", "Origin")
+        var failures = 0
+        fixture.controller.restoreConversationDestination("origin") { failures += 1 }
+        runCurrent()
+        val oldRequest = requireNotNull(fixture.controller.switchingScrollRequest.value)
+        assertEquals("origin", fixture.controller.currentConversationId.value)
+        assertEquals(0, failures)
+
+        fixture.controller.createNewChat()
+        assertEquals(1, failures)
+        assertFalse(fixture.controller.completeSwitchingScroll(oldRequest.id))
+        runCurrent()
+        assertTrue(fixture.controller.isNewChatMode.value)
+        assertNull(fixture.controller.currentConversationId.value)
+        assertEquals(1, failures)
+    }
+
+    @Test
+    fun cancelledNewChatRestoreReportsFailureWithoutCancellingNewerSelection() = runTest {
+        val fadeGate = CompletableDeferred<Unit>()
+        val fixture = Fixture(backgroundScope, fadeDelay = { fadeGate.await() })
+        var failures = 0
+        fixture.controller.restoreNewChatDestination { failures += 1 }
+        runCurrent()
+        fixture.controller.selectConversation("newer")
+        coEvery { fixture.conversations.getConversation("newer") } returns ChatEntity("newer", "Newer")
+        fadeGate.complete(Unit)
+        runCurrent()
+        assertEquals("newer", fixture.controller.currentConversationId.value)
+        assertTrue(fixture.controller.isSwitching.value)
+        assertEquals(1, failures)
     }
 
     private class Fixture(

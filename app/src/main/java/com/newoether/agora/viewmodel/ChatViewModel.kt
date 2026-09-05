@@ -874,16 +874,16 @@ class ChatViewModel(
 
     fun createNewChat() = selectionController.createNewChat()
 
-    internal fun restoreNewChatDestination() =
-        selectionController.restoreNewChatDestination()
+    internal fun restoreNewChatDestination(onFailure: (() -> Unit)? = null) =
+        selectionController.restoreNewChatDestination(onFailure)
 
     fun selectConversation(
         id: String,
         hapticOnCompletion: Boolean = true,
     ) = selectionController.selectConversation(id, hapticOnCompletion)
 
-    internal fun restoreConversationDestination(id: String) =
-        selectionController.restoreConversationDestination(id)
+    internal fun restoreConversationDestination(id: String, onFailure: (() -> Unit)? = null) =
+        selectionController.restoreConversationDestination(id, onFailure)
 
     fun forkConversationFrom(messageId: String? = null) =
         conversationForkShareController.fork(messageId)

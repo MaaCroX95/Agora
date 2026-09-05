@@ -507,6 +507,15 @@ switch in progress. Overlay callbacks, selection results, and subsequent history
 fenced; rapid replacement keeps the original captured origin. While a transient preview or return is
 visible, the Chat top-left action cannot fall through to the hamburger.
 
+If restoration fails because its origin disappeared, loading/projection fails, or a newer navigation
+supersedes it, the existing switching coordinator reports that exact request's failure once. The
+matching return generation releases preview ownership after the Tasks overlay covers Chat and
+resumes live history reconciliation without replacing the selection owner's current destination.
+A stale failure cannot release a newer preview or return, and no retry, timeout, or replacement
+conversation is created to settle a failed return.
+Return generations remain monotonic across task changes and session clearing within the same editor
+ViewModel lifetime, so callbacks from a previous task cannot collide with a new task's return.
+
 The active Task editor session retains only the exact execution-summary list that was rendered when an
 execution was opened, together with its existing numeric scroll position. When Tasks is recomposed
 during return, that task-bound snapshot seeds the first frame and the LazyColumn starts at the retained

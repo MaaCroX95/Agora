@@ -745,13 +745,13 @@ fun MainNavigation(
                         {
                             taskToOpen = taskId
                             taskEditorSession.requestHistoryReturn()
-                            taskEditorSession.beginHistoryReturnRestore()?.let { restore ->
+                            taskEditorSession.beginHistoryReturnRestore { restore, onRestoreFailure ->
                                 if (restore.originWasNewChat) {
-                                    viewModel.restoreNewChatDestination()
+                                    viewModel.restoreNewChatDestination(onRestoreFailure)
                                 } else {
-                                    restore.originConversationId?.let(
-                                        viewModel::restoreConversationDestination,
-                                    )
+                                    restore.originConversationId?.let { origin ->
+                                        viewModel.restoreConversationDestination(origin, onRestoreFailure)
+                                    }
                                 }
                             }
                             topLevelPresentation.present(TopLevelPresentation.TASKS)
