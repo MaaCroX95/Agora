@@ -236,8 +236,12 @@ class SettingsManager(private val context: Context) {
         context.dataStore.data.map { it[SANDBOX_SHARED_STORAGE_ENABLED] ?: false }
 
     val themeMode: Flow<String> = context.dataStore.data.map { it[THEME_MODE] ?: "FOLLOW_DEVICE" }
-    val colorScheme: Flow<String> = context.dataStore.data.map { it[COLOR_SCHEME] ?: "DEFAULT" }
-    val dynamicColor: Flow<Boolean> = context.dataStore.data.map { it[DYNAMIC_COLOR] ?: true }
+    val colorScheme: Flow<String> = context.dataStore.data.map {
+        it[COLOR_SCHEME] ?: DEFAULT_COLOR_SCHEME
+    }
+    val dynamicColor: Flow<Boolean> = context.dataStore.data.map {
+        it[DYNAMIC_COLOR] ?: DEFAULT_DYNAMIC_COLOR
+    }
     val blurEffectsEnabled: Flow<Boolean> = context.dataStore.data.map { it[BLUR_EFFECTS_ENABLED] ?: true }
     val reduceMotion: Flow<Boolean> = context.dataStore.data.map { it[REDUCE_MOTION] ?: false }
     val stickToBottom: Flow<Boolean> = context.dataStore.data.map { it[STICK_TO_BOTTOM] ?: true }
@@ -252,7 +256,9 @@ class SettingsManager(private val context: Context) {
     }
     val autoExpandActiveGroup: Flow<Boolean> =
         context.dataStore.data.map { it[AUTO_EXPAND_ACTIVE_GROUP] ?: true }
-    val schemeStyle: Flow<String> = context.dataStore.data.map { it[SCHEME_STYLE] ?: "TONAL_SPOT" }
+    val schemeStyle: Flow<String> = context.dataStore.data.map {
+        it[SCHEME_STYLE] ?: DEFAULT_SCHEME_STYLE
+    }
     val fontPreference: Flow<String> = context.dataStore.data.map { it[FONT_PREFERENCE] ?: "app_default" }
     val customFontPath: Flow<String> = context.dataStore.data.map { it[CUSTOM_FONT_PATH] ?: "" }
     val customFontName: Flow<String> = context.dataStore.data.map { it[CUSTOM_FONT_NAME] ?: "" }

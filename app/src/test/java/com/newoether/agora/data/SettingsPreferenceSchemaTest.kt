@@ -2,6 +2,7 @@ package com.newoether.agora.data
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class SettingsPreferenceSchemaTest {
@@ -21,6 +22,13 @@ class SettingsPreferenceSchemaTest {
             LOCAL_MODEL_IDLE_RETENTION_MINUTES.name,
         )
         assertEquals("last_models_fetch_fingerprint", LAST_MODELS_FETCH_FINGERPRINT.name)
+    }
+
+    @Test
+    fun appearanceDefaultsUseForestTonalSpotWithoutDynamicColor() {
+        assertEquals("FOREST", DEFAULT_COLOR_SCHEME)
+        assertEquals("TONAL_SPOT", DEFAULT_SCHEME_STYLE)
+        assertFalse(DEFAULT_DYNAMIC_COLOR)
     }
 
     @Test

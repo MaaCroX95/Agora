@@ -5,11 +5,14 @@ import com.newoether.agora.model.ContextBudget
 
 import com.newoether.agora.data.ApiKeyEntry
 import com.newoether.agora.data.BuiltInPrompts
+import com.newoether.agora.data.DEFAULT_COLOR_SCHEME
 import com.newoether.agora.data.DEFAULT_CONTEXT_COMPACT_ENABLED
 import com.newoether.agora.data.DEFAULT_CONTEXT_COMPACT_RETAIN_COUNT
 import com.newoether.agora.data.DEFAULT_CONTEXT_COMPACT_THRESHOLD_PERCENT
+import com.newoether.agora.data.DEFAULT_DYNAMIC_COLOR
 import com.newoether.agora.data.DEFAULT_LOCAL_MODEL_IDLE_RETENTION_MINUTES
 import com.newoether.agora.data.DEFAULT_LOCAL_LOW_CONTEXT_MODE_ENABLED
+import com.newoether.agora.data.DEFAULT_SCHEME_STYLE
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.CustomEndpointProtocol
 import com.newoether.agora.data.CustomEndpointResolution
@@ -218,8 +221,8 @@ class SettingsRepository(
     val defaultPresencePenalty: StateFlow<Float?> = hot(settingsManager.defaultPresencePenalty, null)
     val conversationSettings: StateFlow<Map<String, ConversationSettings>> = hotConversationSettings()
     val themeMode: StateFlow<String> = hot(settingsManager.themeMode, "FOLLOW_DEVICE")
-    val colorScheme: StateFlow<String> = hot(settingsManager.colorScheme, "DEFAULT")
-    val dynamicColor: StateFlow<Boolean> = hot(settingsManager.dynamicColor, true)
+    val colorScheme: StateFlow<String> = hot(settingsManager.colorScheme, DEFAULT_COLOR_SCHEME)
+    val dynamicColor: StateFlow<Boolean> = hot(settingsManager.dynamicColor, DEFAULT_DYNAMIC_COLOR)
     val blurEffectsEnabled: StateFlow<Boolean> = hot(settingsManager.blurEffectsEnabled, true)
     val reduceMotion: StateFlow<Boolean> = hot(settingsManager.reduceMotion, false)
     val stickToBottom: StateFlow<Boolean> = hot(settingsManager.stickToBottom, true)
@@ -234,7 +237,7 @@ class SettingsRepository(
     )
     val autoExpandActiveGroup: StateFlow<Boolean> =
         hot(settingsManager.autoExpandActiveGroup, true)
-    val schemeStyle: StateFlow<String> = hot(settingsManager.schemeStyle, "TONAL_SPOT")
+    val schemeStyle: StateFlow<String> = hot(settingsManager.schemeStyle, DEFAULT_SCHEME_STYLE)
     val fontPreference: StateFlow<String> = hot(settingsManager.fontPreference, "app_default")
     val customFontPath: StateFlow<String> = hot(settingsManager.customFontPath, "")
     val customFontName: StateFlow<String> = hot(settingsManager.customFontName, "")

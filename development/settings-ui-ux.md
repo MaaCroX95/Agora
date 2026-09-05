@@ -48,6 +48,13 @@ layout, states, density, or interaction design has been approved.
   `SettingsAnimations.kt` for page transitions. Copy their behavior through the
   shared APIs rather than recreating their dimensions or motion locally.
 
+## Appearance defaults
+
+- When no appearance preference has been persisted, the app uses the Forest color scheme with the
+  Tonal Spot scheme style and keeps Dynamic Color disabled.
+- Startup placeholders, invalid stored color-scheme fallbacks, and theme defaults must resolve to
+  the same appearance. An explicitly persisted valid user choice remains authoritative.
+
 ## Structure and spacing
 
 - Use the shared settings page scaffold and `SettingsItem` for standard rows.
