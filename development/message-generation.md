@@ -852,11 +852,14 @@ target traversal lasts `1,300 ms`, twice the prior motion speed. Normal motion c
 target-to-target while Pending. The minimum dot radius remains `0.7 dp` and the maximum is `3.9 dp`;
 the existing center bounds account for that maximum so complete dot edges still retain the full
 `16 dp` inset. Reduced Motion freezes the anchor at the center
-without removing the opacity transition. A terminal failure shows a centered Material `BrokenImage`.
+without removing the opacity transition. Pending, decoded, and failed content are the only semantic
+states of one full-`300 x 300 dp` 200 ms Crossfade owner. A terminal failure fills that complete
+slot and shows a centered Material `BrokenImage`; it never first paints a corner-sized failure icon.
 For a completed attachment, the Coil request receives the explicit pixel size derived from the
 `300 dp` slot so decoding never waits for the painter's first draw; the Pending matrix remains until
 decode succeeds, then Crossfades to a `ContentScale.Crop` image that reuses the ordinary media-open
-callback.
+callback. Tool-detail image previews follow the same full-viewport loading/success/failure Crossfade
+and use the shared 4 dp indeterminate loading stroke.
 
 In the Tool detail Bottom Sheet, a `generate_image` result keeps the same `24 dp` outer horizontal
 content padding as ordinary Tool text. Its rounded preview is centered and fills that padded content

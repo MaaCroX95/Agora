@@ -193,7 +193,6 @@ class ChatComposerState(
 
     fun reportUnsupportedFiles(mimeTypes: List<String?>) {
         if (mimeTypes.isEmpty()) return
-        haptics.reject()
         mimeTypes.distinct().forEach { appendRejection(unsupportedFileMessage(it)) }
     }
 

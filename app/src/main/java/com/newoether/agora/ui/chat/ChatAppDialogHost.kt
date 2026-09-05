@@ -217,7 +217,7 @@ internal fun ChatAppDialogHost(
             viewModel = viewModel,
             createdPromptId = createdPromptId,
             onCreatedPromptConsumed = { pendingCreatedPromptId = null },
-            onCreate = { promptDraft = DefaultSystemPrompt.create() },
+            onCreate = { promptDraft = DefaultSystemPrompt.create().copy(title = "") },
             onDismiss = state::dismissPrompt,
         )
     }

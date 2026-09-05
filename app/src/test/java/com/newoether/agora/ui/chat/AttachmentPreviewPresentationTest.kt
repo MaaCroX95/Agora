@@ -1,6 +1,7 @@
 package com.newoether.agora.ui.chat.bottombar
 
 import com.newoether.agora.model.AttachmentImportState
+import com.newoether.agora.ui.chat.MediaLoadPresentation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -13,51 +14,51 @@ class AttachmentPreviewPresentationTest {
                 unavailable = true,
                 importState = AttachmentImportState.READY,
                 type = "image",
-                media = AttachmentMediaLoadState.SUCCESS,
+                media = MediaLoadPresentation.LOADED,
                 expected = AttachmentPreviewPresentation.UNAVAILABLE,
             ),
             Case(
                 importState = AttachmentImportState.PROCESSING,
                 type = "image",
-                media = AttachmentMediaLoadState.LOADING,
+                media = MediaLoadPresentation.LOADING,
                 expected = AttachmentPreviewPresentation.IMPORT_LOADING,
             ),
             Case(
                 importState = AttachmentImportState.FAILED,
                 type = "image",
-                media = AttachmentMediaLoadState.ERROR,
+                media = MediaLoadPresentation.FAILED,
                 expected = AttachmentPreviewPresentation.IMPORT_FAILED,
             ),
             Case(
                 type = "file",
-                media = AttachmentMediaLoadState.LOADING,
+                media = MediaLoadPresentation.LOADING,
                 expected = AttachmentPreviewPresentation.READY_FILE,
             ),
             Case(
                 type = "pdf",
-                media = AttachmentMediaLoadState.LOADING,
+                media = MediaLoadPresentation.LOADING,
                 expected = AttachmentPreviewPresentation.READY_PDF,
             ),
             Case(
                 type = "video",
                 hasVideoFrame = false,
-                media = AttachmentMediaLoadState.LOADING,
+                media = MediaLoadPresentation.LOADING,
                 expected = AttachmentPreviewPresentation.READY_VIDEO_PLACEHOLDER,
             ),
             Case(
                 type = "video",
                 hasVideoFrame = true,
-                media = AttachmentMediaLoadState.LOADING,
+                media = MediaLoadPresentation.LOADING,
                 expected = AttachmentPreviewPresentation.MEDIA_LOADING,
             ),
             Case(
                 type = "image",
-                media = AttachmentMediaLoadState.SUCCESS,
+                media = MediaLoadPresentation.LOADED,
                 expected = AttachmentPreviewPresentation.MEDIA_SUCCESS,
             ),
             Case(
                 type = "image",
-                media = AttachmentMediaLoadState.ERROR,
+                media = MediaLoadPresentation.FAILED,
                 expected = AttachmentPreviewPresentation.MEDIA_ERROR,
             ),
         )
@@ -109,7 +110,7 @@ class AttachmentPreviewPresentationTest {
         val importState: AttachmentImportState = AttachmentImportState.READY,
         val type: String,
         val hasVideoFrame: Boolean = false,
-        val media: AttachmentMediaLoadState,
+        val media: MediaLoadPresentation,
         val expected: AttachmentPreviewPresentation,
     )
 }

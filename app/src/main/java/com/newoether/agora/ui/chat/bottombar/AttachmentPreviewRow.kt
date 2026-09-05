@@ -49,15 +49,12 @@ import com.newoether.agora.R
 import com.newoether.agora.model.AttachmentImportState
 import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.ui.chat.FileThumbnail
+import com.newoether.agora.ui.chat.MEDIA_LOADING_INDICATOR_STROKE_WIDTH
+import com.newoether.agora.ui.chat.MediaLoadPresentation
+import com.newoether.agora.ui.chat.toMediaLoadPresentation
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 
 private const val ATTACHMENT_STATUS_CROSSFADE_MS = 200
-
-internal enum class AttachmentMediaLoadState {
-    LOADING,
-    SUCCESS,
-    ERROR,
-}
 
 internal enum class AttachmentPreviewPresentation {
     INITIAL,
@@ -77,7 +74,7 @@ internal fun attachmentPreviewPresentation(
     importState: AttachmentImportState,
     type: String,
     hasVideoFrame: Boolean,
-    mediaLoadState: AttachmentMediaLoadState,
+    mediaLoadState: MediaLoadPresentation,
 ): AttachmentPreviewPresentation = when {
     unavailable -> AttachmentPreviewPresentation.UNAVAILABLE
     importState == AttachmentImportState.PROCESSING ->
@@ -88,9 +85,9 @@ internal fun attachmentPreviewPresentation(
     type == "pdf" -> AttachmentPreviewPresentation.READY_PDF
     type == "video" && !hasVideoFrame ->
         AttachmentPreviewPresentation.READY_VIDEO_PLACEHOLDER
-    mediaLoadState == AttachmentMediaLoadState.SUCCESS ->
+    mediaLoadState == MediaLoadPresentation.LOADED ->
         AttachmentPreviewPresentation.MEDIA_SUCCESS
-    mediaLoadState == AttachmentMediaLoadState.ERROR ->
+    mediaLoadState == MediaLoadPresentation.FAILED ->
         AttachmentPreviewPresentation.MEDIA_ERROR
     else -> AttachmentPreviewPresentation.MEDIA_LOADING
 }
@@ -140,12 +137,7 @@ internal fun AttachmentPreviewRow(
                 else -> attachment.localPath ?: uriString
             }
             val mediaPainter = rememberAsyncImagePainter(model = mediaModel)
-            val mediaLoadState = when (mediaPainter.state) {
-                is AsyncImagePainter.State.Success -> AttachmentMediaLoadState.SUCCESS
-                is AsyncImagePainter.State.Error -> AttachmentMediaLoadState.ERROR
-                is AsyncImagePainter.State.Empty,
-                is AsyncImagePainter.State.Loading -> AttachmentMediaLoadState.LOADING
-            }
+            val mediaLoadState = mediaPainter.state.toMediaLoadPresentation()
             val targetPresentation = attachmentPreviewPresentation(
                 unavailable = attachment.unavailable,
                 importState = attachment.importState,
@@ -320,7 +312,7 @@ private fun AttachmentPresentationContent(
                 )
                 CircularProgressIndicator(
                     modifier = Modifier.size(24.dp),
-                    strokeWidth = 2.dp,
+                    strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
                     color = Color.White,
                 )
             }
@@ -354,7 +346,7 @@ private fun AttachmentPresentationContent(
                 )
                 CircularProgressIndicator(
                     modifier = Modifier.size(24.dp),
-                    strokeWidth = 2.dp,
+                    strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
                 )
             }
             AttachmentPreviewPresentation.MEDIA_SUCCESS -> {

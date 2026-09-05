@@ -43,7 +43,7 @@ class ToolResultContentSourceContractTest {
         )
         val toolDetail = source
             .substringAfter("internal fun ToolDetailContent(")
-            .substringBefore("private enum class ToolImagePreviewState")
+            .substringBefore("internal fun GeneratedImageThumbnail(")
         assertTrue(
             toolDetail.contains(
                 "val contentAlignmentModifier = if (presentation.kind == ToolKind.WEB_SEARCH)",
@@ -101,8 +101,9 @@ class ToolResultContentSourceContractTest {
         assertFalse(thumbnail.contains("rememberAsyncImagePainter(model = image?.path)"))
         assertTrue(thumbnail.contains(".size(thumbnailSize)"))
         assertTrue(thumbnail.contains("Crossfade("))
-        assertTrue(thumbnail.contains("AsyncImagePainter.State.Success"))
-        assertTrue(thumbnail.contains("AsyncImagePainter.State.Error"))
+        assertTrue(thumbnail.contains("imagePainter.state.toMediaLoadPresentation()"))
+        assertTrue(thumbnail.contains("MEDIA_STATE_CROSSFADE_MILLIS"))
+        assertTrue(thumbnail.contains("modifier = Modifier.fillMaxSize()"))
         assertTrue(thumbnail.contains("Icons.Default.BrokenImage"))
         assertTrue(thumbnail.contains("contentScale = ContentScale.Crop"))
         assertTrue(thumbnail.contains("onMediaClick(paths, 0)"))

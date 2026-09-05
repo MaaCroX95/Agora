@@ -399,7 +399,15 @@ outside it. A newly inserted `PROCESSING` attachment starts at the neutral frame
 indicator visibly crossfades in. Loading-to-ready, loading-to-failed, failed-to-retry/loading, media
 decode success/error, and every progress-indicator appearance/disappearance crossfade without a
 layout jump. Tapping the failure overlay retries the complete import from private staging. Failed
-attachments do not disable Send and are excluded from the accepted result.
+attachments do not disable Send and are excluded from the accepted result. Attachment admission owns
+one selection haptic after the processing tile is inserted; decode/import completion, rejection, and
+failure do not emit a second haptic.
+
+Durable message-bubble thumbnails and the full-screen image viewport use the same explicit media
+loading/success/failure semantics. Their image remains composed under one fixed-geometry, full-size
+200 ms Crossfade owner. Loading uses a 4 dp indeterminate stroke, success reveals the image without a
+layout change, and failure replaces the whole viewport with its error presentation; no corner icon,
+blank thumbnail, hard swap, or zero-size proxy may leave a failed image looking indefinitely active.
 
 Tapping Send freezes that draft owner's exact text, tap-ordered model/settings snapshot, and
 attachment membership. The TextField remains enabled and editable in every submission and generation

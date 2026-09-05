@@ -112,7 +112,10 @@ fun FullScreenMediaViewer(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
-            CircularProgressIndicator(color = Color.White)
+            CircularProgressIndicator(
+                color = Color.White,
+                strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
+            )
         }
         return
     }
@@ -297,7 +300,10 @@ private fun MediaPager(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    CircularProgressIndicator(color = Color.White)
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
+                    )
                 }
                 true -> {
                     if (page == pagerState.currentPage) {

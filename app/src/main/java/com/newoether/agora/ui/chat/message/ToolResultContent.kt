@@ -4,7 +4,6 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -43,7 +42,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -53,13 +51,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
-import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.newoether.agora.R
 import com.newoether.agora.model.CitationPolicy
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.ToolImageAttachment
+import com.newoether.agora.ui.chat.MEDIA_LOADING_INDICATOR_STROKE_WIDTH
+import com.newoether.agora.ui.chat.MEDIA_STATE_CROSSFADE_MILLIS
+import com.newoether.agora.ui.chat.MediaLoadPresentation
+import com.newoether.agora.ui.chat.toMediaLoadPresentation
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import com.newoether.agora.ui.theme.ChatType
 import com.newoether.agora.ui.theme.MonoFamily
@@ -211,13 +212,18 @@ internal fun GeneratedImageThumbnail(
         }
     }
     val imagePainter = rememberAsyncImagePainter(model = imageRequest)
-    val contentState = when {
-        presentation.isActive -> "pending"
-        presentation.state != ToolPresentationState.COMPLETED -> "failed"
-        image == null -> "failed"
-        imagePainter.state is AsyncImagePainter.State.Error -> "failed"
-        imagePainter.state is AsyncImagePainter.State.Success -> "success"
-        else -> "pending"
+    val targetState = when {
+        presentation.isActive -> MediaLoadPresentation.LOADING
+        presentation.state != ToolPresentationState.COMPLETED ->
+            MediaLoadPresentation.FAILED
+        image == null -> MediaLoadPresentation.FAILED
+        else -> imagePainter.state.toMediaLoadPresentation()
+    }
+    var presentedState by remember(appearanceKey) {
+        mutableStateOf(MediaLoadPresentation.LOADING)
+    }
+    LaunchedEffect(targetState) {
+        presentedState = targetState
     }
     val shape = RoundedCornerShape(8.dp)
 
@@ -235,36 +241,60 @@ internal fun GeneratedImageThumbnail(
                 ),
             contentAlignment = Alignment.Center,
         ) {
+            if (imageRequest != null) {
+                Image(
+                    painter = imagePainter,
+                    contentDescription = stringResource(R.string.tool_view_image),
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            enabled = presentedState == MediaLoadPresentation.LOADED &&
+                                paths.isNotEmpty(),
+                            onClick = { onMediaClick(paths, 0) },
+                        ),
+                )
+            }
             Crossfade(
-                targetState = contentState,
+                targetState = presentedState,
                 animationSpec = tween(
-                    durationMillis = STATUS_CROSSFADE_DURATION_MS,
+                    durationMillis = MEDIA_STATE_CROSSFADE_MILLIS,
                     easing = LinearEasing,
                 ),
                 label = "generatedImageContent:$appearanceKey",
+                modifier = Modifier.fillMaxSize(),
             ) { state ->
                 when (state) {
-                    "pending" -> GeneratedImagePendingDots(
-                        animationKey = appearanceKey,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    "success" -> Image(
-                        painter = imagePainter,
-                        contentDescription = stringResource(R.string.tool_view_image),
-                        contentScale = ContentScale.Crop,
+                    MediaLoadPresentation.LOADING -> Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable(
-                                enabled = paths.isNotEmpty(),
-                                onClick = { onMediaClick(paths, 0) },
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
                             ),
-                    )
-                    else -> Icon(
-                        imageVector = Icons.Default.BrokenImage,
-                        contentDescription = stringResource(R.string.attachment_copy_failed_image),
-                        modifier = Modifier.size(36.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-                    )
+                    ) {
+                        GeneratedImagePendingDots(
+                            animationKey = appearanceKey,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    MediaLoadPresentation.LOADED -> Spacer(Modifier.fillMaxSize())
+                    MediaLoadPresentation.FAILED -> Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.BrokenImage,
+                            contentDescription = stringResource(
+                                R.string.attachment_copy_failed_image,
+                            ),
+                            modifier = Modifier.size(36.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                        )
+                    }
                 }
             }
         }
@@ -363,12 +393,6 @@ internal fun toolDetailHorizontalPadding(segment: MessageSegment): Dp =
         else -> 24.dp
     }
 
-private enum class ToolImagePreviewState {
-    LOADING,
-    LOADED,
-    FAILED,
-}
-
 @Composable
 private fun ToolImageResults(
     images: List<ToolImageAttachment>,
@@ -409,14 +433,15 @@ private fun ToolImagePreview(
             (width.toFloat() / height.toFloat()).coerceIn(0.55f, 2.2f)
         }
     }
-    var state by remember(image.path) {
-        mutableStateOf(ToolImagePreviewState.LOADING)
+    var loadState by remember(image.path) {
+        mutableStateOf(MediaLoadPresentation.LOADING)
     }
-    val imageAlpha by animateFloatAsState(
-        targetValue = if (state == ToolImagePreviewState.LOADED) 1f else 0f,
-        animationSpec = tween(durationMillis = 180),
-        label = "toolImagePreview:${image.sha256}",
-    )
+    var presentedState by remember(image.path) {
+        mutableStateOf(MediaLoadPresentation.LOADING)
+    }
+    LaunchedEffect(loadState) {
+        presentedState = loadState
+    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val previewHeight = if (squareCrop) {
@@ -432,37 +457,58 @@ private fun ToolImagePreview(
                     MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.45f),
                 )
                 .clickable(
-                    enabled = state == ToolImagePreviewState.LOADED,
+                    enabled = presentedState == MediaLoadPresentation.LOADED,
                     onClick = onClick,
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            when (state) {
-                ToolImagePreviewState.LOADING -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.width(24.dp).height(24.dp),
-                        strokeWidth = 2.dp,
-                    )
-                }
-                ToolImagePreviewState.FAILED -> {
-                    Text(
-                        text = stringResource(R.string.attachment_copy_failed_image),
-                        style = ChatType.metaNormal,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                ToolImagePreviewState.LOADED -> Unit
-            }
             coil.compose.AsyncImage(
                 model = image.path,
                 contentDescription = stringResource(R.string.tool_view_image),
                 contentScale = if (squareCrop) ContentScale.Crop else ContentScale.Fit,
                 alignment = Alignment.Center,
-                onLoading = { state = ToolImagePreviewState.LOADING },
-                onSuccess = { state = ToolImagePreviewState.LOADED },
-                onError = { state = ToolImagePreviewState.FAILED },
-                modifier = previewModifier.graphicsLayer { alpha = imageAlpha },
+                onLoading = { loadState = MediaLoadPresentation.LOADING },
+                onSuccess = { loadState = MediaLoadPresentation.LOADED },
+                onError = { loadState = MediaLoadPresentation.FAILED },
+                modifier = previewModifier,
             )
+            Crossfade(
+                targetState = presentedState,
+                animationSpec = tween(MEDIA_STATE_CROSSFADE_MILLIS),
+                label = "toolImagePreview",
+                modifier = Modifier.fillMaxSize(),
+            ) { state ->
+                when (state) {
+                    MediaLoadPresentation.LOADING -> Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                MaterialTheme.colorScheme.surfaceContainerHighest,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
+                        )
+                    }
+                    MediaLoadPresentation.LOADED -> Spacer(Modifier.fillMaxSize())
+                    MediaLoadPresentation.FAILED -> Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                MaterialTheme.colorScheme.surfaceContainerHighest,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.attachment_copy_failed_image),
+                            style = ChatType.metaNormal,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
         }
     }
 }
