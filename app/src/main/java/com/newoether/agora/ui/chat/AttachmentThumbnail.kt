@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -313,6 +313,7 @@ private fun MessageMediaThumbnail(
                     CircularProgressIndicator(
                         modifier = Modifier.size(28.dp),
                         strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
                 MediaLoadPresentation.LOADED -> Box(
@@ -338,7 +339,7 @@ private fun MessageMediaThumbnail(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.Default.ErrorOutline,
+                        Icons.Default.BrokenImage,
                         contentDescription = androidx.compose.ui.res.stringResource(
                             com.newoether.agora.R.string.attachment_copy_failed_image,
                         ),

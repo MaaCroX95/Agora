@@ -431,7 +431,9 @@ failure do not emit a second haptic.
 
 Durable message-bubble thumbnails and the full-screen image viewport use the same explicit media
 loading/success/failure semantics. Their image remains composed under one fixed-geometry, full-size
-200 ms Crossfade owner. Loading uses a 4 dp indeterminate stroke, success reveals the image without a
+200 ms Crossfade owner. Composer attachments, message thumbnails, tool image previews and full-screen
+media share a primary-colored 3 dp indeterminate stroke. Image failures use the Material BrokenImage
+icon, preserving the surface's existing retry/close actions. Success reveals the image without a
 layout change, and failure replaces the whole viewport with its error presentation; no corner icon,
 blank thumbnail, hard swap, or zero-size proxy may leave a failed image looking indefinitely active.
 

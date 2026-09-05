@@ -20,7 +20,7 @@ class AttachmentPreviewSourceContractTest {
         assertTrue(mediaState.contains("this is AsyncImagePainter.State.Success"))
         assertTrue(mediaState.contains("this is AsyncImagePainter.State.Error"))
         assertTrue(mediaState.contains("MEDIA_STATE_CROSSFADE_MILLIS = 200"))
-        assertTrue(mediaState.contains("MEDIA_LOADING_INDICATOR_STROKE_WIDTH = 4.dp"))
+        assertTrue(mediaState.contains("MEDIA_LOADING_INDICATOR_STROKE_WIDTH = 3.dp"))
         assertTrue(source.contains("AttachmentPreviewPresentation.IMPORT_LOADING"))
         assertTrue(source.contains("AttachmentPreviewPresentation.IMPORT_FAILED"))
         assertTrue(source.contains("AttachmentPreviewPresentation.MEDIA_LOADING"))

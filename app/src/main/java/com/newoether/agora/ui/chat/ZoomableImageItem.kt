@@ -349,7 +349,7 @@ internal fun ZoomableImageItem(
                     contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator(
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.primary,
                         strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
                     )
                 }

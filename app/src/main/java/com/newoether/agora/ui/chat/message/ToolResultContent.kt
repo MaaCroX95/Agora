@@ -490,6 +490,7 @@ private fun ToolImagePreview(
                         CircularProgressIndicator(
                             modifier = Modifier.size(28.dp),
                             strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
+                            color = MaterialTheme.colorScheme.primary,
                         )
                     }
                     MediaLoadPresentation.LOADED -> Spacer(Modifier.fillMaxSize())
@@ -501,10 +502,11 @@ private fun ToolImagePreview(
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(
-                            text = stringResource(R.string.attachment_copy_failed_image),
-                            style = ChatType.metaNormal,
-                            color = MaterialTheme.colorScheme.error,
+                        Icon(
+                            imageVector = Icons.Default.BrokenImage,
+                            contentDescription = stringResource(R.string.attachment_copy_failed_image),
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(32.dp),
                         )
                     }
                 }

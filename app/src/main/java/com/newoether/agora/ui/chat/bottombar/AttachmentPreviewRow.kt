@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
@@ -313,7 +314,7 @@ private fun AttachmentPresentationContent(
                 CircularProgressIndicator(
                     modifier = Modifier.size(24.dp),
                     strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
             AttachmentPreviewPresentation.IMPORT_FAILED,
@@ -328,7 +329,8 @@ private fun AttachmentPresentationContent(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.Default.ErrorOutline,
+                        if (attachment.type == "image") Icons.Default.BrokenImage
+                        else Icons.Default.ErrorOutline,
                         contentDescription = stringResource(R.string.retry),
                         tint = Color(0xFFB0B0B0),
                         modifier = Modifier.size(28.dp),
@@ -347,6 +349,7 @@ private fun AttachmentPresentationContent(
                 CircularProgressIndicator(
                     modifier = Modifier.size(24.dp),
                     strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
             AttachmentPreviewPresentation.MEDIA_SUCCESS -> {

@@ -11,7 +11,7 @@ internal enum class MediaLoadPresentation {
 }
 
 internal const val MEDIA_STATE_CROSSFADE_MILLIS = 200
-internal val MEDIA_LOADING_INDICATOR_STROKE_WIDTH = 4.dp
+internal val MEDIA_LOADING_INDICATOR_STROKE_WIDTH = 3.dp
 
 internal fun mediaLoadPresentation(
     loaded: Boolean,
