@@ -658,6 +658,7 @@
     <string name="embedding_type_local">Cục bộ</string>
     <string name="cached">Đã lưu bộ đệm</string>
     <string name="not_cached">Chưa lưu bộ đệm</string>
+    <string name="cache_work_remaining">Còn lại %1$d (%2$d/%3$d)</string>
     <string name="advanced_title">Nâng cao</string>
     <string name="search_context_label">Tin nhắn ngữ cảnh cho mỗi kết quả tìm kiếm</string>
     <string name="search_context_desc">%1$d tin nhắn</string>

@@ -655,6 +655,7 @@
     <string name="embedding_type_local">로컬</string>
     <string name="cached">캐시됨</string>
     <string name="not_cached">캐시되지 않음</string>
+    <string name="cache_work_remaining">%1$d개 남음 (%2$d/%3$d)</string>
     <string name="advanced_title">고급</string>
     <string name="search_context_label">검색 적중당 컨텍스트 메시지 수</string>
     <string name="search_context_desc">메시지 %1$d개</string>

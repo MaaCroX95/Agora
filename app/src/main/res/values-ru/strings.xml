@@ -655,6 +655,7 @@
     <string name="embedding_type_local">Локальная</string>
     <string name="cached">В кэше</string>
     <string name="not_cached">Не в кэше</string>
+    <string name="cache_work_remaining">Осталось: %1$d (%2$d/%3$d)</string>
     <string name="advanced_title">Дополнительно</string>
     <string name="search_context_label">Контекстных сообщений на результат поиска</string>
     <string name="search_context_desc">Сообщений: %1$d</string>
