@@ -1071,6 +1071,10 @@ changes database materialization and object lifetime only; it does not change Pr
 ordering, attachment projection, protocol validation, context selection, or failure semantics.
 
 ### 9.2 Ordinary-generation system prompt ownership
+Gemini serializes the compiled system prompt under the canonical REST JSON field
+`systemInstruction`, shared by ordinary chat and dedicated internal generations. It must emit
+only that field spelling, never both protobuf and JSON aliases; absent prompts omit the field.
+
 For ordinary conversation generation, the complete Provider-visible system prompt is owned by the
 user-selected structured System Prompt template. The request builder may compile that template and
 resolve only the predefined variables that the user explicitly placed in it. It must not append,
