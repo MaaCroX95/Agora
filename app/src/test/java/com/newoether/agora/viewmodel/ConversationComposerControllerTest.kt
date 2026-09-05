@@ -840,7 +840,7 @@ class ConversationComposerControllerTest {
     }
 
     @Test
-    fun `ready replacement reclaims staged source only after durable write`() = runTest {
+    fun `ready replacement leaves staged cleanup to durable draft persistence`() = runTest {
         val staged = attachment("ready").processing("/stage/ready")
         val ready = staged.ready("/final/ready.jpg")
         val processor = mockk<AttachmentImportProcessor>()
@@ -855,7 +855,7 @@ class ConversationComposerControllerTest {
         fixture.controller.awaitProcessing(OWNER_A)
 
         assertEquals(ready, fixture.persistence.attachment(OWNER_A))
-        coVerify(exactly = 1) {
+        coVerify(exactly = 0) {
             fixture.repository.deleteUnreferencedDraftAttachmentFiles(listOf(staged))
         }
     }
