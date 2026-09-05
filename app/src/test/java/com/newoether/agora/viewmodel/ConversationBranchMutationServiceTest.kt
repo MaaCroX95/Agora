@@ -13,14 +13,74 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConversationBranchMutationServiceTest {
+    @Test
+    fun cancellationDuringOverlayStillCompletesTheBlockedDialog() = runTest {
+        val owner = SupervisorJob()
+        val events = mutableListOf<String>()
+        val results = mutableListOf<Boolean>()
+        val state = ConversationGenerationState("conversation")
+        val service = service(
+            conversations = mockk(),
+            events = events,
+            ownerScope = CoroutineScope(StandardTestDispatcher(testScheduler) + owner),
+            start = {
+                CompletableDeferred<Unit>().await()
+                7L
+            },
+        )
+        service.delete(
+            "conversation", "model", state,
+            listOf(chat("model", null, Participant.MODEL)), results::add,
+        )
+        runCurrent()
+        owner.cancel()
+        runCurrent()
+
+        assertEquals(listOf(false), results)
+        assertEquals(listOf("failed:null"), events)
+        state.dispose()
+    }
+
+    @Test
+    fun busyCoordinatorRejectsDeletionWithoutWaitingForGeneration() = runTest {
+        val coordinator = ConversationExecutionCoordinator()
+        val events = mutableListOf<String>()
+        val results = mutableListOf<Boolean>()
+        val state = ConversationGenerationState("conversation")
+        backgroundScope.launch {
+            coordinator.withAutomationConversationLock("conversation") {
+                CompletableDeferred<Unit>().await()
+            }
+        }
+        runCurrent()
+        val service = service(
+            mockk(), events,
+            ownerScope = backgroundScope, coordinator = coordinator,
+        )
+        service.delete(
+            "conversation", "model", state,
+            listOf(chat("model", null, Participant.MODEL)), results::add,
+        )
+        runCurrent()
+
+        assertEquals(listOf(false), results)
+        assertEquals(listOf("start:true", "failed:7"), events)
+        state.dispose()
+    }
+
     @Test
     fun compactBoundaryUsesDedicatedTransactionWithoutRequestingAScrollTarget() = runTest {
         val conversations = mockk<ConversationRepository>()
@@ -155,19 +215,22 @@ class ConversationBranchMutationServiceTest {
         conversations: ConversationRepository,
         events: MutableList<String>,
         onFailed: (Long?) -> Unit = { events += "failed:$it" },
+        ownerScope: CoroutineScope = this,
+        coordinator: ConversationExecutionCoordinator = ConversationExecutionCoordinator(),
+        start: suspend (Boolean) -> Long? = {
+            events += "start:$it"
+            7L
+        },
     ) = ConversationBranchMutationService(
-        scope = this,
+        scope = ownerScope,
         conversations = conversations,
-        executionCoordinator = ConversationExecutionCoordinator(),
+        executionCoordinator = coordinator,
         toUiMessage = { entity ->
             chat(entity.id, entity.parentId, entity.participant)
         },
         isConversationOpen = { true },
         projectGraph = { messages, _ -> events += "project:${messages.joinToString { it.id }}" },
-        onMutationStart = { _, scrollToTarget ->
-            events += "start:$scrollToTarget"
-            7L
-        },
+        onMutationStart = { _, scrollToTarget -> start(scrollToTarget) },
         onMutationSettling = { _, target -> events += "settle:$target" },
         onMutationFailed = onFailed,
         ioDispatcher = StandardTestDispatcher(testScheduler),

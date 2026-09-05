@@ -191,12 +191,11 @@ internal fun MessageItem(
 
     LaunchedEffect(confirmedDelete) {
         val confirmed = confirmedDelete ?: return@LaunchedEffect
-        // The confirmation dialog must leave its window before the destructive transition starts.
-        // Waiting for the next frame also prevents the loading overlay from being composed behind it.
+        // Draw the loading action in the blocking confirmation before dispatch.
         withFrameNanos { }
         val onResult: (Boolean) -> Unit = { deleted ->
+            pendingDelete = if (deleted) null else confirmed
             if (deleted) haptics.destructiveConfirmed()
-            else pendingDelete = confirmed
             confirmedDelete = null
         }
         val accepted = if (confirmed.deletesConversation) {
@@ -210,9 +209,6 @@ internal fun MessageItem(
     pendingDelete?.let { pending ->
         val onConfirmDelete = {
             if (confirmedDelete == null) {
-                // Close the dialog in this snapshot. Deletion is dispatched by LaunchedEffect only
-                // after Compose has committed and drawn a frame without the dialog.
-                pendingDelete = null
                 confirmedDelete = pending
             }
             Unit
@@ -220,21 +216,21 @@ internal fun MessageItem(
         if (pending.deletesConversation) {
             MessageDeleteDialog(
                 deletesConversation = true,
-                enabled = true,
+                pending = confirmedDelete != null,
                 onConfirm = onConfirmDelete,
-                onDismiss = { pendingDelete = null },
+                onDismiss = { if (confirmedDelete == null) pendingDelete = null },
             )
         } else if (message.isContextCompact()) {
             ContextCompactDeleteDialog(
-                enabled = true,
+                pending = confirmedDelete != null,
                 onConfirm = onConfirmDelete,
-                onDismiss = { pendingDelete = null },
+                onDismiss = { if (confirmedDelete == null) pendingDelete = null },
             )
         } else {
             MessageDeleteDialog(
-                enabled = true,
+                pending = confirmedDelete != null,
                 onConfirm = onConfirmDelete,
-                onDismiss = { pendingDelete = null },
+                onDismiss = { if (confirmedDelete == null) pendingDelete = null },
             )
         }
     }

@@ -31,7 +31,7 @@ class RecentRegressionSourceContractTest {
     }
 
     @Test
-    fun deleteDialogLeavesBeforeDeletionAndSelectedDeleteWaitsForOverlay() {
+    fun everyDeleteKeepsTheDialogUntilCompletion() {
         val item = source("ui/chat/message/MessageItem.kt")
         val confirm = item.substringAfter("val onConfirmDelete = {")
             .substringBefore("if (pending.deletesConversation)")
@@ -43,11 +43,12 @@ class RecentRegressionSourceContractTest {
         val dialogHost = source("ui/chat/ChatAppDialogHost.kt")
         val conversationConfirm = dialogHost.substringAfter("ChatDeleteConfirmDialog(")
             .substringBefore("onDismiss = state::dismissDelete")
-        val selectedConfirm = conversationConfirm.substringAfter("if (id == currentConversationId)")
-            .substringBefore("} else {")
-        val backgroundConfirm = conversationConfirm.substringAfter("} else {")
+        val messageDialog = source("ui/chat/message/MessageDialogs.kt")
+            .substringAfter("internal fun MessageDeleteDialog(")
 
-        assertTrue(confirm.indexOf("pendingDelete = null") < confirm.indexOf("confirmedDelete = pending"))
+        assertFalse(confirm.contains("pendingDelete = null"))
+        assertTrue(item.contains("pending = confirmedDelete != null"))
+        assertTrue(effect.contains("pendingDelete = if (deleted) null else confirmed"))
         assertTrue(effect.indexOf("withFrameNanos") < effect.indexOf("onDeleteConversation"))
         assertTrue(effect.indexOf("withFrameNanos") < effect.indexOf("onDelete("))
         assertTrue(
@@ -56,20 +57,16 @@ class RecentRegressionSourceContractTest {
         )
         assertTrue(
             conversationConfirm.indexOf("state.beginDelete(id)") <
-                conversationConfirm.indexOf("if (id == currentConversationId)"),
+                conversationConfirm.indexOf("deleteConversation()"),
         )
         assertTrue(
-            selectedConfirm.indexOf("state.completeDelete(id)") <
-                selectedConfirm.indexOf("deleteConversation()"),
+            conversationConfirm.indexOf("withFrameNanos") <
+                conversationConfirm.indexOf("deleteConversation()"),
         )
-        assertTrue(
-            backgroundConfirm.indexOf("withFrameNanos") <
-                backgroundConfirm.indexOf("viewModel.currentConversationId.value"),
-        )
-        assertTrue(
-            backgroundConfirm.indexOf("viewModel.currentConversationId.value") <
-                backgroundConfirm.indexOf("deleteConversation()"),
-        )
+        assertFalse(conversationConfirm.contains("state.completeDelete(id)"))
+        assertTrue(messageDialog.contains("dismissOnBackPress = !pending"))
+        assertTrue(messageDialog.contains("dismissOnClickOutside = !pending"))
+        assertTrue(messageDialog.contains("enabled = enabled && !pending"))
     }
 
     private fun source(relativePath: String): String =

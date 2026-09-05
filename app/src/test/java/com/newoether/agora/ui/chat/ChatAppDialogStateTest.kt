@@ -65,13 +65,23 @@ class ChatAppDialogStateTest {
         val state = ChatAppDialogState(mutableStateOf(false))
         state.requestDelete("conversation")
         assertTrue(state.beginDelete("conversation"))
-        state.completeDelete("conversation")
-
         state.failDelete("conversation")
 
         assertEquals("conversation", state.deleteConversationId)
         assertEquals(ChatDeleteDialogPhase.FAILED, state.deleteConversationPhase)
         assertTrue(state.beginDelete("conversation"))
+    }
+
+    @Test
+    fun `completed deletion closes once and late failure cannot reopen it`() {
+        val state = ChatAppDialogState(mutableStateOf(false))
+        state.requestDelete("conversation")
+        assertTrue(state.beginDelete("conversation"))
+        state.completeDelete("conversation")
+        state.failDelete("conversation")
+
+        assertNull(state.deleteConversationId)
+        assertEquals(ChatDeleteDialogPhase.CONFIRM, state.deleteConversationPhase)
     }
 
     @Test

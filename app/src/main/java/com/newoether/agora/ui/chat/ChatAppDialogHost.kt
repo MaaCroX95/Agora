@@ -90,9 +90,6 @@ internal class ChatAppDialogState internal constructor(
     fun failDelete(conversationId: String) {
         if (deleteConversationId == conversationId) {
             deleteConversationPhase = ChatDeleteDialogPhase.FAILED
-        } else if (deleteConversationId == null) {
-            deleteConversationId = conversationId
-            deleteConversationPhase = ChatDeleteDialogPhase.FAILED
         }
     }
 
@@ -190,21 +187,11 @@ internal fun ChatAppDialogHost(
             phase = state.deleteConversationPhase,
             onConfirm = {
                 if (state.beginDelete(id)) {
-                    if (id == currentConversationId) {
-                        // The selected conversation transfers blocking ownership to the full-screen
-                        // tree-mutation overlay before durable deletion starts.
-                        state.completeDelete(id)
+                    promptEditorScope.launch {
+                        // Keep the confirmation window blocking until the result arrives.
+                        withFrameNanos { }
+                        if (!state.isDeletePending(id)) return@launch
                         deleteConversation()
-                    } else {
-                        promptEditorScope.launch {
-                            // Draw the dialog's pending state before starting non-selected deletion.
-                            withFrameNanos { }
-                            if (!state.isDeletePending(id)) return@launch
-                            if (viewModel.currentConversationId.value == id) {
-                                state.completeDelete(id)
-                            }
-                            deleteConversation()
-                        }
                     }
                 }
             },

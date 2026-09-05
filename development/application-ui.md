@@ -245,6 +245,13 @@ A New Chat first Send is the sole automatic-top exception. Only after the accept
 
 After durable deletion and runtime cleanup of the conversation that was selected when deletion was admitted, the canonical selection owner enters New Chat unless a newer explicit selection targets another conversation. A pending or completed newer conversation selection remains authoritative. Deleting a nonselected conversation or a deletion that fails before cleanup does not change the visible page.
 
+Conversation, message-subtree and Compact deletion share the same confirmation flow. Clicking Delete
+keeps the dialog visible and replaces the Delete action text with a loading indicator throughout
+the pending operation. It blocks repeat confirmation, Cancel, Back, and outside dismissal.
+Only successful completion closes the dialog; rejection or failure keeps it open and restores its
+controls with the original target. The selected-page transition may proceed behind the dialog, but
+does not replace the dialog as the interaction blocker. Late results cannot reopen a finished dialog.
+
 If a message action would remove every durable message in the current tree, including the
 single-Compact case, its action is presented as `Delete Conversation` and the confirmation explicitly
 warns that the whole conversation will be removed. The dialog freezes the exact message-id topology

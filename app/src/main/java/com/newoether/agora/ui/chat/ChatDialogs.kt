@@ -77,7 +77,7 @@ internal fun ChatRenameDialog(
     )
 }
 
-/** Delete-conversation confirmation dialog and non-selected deletion blocker. */
+/** Delete-conversation confirmation and blocker for the entire pending operation. */
 @Composable
 internal fun ChatDeleteConfirmDialog(
     phase: ChatDeleteDialogPhase,

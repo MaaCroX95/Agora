@@ -47,7 +47,7 @@ internal class ConversationLifecycleController(
             try {
                 if (selectedAtDispatch) {
                     // This suspends for the overlay fade, so no destructive storage work can begin
-                    // until the confirmation dialog is gone and the loading surface is visible.
+                    // until the underlying selected-page loading surface is visible.
                     transitionRequestId = beginSelectedDeleteTransition(conversationId)
                 }
                 tryWithConversationLock(conversationId) {
