@@ -50,7 +50,6 @@ import com.newoether.agora.api.DebugProvider
 import com.newoether.agora.data.forDisplay
 import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
 import com.newoether.agora.util.gradientBlur
-import com.newoether.agora.util.verticalBottomOverlayFade
 import com.newoether.agora.ui.chat.bottombar.CHAT_BOTTOM_BAR_OUTER_SHAPE
 import com.newoether.agora.ui.chat.bottombar.ChatBottomBar
 import com.newoether.agora.ui.chat.bottombar.LoopStatusBackdrop
@@ -508,11 +507,6 @@ fun ChatApp(
                         modifier = Modifier.fillMaxSize()
                     ) { (targetNewChat, targetShowLaunch) ->
                         if (!targetNewChat) {
-                            val messageListModifier = if (blurEffectsEnabled) {
-                                Modifier.fillMaxSize().gradientBlur(blurAtTopDp = 8f, blurAtBottomDp = 0f)
-                            } else {
-                                Modifier.fillMaxSize()
-                            }
                             val streamingFollowAvailability = streamingTailAvailability(
                                 generationActive = isLoading,
                                 blocked =
@@ -535,7 +529,9 @@ fun ChatApp(
                                 authoritativeMessages = StableMessageList(displayMessagesState.value),
                                 allMessages = StableMessageList(allMessagesState.value),
                                 conversationId = currentConversationId,
-                                modifier = messageListModifier.verticalBottomOverlayFade(
+                                modifier = Modifier.fillMaxSize().gradientBlur(
+                                    blurAtTopDp = if (blurEffectsEnabled) 8f else 0f,
+                                    blurAtBottomDp = 0f,
                                     fadeHeightDp = 40f,
                                     bottomOverlayHeight = bottomBarHeight + with(density) { outerSpacerHeightPx.toDp() } + 12.dp,
                                 ),

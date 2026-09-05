@@ -82,6 +82,14 @@ IME/navigation insets, composer-expansion spacer ownership, and scroll ownership
 Expanded composer mode receives no lift and retains its exact background-color cover with 20 dp
 compact-at-screen-top gradient geometry.
 
+The top gradient blur and bottom alpha mask share one viewport graphics layer. The layer records
+the existing `DstIn` mask before applying the remembered horizontal/vertical RenderEffect chain;
+ChatApp must not stack a second offscreen mask layer inside a blur layer. The blur retains its
+full-resolution 9-tap passes, 5 dp maximum scale, 150 dp top falloff, and sub-0.5-pixel bypass.
+Blur Effects off and Android below API 33 retain the same mask without constructing RuntimeShader.
+The mask caches its brush and stops until drawing size or fade geometry changes. Content redraws
+must not reconstruct them, and composer geometry changes must not recompile the blur shaders.
+
 ## 6. MCP page-entry refresh
 
 Entering the MCP Settings page submits exactly one refresh request for every enabled server with a
