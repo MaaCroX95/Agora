@@ -3,9 +3,44 @@ package com.newoether.agora.ui.chat
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
+import com.newoether.agora.ui.chat.bottombar.composerSendActionEnabled
+import com.newoether.agora.viewmodel.ComposerSubmissionPhase
+import com.newoether.agora.viewmodel.ConversationComposerSubmissionSnapshot
 
 class RecentRegressionSourceContractTest {
+    @Test
+    fun busySendCannotDispatchAnOtherwiseAvailableStopOrSend() {
+        val expectedWhenActionAvailable = mapOf(
+            ComposerSubmissionPhase.IDLE to true,
+            ComposerSubmissionPhase.WAITING to true,
+            ComposerSubmissionPhase.SUBMITTING to false,
+            ComposerSubmissionPhase.ACCEPTED_PENDING_CLEAR to false,
+        )
+        expectedWhenActionAvailable.forEach { (phase, expected) ->
+            val submission = ConversationComposerSubmissionSnapshot(phase = phase)
+            listOf(true to false, false to true, true to true).forEach { (stop, send) ->
+                assertEquals(phase.name, expected, composerSendActionEnabled(
+                    submission, isSwitching = false, isStopping = false, stop, send,
+                ))
+                assertFalse(composerSendActionEnabled(
+                    submission, isSwitching = true, isStopping = false, stop, send,
+                ))
+                assertFalse(composerSendActionEnabled(
+                    submission, isSwitching = false, isStopping = true, stop, send,
+                ))
+            }
+            assertEquals(phase == ComposerSubmissionPhase.WAITING, composerSendActionEnabled(
+                submission, isSwitching = false, isStopping = false, showStop = false, canSend = false,
+            ))
+        }
+        val button = source("ui/chat/bottombar/ComposerSendButton.kt")
+        assertTrue(button.contains("enabled = isActionable"))
+        val click = button.substringAfter("onClick = {").substringBefore("enabled = isActionable")
+        assertTrue(click.indexOf("if (!isActionable) return@Surface") < click.indexOf("when {"))
+    }
+
     @Test
     fun attachmentPainterRemainsDrawnWhileLoading() {
         val source = source("ui/chat/bottombar/AttachmentPreviewRow.kt")
