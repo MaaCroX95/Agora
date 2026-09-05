@@ -1,4 +1,4 @@
-name: Diagnose upstream v2.1.0 sync
+name: Resolve upstream v2.1.0 sync
 
 on:
   push:
@@ -6,37 +6,144 @@ on:
       - sync/upstream-v2.1.0-auto
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  merge-diagnostic:
+  resolve-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Fetch upstream and diagnose merge
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Merge upstream v2.1.0 and preserve Agora Dev contracts
+        shell: bash
         run: |
           set -euo pipefail
           git remote add upstream https://github.com/newo-ether/Agora.git
           git fetch upstream master
+          git fetch origin master
+          git checkout -B sync-work origin/master
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           set +e
           git merge --no-commit --no-ff upstream/master
           merge_rc=$?
           set -e
-          echo "merge_rc=$merge_rc"
           if [ "$merge_rc" -ne 0 ]; then
-            echo "::group::Unmerged paths"
-            git diff --name-only --diff-filter=U
-            echo "::endgroup::"
-            for f in $(git diff --name-only --diff-filter=U); do
-              echo "::group::Conflict diff: $f"
-              git diff --cc -- "$f" || true
-              echo "::endgroup::"
-            done
+            echo "Resolving expected fork/upstream conflicts..."
+          fi
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          def resolve_one(path, resolver):
+              p = Path(path)
+              text = p.read_text()
+              marker = "<<<<<<< HEAD\n"
+              while marker in text:
+                  start = text.index(marker)
+                  mid = text.index("=======\n", start)
+                  end = text.index(">>>>>>> upstream/master\n", mid)
+                  ours = text[start + len(marker):mid]
+                  theirs = text[mid + len("=======\n"):end]
+                  replacement = resolver(ours, theirs)
+                  text = text[:start] + replacement + text[end + len(">>>>>>> upstream/master\n"):]
+              p.write_text(text)
+
+          def build_resolver(ours, theirs):
+              # Keep Agora Dev's CI logging/OOM hardening and add upstream's serial/no-daemon guards.
+              return ours.replace(
+                  "verifyKotlinFileSize -Pkotlin.daemon.jvmargs=-Xmx3584m",
+                  "verifyKotlinFileSize --no-daemon --max-workers=1 -Pkotlin.daemon.jvmargs=-Xmx3584m",
+              )
+
+          def gradle_resolver(ours, theirs):
+              indent = "        "
+              return (
+                  f'{indent}versionCode = ciVersionCode ?: 31\n'
+                  f'{indent}versionName = "2.1.0"\n'
+              )
+
+          def ours_resolver(ours, theirs):
+              return ours
+
+          def settings_resolver(ours, theirs):
+              return (
+                  "            val messageTemplatesMigrated = migrateSystemPromptsOnStartup(currentPrompts, locale)\n"
+                  "            val runtimeMigrated = migrateOldRuntimeContext(messageTemplatesMigrated, locale)\n"
+                  "            val webSearchGuidanceMigrated =\n"
+                  "                runtimeMigrated.map(DefaultSystemPrompt::migrateLegacyWebSearchGuidance)\n"
+                  "            if (webSearchGuidanceMigrated != currentPrompts) {\n"
+                  "                prefs[SYSTEM_PROMPTS_JSON] = json.encodeToString(webSearchGuidanceMigrated)\n"
+              )
+
+          resolve_one(".github/workflows/build.yml", build_resolver)
+          resolve_one("app/build.gradle.kts", gradle_resolver)
+          resolve_one("app/src/main/java/com/newoether/agora/data/DefaultSystemPrompt.kt", ours_resolver)
+          resolve_one("app/src/main/java/com/newoether/agora/data/SettingsManager.kt", settings_resolver)
+          resolve_one("app/src/test/java/com/newoether/agora/data/DefaultSystemPromptTest.kt", ours_resolver)
+          PY
+
+          git add .github/workflows/build.yml \
+            app/build.gradle.kts \
+            app/src/main/java/com/newoether/agora/data/DefaultSystemPrompt.kt \
+            app/src/main/java/com/newoether/agora/data/SettingsManager.kt \
+            app/src/test/java/com/newoether/agora/data/DefaultSystemPromptTest.kt
+
+          unresolved=$(git diff --name-only --diff-filter=U)
+          if [ -n "$unresolved" ]; then
+            echo "::error::Unresolved merge conflicts remain:"
+            printf '%s\n' "$unresolved"
             exit 1
           fi
-          echo "Merge completed cleanly in diagnostic checkout."
+          if grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' \
+            .github/workflows/build.yml app/build.gradle.kts \
+            app/src/main/java/com/newoether/agora/data/DefaultSystemPrompt.kt \
+            app/src/main/java/com/newoether/agora/data/SettingsManager.kt \
+            app/src/test/java/com/newoether/agora/data/DefaultSystemPromptTest.kt; then
+            echo "::error::Conflict marker remains after resolution."
+            exit 1
+          fi
+
+          # Fork contracts that must survive the upstream merge.
+          grep -q 'EXPECTED_SHA256: BA:4B:45:1D:80:48:90:22:35:B2:A9:0F:F3:4C:76:9E:02:BA:F1:4E:35:2C:03:97:89:42:42:DC:5C:EF:F3:BA' .github/workflows/build.yml
+          grep -q 'debug-signing fallback is intentionally disabled' app/build.gradle.kts
+          grep -q 'versionName = "2.1.0"' app/build.gradle.kts
+          grep -q 'minSdk = 26' app/build.gradle.kts
+          grep -q 'OPENAI_WEB_SEARCH_ENABLED' app/src/main/java/com/newoether/agora/data/SettingsManager.kt
+          grep -q 'saveOpenAiWebSearchEnabled' app/src/main/java/com/newoether/agora/data/SettingsManager.kt
+          grep -q 'migrateLegacyWebSearchGuidance' app/src/main/java/com/newoether/agora/data/SettingsManager.kt
+          grep -q 'openAiWebSearchEnabled' app/src/main/java/com/newoether/agora/data/PortableSettingsArchive.kt
+          grep -q 'agora_web_search' app/src/main/java/com/newoether/agora/tool/WebSearchToolProvider.kt
+          grep -q 'globalOpenAiWebSearch' app/src/main/java/com/newoether/agora/ui/chat/ConversationSettingsWorkspace.kt
+
+          git add -A
+          git status --short
+
+      - name: Run merged unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew -p build-logic test --stacktrace
+          ./gradlew :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest verifyKotlinFileSize --no-daemon --max-workers=1 -Pkotlin.daemon.jvmargs=-Xmx3584m --stacktrace
+
+      - name: Commit and push clean sync branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          git commit -m "Merge upstream v2.1.0"
+          git push --force origin HEAD:refs/heads/sync/upstream-v2.1.0-final
