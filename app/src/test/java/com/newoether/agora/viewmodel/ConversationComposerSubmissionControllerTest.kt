@@ -174,7 +174,7 @@ class ConversationComposerSubmissionControllerTest {
     }
 
     @Test
-    fun directAcceptanceClearsFrozenOwnerOnceAndReclaimsAfterward() = runTest {
+    fun directAcceptanceClearsFrozenOwnerWithoutReclaimingDurableAttachment() = runTest {
         val attachment = attachment("app-private")
         val fixture = Fixture(
             this,
@@ -196,13 +196,45 @@ class ConversationComposerSubmissionControllerTest {
                 "clear:draft-owner",
                 "unfreeze:draft-owner:1",
                 "release:draft-owner",
-                "reclaim:app-private",
             ),
             fixture.events,
         )
         assertEquals(1L, fixture.controller.state("draft-owner").value.acceptedVersion)
         assertEquals(1L, fixture.controller.state("draft-owner").value.directAcceptedVersion)
-        coVerify(exactly = 0) { fixture.composers.clearAccepted("accepted-conversation", any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { fixture.drafts.reclaimAttachments(any()) }
+        coVerify(exactly = 0) {
+            fixture.composers.clearAccepted(
+                "accepted-conversation",
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+            )
+        }
+    }
+
+    @Test
+    fun directAcceptanceReclaimsOnlyClearedAttachmentsOutsideDurablePayload() = runTest {
+        val durable = attachment("durable")
+        val abandoned = attachment("abandoned", state = AttachmentImportState.FAILED)
+        val fixture = Fixture(
+            this,
+            attachments = listOf(durable, abandoned),
+            acceptance = SendAcceptance.Direct("message", "conversation"),
+            clearedAttachments = listOf(durable, abandoned),
+        )
+
+        fixture.controller.submit("conversation", "text", listOf(durable.localId, abandoned.localId))
+        runCurrent()
+
+        assertEquals(listOf("durable"), fixture.sentAttachments.map(SelectedAttachment::localId))
+        coVerify(exactly = 1) {
+            fixture.drafts.reclaimAttachments(
+                match { attachments -> attachments.map(SelectedAttachment::localId) == listOf("abandoned") },
+            )
+        }
     }
 
     @Test
