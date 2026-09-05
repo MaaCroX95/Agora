@@ -63,7 +63,6 @@ jobs:
               p.write_text(text)
 
           def build_resolver(ours, theirs):
-              # Keep Agora Dev's CI logging/OOM hardening and add upstream's serial/no-daemon guards.
               return ours.replace(
                   "verifyKotlinFileSize -Pkotlin.daemon.jvmargs=-Xmx3584m",
                   "verifyKotlinFileSize --no-daemon --max-workers=1 -Pkotlin.daemon.jvmargs=-Xmx3584m",
@@ -95,37 +94,36 @@ jobs:
           resolve_one("app/src/main/java/com/newoether/agora/data/SettingsManager.kt", settings_resolver)
           resolve_one("app/src/test/java/com/newoether/agora/data/DefaultSystemPromptTest.kt", ours_resolver)
 
-          # Upstream v2.1.0 extracted stock prompt migrations to SystemPromptMigration.kt.
-          # Re-add Agora Dev's fork-only legacy runtime-context migration, then chain it
-          # after upstream's migration and before the fork-only web-search guidance migration.
           settings_path = Path("app/src/main/java/com/newoether/agora/data/SettingsManager.kt")
           settings_text = settings_path.read_text()
           if "private fun migrateOldRuntimeContext(" not in settings_text:
               needle = "    suspend fun setActiveSystemPromptId(id: String?) {"
               if needle not in settings_text:
                   raise SystemExit("Could not find SettingsManager insertion point")
-              helper = '''    private fun migrateOldRuntimeContext(
-              prompts: List<SystemPromptEntry>,
-              locale: Locale
-          ): List<SystemPromptEntry> {
-              if (prompts.isEmpty()) return prompts
-              val newDefault = DefaultSystemPrompt.create(locale)
-              return prompts.map { entry ->
-                  if (DefaultSystemPrompt.hasOldRuntimeContext(entry)) {
-                      entry.copy(
-                          systemItems = newDefault.systemItems,
-                          userItems = newDefault.resolvedUserItems,
-                          assistantItems = newDefault.resolvedAssistantItems,
-                          userPrependItems = emptyList(),
-                          userPostpendItems = emptyList(),
-                      )
-                  } else {
-                      entry
-                  }
-              }
-          }
-
-'''
+              helper_lines = [
+                  "    private fun migrateOldRuntimeContext(",
+                  "        prompts: List<SystemPromptEntry>,",
+                  "        locale: Locale",
+                  "    ): List<SystemPromptEntry> {",
+                  "        if (prompts.isEmpty()) return prompts",
+                  "        val newDefault = DefaultSystemPrompt.create(locale)",
+                  "        return prompts.map { entry ->",
+                  "            if (DefaultSystemPrompt.hasOldRuntimeContext(entry)) {",
+                  "                entry.copy(",
+                  "                    systemItems = newDefault.systemItems,",
+                  "                    userItems = newDefault.resolvedUserItems,",
+                  "                    assistantItems = newDefault.resolvedAssistantItems,",
+                  "                    userPrependItems = emptyList(),",
+                  "                    userPostpendItems = emptyList(),",
+                  "                )",
+                  "            } else {",
+                  "                entry",
+                  "            }",
+                  "        }",
+                  "    }",
+                  "",
+              ]
+              helper = "\n".join(helper_lines) + "\n"
               settings_text = settings_text.replace(needle, helper + needle, 1)
               settings_path.write_text(settings_text)
           PY
@@ -151,7 +149,6 @@ jobs:
             exit 1
           fi
 
-          # Fork contracts that must survive the upstream merge.
           grep -q 'EXPECTED_SHA256: BA:4B:45:1D:80:48:90:22:35:B2:A9:0F:F3:4C:76:9E:02:BA:F1:4E:35:2C:03:97:89:42:42:DC:5C:EF:F3:BA' .github/workflows/build.yml
           grep -q 'debug-signing fallback is intentionally disabled' app/build.gradle.kts
           grep -q 'versionName = "2.1.0"' app/build.gradle.kts
