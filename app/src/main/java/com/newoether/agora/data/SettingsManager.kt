@@ -50,7 +50,9 @@ internal fun migrateUnmodifiedBuiltInDefault(
     }
 }
 
-private val Context.dataStore by preferencesDataStore(name = "settings")
+private val Context.dataStore by preferencesDataStore(
+    name = "settings", produceMigrations = { listOf(modelProviderNamesMigration) },
+)
 
 class SettingsManager(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -71,6 +73,7 @@ class SettingsManager(private val context: Context) {
     val customModels: Flow<Set<String>> = modelPreferenceStore.customModels
     val enabledModels: Flow<Set<String>> = modelPreferenceStore.enabledModels
     val modelAliases: Flow<Map<String, String>> = modelPreferenceStore.modelAliases
+    val modelProviderNames: Flow<Map<String, Boolean>> = modelPreferenceStore.modelProviderNames
     val apiKeys: Flow<List<ApiKeyEntry>> = modelPreferenceStore.apiKeys
     val activeApiKeyIds: Flow<Map<String, String>> = modelPreferenceStore.activeApiKeyIds
 
@@ -317,8 +320,11 @@ class SettingsManager(private val context: Context) {
     suspend fun saveModelAliases(aliases: Map<String, String>) =
         modelPreferenceStore.saveModelAliases(aliases)
 
-    suspend fun updateModelAlias(modelId: String, alias: String) =
-        modelPreferenceStore.updateModelAlias(modelId, alias)
+    suspend fun updateModelAlias(modelId: String, alias: String, showProviderName: Boolean? = null) =
+        modelPreferenceStore.updateModelAlias(modelId, alias, showProviderName)
+
+    suspend fun saveModelProviderNames(values: Map<String, Boolean>, replace: Boolean = true) =
+        modelPreferenceStore.saveModelProviderNames(values, replace)
 
     suspend fun synchronizeLocalModelAliases(aliases: Map<String, String>) =
         modelPreferenceStore.synchronizeLocalModelAliases(aliases)

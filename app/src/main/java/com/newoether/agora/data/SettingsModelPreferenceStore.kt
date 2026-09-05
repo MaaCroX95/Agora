@@ -1,6 +1,7 @@
 package com.newoether.agora.data
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.DataMigration
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import com.newoether.agora.util.Constants
@@ -9,6 +10,26 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+
+/** Preserve the old presentation once, before any settings read or edit is admitted. */
+internal val modelProviderNamesMigration = object : DataMigration<Preferences> {
+    override suspend fun shouldMigrate(currentData: Preferences): Boolean =
+        currentData[MODEL_PROVIDER_NAMES_JSON] == null
+
+    override suspend fun migrate(currentData: Preferences): Preferences {
+        if (!shouldMigrate(currentData)) return currentData
+        val aliases = runCatching {
+            Json.decodeFromString<Map<String, String>>(currentData[MODEL_ALIASES_JSON] ?: "{}")
+        }.getOrDefault(emptyMap())
+        return currentData.toMutablePreferences().apply {
+            this[MODEL_PROVIDER_NAMES_JSON] = Json.encodeToString(
+                aliases.filterValues(String::isNotBlank).mapValues { false },
+            )
+        }
+    }
+
+    override suspend fun cleanUp() = Unit
+}
 
 internal class SettingsModelPreferenceStore(
     private val dataStore: DataStore<Preferences>,
@@ -272,12 +293,16 @@ internal class SettingsModelPreferenceStore(
         dataStore.edit { it[MODEL_ALIASES_JSON] = json.encodeToString(aliases) }
     }
 
+    val modelProviderNames: Flow<Map<String, Boolean>> = dataStore.data.map { pref ->
+        json.decodeFromString(pref[MODEL_PROVIDER_NAMES_JSON] ?: "{}")
+    }
+
     /**
      * Changes one alias against the value currently stored on disk.  Callers must not rebuild
      * the complete alias map from a StateFlow snapshot: that snapshot can predate startup
      * identity migration and would restore legacy custom-provider keys after migration commits.
      */
-    suspend fun updateModelAlias(modelId: String, alias: String) {
+    suspend fun updateModelAlias(modelId: String, alias: String, showProviderName: Boolean? = null) {
         dataStore.edit { prefs ->
             val aliases = prefs.mutableModelAliasesOrNull() ?: return@edit
             if (alias.isBlank()) {
@@ -286,6 +311,22 @@ internal class SettingsModelPreferenceStore(
                 aliases[modelId] = alias.trim()
             }
             prefs[MODEL_ALIASES_JSON] = json.encodeToString(aliases)
+            if (showProviderName != null) {
+                val visibility = json.decodeFromString<MutableMap<String, Boolean>>(
+                    prefs[MODEL_PROVIDER_NAMES_JSON] ?: "{}",
+                )
+                visibility[modelId] = showProviderName
+                prefs[MODEL_PROVIDER_NAMES_JSON] = json.encodeToString(visibility)
+            }
+        }
+    }
+
+    suspend fun saveModelProviderNames(values: Map<String, Boolean>, replace: Boolean = true) {
+        dataStore.edit { prefs ->
+            val current = if (replace) emptyMap() else json.decodeFromString<Map<String, Boolean>>(
+                prefs[MODEL_PROVIDER_NAMES_JSON] ?: "{}",
+            )
+            prefs[MODEL_PROVIDER_NAMES_JSON] = json.encodeToString(current + values)
         }
     }
 

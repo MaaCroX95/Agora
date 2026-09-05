@@ -325,6 +325,18 @@ exists. Saving that seed unchanged does not materialize it in DataStore; editing
 explicit alias, while clearing an explicit alias restores fallback behavior. The new-custom-model
 form remains blank until the user enters an alias.
 
+Provider-name visibility is a separate preference keyed by the complete model ID. Rename places a
+Show Provider name switch below the alias field; Save commits both values in one DataStore edit,
+while Cancel, Back and outside dismissal commit neither. Clearing or changing an alias never changes
+that switch. Complete-name surfaces append the current Provider name only when the preference is on;
+alias-only labels in Provider-grouped model lists retain their existing presentation.
+
+New models default to showing the Provider. A one-time Preferences DataStore migration preserves
+existing presentation by recording off for existing nonblank explicit aliases; all other model IDs
+default on. Subsequent display never infers visibility from alias presence. The initialization runs
+before settings reads or writes, does not scan messages, and requires no Room schema migration.
+The setting follows model identity remapping/replacement/deletion and portable Settings transport.
+
 ## 18. Models sync progress and attempt fingerprint
 
 The Models page starts automatic full-provider model sync only when the current provider fingerprint
