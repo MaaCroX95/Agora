@@ -486,6 +486,10 @@ Attachment paging preserves occurrence identity. Send emits successful attachmen
 metadata in one traversal of Composer order. Composer and durable-message viewers assign pager
 indices while constructing their filtered media sequence; they never recover an occurrence with
 `indexOf` on a URI or path, so duplicate values and mixed attachment types open the tapped item.
+The current preview target initializes the viewer in its first composition. Retained content is used
+only for exit; every new open owns a fresh request identity, while pager navigation preserves that
+identity. Late Close/Navigate callbacks from an earlier request cannot change the current preview.
+Multi-item and PDF pagers keep their composition while each child resolves its media type.
 
 Attachment cleanup verifies current message, conversation-draft and New Chat draft references and
 deletes an unowned file inside the same Room transaction. Reconciliation must repeat this atomic

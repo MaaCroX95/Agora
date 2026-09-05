@@ -59,6 +59,7 @@ import com.newoether.agora.service.AgoraForegroundService
 import com.newoether.agora.service.AppForegroundTracker
 import com.newoether.agora.ui.chat.ChatApp
 import com.newoether.agora.ui.chat.FullScreenMediaPreviewDialog
+import com.newoether.agora.ui.chat.MediaPreviewTarget
 import com.newoether.agora.ui.chat.message.ChatMarkdownCodeBlock
 import com.newoether.agora.ui.onboarding.WelcomeScreen
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
@@ -71,8 +72,6 @@ import com.newoether.agora.util.CrashReporter
 import com.newoether.agora.viewmodel.ChatViewModel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
-
-private data class MediaPreviewTarget(val urls: List<String>, val index: Int)
 
 private fun fullScreenPreviewEnterTransition(allowSpatialTransitions: Boolean): EnterTransition = fadeIn(tween(durationMillis = 220)) + (if (allowSpatialTransitions) scaleIn(tween(durationMillis = 300, easing = FastOutSlowInEasing), initialScale = 0.96f) else EnterTransition.None)
 private fun fullScreenPreviewExitTransition(allowSpatialTransitions: Boolean): ExitTransition = fadeOut(tween(durationMillis = 180)) + (if (allowSpatialTransitions) scaleOut(tween(durationMillis = 220, easing = FastOutLinearInEasing), targetScale = 0.96f) else ExitTransition.None)
@@ -374,9 +373,6 @@ fun MainNavigation(
     var pdfPreviewFromDialog by remember { mutableStateOf(false) }
     val hapticsEnabled by viewModel.settings.hapticsEnabled.collectAsState()
     val pdfPages by viewModel.previewPdfPages.collectAsState()
-    val pdfIndex by viewModel.previewPdfIndex.collectAsState()
-    var savedPdfPages by remember { mutableStateOf<List<String>>(emptyList()) }
-    if (pdfPages.isNotEmpty()) { savedPdfPages = pdfPages } else { savedPdfPages = emptyList() }
     val snackbarHostState = remember { SnackbarHostState() }
     var snackbarVersion by remember { mutableIntStateOf(0) }
     val accessibilityManager = LocalAccessibilityManager.current
@@ -856,9 +852,8 @@ fun MainNavigation(
 
             // A dedicated dialog gives the media viewer its own window above source sheets.
             FullScreenMediaPreviewDialog(
-                currentUrls = mediaPreviewTarget?.urls,
-                currentIndex = mediaPreviewTarget?.index ?: 0,
-                currentPdfPages = savedPdfPages,
+                currentTarget = mediaPreviewTarget,
+                currentPdfPages = pdfPages,
                 currentPdfSelectedPages = pdfViewerSelection,
                 currentPdfSelectionEnabled = pdfPreviewFromDialog,
                 currentPdfTogglePage = onTogglePdfSelection,
@@ -867,13 +862,16 @@ fun MainNavigation(
                 onHidden = {
                     topLevelPresentation.release(TopLevelPresentation.MEDIA_PREVIEW)
                 },
-                onClose = {
+                onClose = { target ->
+                    if (mediaPreviewTarget?.requestId != target.requestId) return@FullScreenMediaPreviewDialog
                     viewModel.clearPreviews()
                     mediaPreviewTarget = null
                     pdfPreviewFromDialog = false
                 },
-                onNavigate = { idx ->
-                    mediaPreviewTarget = mediaPreviewTarget?.copy(index = idx)
+                onNavigate = { target, idx ->
+                    if (mediaPreviewTarget?.requestId == target.requestId) {
+                        mediaPreviewTarget = target.copy(index = idx)
+                    }
                 },
                 onMessage = { viewModel.emitSnackbar(it) },
                 hapticsEnabled = hapticsEnabled,

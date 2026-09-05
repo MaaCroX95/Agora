@@ -8,6 +8,25 @@ import org.junit.Test
 import com.newoether.agora.ui.chat.bottombar.composerSendActionEnabled
 import com.newoether.agora.viewmodel.ComposerSubmissionPhase
 import com.newoether.agora.viewmodel.ConversationComposerSubmissionSnapshot
+import android.os.Trace
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.AbstractApplier
+import androidx.compose.runtime.BroadcastFrameClock
+import androidx.compose.runtime.Composition
+import androidx.compose.runtime.Recomposer
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.Snapshot
+import io.mockk.every
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertSame
 
 class RecentRegressionSourceContractTest {
     @Test
@@ -62,7 +81,91 @@ class RecentRegressionSourceContractTest {
         assertTrue(activity.contains("MediaPreviewTarget(pages, idx)"))
         assertFalse(activity.contains("fullScreenMediaUrls"))
         assertFalse(activity.contains("fullScreenMediaIndex"))
-        assertTrue(dialog.contains("LaunchedEffect(currentUrls, currentIndex)"))
+        assertTrue(activity.contains("currentTarget = mediaPreviewTarget"))
+        assertTrue(activity.contains("if (mediaPreviewTarget?.requestId != target.requestId)"))
+        assertTrue(activity.contains("if (mediaPreviewTarget?.requestId == target.requestId)"))
+        assertTrue(dialog.contains("rememberMediaPreviewTargetForExit(currentTarget)"))
+        assertTrue(dialog.contains("key(target.requestId)"))
+        assertTrue(dialog.contains("initialIndex = target.index"))
+        assertFalse(dialog.contains("LaunchedEffect(currentUrls, currentIndex)"))
+        val viewer = source("ui/chat/FullScreenMediaViewer.kt")
+        val entry = viewer.substringAfter("fun FullScreenMediaViewer(").substringBefore("// --- PDF pager")
+        assertTrue(entry.indexOf("PdfPager(") < entry.indexOf("rememberIsVideoMedia(url)"))
+        assertTrue(entry.indexOf("MediaPager(") < entry.indexOf("rememberIsVideoMedia(url)"))
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun previewReopeningUsesTheTappedOccurrenceBeforeAnyEffectAndKeepsOnePagerPerRequest() = runTest {
+        mockkStatic(Trace::class)
+        every { Trace.beginSection(any()) } answers { }
+        every { Trace.endSection() } answers { }
+        val current = mutableStateOf<MediaPreviewTarget?>(null)
+        val observations = mutableListOf<MediaPreviewTarget?>()
+        var observedPager: PagerState? = null
+        val clock = BroadcastFrameClock()
+        val recomposer = Recomposer(backgroundScope.coroutineContext + clock)
+        val composition = Composition(object : AbstractApplier<Unit>(Unit) {
+            override fun insertTopDown(index: Int, instance: Unit) = Unit
+            override fun insertBottomUp(index: Int, instance: Unit) = Unit
+            override fun remove(index: Int, count: Int) = Unit
+            override fun move(from: Int, to: Int, count: Int) = Unit
+            override fun onClear() = Unit
+        }, recomposer)
+        backgroundScope.launch(clock) { recomposer.runRecomposeAndApplyChanges() }
+        var frame = 0L
+        fun settle() {
+            repeat(2) {
+                Snapshot.sendApplyNotifications()
+                runCurrent()
+                clock.sendFrame(++frame * 16_000_000)
+                runCurrent()
+            }
+        }
+        try {
+            composition.setContent {
+                val target = rememberMediaPreviewTargetForExit(current.value)
+                SideEffect { observations += target }
+                if (target != null) key(target.requestId) {
+                    val pager = rememberPagerState(initialPage = target.index) { target.urls.size }
+                    SideEffect { observedPager = pager }
+                }
+            }
+            settle()
+            val urls = listOf("same.jpg", "video.mp4", "same.jpg")
+            val first = MediaPreviewTarget(urls, 2)
+            current.value = first
+            observations.clear()
+            settle()
+            assertEquals(first, observations.first())
+            assertEquals(2, observedPager!!.currentPage)
+            val firstPager = observedPager
+            current.value = first.copy(index = 1)
+            settle()
+            assertSame(firstPager, observedPager)
+            current.value = null
+            settle()
+            assertEquals(first.copy(index = 1), observations.last())
+            assertSame(firstPager, observedPager)
+            val reopened = MediaPreviewTarget(urls, 0)
+            assertNotEquals(first.requestId, reopened.requestId)
+            current.value = reopened
+            observations.clear()
+            settle()
+            assertEquals(reopened, observations.first())
+            assertEquals(0, observedPager!!.currentPage)
+            assertTrue(firstPager !== observedPager)
+            current.value = null
+            current.value = MediaPreviewTarget(listOf("new.jpg", "new-2.jpg"), 1)
+            observations.clear()
+            settle()
+            assertEquals(current.value, observations.first())
+            assertEquals(1, observedPager!!.currentPage)
+        } finally {
+            composition.dispose()
+            recomposer.close()
+            unmockkStatic(Trace::class)
+        }
     }
 
     @Test

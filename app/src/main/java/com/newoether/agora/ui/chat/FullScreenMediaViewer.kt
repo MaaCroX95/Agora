@@ -103,8 +103,15 @@ fun FullScreenMediaViewer(
 ) {
     val url = urls.getOrNull(initialIndex) ?: return
     val haptics = rememberAgoraHaptics(hapticsEnabled)
-    val isPdf = pdfPages.isNotEmpty()
-    val isSingleVideo = if (isPdf) false else rememberIsVideoMedia(url)
+    if (pdfPages.isNotEmpty()) {
+        PdfPager(pdfPages, initialIndex, pdfSelectedPages, onTogglePdfPage, onClose, onNavigate)
+        return
+    }
+    if (urls.size > 1) {
+        MediaPager(urls, initialIndex, onClose, onNavigate, onMessage, haptics = haptics)
+        return
+    }
+    val isSingleVideo = rememberIsVideoMedia(url)
 
     if (isSingleVideo == null) {
         BackHandler(onBack = onClose)
@@ -120,7 +127,7 @@ fun FullScreenMediaViewer(
         return
     }
 
-    if (isSingleVideo == true && urls.size == 1) {
+    if (isSingleVideo == true) {
         var showOverlay by remember { mutableStateOf(true) }
         var closing by remember { mutableStateOf(false) }
         Box(modifier = Modifier.fillMaxSize()) {
@@ -141,16 +148,6 @@ fun FullScreenMediaViewer(
                 }
             }
         }
-        return
-    }
-
-    if (isPdf) {
-        PdfPager(pdfPages, initialIndex, pdfSelectedPages, onTogglePdfPage, onClose, onNavigate)
-        return
-    }
-
-    if (urls.size > 1) {
-        MediaPager(urls, initialIndex, onClose, onNavigate, onMessage, haptics = haptics)
         return
     }
 

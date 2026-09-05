@@ -821,7 +821,7 @@ class ApplicationUiSourceContractTest {
                 .count(),
         )
         assertEquals(1, Regex("if \\(!currentState && !isRunning\\)").findAll(source).count())
-        assertTrue(mediaDialog.contains("if (!currentState && !isRunning) onHidden()"))
+        assertTrue(mediaDialog.contains("if (!currentState && !isRunning && latestTarget == null) onHidden()"))
         assertTrue(source.contains(
             "topLevelPresentation.release(TopLevelPresentation.MEDIA_PREVIEW)"
         ))
