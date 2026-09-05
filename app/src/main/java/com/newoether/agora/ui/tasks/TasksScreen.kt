@@ -269,12 +269,15 @@ private fun TasksListPage(
             }
         } else {
             itemsIndexed(tasks, key = { _, task -> task.id }) { index, task ->
-                val executions by viewModel.executionSummariesForTask(task.id)
-                    .collectAsState(initial = emptyList())
+                val executionHistoryFlow = remember(task.id, viewModel) {
+                    viewModel.executionSummariesForTask(task.id)
+                }
+                val executions by executionHistoryFlow.collectAsState(initial = null)
                 TaskCard(
                     task = task,
                     isRunning = task.id in running,
-                    lastRunAt = executions.firstOrNull()?.timestamp?.takeIf { it > 0L },
+                    executionsLoaded = executions != null,
+                    lastRunAt = executions?.firstOrNull()?.timestamp?.takeIf { it > 0L },
                     shape = stackedShape(index, totalRows),
                     onClick = { onOpenTask(task) },
                     onRun = { viewModel.runTaskNow(task) },
@@ -320,6 +323,7 @@ private fun TasksListPage(
 private fun TaskCard(
     task: TaskEntity,
     isRunning: Boolean,
+    executionsLoaded: Boolean,
     lastRunAt: Long?,
     shape: RoundedCornerShape,
     onClick: () -> Unit,
@@ -394,6 +398,7 @@ private fun TaskCard(
                 Spacer(Modifier.height(3.dp))
                 val lastRunText = when {
                     isRunning -> stringResource(R.string.task_running)
+                    !executionsLoaded -> stringResource(R.string.loading_label)
                     lastRunAt != null -> stringResource(R.string.task_last_run_at, formatDateTime(lastRunAt))
                     else -> stringResource(R.string.task_never_run)
                 }

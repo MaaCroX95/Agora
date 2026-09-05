@@ -572,10 +572,17 @@ title resolution, click behavior, and persistence remain unchanged.
 
 ## 25. Task History return continuity and drawer focus threshold
 
-Task-list cards Crossfade their Last Run status line over 200 ms between Running, the last-run
-timestamp, and Never Run. Each transition snapshot includes its own text and running-status color;
+Task-list cards Crossfade their Last Run status line over 200 ms between Loading, Running, the last-run
+timestamp, and Never Run. Before the first real execution-history snapshot, the line shows localized
+Loading rather than treating missing data as empty; a known Running state retains priority. The Flow
+is remembered per task identity and ViewModel, and later updates retain the last emitted snapshot.
+Each transition snapshot includes its own text and running-status color;
 unchanged countdown ticks do not restart this transition. Reduced Motion retains this opacity-only
 feedback. The card's controls and task execution lifecycle are not part of this transition.
+
+Task execution-history rows render Failed status and its timestamp with the neutral
+`onSurfaceVariant` color. Success retains `primary`; the global theme error role remains available
+for other feedback, including destructive actions and input validation.
 
 A conversation opened from a Task execution log is a transient preview owned by that exact task and
 execution conversation. The preview first observes its selected destination before reacting to later
