@@ -487,6 +487,14 @@ metadata in one traversal of Composer order. Composer and durable-message viewer
 indices while constructing their filtered media sequence; they never recover an occurrence with
 `indexOf` on a URI or path, so duplicate values and mixed attachment types open the tapped item.
 
+Attachment cleanup verifies current message, conversation-draft and New Chat draft references and
+deletes an unowned file inside the same Room transaction. Reconciliation must repeat this atomic
+check immediately before unlinking each candidate. Candidate queries use the covering attachment
+index; canonical full paths determine ownership. Unreadable candidate metadata prevents deletion.
+Draft persistence schedules removed durable paths once; transient removals remain explicitly owned
+by the Composer. Schema 31 builds the covering index once on upgrade without rewriting message or
+attachment content.
+
 ## Local Low Context controls
 
 When the selected model belongs to the embedded `Local` Provider, the Chat bottom bar's three-dot

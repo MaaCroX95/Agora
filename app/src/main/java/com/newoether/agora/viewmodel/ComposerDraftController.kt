@@ -146,7 +146,8 @@ internal class ComposerDraftController(
                     revision = current.revision + 1L,
                 )
                 persistedDrafts[conversationId] = next
-                reclaimAttachments(current.attachments + explicitlyRemovedAttachments)
+                // updateDraft already enqueues paths removed from durable ownership.
+                reclaimAttachments(explicitlyRemovedAttachments)
                 DraftPersistResult(
                     revision = next.revision,
                     succeeded = true,

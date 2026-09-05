@@ -16,6 +16,33 @@ import org.junit.Test
 
 class Migration29To30Test {
     @Test
+    fun attachmentIndexUpgradePreservesEntityPayloadsAndOnlyCreatesOneIndex() {
+        val database = mockk<SupportSQLiteDatabase>()
+        val statements = mutableListOf<String>()
+        every { database.execSQL(capture(statements)) } just Runs
+        MIGRATION_30_31.migrate(database)
+        assertEquals(30, MIGRATION_30_31.startVersion)
+        assertEquals(31, MIGRATION_30_31.endVersion)
+        assertEquals(listOf(
+            "CREATE INDEX index_messages_id_images_attachmentMeta ON messages(id, images, attachmentMeta)",
+        ), statements)
+        val oldDatabase = Json.parseToJsonElement(locateSchema(30).readText()).jsonObject.getValue("database").jsonObject
+        val newDatabase = Json.parseToJsonElement(locateSchema(31).readText()).jsonObject.getValue("database").jsonObject
+        val oldEntities = oldDatabase.getValue("entities").jsonArray
+        val newEntities = newDatabase.getValue("entities").jsonArray
+        assertEquals(oldEntities.size, newEntities.size)
+        oldEntities.zip(newEntities).forEach { (old, new) ->
+            assertEquals(old.jsonObject["fields"], new.jsonObject["fields"])
+            assertEquals(old.jsonObject["foreignKeys"], new.jsonObject["foreignKeys"])
+        }
+        val messages = newEntities.single { it.jsonObject["tableName"]?.jsonPrimitive?.content == "messages" }.jsonObject
+        assertTrue(messages.getValue("indices").jsonArray.any {
+            it.jsonObject.getValue("columnNames").jsonArray.map { column -> column.jsonPrimitive.content } ==
+                listOf("id", "images", "attachmentMeta")
+        })
+    }
+
+    @Test
     fun migrationPreservesPayloadsAndInitializesReconcileGeneration() {
         val database = mockk<SupportSQLiteDatabase>()
         val statements = mutableListOf<String>()
@@ -51,15 +78,15 @@ class Migration29To30Test {
             it.jsonObject.getValue("columnName").jsonPrimitive.content
         }
 
-    private fun locateSchema(): File {
+    private fun locateSchema(version: Int = 30): File {
         var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
         repeat(8) {
             listOf(
-                File(directory, "app/schemas/com.newoether.agora.data.local.ChatDatabase/30.json"),
-                File(directory, "schemas/com.newoether.agora.data.local.ChatDatabase/30.json"),
+                File(directory, "app/schemas/com.newoether.agora.data.local.ChatDatabase/$version.json"),
+                File(directory, "schemas/com.newoether.agora.data.local.ChatDatabase/$version.json"),
             ).firstOrNull(File::isFile)?.let { return it }
             directory = directory.parentFile ?: error("Reached filesystem root")
         }
-        error("Unable to locate Room schema 30")
+        error("Unable to locate Room schema $version")
     }
 }
