@@ -16,11 +16,8 @@ Provider-private marker syntax and IDs are inputs to that normalization only. Th
 renderer must not learn an OpenAI-, Gemini-, Anthropic-, ChatGPT-, or Claude-private citation
 dialect.
 
-Standard Markdown links remain ordinary answer content. In an answer that already owns structured
-citations, a complete safe link wrapped by ASCII or full-width parentheses is the one presentation-
-only exception: it is rendered as a native source capsule so Task History cannot mix capsule and
-parenthesized-link styles. Unwrapped inline links remain ordinary Markdown even when their URL also
-appears in citation metadata.
+Standard Markdown links remain ordinary answer content. They are never reclassified as citations
+merely because their URL also appears in citation metadata.
 
 This feature is not an academic bibliography manager, CSL processor, BibTeX database, or Pandoc
 citation-language implementation.
@@ -111,16 +108,17 @@ exact-`citedText` occurrence rule in section 2. Markdown syntax, links, code, HT
 transformations that prevent a deterministic source-to-display mapping cause a bottom-sheet-only
 fallback; they do not justify splitting the answer into independent Markdown blocks.
 
-A complete safe Markdown link wrapped in ASCII or full-width parentheses is source presentation
-syntax when the answer also contains structured citation metadata. Terminal projection maps the
-whole wrapper to a native capsule, synthesizing only the bounded presentation source needed when its
-URL is not already represented by structured metadata. A structured anchor may cover the complete
-wrapper, the Markdown link, the label, or another valid subrange; it does not need to cover the
-complete wrapper. Projection must not preserve the parentheses, link label, or Markdown target and
-then append a second capsule. Repeated wrappers remain independently positionally mapped. A
-standard Markdown link without the additional outer parentheses remains ordinary answer content
-even when its URL matches a structured citation. For ordinary claim-text anchors, the claim remains
-unchanged and the capsule is inserted after it.
+A parenthesized Markdown link whose target has the same canonical safe URL as a structured citation
+source is Provider presentation syntax when it maps deterministically through an overlapping anchor
+or, when no positional evidence identifies a wrapper, through one unique same-URL wrapper. The
+anchor may cover the complete wrapper, the Markdown link, the label, or another valid subrange; it
+does not need to cover the complete wrapper. Terminal projection replaces every positionally mapped
+wrapper, or the unique same-URL fallback wrapper, as one complete range with the native capsule. It
+must not preserve the parentheses, link label, or Markdown target and then append a second capsule.
+Repeated same-URL wrappers without positional evidence remain ambiguous and receive no inline
+capsule. A standard Markdown link without the additional outer parentheses remains ordinary answer
+content even when its URL matches a structured citation. For ordinary claim-text anchors, the claim
+remains unchanged and the capsule is inserted after it.
 
 Resolvable private-use markers map to their structured source and disappear from visible answer
 text. Unresolved OpenAI/ChatGPT `cite`, `filecite`, and equivalent bare `turn...` envelopes are

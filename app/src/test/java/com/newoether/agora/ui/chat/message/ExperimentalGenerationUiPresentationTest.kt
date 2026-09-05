@@ -119,21 +119,6 @@ class ExperimentalGenerationUiPresentationTest {
     }
 
     @Test
-    fun `historical assistant rendering reports ready only after every answer parser`() {
-        val twoAnswers = AssistantRenderReadiness(setOf(1, 3))
-        assertFalse(twoAnswers.claimSynchronousReady())
-        assertFalse(twoAnswers.markReady(1))
-        assertFalse(twoAnswers.markReady(1))
-        assertTrue(twoAnswers.markReady(3))
-        assertFalse(twoAnswers.markReady(3))
-
-        val noMarkdown = AssistantRenderReadiness(emptySet())
-        assertTrue(noMarkdown.claimSynchronousReady())
-        assertFalse(noMarkdown.claimSynchronousReady())
-        assertFalse(noMarkdown.markReady(0))
-    }
-
-    @Test
     fun `current tail card stays loading throughout active generation`() {
         assertTrue(
             compactSegmentShowsLoading(

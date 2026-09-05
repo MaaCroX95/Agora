@@ -615,7 +615,6 @@ internal fun TimelineSegmentsContent(
     segmentAppearanceRegistry: SegmentAppearanceRegistry,
     onLayoutMutationStarted: (String) -> Unit,
     onLayoutMutationSettled: (String) -> Unit,
-    onAnswerReady: (Int) -> Unit = {},
     onMediaClick: (List<String>, Int) -> Unit,
     opensDetailSheet: Boolean = false,
     preserveInitialCompactIdentity: Boolean = false,
@@ -691,7 +690,6 @@ internal fun TimelineSegmentsContent(
                                                 selectionEnabled = !presentedIsStreaming,
                                                 textDeltas = seg.streamingTextDeltas,
                                                 fadeTracker = answerFadeTracker,
-                                                onReady = { onAnswerReady(index) },
                                             )
                                         }
                                     }

@@ -146,7 +146,7 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(composer.contains(".contentReceiver(clipboardImageReceiver)"))
         assertTrue(composer.contains("transferableContent.consume"))
         assertTrue(composer.contains("hasMediaType(MediaType.Image)"))
-        assertTrue(composer.contains("importUris(composerOwnerId, imageUris, \"image\")"))
+        assertTrue(composer.contains("importUris(composerOwnerId, imageUris, \"image\", emitSuccessHaptic = false)"))
         assertTrue(composer.contains("inspectAttachmentIngress("))
         assertTrue(composer.contains(
             "composerController.importAttachment(ownerId, attachment) || imported",

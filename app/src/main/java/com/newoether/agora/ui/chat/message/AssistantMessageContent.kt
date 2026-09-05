@@ -254,7 +254,6 @@ internal fun AssistantMessageContent(
     onSegmentSelected: (List<Int>, Boolean) -> Unit,
     onLayoutMutationStarted: (String) -> Unit,
     onLayoutMutationSettled: (String) -> Unit,
-    onContentReady: () -> Unit = {},
     setThoughtBlockHeight: (Int) -> Unit,
 ) {
     @Suppress("DEPRECATION")
@@ -471,27 +470,6 @@ internal fun AssistantMessageContent(
                                             )
                                     )
                             )
-                val asynchronousAnswerKeys = remember(
-                    orderedSegments, useTimelineSegments, renderedText, isError,
-                    errorContent?.answerText,
-                ) {
-                    assistantAsynchronousAnswerKeys(
-                        useTimelineSegments = useTimelineSegments,
-                        orderedSegments = orderedSegments,
-                        fallbackAnswer = errorContent?.answerText
-                            ?: renderedText.takeIf { !isError },
-                    )
-                }
-                val renderReadiness = remember(message.id, asynchronousAnswerKeys) {
-                    AssistantRenderReadiness(asynchronousAnswerKeys)
-                }
-                val latestOnContentReady by rememberUpdatedState(onContentReady)
-                LaunchedEffect(renderReadiness) {
-                    if (renderReadiness.claimSynchronousReady()) latestOnContentReady()
-                }
-                val markAnswerReady: (Int) -> Unit = { key ->
-                    if (renderReadiness.markReady(key)) latestOnContentReady()
-                }
                 val detailSegments = remember(mergedSegments) {
                     mergedSegments.filter { it.type != "answer" && it.type != "error" }
                 }
@@ -532,7 +510,6 @@ internal fun AssistantMessageContent(
                         segmentAppearanceRegistry = segmentAppearanceRegistry,
                         onLayoutMutationStarted = onLayoutMutationStarted,
                         onLayoutMutationSettled = onLayoutMutationSettled,
-                        onAnswerReady = markAnswerReady,
                         onMediaClick = onMediaClick,
                         opensDetailSheet = useThinkingSheet,
                         preserveInitialCompactIdentity =
@@ -675,7 +652,6 @@ internal fun AssistantMessageContent(
                                             selectionEnabled = !presentedIsStreaming,
                                             textDeltas = answerTextDeltas,
                                             fadeTracker = answerFadeTracker,
-                                            onReady = { markAnswerReady(-1) },
                                         )
                                     }
                                 } else {
@@ -687,7 +663,6 @@ internal fun AssistantMessageContent(
                                         selectionEnabled = !presentedIsStreaming,
                                         textDeltas = answerTextDeltas,
                                         fadeTracker = answerFadeTracker,
-                                        onReady = { markAnswerReady(-1) },
                                     )
                                 }
                             }

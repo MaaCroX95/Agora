@@ -23,7 +23,3 @@ For compatible endpoints, the service tier can be **Off**, **Auto**, **Default**
 ## Related settings
 
 Context budgeting and Compact are configured separately under [Context](context.md). Automatic titles use [Title Generation](title-generation.md), and image-specific defaults use [Image Generation](image-generation.md).
-
-## Historical message presentation
-
-Persisted message payloads are decoded and display-normalized on a bounded background dispatcher. Each stable message ID owns one Loading, Ready, or Failed/Retry presentation; transitions crossfade without blank rows, and durable answer text remains visible when an older structured payload contains only thinking or tool segments.

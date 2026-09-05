@@ -192,7 +192,7 @@ internal fun ChatBottomBar(
             withContext(NonCancellable) { composerController.release(ownerId) }
         }
     }
-    fun importUris(ownerId: String, uris: List<Uri>, forcedType: String? = null) {
+    fun importUris(ownerId: String, uris: List<Uri>, forcedType: String? = null, emitSuccessHaptic: Boolean = true) {
         if (uris.isEmpty() || submissionController.snapshot(ownerId).isFrozen) return
         activityLaunchScope.launch {
             val (attachments, rejected) = inspectAttachmentIngress(
@@ -210,7 +210,7 @@ internal fun ChatBottomBar(
                     if (submissionController.snapshot(ownerId).isFrozen) break
                     imported = composerController.importAttachment(ownerId, attachment) || imported
                 }
-            } && imported) haptics.selection()
+            } && imported && emitSuccessHaptic) haptics.selection()
         }
     }
     val clipboardImageReceiver = remember(context, composerOwnerId, composer) {
@@ -226,7 +226,7 @@ internal fun ChatBottomBar(
                     if (isImage) imageUris += uri
                     isImage
                 }
-                importUris(composerOwnerId, imageUris, "image")
+                importUris(composerOwnerId, imageUris, "image", emitSuccessHaptic = false)
                 return remaining
             }
         }

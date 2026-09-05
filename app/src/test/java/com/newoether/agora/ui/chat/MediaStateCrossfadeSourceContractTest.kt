@@ -50,7 +50,7 @@ class MediaStateCrossfadeSourceContractTest {
     }
 
     @Test
-    fun attachmentAdmissionOwnsTheOnlyUploadHaptic() {
+    fun attachmentAdmissionPreservesPickerAndCameraHapticsButClipboardStaysSilent() {
         val composer = source("ui/chat/bottombar/ChatComposerState.kt")
         val reportUnsupported = composer
             .substringAfter("fun reportUnsupportedFiles(")
@@ -61,10 +61,15 @@ class MediaStateCrossfadeSourceContractTest {
         val pickerAdmission = bottomBar
             .substringAfter("fun importUris(")
             .substringBefore("val clipboardImageReceiver")
-        assertTrue(pickerAdmission.contains("} && imported) haptics.selection()"))
+        assertTrue(pickerAdmission.contains("imported && emitSuccessHaptic"))
         assertTrue(
             Regex("""haptics\.selection\(\)""").findAll(pickerAdmission).count() == 1,
         )
+        val clipboardAdmission = bottomBar
+            .substringAfter("val clipboardImageReceiver")
+            .substringBefore("var showThinkingSheet")
+        assertTrue(clipboardAdmission.contains("emitSuccessHaptic = false"))
+        assertFalse(clipboardAdmission.contains("haptics."))
         val cameraAdmission = composer
             .substringAfter(".onSuccess { imported ->")
             .substringBefore(".onFailure { failure ->")
