@@ -842,6 +842,7 @@
     <string name="about_links">Links</string>
     <string name="about_developer">Developer</string>
     <string name="about_developer_name">Newo Ether · Solo developer</string>
+    <string name="about_website">Website</string>
     <string name="about_github">GitHub</string>
     <string name="about_issue_tracker">Issue Tracker</string>
     <string name="about_contribute">Contribute</string>

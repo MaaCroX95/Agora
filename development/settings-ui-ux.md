@@ -91,6 +91,11 @@ layout, states, density, or interaction design has been approved.
 
 ## Documentation entry point
 
+- About places Website first in its Links group, with `agora.newoether.com` as supporting text,
+  a globe icon, and the established external-link action icon. The whole row opens
+  `https://agora.newoether.com` through the existing external URL launcher. The public homepage
+  remains separate from the documentation destination and its visibility setting.
+
 - Reuse the shared `DocumentationFab` exactly; do not create page-specific styling, iconography, shape, animation, or spacing.
 - The FAB belongs on the actionable configuration surface that the manual explains. For list/detail flows, place it on the Add/Edit detail editor and not on a root list that cannot configure the documented fields.
 - Gate the FAB with the shared documentation-visibility setting and add the established 80 dp bottom spacer only to the same scrollable surface.
