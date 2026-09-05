@@ -461,6 +461,14 @@ attachments do not disable Send and are excluded from the accepted result. Attac
 one selection haptic after the processing tile is inserted; decode/import completion, rejection, and
 failure do not emit a second haptic.
 
+Composer image attachments and durable message media thumbnails initially suppress their progress
+indicator. It becomes visible only after 200 ms of continuous loading, through the existing 200 ms
+presentation Crossfade. Image import-to-decode processing shares the same delay for one Composer
+attachment. Fast success/error never displays a progress indicator; image requests and painters remain
+active during the waiting period. Loading completion, failure, retry, source-identity replacement and
+composition disposal reset or cancel the keyed visibility timer. Ordinary file/PDF import feedback,
+full-screen media and tool previews retain their existing timing.
+
 Durable message-bubble thumbnails and the full-screen image viewport use the same explicit media
 loading/success/failure semantics. Their image remains composed under one fixed-geometry, full-size
 200 ms Crossfade owner. Composer attachments, message thumbnails, tool image previews and full-screen
@@ -563,6 +571,11 @@ title padding, 16 dp actions gap, 98 dp actions width, ellipsis, icon geometry, 
 title resolution, click behavior, and persistence remain unchanged.
 
 ## 25. Task History return continuity and drawer focus threshold
+
+Task-list cards Crossfade their Last Run status line over 200 ms between Running, the last-run
+timestamp, and Never Run. Each transition snapshot includes its own text and running-status color;
+unchanged countdown ticks do not restart this transition. Reduced Motion retains this opacity-only
+feedback. The card's controls and task execution lifecycle are not part of this transition.
 
 A conversation opened from a Task execution log is a transient preview owned by that exact task and
 execution conversation. The preview first observes its selected destination before reacting to later

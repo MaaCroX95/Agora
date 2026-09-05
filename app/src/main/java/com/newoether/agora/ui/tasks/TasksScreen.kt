@@ -1,6 +1,8 @@
 package com.newoether.agora.ui.tasks
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -390,18 +392,25 @@ private fun TaskCard(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(3.dp))
-                Text(
-                    text = when {
-                        isRunning -> stringResource(R.string.task_running)
-                        lastRunAt != null -> stringResource(R.string.task_last_run_at, formatDateTime(lastRunAt))
-                        else -> stringResource(R.string.task_never_run)
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (isRunning) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                val lastRunText = when {
+                    isRunning -> stringResource(R.string.task_running)
+                    lastRunAt != null -> stringResource(R.string.task_last_run_at, formatDateTime(lastRunAt))
+                    else -> stringResource(R.string.task_never_run)
+                }
+                Crossfade(
+                    targetState = lastRunText to isRunning,
+                    animationSpec = tween(200),
+                    label = "taskLastRun",
+                ) { (text, running) ->
+                    Text(
+                        text = text,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (running) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Spacer(Modifier.width(8.dp))
             if (isRunning) {

@@ -52,6 +52,7 @@ import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.ui.chat.FileThumbnail
 import com.newoether.agora.ui.chat.MEDIA_LOADING_INDICATOR_STROKE_WIDTH
 import com.newoether.agora.ui.chat.MediaLoadPresentation
+import com.newoether.agora.ui.chat.rememberMediaLoadingVisible
 import com.newoether.agora.ui.chat.toMediaLoadPresentation
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 
@@ -146,11 +147,18 @@ internal fun AttachmentPreviewRow(
                 hasVideoFrame = attachment.processedFrames?.isNotEmpty() == true,
                 mediaLoadState = mediaLoadState,
             )
+            val isLoading = targetPresentation == AttachmentPreviewPresentation.IMPORT_LOADING ||
+                targetPresentation == AttachmentPreviewPresentation.MEDIA_LOADING
+            val delayedLoadingVisible = rememberMediaLoadingVisible(
+                loadingKey = attachment.localId,
+                isLoading = isLoading && attachment.type == "image",
+            )
+            val loadingVisible = isLoading && (attachment.type != "image" || delayedLoadingVisible)
             var presentedState by remember(attachment.localId) {
-                mutableStateOf(AttachmentPreviewPresentation.INITIAL)
+                mutableStateOf(AttachmentPreviewPresentation.INITIAL to false)
             }
-            LaunchedEffect(targetPresentation) {
-                presentedState = targetPresentation
+            LaunchedEffect(attachment.localId, targetPresentation, loadingVisible) {
+                presentedState = targetPresentation to loadingVisible
             }
 
             Column(
@@ -202,9 +210,10 @@ internal fun AttachmentPreviewRow(
                             .size(64.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .then(clickableModifier),
-                    ) { presentation ->
+                    ) { (presentation, showLoading) ->
                         AttachmentPresentationContent(
                             presentation = presentation,
+                            showLoading = showLoading,
                             attachment = attachment,
                             mediaPainter = mediaPainter,
                             editable = editable,
@@ -236,7 +245,7 @@ internal fun AttachmentPreviewRow(
                     }
                 }
                 Crossfade(
-                    targetState = presentedState,
+                    targetState = presentedState.first,
                     animationSpec = tween(ATTACHMENT_STATUS_CROSSFADE_MS),
                     label = "attachmentCaption",
                 ) { presentation ->
@@ -275,6 +284,7 @@ internal fun AttachmentPreviewRow(
 @Composable
 private fun AttachmentPresentationContent(
     presentation: AttachmentPreviewPresentation,
+    showLoading: Boolean,
     attachment: SelectedAttachment,
     mediaPainter: AsyncImagePainter,
     editable: Boolean,
@@ -311,11 +321,13 @@ private fun AttachmentPresentationContent(
                         .clip(shape)
                         .background(Color.Black.copy(alpha = 0.4f)),
                 )
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
-                    color = MaterialTheme.colorScheme.primary,
-                )
+                if (showLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
             AttachmentPreviewPresentation.IMPORT_FAILED,
             AttachmentPreviewPresentation.MEDIA_ERROR -> {
@@ -346,11 +358,13 @@ private fun AttachmentPresentationContent(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
                 )
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
-                    color = MaterialTheme.colorScheme.primary,
-                )
+                if (showLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
             AttachmentPreviewPresentation.MEDIA_SUCCESS -> {
                 Image(

@@ -277,11 +277,12 @@ private fun MessageMediaThumbnail(
     var loadState by remember(imagePath) {
         mutableStateOf(MediaLoadPresentation.LOADING)
     }
+    val loadingVisible = rememberMediaLoadingVisible(imagePath, loadState == MediaLoadPresentation.LOADING)
     var presentedState by remember(imagePath) {
-        mutableStateOf(MediaLoadPresentation.LOADING)
+        mutableStateOf(MediaLoadPresentation.LOADING to false)
     }
-    LaunchedEffect(loadState) {
-        presentedState = loadState
+    LaunchedEffect(imagePath, loadState, loadingVisible) {
+        presentedState = loadState to loadingVisible
     }
 
     Box(
@@ -302,7 +303,7 @@ private fun MessageMediaThumbnail(
             animationSpec = tween(MEDIA_STATE_CROSSFADE_MILLIS),
             label = "messageMediaThumbnail",
             modifier = Modifier.fillMaxSize(),
-        ) { state ->
+        ) { (state, showLoading) ->
             when (state) {
                 MediaLoadPresentation.LOADING -> Box(
                     modifier = Modifier
@@ -310,11 +311,13 @@ private fun MessageMediaThumbnail(
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center,
                 ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(28.dp),
-                        strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
+                    if (showLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = MEDIA_LOADING_INDICATOR_STROKE_WIDTH,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
                 MediaLoadPresentation.LOADED -> Box(
                     modifier = Modifier.fillMaxSize(),

@@ -11,7 +11,7 @@ class AttachmentPreviewSourceContractTest {
         val source = source("ui/chat/bottombar/AttachmentPreviewRow.kt")
         val mediaState = source("ui/chat/MediaLoadPresentation.kt")
 
-        assertTrue(source.contains("mutableStateOf(AttachmentPreviewPresentation.INITIAL)"))
+        assertTrue(source.contains("mutableStateOf(AttachmentPreviewPresentation.INITIAL to false)"))
         assertTrue(source.contains("targetState = presentedState"))
         assertTrue(source.contains("label = \"attachmentPresentation\""))
         assertTrue(source.contains("label = \"attachmentCaption\""))
