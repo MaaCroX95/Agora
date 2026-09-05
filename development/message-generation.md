@@ -1099,6 +1099,10 @@ message-scoped: ordinary User and Assistant wrappers resolve it independently fr
 message's model identity, using an empty value when none exists. It is not a request-wide substitute.
 Editor previews may use explicit example values only for presentation and must never persist them as
 resolved prompt content.
+Startup migrations preserve user-edited System Prompt content and all message wrappers. Only a
+complete match to a known unmodified built-in template permits replacement with a newer default;
+the presence of a legacy runtime tag alone never authorizes replacing a stored template. Legacy
+wrapper storage may be normalized without changing its resolved content.
 Context rollout and token accounting for a dispatched request must consume the exact late-bound system
 prompt instance that the transport serializes. They must not estimate from an earlier resolution and
 then dispatch a newly resolved prompt. Provider adapters receive the compiled prompt and must not

@@ -363,10 +363,7 @@ class SettingsManager(private val context: Context) {
             } catch (_: Exception) {
                 emptyList()
             }
-            val defaultMigrated = migrateUnmodifiedBuiltInDefault(currentPrompts, locale)
-            val migratedPrompts = migrateLegacyDefaultPromptTitle(defaultMigrated, locale)
-            val runtimeMigrated = migrateOldRuntimeContext(migratedPrompts, locale)
-            val messageTemplatesMigrated = migrateLegacyMessageTemplates(runtimeMigrated)
+            val messageTemplatesMigrated = migrateSystemPromptsOnStartup(currentPrompts, locale)
             if (messageTemplatesMigrated != currentPrompts) {
                 prefs[SYSTEM_PROMPTS_JSON] = json.encodeToString(messageTemplatesMigrated)
             }
@@ -382,79 +379,6 @@ class SettingsManager(private val context: Context) {
         }
     }
 
-    private fun migrateOldRuntimeContext(
-        prompts: List<SystemPromptEntry>,
-        locale: Locale
-    ): List<SystemPromptEntry> {
-        if (prompts.isEmpty()) return prompts
-        val newDefault = DefaultSystemPrompt.create(locale)
-        return prompts.map { entry ->
-            if (DefaultSystemPrompt.hasOldRuntimeContext(entry)) {
-                entry.copy(
-                    systemItems = newDefault.systemItems,
-                    userItems = newDefault.resolvedUserItems,
-                    assistantItems = newDefault.resolvedAssistantItems,
-                    userPrependItems = emptyList(),
-                    userPostpendItems = emptyList(),
-                )
-            } else {
-                entry
-            }
-        }
-    }
-
-    private fun migrateLegacyMessageTemplates(
-        prompts: List<SystemPromptEntry>,
-    ): List<SystemPromptEntry> = prompts.map { entry ->
-        val normalizedUserItems = entry.resolvedUserItems
-        val normalizedAssistantItems = entry.resolvedAssistantItems
-        if (
-            entry.userItems != normalizedUserItems ||
-            entry.assistantItems != normalizedAssistantItems ||
-            entry.userPrependItems.isNotEmpty() ||
-            entry.userPostpendItems.isNotEmpty()
-        ) {
-            entry.copy(
-                userItems = normalizedUserItems,
-                assistantItems = normalizedAssistantItems,
-                userPrependItems = emptyList(),
-                userPostpendItems = emptyList(),
-            )
-        } else {
-            entry
-        }
-    }
-
-    private fun migrateLegacyDefaultPromptTitle(
-        prompts: List<SystemPromptEntry>,
-        locale: Locale
-    ): List<SystemPromptEntry> {
-        if (prompts.isEmpty()) return prompts
-        val localizedTitle = DefaultSystemPrompt.titleForLocale(locale)
-        val defaultPrompt = DefaultSystemPrompt.create(locale)
-        return prompts.map { entry ->
-            val legacyLowercaseEnglish = entry.title == "default"
-            val legacySimplifiedTitleInTraditionalLocale =
-                entry.title == "\u9ed8\u8ba4" && localizedTitle == "\u9810\u8a2d"
-            if ((legacyLowercaseEnglish || legacySimplifiedTitleInTraditionalLocale) &&
-                entry.sameTemplateAs(defaultPrompt)
-            ) {
-                entry.copy(title = localizedTitle)
-            } else {
-                entry
-            }
-        }
-    }
-
-    private fun SystemPromptEntry.sameTemplateAs(other: SystemPromptEntry): Boolean =
-        resolvedSystemItems.sameTemplateItems(other.resolvedSystemItems) &&
-            resolvedUserItems.sameTemplateItems(other.resolvedUserItems) &&
-            resolvedAssistantItems.sameTemplateItems(other.resolvedAssistantItems)
-
-    private fun List<PromptTemplateItem>.sameTemplateItems(other: List<PromptTemplateItem>): Boolean =
-        size == other.size && zip(other).all { (left, right) ->
-            left.type == right.type && left.value == right.value
-        }
     suspend fun setActiveSystemPromptId(id: String?) {
         context.dataStore.edit { 
             if (id == null) it.remove(ACTIVE_SYSTEM_PROMPT_ID) else it[ACTIVE_SYSTEM_PROMPT_ID] = id 

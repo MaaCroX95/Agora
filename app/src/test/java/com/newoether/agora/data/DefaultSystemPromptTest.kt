@@ -41,18 +41,6 @@ class DefaultSystemPromptTest {
     }
 
     @Test
-    fun hasOldRuntimeContext_detectsOldEntries() {
-        val entry = DefaultSystemPrompt.create(Locale.ENGLISH)
-        assertFalse(DefaultSystemPrompt.hasOldRuntimeContext(entry))
-
-        // Simulate an old entry by injecting a custom item with the legacy tag
-        val oldItems = entry.systemItems.toMutableList()
-        oldItems.add(0, PromptTemplateItem(type = PromptItemType.CUSTOM, value = "prefix <agora_runtime_context> old content"))
-        val oldEntry = entry.copy(systemItems = oldItems)
-        assertTrue(DefaultSystemPrompt.hasOldRuntimeContext(oldEntry))
-    }
-
-    @Test
     fun unmodifiedPreviousDefaultIsMigratedInPlace() {
         val previous = DefaultSystemPrompt.previousVersionForMigration(Locale.ENGLISH)
             .copy(id = "default-id")
