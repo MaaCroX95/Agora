@@ -1244,4 +1244,6 @@
     <string name="delete_conversation_title">会話を削除しますか？</string>
     <string name="delete_conversation_from_message_confirm">このメッセージを削除すると、会話全体が削除されます。この操作は元に戻せません。</string>
     <string name="composer_clear_failed">メッセージは送信されましたが、下書きを消去できませんでした。</string>
+    <string name="models_show_provider_name">プロバイダー名を表示</string>
+    <string name="models_show_provider_name_desc">モデル名の後にプロバイダー名を追加します。</string>
 </resources>

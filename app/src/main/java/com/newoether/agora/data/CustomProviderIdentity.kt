@@ -446,10 +446,10 @@ fun modelDisplayName(
     modelId: String,
     aliases: Map<String, String>,
     customProviders: List<CustomProviderConfig>,
+    showProviderName: Boolean,
 ): String {
-    aliases[modelId]?.takeIf(String::isNotBlank)?.let {
-        return modelAliasDisplayName(modelId, aliases, customProviders)
-    }
+    val alias = modelAliasDisplayName(modelId, aliases, customProviders)
+    if (!showProviderName) return alias
     val parsed = ModelId.parse(modelId)
-    return "${modelAliasDisplayName(modelId, aliases, customProviders)} (${providerDisplayName(parsed.providerName, customProviders)})"
+    return "$alias (${providerDisplayName(parsed.providerName, customProviders)})"
 }

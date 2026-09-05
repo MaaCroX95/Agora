@@ -167,6 +167,7 @@ internal fun TaskDetailPage(
     val running by viewModel.runningTaskIds.collectAsState()
     val enabledModels by viewModel.settings.enabledModels.collectAsState()
     val modelAliases by viewModel.settings.modelAliases.collectAsState()
+    val modelProviderNames by viewModel.settings.modelProviderNames.collectAsState()
     val customProviders by viewModel.settings.customProviders.collectAsState()
 
     val name = editorSession.name
@@ -331,7 +332,7 @@ internal fun TaskDetailPage(
                             headlineContent = { Text(stringResource(R.string.task_model)) },
                             supportingContent = {
                                 Text(
-                                    modelId?.let { modelDisplayName(it, modelAliases, customProviders) }
+                                    modelId?.let { modelDisplayName(it, modelAliases, customProviders, modelProviderNames[it] != false) }
                                         ?: stringResource(R.string.task_model_default)
                                 )
                             },

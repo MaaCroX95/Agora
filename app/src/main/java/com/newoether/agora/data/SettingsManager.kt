@@ -305,14 +305,15 @@ class SettingsManager(private val context: Context) {
     suspend fun saveCustomModels(models: Set<String>) =
         modelPreferenceStore.saveCustomModels(models)
 
-    suspend fun addCustomModel(modelId: String, alias: String) =
-        modelPreferenceStore.addCustomModel(modelId, alias)
+    suspend fun addCustomModel(modelId: String, alias: String, showProviderName: Boolean = true) =
+        modelPreferenceStore.addCustomModel(modelId, alias, showProviderName)
 
     suspend fun replaceCustomModel(
         oldModelId: String,
         newModelId: String?,
         alias: String,
-    ) = modelPreferenceStore.replaceCustomModel(oldModelId, newModelId, alias)
+        showProviderName: Boolean? = null,
+    ) = modelPreferenceStore.replaceCustomModel(oldModelId, newModelId, alias, showProviderName)
 
     suspend fun saveEnabledModels(models: Set<String>) =
         modelPreferenceStore.saveEnabledModels(models)

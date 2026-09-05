@@ -1250,4 +1250,6 @@
     <string name="delete_conversation_title">Xóa cuộc trò chuyện?</string>
     <string name="delete_conversation_from_message_confirm">Xóa tin nhắn này sẽ xóa toàn bộ cuộc trò chuyện. Bạn không thể hoàn tác thao tác này.</string>
     <string name="composer_clear_failed">Đã gửi tin nhắn nhưng không thể xóa bản nháp.</string>
+    <string name="models_show_provider_name">Hiện tên nhà cung cấp</string>
+    <string name="models_show_provider_name_desc">Thêm tên nhà cung cấp sau tên mô hình.</string>
 </resources>

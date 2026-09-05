@@ -77,6 +77,20 @@ class SettingsModelPreferenceStoreTest {
     }
 
     @Test
+    fun customModelEditorSavesAliasAndProviderChoiceWithCreationAndIdentityChanges() = runTest {
+        val store = SettingsModelPreferenceStore(InMemoryPreferencesDataStore(), testJson)
+        store.addCustomModel("Gateway:old", "Work", showProviderName = false)
+        assertEquals(mapOf("Gateway:old" to false), store.modelProviderNames.first())
+        store.replaceCustomModel("Gateway:old", "Gateway:old", "Renamed", showProviderName = true)
+        assertEquals(mapOf("Gateway:old" to "Renamed"), store.modelAliases.first())
+        assertEquals(mapOf("Gateway:old" to true), store.modelProviderNames.first())
+        store.replaceCustomModel("Gateway:old", "Gateway:new", "", showProviderName = false)
+        assertEquals(setOf("Gateway:new"), store.customModels.first())
+        assertTrue(store.modelAliases.first().isEmpty())
+        assertEquals(mapOf("Gateway:new" to false), store.modelProviderNames.first())
+    }
+
+    @Test
     fun malformedProviderPreferencesDoNotPartiallySaveAnAlias() = runTest {
         val dataStore = InMemoryPreferencesDataStore()
         val store = SettingsModelPreferenceStore(dataStore, testJson)

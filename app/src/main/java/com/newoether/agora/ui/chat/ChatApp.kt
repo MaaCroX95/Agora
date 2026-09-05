@@ -126,6 +126,7 @@ fun ChatApp(
     val developerOptionsEnabled by viewModel.settings.developerOptionsEnabled.collectAsState()
     val debugModelEnabled by viewModel.settings.debugModelEnabled.collectAsState()
     val modelAliases by viewModel.settings.modelAliases.collectAsState()
+    val modelProviderNames by viewModel.settings.modelProviderNames.collectAsState()
     val chatEnabledModels = validChatModels(
         enabledModels,
         developerOptionsEnabled,
@@ -565,7 +566,7 @@ fun ChatApp(
                                 autoExpandActiveGroup = autoExpandActiveGroup,
                                 parseInlineDollarMath = parseInlineDollarMath,
                                 contextRetainedMessageIds = contextProjection.retainedMessageIds.orEmpty(),
-                                modelAliases = StableModelAliases(modelAliases),
+                                modelAliases = StableModelAliases(modelAliases, modelProviderNames),
                                 customProviders = customProviders,
                                 bottomBarHeight = bottomBarHeight + shareSelectionBarSpace,
                                 viewportHeight = viewportHeightPx,
@@ -897,6 +898,7 @@ fun ChatApp(
                         enabledModels = chatEnabledModels,
                         selectedModel = selectedModel,
                         modelAliases = chatModelAliases,
+                        modelProviderNames = modelProviderNames,
                         customProviders = customProviders,
                         codeExecutionEnabled = conversationControls.codeExecutionEnabled,
                         googleSearchEnabled = conversationControls.googleSearchEnabled,
@@ -988,6 +990,7 @@ fun ChatApp(
         compactRetainCount = compactRetainCount,
         enabledModels = chatEnabledModels,
         modelAliases = chatModelAliases, customProviders = customProviders,
+        modelProviderNames = modelProviderNames,
         isCompacting = isCompacting,
     )
 

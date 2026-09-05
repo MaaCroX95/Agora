@@ -142,6 +142,7 @@ internal fun ChatAppDialogHost(
     compactRetainCount: Int,
     enabledModels: Set<String>,
     modelAliases: Map<String, String>,
+    modelProviderNames: Map<String, Boolean>,
     customProviders: List<CustomProviderConfig>,
     isCompacting: Boolean,
 ) {
@@ -263,6 +264,7 @@ internal fun ChatAppDialogHost(
             initialRetainCount = compactRetainCount,
             enabledModels = enabledModels,
             modelAliases = modelAliases,
+            modelProviderNames = modelProviderNames,
             customProviders = customProviders,
             isCompacting = isCompacting,
             onCompact = { model, prompt, retainCount ->

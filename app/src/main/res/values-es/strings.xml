@@ -1244,4 +1244,6 @@
     <string name="delete_conversation_title">¿Eliminar conversación?</string>
     <string name="delete_conversation_from_message_confirm">Al eliminar este mensaje se borrará toda la conversación. Esta acción no se puede deshacer.</string>
     <string name="composer_clear_failed">El mensaje se envió, pero no se pudo borrar el borrador.</string>
+    <string name="models_show_provider_name">Mostrar nombre del proveedor</string>
+    <string name="models_show_provider_name_desc">Añadir el nombre del proveedor al nombre del modelo.</string>
 </resources>

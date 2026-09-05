@@ -1244,4 +1244,6 @@
     <string name="delete_conversation_title">Удалить разговор?</string>
     <string name="delete_conversation_from_message_confirm">Удаление этого сообщения приведёт к удалению всего разговора. Это действие нельзя отменить.</string>
     <string name="composer_clear_failed">Сообщение отправлено, но не удалось очистить черновик.</string>
+    <string name="models_show_provider_name">Показывать имя провайдера</string>
+    <string name="models_show_provider_name_desc">Добавлять имя провайдера после имени модели.</string>
 </resources>

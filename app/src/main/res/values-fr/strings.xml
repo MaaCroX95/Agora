@@ -1244,4 +1244,6 @@
     <string name="delete_conversation_title">Supprimer la conversation ?</string>
     <string name="delete_conversation_from_message_confirm">La suppression de ce message supprimera toute la conversation. Cette action est irréversible.</string>
     <string name="composer_clear_failed">Le message a été envoyé, mais le brouillon n’a pas pu être effacé.</string>
+    <string name="models_show_provider_name">Afficher le nom du fournisseur</string>
+    <string name="models_show_provider_name_desc">Ajouter le nom du fournisseur après le nom du modèle.</string>
 </resources>

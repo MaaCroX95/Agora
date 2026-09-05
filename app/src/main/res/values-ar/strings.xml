@@ -1244,4 +1244,6 @@
     <string name="delete_conversation_title">حذف المحادثة؟</string>
     <string name="delete_conversation_from_message_confirm">سيؤدي حذف هذه الرسالة إلى إزالة المحادثة بالكامل. لا يمكن التراجع عن هذا الإجراء.</string>
     <string name="composer_clear_failed">تم إرسال الرسالة، ولكن تعذر مسح المسودة.</string>
+    <string name="models_show_provider_name">إظهار اسم المزوّد</string>
+    <string name="models_show_provider_name_desc">إضافة اسم المزوّد بعد اسم النموذج.</string>
 </resources>

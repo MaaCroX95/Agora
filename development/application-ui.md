@@ -325,8 +325,8 @@ exists. Saving that seed unchanged does not materialize it in DataStore; editing
 explicit alias, while clearing an explicit alias restores fallback behavior. The new-custom-model
 form remains blank until the user enters an alias.
 
-Provider-name visibility is a separate preference keyed by the complete model ID. Rename places a
-Show Provider name switch below the alias field; Save commits both values in one DataStore edit,
+Provider-name visibility is a separate preference keyed by the complete model ID. Rename and the
+custom model editor place a Show Provider name switch below the alias field. Save commits both values in one DataStore edit,
 while Cancel, Back and outside dismissal commit neither. Clearing or changing an alias never changes
 that switch. Complete-name surfaces append the current Provider name only when the preference is on;
 alias-only labels in Provider-grouped model lists retain their existing presentation.

@@ -1245,4 +1245,6 @@
     <string name="learn_more">Learn more...</string>
     <string name="local_model_limitations_title">Limitations of Local Models</string>
     <string name="local_model_limitations_body">Local models are limited by the memory available on mobile devices. Context size is one of the main constraints. Context often includes the system prompt, tool or function definitions, and skills. To reduce initial context use, open the three-dot menu beside the model selector and enable Low Context Mode.</string>
+    <string name="models_show_provider_name">Show Provider name</string>
+    <string name="models_show_provider_name_desc">Append the Provider name to the model name.</string>
 </resources>

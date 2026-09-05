@@ -103,6 +103,7 @@ internal fun ChatBottomBar(
     enabledModels: Set<String>,
     selectedModel: String,
     modelAliases: Map<String, String> = emptyMap(),
+    modelProviderNames: Map<String, Boolean> = emptyMap(),
     customProviders: List<CustomProviderConfig> = emptyList(),
     codeExecutionEnabled: Boolean = false,
     googleSearchEnabled: Boolean = false,
@@ -511,7 +512,7 @@ internal fun ChatBottomBar(
                 )
                 val capabilityControlsEnabled = !lowContextModeEnabled
                 val displayText = when {
-                    isModelValid -> modelDisplayName(selectedModel, modelAliases, customProviders)
+                    isModelValid -> modelDisplayName(selectedModel, modelAliases, customProviders, modelProviderNames[selectedModel] != false)
                     enabledModels.isNotEmpty() -> stringResource(R.string.select_model)
                     else -> stringResource(R.string.no_model_selected)
                 }
@@ -582,7 +583,7 @@ internal fun ChatBottomBar(
                             sortedModels.forEach { model ->
                                 DropdownMenuItem(
                                     text = {
-                                        Text(modelDisplayName(model, modelAliases, customProviders))
+                                        Text(modelDisplayName(model, modelAliases, customProviders, modelProviderNames[model] != false))
                                     },
                                     onClick = {
                                         haptics.selection()

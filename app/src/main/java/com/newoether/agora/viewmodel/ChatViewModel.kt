@@ -828,8 +828,9 @@ class ChatViewModel(
         provider: String,
         modelId: String,
         alias: String,
+        showProviderName: Boolean? = null,
     ) {
-        customModelConfiguration.updateModel(oldModelId, provider, modelId, alias)
+        customModelConfiguration.updateModel(oldModelId, provider, modelId, alias, showProviderName)
     }
 
     fun deleteCustomModel(modelId: String) {

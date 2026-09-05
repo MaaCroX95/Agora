@@ -32,13 +32,14 @@ import java.util.Locale
 internal fun MessageInfoDialog(
     message: ChatMessage,
     modelAliases: Map<String, String>,
+    showProviderName: Boolean,
     customProviders: List<CustomProviderConfig> = emptyList(),
     onDismiss: () -> Unit
 ) {
     val sdf = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
     val dateString = sdf.format(Date(message.timestamp))
     val modelDisplay = if (message.modelName != null) {
-        modelDisplayName(message.modelName, modelAliases, customProviders)
+        modelDisplayName(message.modelName, modelAliases, customProviders, showProviderName)
     } else stringResource(R.string.unknown)
     val tokenUsage = tokenUsagePresentation(message.tokenUsage)
     val inputTokens = when {

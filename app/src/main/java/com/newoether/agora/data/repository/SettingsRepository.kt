@@ -121,6 +121,7 @@ class SettingsRepository(
     val customModels: StateFlow<Set<String>> = hot(settingsManager.customModels, emptySet())
     val enabledModels: StateFlow<Set<String>> = hot(settingsManager.enabledModels, emptySet())
     val modelAliases: StateFlow<Map<String, String>> = hot(settingsManager.modelAliases, emptyMap())
+    val modelProviderNames: StateFlow<Map<String, Boolean>> = hot(settingsManager.modelProviderNames, emptyMap())
     val apiKeys: StateFlow<List<ApiKeyEntry>> = hot(settingsManager.apiKeys, emptyList())
     val activeApiKeyIds: StateFlow<Map<String, String>> = hot(settingsManager.activeApiKeyIds, emptyMap())
     val systemPrompts: StateFlow<List<SystemPromptEntry>> = hot(settingsManager.systemPrompts, emptyList())
@@ -285,19 +286,19 @@ class SettingsRepository(
         }
     }
 
-    fun updateModelAlias(model: String, alias: String) {
+    fun updateModelAlias(model: String, alias: String, showProviderName: Boolean? = null) {
         scope.launch {
-            settingsManager.updateModelAlias(model, alias)
+            settingsManager.updateModelAlias(model, alias, showProviderName)
         }
     }
 
-    fun addCustomModel(provider: String, modelName: String, alias: String = "") {
+    fun addCustomModel(provider: String, modelName: String, alias: String = "", showProviderName: Boolean = true) {
         val normalizedProvider = stableProviderReference(provider)
         val normalizedName = modelName.trim()
         if (normalizedProvider.isEmpty() || normalizedName.isEmpty()) return
         val modelId = ModelId(normalizedProvider, normalizedName).prefixed
         scope.launch {
-            settingsManager.addCustomModel(modelId, alias)
+            settingsManager.addCustomModel(modelId, alias, showProviderName)
         }
     }
 
@@ -312,7 +313,8 @@ class SettingsRepository(
         oldModelId: String,
         newModelId: String?,
         alias: String,
-    ) = settingsManager.replaceCustomModel(oldModelId, newModelId, alias)
+        showProviderName: Boolean? = null,
+    ) = settingsManager.replaceCustomModel(oldModelId, newModelId, alias, showProviderName)
 
     // API keys
     fun addApiKey(name: String, key: String, provider: String) {

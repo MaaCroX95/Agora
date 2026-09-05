@@ -37,11 +37,12 @@ class CustomModelConfigurationControllerTest {
                 provider = "  New  ",
                 modelId = " model-v2 ",
                 alias = "Alias",
+                showProviderName = false,
             )
             runCurrent()
 
             coVerifyOrder {
-                settings.replaceCustomModel("Old:model", "New:model-v2", "Alias")
+                settings.replaceCustomModel("Old:model", "New:model-v2", "Alias", false)
                 conversations.replaceConfiguredModelReferences("Old:model", "New:model-v2")
             }
             assertEquals(listOf("Old:model" to "New:model-v2"), callbacks)
@@ -142,6 +143,6 @@ class CustomModelConfigurationControllerTest {
             every { settings.stableProviderReference(any()) } answers {
                 firstArg<String>().trim()
             }
-            coEvery { settings.replaceCustomModel(any(), any(), any()) } just Runs
+            coEvery { settings.replaceCustomModel(any(), any(), any(), any()) } just Runs
         }
 }

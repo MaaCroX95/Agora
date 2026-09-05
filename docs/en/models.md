@@ -24,4 +24,10 @@ Fetched models are grouped by provider and can be searched by provider, raw mode
 
 Disabling any model removes it from selection. Deleting a manually added model removes that local configuration entry; neither action deletes remote provider data. Imported chat GGUF files are managed under the Local provider in [Providers](provider.md).
 
+## Provider Name in Model Labels
+
+The Rename dialog and custom model editor include **Show Provider name** below the alias field. When enabled, complete model labels show `Model name (Provider)`; when disabled, they show only the model name. Changing or clearing the alias does not change this switch. Provider-grouped settings lists keep their separate provider labels.
+
+Click **Save** to save both the alias and the switch. Cancel, Back, or dismissing the dialog discards both edits. New models show the provider by default. On upgrade, Agora initializes the switch once to preserve each existing model's previous presentation. The choice is included in settings backups.
+
 See [Providers](provider.md) and [Generation](generation.md).

@@ -1244,4 +1244,6 @@
     <string name="delete_conversation_title">Unterhaltung löschen?</string>
     <string name="delete_conversation_from_message_confirm">Durch das Löschen dieser Nachricht wird die gesamte Unterhaltung entfernt. Diese Aktion kann nicht rückgängig gemacht werden.</string>
     <string name="composer_clear_failed">Nachricht gesendet, aber der Entwurf konnte nicht gelöscht werden.</string>
+    <string name="models_show_provider_name">Anbieternamen anzeigen</string>
+    <string name="models_show_provider_name_desc">Den Anbieternamen an den Modellnamen anhängen.</string>
 </resources>

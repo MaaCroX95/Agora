@@ -1244,4 +1244,6 @@
     <string name="delete_conversation_title">대화를 삭제할까요?</string>
     <string name="delete_conversation_from_message_confirm">이 메시지를 삭제하면 전체 대화가 삭제됩니다. 이 작업은 실행 취소할 수 없습니다.</string>
     <string name="composer_clear_failed">메시지는 전송되었지만 초안을 지우지 못했습니다.</string>
+    <string name="models_show_provider_name">제공업체 이름 표시</string>
+    <string name="models_show_provider_name_desc">모델 이름 뒤에 제공업체 이름을 추가합니다.</string>
 </resources>

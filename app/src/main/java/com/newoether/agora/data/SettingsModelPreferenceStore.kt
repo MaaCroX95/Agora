@@ -3,6 +3,7 @@ package com.newoether.agora.data
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataMigration
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import com.newoether.agora.util.Constants
 import com.newoether.agora.util.DebugLog
@@ -191,7 +192,7 @@ internal class SettingsModelPreferenceStore(
         dataStore.edit { it[CUSTOM_MODELS] = models }
     }
 
-    suspend fun addCustomModel(modelId: String, alias: String) {
+    suspend fun addCustomModel(modelId: String, alias: String, showProviderName: Boolean = true) {
         dataStore.edit { prefs ->
             prefs[CUSTOM_MODELS] = (prefs[CUSTOM_MODELS] ?: emptySet()) + modelId
             val enabledModels = (prefs[ENABLED_MODELS] ?: emptySet()) + modelId
@@ -213,6 +214,7 @@ internal class SettingsModelPreferenceStore(
                 aliases[modelId] = alias.trim()
             }
             prefs[MODEL_ALIASES_JSON] = json.encodeToString(aliases)
+            prefs.setModelProviderName(modelId, showProviderName)
         }
     }
 
@@ -220,6 +222,7 @@ internal class SettingsModelPreferenceStore(
         oldModelId: String,
         newModelId: String?,
         alias: String,
+        showProviderName: Boolean? = null,
     ) {
         if (oldModelId == newModelId) {
             dataStore.edit { prefs ->
@@ -231,6 +234,7 @@ internal class SettingsModelPreferenceStore(
                     emptyMap()
                 }.replaceCustomModelAlias(oldModelId, newModelId, alias)
                 prefs[MODEL_ALIASES_JSON] = json.encodeToString(aliases)
+                if (showProviderName != null) prefs.setModelProviderName(oldModelId, showProviderName)
             }
             return
         }
@@ -259,8 +263,8 @@ internal class SettingsModelPreferenceStore(
             val visibility = json.decodeFromString<MutableMap<String, Boolean>>(
                 prefs[MODEL_PROVIDER_NAMES_JSON] ?: "{}",
             )
-            val showProviderName = visibility.remove(oldModelId) ?: true
-            if (newModelId != null) visibility[newModelId] = showProviderName
+            val previousVisibility = visibility.remove(oldModelId) ?: true
+            if (newModelId != null) visibility[newModelId] = showProviderName ?: previousVisibility
             prefs[MODEL_PROVIDER_NAMES_JSON] = json.encodeToString(visibility)
 
             if (prefs[SELECTED_MODEL] == oldModelId) {
@@ -318,14 +322,16 @@ internal class SettingsModelPreferenceStore(
                 aliases[modelId] = alias.trim()
             }
             prefs[MODEL_ALIASES_JSON] = json.encodeToString(aliases)
-            if (showProviderName != null) {
-                val visibility = json.decodeFromString<MutableMap<String, Boolean>>(
-                    prefs[MODEL_PROVIDER_NAMES_JSON] ?: "{}",
-                )
-                visibility[modelId] = showProviderName
-                prefs[MODEL_PROVIDER_NAMES_JSON] = json.encodeToString(visibility)
-            }
+            if (showProviderName != null) prefs.setModelProviderName(modelId, showProviderName)
         }
+    }
+
+    private fun MutablePreferences.setModelProviderName(modelId: String, visible: Boolean) {
+        val visibility = json.decodeFromString<MutableMap<String, Boolean>>(
+            this[MODEL_PROVIDER_NAMES_JSON] ?: "{}",
+        )
+        visibility[modelId] = visible
+        this[MODEL_PROVIDER_NAMES_JSON] = json.encodeToString(visibility)
     }
 
     suspend fun saveModelProviderNames(values: Map<String, Boolean>, replace: Boolean = true) {

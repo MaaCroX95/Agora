@@ -184,6 +184,7 @@ internal fun MessageItem(
         MessageInfoDialog(
             message = displayMessage,
             modelAliases = modelAliases.map,
+            showProviderName = modelAliases.providerNames[message.modelName] != false,
             customProviders = customProviders,
             onDismiss = { showInfoDialog = false }
         )

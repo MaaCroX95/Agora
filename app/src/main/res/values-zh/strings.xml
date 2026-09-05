@@ -1349,4 +1349,6 @@
     <string name="delete_conversation_title">删除对话？</string>
     <string name="delete_conversation_from_message_confirm">删除此消息将移除整个对话。此操作无法撤销。</string>
     <string name="composer_clear_failed">消息已发送，但无法清除草稿。</string>
+    <string name="models_show_provider_name">显示 Provider 名称</string>
+    <string name="models_show_provider_name_desc">在模型名称后附加服务商名称。</string>
 </resources>
