@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.newoether.agora.R
 import com.newoether.agora.model.ChatConversation
+import com.newoether.agora.model.ContextBudget
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import com.newoether.agora.ui.theme.ChatType
 
@@ -74,6 +75,7 @@ internal fun ChatTopBar(
     currentConversationId: String?,
     currentConversationTitle: String? = null,
     totalTokens: Int,
+    contextTokenBudget: Int,
     searchActive: Boolean = false,
     searchQuery: String = "",
     searchMatchIndex: Int = -1,
@@ -271,7 +273,11 @@ internal fun ChatTopBar(
                 val conversationTitleStyle =
                     if (totalTokens > 0) ChatType.conversationTitle else ChatType.conversationTitleSolo
                 val tokenSubtitle = if (!showBrandTitle && totalTokens > 0) {
-                    stringResource(R.string.total_tokens, totalTokens)
+                    stringResource(
+                        R.string.context_usage_messages,
+                        ContextBudget.compactLabel(totalTokens),
+                        ContextBudget.compactLabel(contextTokenBudget),
+                    )
                 } else {
                     null
                 }

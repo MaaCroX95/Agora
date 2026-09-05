@@ -1173,7 +1173,10 @@ progress, presentation metadata, and attachment metadata that is not serialized 
 The Chat top-bar token subtitle and Bottom Bar context indicator report the same full selected canonical
 context estimate plus fixed request cost; neither surface replaces that number with the already-retained
 Provider window or with a sum of historical message usage. The top-bar subtitle is absent when no
-canonical usage is available. The rollout projection maps the shared canonical window back to one
+canonical usage is available. When visible, it shows `~used / budget tokens`, reusing the Bottom Bar's
+localized context-usage resource and `ContextBudget.compactLabel` for both numbers. The subtitle retains
+the existing title measurement, clipping, and motion ownership; it never calculates context itself.
+The rollout projection maps the shared canonical window back to one
 contiguous eligible durable suffix on the selected branch, including complete protocol units.
 Automatic Compact eligibility and retained verbatim text consume the complete selected canonical path,
 not an already-rolled Provider suffix.
