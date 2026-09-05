@@ -208,7 +208,10 @@ internal fun timelineSegmentGroupPosition(
 }
 
 internal fun ChatMessage.hasActiveAnswerSegment(): Boolean {
-    val lastVisibleSegment = segments?.lastOrNull { !it.isBlankAnswerSegment() }
+    // Citations annotate prior output; tools and thoughts still delimit the active phase.
+    val lastVisibleSegment = segments?.lastOrNull {
+        it.type != "citation" && !it.isBlankAnswerSegment()
+    }
     return if (lastVisibleSegment != null) {
         lastVisibleSegment.isVisibleAnswerSegment()
     } else {

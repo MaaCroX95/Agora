@@ -183,6 +183,10 @@ an independently sampled ID/snapshot pair must never drive answering haptics. Co
 non-Answer message, Settings, Tasks, media/PDF preview, text preview, app background, or disabling
 haptics makes the texture ineligible and must stop it immediately, including when the effect leaves
 composition. The drawer remains part of Chat presentation and does not suppress the texture.
+Citation metadata never ends an Answer phase; an actual tool or thought segment still does, even
+when its renderer hides it. Discrete confirmation, interruption and deletion feedback may pause the
+actuator but do not revoke the current Chat effect's texture request. Its existing pending resume
+must be cancelled when that effect stops, so a stale callback cannot revive an inactive texture.
 Generation code and overlay code must not start or stop the waveform independently or introduce a
 second haptic owner, shadow state, delay, compensation, or fallback path.
 
