@@ -191,7 +191,7 @@ private fun AdvancedParamRow(
                 Text(
                     text = stringResource(R.string.gen_not_specified),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -257,7 +257,7 @@ private fun AdvancedParamRow(
                 Text(
                     text = stringResource(R.string.gen_not_specified),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

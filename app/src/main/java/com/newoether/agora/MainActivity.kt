@@ -1,6 +1,5 @@
 package com.newoether.agora
 import android.Manifest
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -16,7 +15,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.runtime.key
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
@@ -150,6 +148,7 @@ class MainActivity : ComponentActivity() {
             }
             setContent {
             val themeMode by settingsManager.themeMode.collectAsState(initial = "FOLLOW_DEVICE")
+            val amoledEnabled by settingsManager.amoledEnabled.collectAsState(initial = false)
             val colorSchemeName by settingsManager.colorScheme.collectAsState(initial = com.newoether.agora.data.DEFAULT_COLOR_SCHEME)
             val schemeStyleName by settingsManager.schemeStyle.collectAsState(initial = com.newoether.agora.data.DEFAULT_SCHEME_STYLE)
             val dynamicColor by settingsManager.dynamicColor.collectAsState(initial = com.newoether.agora.data.DEFAULT_DYNAMIC_COLOR)
@@ -177,6 +176,7 @@ class MainActivity : ComponentActivity() {
 
             AgoraTheme(
                 themeMode = themeModeEnum,
+                amoledEnabled = amoledEnabled,
                 colorSchemePreset = colorSchemePreset,
                 schemeStyle = schemeStyle,
                 dynamicColor = dynamicColor,

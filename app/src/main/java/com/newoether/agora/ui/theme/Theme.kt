@@ -78,6 +78,7 @@ fun AgoraTheme(
     colorSchemePreset: ColorSchemePreset = ColorSchemePreset.FOREST,
     schemeStyle: SchemeStyle = SchemeStyle.TONAL_SPOT,
     dynamicColor: Boolean = false,
+    amoledEnabled: Boolean = false,
     fontPreference: String = "app_default",
     customFontPath: String = "",
     content: @Composable () -> Unit
@@ -89,7 +90,7 @@ fun AgoraTheme(
         ThemeMode.FOLLOW_DEVICE -> systemDark
     }
 
-    val colorScheme = when {
+    val baseColorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -97,6 +98,10 @@ fun AgoraTheme(
         else -> remember(colorSchemePreset, schemeStyle, darkTheme) {
             colorSchemeForPreset(colorSchemePreset, schemeStyle, darkTheme)
         }
+    }
+
+    val colorScheme = remember(baseColorScheme, darkTheme, amoledEnabled) {
+        baseColorScheme.withAmoledBackground(darkTheme, amoledEnabled)
     }
 
     val fontFamily = effectiveFontFamily(fontPreference, customFontPath)

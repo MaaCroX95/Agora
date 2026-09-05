@@ -573,6 +573,8 @@
     <string name="settings_appearance_desc">テーマ、配色、ダイナミックカラー</string>
     <string name="appearance_title">外観</string>
     <string name="theme_mode">テーマモード</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">ライトテーマでは純白、ダークテーマでは純黒の背景を使用</string>
     <string name="theme_mode_light">ライト</string>
     <string name="theme_mode_dark">ダーク</string>
     <string name="theme_mode_follow_device">デバイスに合わせる</string>

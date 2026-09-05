@@ -128,6 +128,7 @@ internal object PortableSettingsArchive {
 
         put("showDocumentationFab", JsonPrimitive(sm.showDocumentationFab.first()))
         put("themeMode", JsonPrimitive(sm.themeMode.first()))
+        put("amoledEnabled", JsonPrimitive(sm.amoledEnabled.first()))
         put("colorScheme", JsonPrimitive(sm.colorScheme.first()))
         put("dynamicColor", JsonPrimitive(sm.dynamicColor.first()))
         put("blurEffectsEnabled", JsonPrimitive(sm.blurEffectsEnabled.first()))
@@ -430,6 +431,7 @@ internal object PortableSettingsArchive {
 
         obj.boolean("showDocumentationFab")?.let { sm.saveShowDocumentationFab(it) }
         obj.string("themeMode")?.let { sm.saveThemeMode(it) }
+        obj.boolean("amoledEnabled")?.let { sm.saveAmoledEnabled(it) }
         obj.string("colorScheme")?.let { sm.saveColorScheme(it) }
         obj.boolean("dynamicColor")?.let { sm.saveDynamicColor(it) }
         obj.boolean("blurEffectsEnabled")?.let { sm.saveBlurEffectsEnabled(it) }

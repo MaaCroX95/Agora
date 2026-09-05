@@ -103,6 +103,7 @@ internal const val DEFAULT_SCHEME_STYLE = "TONAL_SPOT"
 internal const val DEFAULT_DYNAMIC_COLOR = false
 
 internal val THEME_MODE = stringPreferencesKey("theme_mode")
+internal val AMOLED_ENABLED = booleanPreferencesKey("amoled_enabled")
 internal val COLOR_SCHEME = stringPreferencesKey("color_scheme")
 internal val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
 internal val BLUR_EFFECTS_ENABLED = booleanPreferencesKey("blur_effects_enabled")

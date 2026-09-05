@@ -573,6 +573,8 @@
     <string name="settings_appearance_desc">테마, 색 구성표 및 동적 색상</string>
     <string name="appearance_title">모양</string>
     <string name="theme_mode">테마 모드</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">밝은 테마에서는 순백색, 어두운 테마에서는 순흑색 배경 사용</string>
     <string name="theme_mode_light">밝게</string>
     <string name="theme_mode_dark">어둡게</string>
     <string name="theme_mode_follow_device">기기 설정 따르기</string>

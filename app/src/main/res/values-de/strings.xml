@@ -573,6 +573,8 @@
     <string name="settings_appearance_desc">Design, Farbschema und dynamische Farbe</string>
     <string name="appearance_title">Erscheinungsbild</string>
     <string name="theme_mode">Design-Modus</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">Reinweiße Hintergründe im hellen Design und tiefschwarze im dunklen Design verwenden</string>
     <string name="theme_mode_light">Hell</string>
     <string name="theme_mode_dark">Dunkel</string>
     <string name="theme_mode_follow_device">Gerät folgen</string>

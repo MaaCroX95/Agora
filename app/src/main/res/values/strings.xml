@@ -621,6 +621,8 @@
     <string name="appearance_motion_feedback">Motion &amp; Feedback</string>
     <string name="appearance_chat_display">Chat Display</string>
     <string name="theme_mode">Theme Mode</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">Use pure white backgrounds in light themes and pure black in dark themes</string>
     <string name="theme_mode_light">Light</string>
     <string name="theme_mode_dark">Dark</string>
     <string name="theme_mode_follow_device">Follow Device</string>

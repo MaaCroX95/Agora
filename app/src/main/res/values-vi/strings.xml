@@ -571,6 +571,8 @@
     <string name="appearance_motion_feedback">Chuyển động &amp; phản hồi</string>
     <string name="appearance_chat_display">Hiển thị trò chuyện</string>
     <string name="theme_mode">Chế độ chủ đề</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">Dùng nền trắng thuần trong giao diện sáng và đen thuần trong giao diện tối</string>
     <string name="theme_mode_light">Sáng</string>
     <string name="theme_mode_dark">Tối</string>
     <string name="theme_mode_follow_device">Theo hệ thống</string>

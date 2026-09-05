@@ -573,6 +573,8 @@
     <string name="settings_appearance_desc">السمة ونظام الألوان واللون الديناميكي</string>
     <string name="appearance_title">المظهر</string>
     <string name="theme_mode">وضع السمة</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">استخدام خلفيات بيضاء نقية في السمات الفاتحة وسوداء نقية في السمات الداكنة</string>
     <string name="theme_mode_light">فاتح</string>
     <string name="theme_mode_dark">داكن</string>
     <string name="theme_mode_follow_device">حسب الجهاز</string>

@@ -583,6 +583,8 @@
     <string name="settings_appearance_desc">主题、配色方案和动态颜色</string>
     <string name="appearance_title">外观</string>
     <string name="theme_mode">主题模式</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">浅色主题使用纯白背景，深色主题使用纯黑背景</string>
     <string name="theme_mode_light">浅色</string>
     <string name="theme_mode_dark">深色</string>
     <string name="theme_mode_follow_device">跟随系统</string>

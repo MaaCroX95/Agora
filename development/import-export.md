@@ -82,13 +82,16 @@ The following JSON field names are the complete current portable allowlist.
 | Image transcription | `imageTranscriptionEnabled`, `imageTranscriptionEnabledModels`, `imageTranscriptionModel`, `imageTranscriptionBatchSize`, `imageTranscriptionPrompt` |
 | Shell, automation, custom Providers, and MCP | `shellEnabled`, `shellConfirmEnabled`, secret-free `shellDevices`, `automationToolsEnabled`, `exactExecutionEnabled`, `customProviders`, secret-free `mcpServers` |
 | Proxy | `proxyEnabled`, `proxyType`, `proxyHost`, `proxyPort`, `proxyUsername`, `proxyBypass` |
-| Appearance | `showDocumentationFab`, `themeMode`, `colorScheme`, `dynamicColor`, `blurEffectsEnabled`, `reduceMotion`, `stickToBottom`, `parseInlineDollarMath`, `hapticsEnabled`, `detailedTokenUsage`, `toolCallDisplayMode`, `thinkingSegmentDisplayMode`, `autoExpandActiveGroup`, `schemeStyle` |
+| Appearance | `showDocumentationFab`, `themeMode`, `amoledEnabled`, `colorScheme`, `dynamicColor`, `blurEffectsEnabled`, `reduceMotion`, `stickToBottom`, `parseInlineDollarMath`, `hapticsEnabled`, `detailedTokenUsage`, `toolCallDisplayMode`, `thinkingSegmentDisplayMode`, `autoExpandActiveGroup`, `schemeStyle` |
 | Custom font | `fontPreference`; `customFontName` only when `custom_font/font` is included. The device file path is never portable. |
 | Generation defaults | Nullable `defaultTemperature`, `defaultMaxTokens`, `defaultTopP`, `defaultFrequencyPenalty`, `defaultPresencePenalty` |
 | Prompt selection | Nullable `activeSystemPromptId` |
 
 Nullable fields are deliberately emitted as JSON null when unset. Their presence distinguishes
 "clear this portable value" from an older archive that has no opinion about the field.
+
+`amoledEnabled` is a default-false boolean. MERGE leaves it unchanged when absent; REPLACE clears
+its portable key before restore, so older archives resolve to false without redefining Theme Mode semantics.
 
 `accessSkillsModify` has no independent archive field. Settings `REPLACE` clears its explicit
 device value so the restored setting follows the portable `accessSkills` compatibility fallback;

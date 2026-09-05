@@ -26,6 +26,7 @@ class SettingsPreferenceSchemaTest {
 
     @Test
     fun appearanceDefaultsUseForestTonalSpotWithoutDynamicColor() {
+        assertEquals("amoled_enabled", AMOLED_ENABLED.name)
         assertEquals("FOREST", DEFAULT_COLOR_SCHEME)
         assertEquals("TONAL_SPOT", DEFAULT_SCHEME_STYLE)
         assertFalse(DEFAULT_DYNAMIC_COLOR)

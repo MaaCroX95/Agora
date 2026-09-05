@@ -8,6 +8,32 @@ import org.junit.Test
 
 class PortableSettingsArchiveTest {
     @Test
+    fun amoledIsDefaultOffPortableAndAvailableInEveryTheme() {
+        val root = locateDirectory("app/src/main/java", "src/main/java")
+        fun source(path: String) = File(root, "com/newoether/agora/$path").readText()
+        val manager = source("data/SettingsManager.kt")
+        val archive = source("data/PortableSettingsArchive.kt")
+        val repository = source("data/repository/SettingsRepository.kt")
+        val page = source("ui/settings/SettingsAppearancePage.kt")
+        assertTrue(manager.contains("it[AMOLED_ENABLED] ?: false"))
+        assertTrue(manager.contains("it[AMOLED_ENABLED] = enabled"))
+        assertTrue(manager.contains("prefs.remove(AMOLED_ENABLED)"))
+        assertTrue(repository.contains("hot(settingsManager.amoledEnabled, false)"))
+        assertTrue(archive.contains("put(\"amoledEnabled\", JsonPrimitive(sm.amoledEnabled.first()))"))
+        assertTrue(archive.contains("obj.boolean(\"amoledEnabled\")?.let { sm.saveAmoledEnabled(it) }"))
+        assertTrue(archive.contains("if (replace) sm.resetPortableSettingsForImport()"))
+        assertTrue(page.indexOf("R.string.amoled_mode)") < page.indexOf("if (isDynamicAvailable)"))
+        assertTrue(page.contains("Switch(checked = amoledEnabled, onCheckedChange = null)"))
+        assertTrue(page.contains("role = Role.Switch"))
+        val resources = locateDirectory("app/src/main/res", "src/main/res")
+        resources.listFiles().orEmpty().map { File(it, "strings.xml") }.filter(File::isFile).forEach {
+            val strings = it.readText()
+            assertTrue("AMOLED title missing in $it", strings.contains("name=\"amoled_mode\""))
+            assertTrue("AMOLED description missing in $it", strings.contains("name=\"amoled_mode_desc\""))
+        }
+    }
+
+    @Test
     fun compactThresholdImportAcceptsOnlyThePortableRange() {
         assertEquals(50, importedContextCompactThresholdPercent(50))
         assertEquals(90, importedContextCompactThresholdPercent(90))

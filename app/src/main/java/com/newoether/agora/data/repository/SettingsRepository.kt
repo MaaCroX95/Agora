@@ -221,6 +221,7 @@ class SettingsRepository(
     val defaultPresencePenalty: StateFlow<Float?> = hot(settingsManager.defaultPresencePenalty, null)
     val conversationSettings: StateFlow<Map<String, ConversationSettings>> = hotConversationSettings()
     val themeMode: StateFlow<String> = hot(settingsManager.themeMode, "FOLLOW_DEVICE")
+    val amoledEnabled: StateFlow<Boolean> = hot(settingsManager.amoledEnabled, false)
     val colorScheme: StateFlow<String> = hot(settingsManager.colorScheme, DEFAULT_COLOR_SCHEME)
     val dynamicColor: StateFlow<Boolean> = hot(settingsManager.dynamicColor, DEFAULT_DYNAMIC_COLOR)
     val blurEffectsEnabled: StateFlow<Boolean> = hot(settingsManager.blurEffectsEnabled, true)
@@ -687,6 +688,7 @@ class SettingsRepository(
     fun setDefaultFrequencyPenalty(v: Float?) = scope.launch { settingsManager.saveDefaultFrequencyPenalty(v) }
     fun setDefaultPresencePenalty(v: Float?) = scope.launch { settingsManager.saveDefaultPresencePenalty(v) }
     fun setThemeMode(mode: String) = scope.launch { settingsManager.saveThemeMode(mode) }
+    fun setAmoledEnabled(enabled: Boolean) = scope.launch { settingsManager.saveAmoledEnabled(enabled) }
     fun setColorScheme(scheme: String) = scope.launch { settingsManager.saveColorScheme(scheme) }
     fun setDynamicColor(enabled: Boolean) = scope.launch { settingsManager.saveDynamicColor(enabled) }
     fun setBlurEffectsEnabled(enabled: Boolean) = scope.launch { settingsManager.saveBlurEffectsEnabled(enabled) }

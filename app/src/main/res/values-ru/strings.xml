@@ -573,6 +573,8 @@
     <string name="settings_appearance_desc">Тема, цветовая схема и динамические цвета</string>
     <string name="appearance_title">Оформление</string>
     <string name="theme_mode">Режим темы</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">Использовать чисто белый фон в светлых темах и чисто чёрный в тёмных</string>
     <string name="theme_mode_light">Светлая</string>
     <string name="theme_mode_dark">Тёмная</string>
     <string name="theme_mode_follow_device">Как на устройстве</string>

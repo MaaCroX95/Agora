@@ -55,6 +55,25 @@ layout, states, density, or interaction design has been approved.
 - Startup placeholders, invalid stored color-scheme fallbacks, and theme defaults must resolve to
   the same appearance. An explicitly persisted valid user choice remains authoritative.
 
+## AMOLED appearance
+
+- Appearance places an `AMOLED` switch immediately after Theme Mode. It is always available,
+  defaults off, and applies and persists immediately through the existing Settings owner.
+- AMOLED preserves Light, Dark, and Follow Device selection. It sets the effective light theme's
+  base background and surface to pure white and the dark theme's to pure black. Surface dim/bright
+  bounds remain ordered. Container levels, content colors, accents, errors, and dynamic color stay
+  owned by the selected Material palette; AMOLED never flattens every container or changes brightness.
+- While enabled, the chat background owner omits its decorative blobs and gradients. Disabling
+  AMOLED restores the existing decoration and theme without overwriting Blur Effects or motion settings.
+- Custom seed palettes map every Compose color role from the same MaterialKolor scheme, including
+  surface containers, inverse and fixed colors. No role may silently inherit the library's seed palette.
+- Small readable status text uses full semantic content colors. PDF warning text in a user bubble
+  uses the theme error color; its contrast against primaryContainer must remain at least 4.5:1 for
+  all shipped palettes. Advanced generation's unspecified labels use full onSurfaceVariant.
+- AMOLED follows the portable Settings contract in `import-export.md`. Verification covers both
+  endpoints, unchanged container/content roles, all presets/styles, default-off behavior, locale
+  parity, and complete export/restore/Replace wiring. Device visual acceptance remains owner-tested.
+
 ## Structure and spacing
 
 - Use the shared settings page scaffold and `SettingsItem` for standard rows.

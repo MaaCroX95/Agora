@@ -63,7 +63,6 @@ import com.newoether.agora.ui.common.rememberAgoraHaptics
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import com.newoether.agora.model.StableMessageList
 import com.newoether.agora.model.StableModelAliases
-import com.newoether.agora.viewmodel.AnimatedScrollDestination
 import com.newoether.agora.viewmodel.ChatViewModel
 import com.newoether.agora.viewmodel.validChatModels
 import kotlinx.coroutines.launch
@@ -150,6 +149,7 @@ fun ChatApp(
     val displayMessagesState = remember(messagesState, customProviders) { derivedStateOf { messagesState.value.map { it.forDisplay(customProviders) } } }
     val webSearchApiKeys by viewModel.settings.webSearchApiKeys.collectAsState()
     val shellDevices by viewModel.settings.shellDevices.collectAsState()
+    val amoledEnabled by viewModel.settings.amoledEnabled.collectAsState()
     val toolCallDisplayMode by viewModel.settings.toolCallDisplayMode.collectAsState()
     val thinkingSegmentDisplayMode by viewModel.settings.thinkingSegmentDisplayMode.collectAsState()
     val autoExpandActiveGroup by viewModel.settings.autoExpandActiveGroup.collectAsState()
@@ -390,14 +390,16 @@ fun ChatApp(
                 isSwitching = isSwitching,
                 newChatEntryId = newChatEntryId,
             )
-            AnimatedBlobBackground(
-                centerAlpha = ca,
-                quarterAlpha = qa,
-                blurRadius = 40f,
-                dark = dark,
-                blurEnabled = blurEffectsEnabled,
-                motionEnabled = newChatMotion.animateBackground,
-            )
+            if (!amoledEnabled) {
+                AnimatedBlobBackground(
+                    centerAlpha = ca,
+                    quarterAlpha = qa,
+                    blurRadius = 40f,
+                    dark = dark,
+                    blurEnabled = blurEffectsEnabled,
+                    motionEnabled = newChatMotion.animateBackground,
+                )
+            }
 
             Scaffold(
                 containerColor = Color.Transparent,

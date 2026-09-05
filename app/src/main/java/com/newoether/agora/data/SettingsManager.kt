@@ -236,6 +236,7 @@ class SettingsManager(private val context: Context) {
         context.dataStore.data.map { it[SANDBOX_SHARED_STORAGE_ENABLED] ?: false }
 
     val themeMode: Flow<String> = context.dataStore.data.map { it[THEME_MODE] ?: "FOLLOW_DEVICE" }
+    val amoledEnabled: Flow<Boolean> = context.dataStore.data.map { it[AMOLED_ENABLED] ?: false }
     val colorScheme: Flow<String> = context.dataStore.data.map {
         it[COLOR_SCHEME] ?: DEFAULT_COLOR_SCHEME
     }
@@ -779,6 +780,9 @@ class SettingsManager(private val context: Context) {
     suspend fun saveThemeMode(mode: String) {
         context.dataStore.edit { it[THEME_MODE] = mode }
     }
+    suspend fun saveAmoledEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[AMOLED_ENABLED] = enabled }
+    }
     suspend fun saveColorScheme(scheme: String) {
         context.dataStore.edit { it[COLOR_SCHEME] = scheme }
     }
@@ -945,6 +949,7 @@ class SettingsManager(private val context: Context) {
             prefs.remove(PROXY_BYPASS)
             prefs.remove(SHELL_CONFIRM_ENABLED)
             prefs.remove(THEME_MODE)
+            prefs.remove(AMOLED_ENABLED)
             prefs.remove(COLOR_SCHEME)
             prefs.remove(DYNAMIC_COLOR)
             prefs.remove(BLUR_EFFECTS_ENABLED)

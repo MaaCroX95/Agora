@@ -573,6 +573,8 @@
     <string name="settings_appearance_desc">Thème, schéma de couleurs et couleur dynamique</string>
     <string name="appearance_title">Apparence</string>
     <string name="theme_mode">Mode du thème</string>
+    <string name="amoled_mode">AMOLED</string>
+    <string name="amoled_mode_desc">Utiliser des fonds blancs purs dans les thèmes clairs et noirs purs dans les thèmes sombres</string>
     <string name="theme_mode_light">Clair</string>
     <string name="theme_mode_dark">Sombre</string>
     <string name="theme_mode_follow_device">Suivre l\'appareil</string>
