@@ -37,6 +37,7 @@ internal fun StreamingMarkdownMessage(
     emptyStreamingText: String? = null,
     emptyStreamingTextColor: Color = Color.Unspecified,
     emptyStreamingTextStyle: TextStyle = renderContext.plainTextStyle,
+    onReady: () -> Unit = {},
 ) {
     val hasContent = content.isNotBlank()
     val showEmptyState = isStreaming && !hasContent && emptyStreamingText != null
@@ -53,6 +54,7 @@ internal fun StreamingMarkdownMessage(
                 selectionEnabled = selectionEnabled,
                 textDeltas = textDeltas,
                 fadeTracker = fadeTracker,
+                onReady = onReady,
             )
         }
         AnimatedVisibility(

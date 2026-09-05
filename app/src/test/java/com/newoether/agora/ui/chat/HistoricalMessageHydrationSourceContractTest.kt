@@ -24,4 +24,40 @@ class HistoricalMessageHydrationSourceContractTest {
             !list.contains("collectAsState(initial = cachedMessage)"))
         assertTrue(projection.contains("fallbackSegments.withDurableModelAnswer"))
     }
+
+    @Test
+    fun historicalRowsKeepTheViewportCoveredAndAnchoredUntilRenderedMarkdownIsReady() {
+        val start = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
+        val root = generateSequence(start) { it.parentFile }
+            .first { File(it, "app/src/main").isDirectory }
+        fun source(path: String) = File(root, path).readText().replace("\r\n", "\n")
+        val list = source("app/src/main/java/com/newoether/agora/ui/chat/MessageList.kt")
+        val settlement = source(
+            "app/src/main/java/com/newoether/agora/ui/chat/HistoricalMessageViewportSettlement.kt",
+        )
+        val item = source("app/src/main/java/com/newoether/agora/ui/chat/message/MessageItem.kt")
+        val assistant = source(
+            "app/src/main/java/com/newoether/agora/ui/chat/message/AssistantMessageContent.kt",
+        )
+        val streaming = source(
+            "app/src/main/java/com/newoether/agora/ui/chat/message/StreamingMarkdownMessage.kt",
+        )
+        val incremental = source(
+            "app/src/main/java/com/newoether/agora/ui/chat/message/IncrementalStreamingMarkdown.kt",
+        )
+        assertTrue(settlement.contains("delay(HISTORICAL_MESSAGE_CROSSFADE_MS.toLong())"))
+        assertTrue(settlement.indexOf("delay(HISTORICAL_MESSAGE_CROSSFADE_MS.toLong())") <
+            settlement.indexOf("currentOnSettled(messageId)"))
+        assertTrue(settlement.contains("withFrameNanos { }"))
+        assertTrue(list.contains("rememberHistoricalMessageViewportSettlement("))
+        assertTrue(list.contains("onRenderReady = {") &&
+            list.contains("finishHydrationAfterRenderedContent()"))
+        assertTrue(item.contains("onContentReady = onRenderReady"))
+        assertTrue(assistant.contains("AssistantRenderReadiness(asynchronousAnswerKeys)"))
+        assertTrue(assistant.contains("onAnswerReady = markAnswerReady"))
+        assertTrue(streaming.contains("onReady = onReady"))
+        assertTrue(incremental.contains("MarkdownTextContent(") &&
+            incremental.contains("onReady = onReady"))
+        assertTrue(incremental.contains("snapshot.inputContent == content"))
+    }
 }

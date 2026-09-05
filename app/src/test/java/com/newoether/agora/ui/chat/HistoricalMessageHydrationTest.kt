@@ -91,6 +91,17 @@ class HistoricalMessageHydrationTest {
         assertSame(messages.first(), loaded.message)
     }
 
+    @Test
+    fun canceledViewportCorrectionStillSettlesHydrationExactlyOnce() {
+        val gate = HistoricalMessageSettlementGate()
+
+        assertTrue(gate.trySchedule())
+        assertFalse(gate.trySchedule())
+        assertTrue(gate.settle())
+        assertFalse(gate.settle())
+        assertFalse(gate.trySchedule())
+    }
+
     private fun message(id: String) = ChatMessage(
         id = id,
         text = "payload-$id",

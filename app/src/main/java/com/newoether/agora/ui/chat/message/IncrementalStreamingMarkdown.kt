@@ -17,6 +17,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -567,6 +568,7 @@ internal fun IncrementalStreamingMarkdownContent(
     selectionEnabled: Boolean = !isStreaming,
     textDeltas: List<StreamingTextDelta>? = null,
     fadeTracker: StreamingTailFadeTracker = remember { StreamingTailFadeTracker() },
+    onReady: () -> Unit = {},
 ) {
     var hasStreamed by remember { mutableStateOf(isStreaming || !textDeltas.isNullOrEmpty()) }
     SideEffect {
@@ -582,6 +584,7 @@ internal fun IncrementalStreamingMarkdownContent(
                 MarkdownTextContent(
                     text = content,
                     renderContext = renderContext,
+                    onReady = onReady,
                 )
             }
         }
@@ -610,6 +613,13 @@ internal fun IncrementalStreamingMarkdownContent(
     }
 
     val snapshot by state.snapshot.collectAsState()
+    val currentOnReady by rememberUpdatedState(onReady)
+    LaunchedEffect(snapshot, content, isStreaming) {
+        val parsedCurrentInput =
+            snapshot.inputContent == content && snapshot.isStreaming == isStreaming &&
+                (snapshot.stableBlocks.isNotEmpty() || snapshot.liveBlock != null)
+        if (parsedCurrentInput) currentOnReady()
+    }
     val blockFadeSpecs = remember(snapshot) { computeBlockFadeSpecs(snapshot) }
     androidx.compose.runtime.CompositionLocalProvider(
         LocalStreamingMarkdownInteractionController provides state,

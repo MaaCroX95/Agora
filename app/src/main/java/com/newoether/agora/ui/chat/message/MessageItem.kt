@@ -135,6 +135,7 @@ internal fun MessageItem(
     onPdfPagesClick: ((pages: List<String>, startIndex: Int) -> Unit)? = null,
     onSegmentDetailRequest: (String, List<Int>, Boolean) -> Unit = { _, _, _ -> },
     onHeightChanged: (Int) -> Unit = {},
+    onRenderReady: () -> Unit = {},
     searchQuery: String = "",
     activeSearchMatch: ConversationSearchMatch? = null,
     onSearchMatchPosition: (
@@ -283,6 +284,12 @@ internal fun MessageItem(
         durationMillis = MESSAGE_ENTER_DURATION_MS,
         forceOpaque = displayMessage.segments.orEmpty().any { it.type == "tool" },
     )
+    LaunchedEffect(message.id, message.participant, message.isContextCompact()) {
+        if (message.isContextCompact() || message.participant == Participant.USER) {
+            withFrameNanos { }
+            onRenderReady()
+        }
+    }
 
     Row(
         modifier = modifier
@@ -425,6 +432,7 @@ internal fun MessageItem(
                         },
                         onLayoutMutationStarted = onLayoutMutationStarted,
                         onLayoutMutationSettled = onLayoutMutationSettled,
+                        onContentReady = onRenderReady,
                         setThoughtBlockHeight = {},
                     )
                 }

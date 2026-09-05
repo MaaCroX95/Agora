@@ -672,38 +672,25 @@ internal fun MessageList(
         val observedMessage = hydrationState.message
         val message = resolveMessagePayloadForRender(messageStub, streamingMessage, observedMessage, cachedMessage)
         val hydrationPending = hydrationState.phase == HistoricalMessageHydrationPhase.LOADING
-        val hydrationMutationKey = "hydrate:${messageStub.id}"
-
-        LaunchedEffect(messageStub.id, hydrationState.phase, observedMessage, cachedMessage, isStreamingOverlay) {
-            val payloadReady = isStreamingOverlay ||
-                hydrationState.phase == HistoricalMessageHydrationPhase.READY
-            if (payloadReady) {
+        LaunchedEffect(hydrationState.phase, observedMessage, cachedMessage) {
+            if (hydrationState.phase == HistoricalMessageHydrationPhase.READY) {
                 (observedMessage ?: cachedMessage)?.let(::cacheHydratedPayload)
-                onMessageHydrated(conversationId, messageStub.id)
-            } else if (
-                hydrationState.phase == HistoricalMessageHydrationPhase.LOADING &&
-                messageListLayoutMode(
-                    isSwitching = isSwitching,
-                    isScrollInProgress = state.isScrollInProgress || programmaticScrollActive,
-                ) == MessageListLayoutMode.STABLE
-            ) {
-                mutationAnchorLock.begin(
-                    key = hydrationMutationKey,
-                    candidate = state.captureMessageListViewportAnchor(turns),
-                )?.let { anchor -> state.restoreMessageListViewportAnchor(turns, anchor) }
-            }
-            if (hydrationState.phase != HistoricalMessageHydrationPhase.LOADING &&
-                mutationAnchorLock.isActive(hydrationMutationKey)) {
-                withFrameNanos { }
-                withFrameNanos { }
-                mutationAnchorLock.finish(hydrationMutationKey)?.let { anchor ->
-                    state.restoreMessageListViewportAnchor(turns, anchor)
-                }
             }
         }
-        DisposableEffect(hydrationMutationKey) {
-            onDispose { mutationAnchorLock.finish(hydrationMutationKey) }
-        }
+        val finishHydrationAfterRenderedContent =
+            rememberHistoricalMessageViewportSettlement(
+                messageId = messageStub.id,
+                phase = hydrationState.phase,
+                isStreamingOverlay = isStreamingOverlay,
+                isSwitching = isSwitching,
+                isScrollInProgress = state.isScrollInProgress || programmaticScrollActive,
+                state = state,
+                turns = turns,
+                mutationAnchorLock = mutationAnchorLock,
+                pendingSettlements = pendingMutationSettles,
+                mutationScope = mutationScope,
+                onSettled = { id -> onMessageHydrated(conversationId, id) },
+            )
 
         val isRetainedBranchReplacementExit =
             message.id in branchReplacementExitIds && message.id !in activeMessageIds
@@ -906,6 +893,11 @@ internal fun MessageList(
                             state.restoreMessageListViewportAnchor(turns, lockedAnchor)
                         }
                     }
+                }
+            },
+            onRenderReady = {
+                if (hydrationState.phase == HistoricalMessageHydrationPhase.READY) {
+                    finishHydrationAfterRenderedContent()
                 }
             },
             onLayoutMutationStarted = { mutationKey ->
