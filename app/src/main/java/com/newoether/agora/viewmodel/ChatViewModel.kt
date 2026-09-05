@@ -155,8 +155,8 @@ class ChatViewModel(
             conversations = convRepo,
             scope = viewModelScope,
             stopLoop = { conversationId -> loopManager.stopLoop(conversationId) },
-            withConversationLock = { conversationId, block ->
-                conversationExecutionCoordinator.withConversationLock(conversationId) { block() }
+            tryWithConversationLock = { conversationId, block ->
+                conversationExecutionCoordinator.tryWithConversationLock(conversationId) { block() }
             },
             removeRuntime = generationRegistry::remove,
             stopVisibleGeneration = generationStopAdapter::stopVisibleConversation,

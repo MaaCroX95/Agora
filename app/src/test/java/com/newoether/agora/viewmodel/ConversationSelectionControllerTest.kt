@@ -17,6 +17,7 @@ import io.mockk.mockkObject
 import io.mockk.unmockkObject
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
@@ -29,6 +30,36 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConversationSelectionControllerTest {
+    @Test
+    fun cancelledMutationFadeReleasesItsOwnOverlay() = runTest {
+        val fixture = Fixture(backgroundScope, fadeDelay = { CompletableDeferred<Unit>().await() })
+        fixture.controller.publishAcceptedConversation("conversation", "provider:model")
+        val mutation = backgroundScope.launch { fixture.controller.beginTreeMutation() }
+        runCurrent()
+        assertTrue(fixture.controller.isSwitching.value)
+
+        mutation.cancel()
+        runCurrent()
+
+        assertFalse(fixture.controller.isSwitching.value)
+        assertEquals("conversation", fixture.controller.currentConversationId.value)
+    }
+
+    @Test
+    fun cancelledMutationFadeCannotReleaseANewerSelectionOverlay() = runTest {
+        val fixture = Fixture(backgroundScope, fadeDelay = { CompletableDeferred<Unit>().await() })
+        fixture.controller.publishAcceptedConversation("conversation", "provider:model")
+        val mutation = backgroundScope.launch { fixture.controller.beginTreeMutation() }
+        runCurrent()
+        fixture.controller.createNewChat()
+
+        mutation.cancel()
+        runCurrent()
+
+        assertTrue(fixture.controller.isSwitching.value)
+        assertTrue(fixture.controller.isNewChatMode.value)
+    }
+
     @Test
     fun selectPublishesConversationAndModelBeforeUiReadiness() = runTest {
         val fixture = Fixture(backgroundScope)

@@ -256,6 +256,13 @@ opens that confirmation, never as per-row message composition work. The confirma
 copied topology after failed or rejected admission; reopening through a new delete action captures
 the then-current topology. Ordinary message rendering performs no deletion graph traversal.
 
+Conversation deletion attempts immediate admission through the existing conversation execution
+coordinator after the selected-page cover is visible. If generation already owns or awaits that
+conversation, deletion reports failure and releases its own cover without waiting for generation
+to finish or stopping it. Successful admission validates the captured topology under that same
+ownership before storage mutation. Cancellation still delivers the completion callback and clears
+only the cancelled request's cover, including cancellation during the cover fade.
+
 ## 17. Model alias display fallback
 
 A model alias is presentation text, never a model identity. An explicit nonblank alias stored under

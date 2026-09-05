@@ -448,8 +448,13 @@ internal class ConversationSelectionController(
     ): Long? {
         if (_currentConversationId.value != conversationId || _isNewChatMode.value) return null
         val request = switching.beginTreeMutation(conversationId, scrollToTarget)
-        fadeDelay()
-        return request.id
+        try {
+            fadeDelay()
+            return request.id
+        } catch (error: Exception) {
+            switching.complete(request.id, successful = false)
+            throw error
+        }
     }
 
     fun markTreeMutationReady(requestId: Long?, targetMessageId: String?) {

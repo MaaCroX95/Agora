@@ -3,8 +3,10 @@ package com.newoether.agora.viewmodel
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -15,7 +17,7 @@ internal class ConversationLifecycleController(
     private val conversations: ConversationRepository,
     private val scope: CoroutineScope,
     private val stopLoop: suspend (String) -> Unit,
-    private val withConversationLock: suspend (String, suspend () -> Unit) -> Unit,
+    private val tryWithConversationLock: suspend (String, suspend () -> Unit) -> Boolean,
     private val removeRuntime: (String) -> Unit,
     private val stopVisibleGeneration: () -> Unit,
     private val settleDeletedSelectedConversation: (String) -> Unit,
@@ -48,14 +50,14 @@ internal class ConversationLifecycleController(
                     // until the confirmation dialog is gone and the loading surface is visible.
                     transitionRequestId = beginSelectedDeleteTransition(conversationId)
                 }
-                withConversationLock(conversationId) {
+                tryWithConversationLock(conversationId) {
                     // Send admission uses this same lock. Only the winner may stop live work.
-                    if (isDeleteLocked(conversationId)) return@withConversationLock
+                    if (isDeleteLocked(conversationId)) return@tryWithConversationLock
                     if (
                         expectedMessageIds != null &&
                         conversations.getMessageTopologySnapshot(conversationId)
                             .mapTo(linkedSetOf()) { it.id } != expectedMessageIds
-                    ) return@withConversationLock
+                    ) return@tryWithConversationLock
                     selectedAtCommit = currentConversationId.value == conversationId
                     if (selectedAtCommit) stopVisibleGeneration()
                     stopLoop(conversationId)
@@ -71,6 +73,8 @@ internal class ConversationLifecycleController(
                         }
                     }
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 runCatching {
                     DebugLog.e(
@@ -80,7 +84,7 @@ internal class ConversationLifecycleController(
                     )
                 }
             } finally {
-                withContext(mainDispatcher) {
+                withContext(NonCancellable + mainDispatcher) {
                     if (selectedAtDispatch && (!deleted || !selectedAtCommit)) {
                         abortSelectedDeleteTransition(transitionRequestId)
                     }

@@ -52,7 +52,7 @@ class RecentRegressionSourceContractTest {
         assertTrue(effect.indexOf("withFrameNanos") < effect.indexOf("onDelete("))
         assertTrue(
             deleteBody.indexOf("beginSelectedDeleteTransition") <
-                deleteBody.indexOf("withConversationLock"),
+                deleteBody.indexOf("tryWithConversationLock"),
         )
         assertTrue(
             conversationConfirm.indexOf("state.beginDelete(id)") <
