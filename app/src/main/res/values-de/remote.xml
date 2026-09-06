@@ -5,7 +5,7 @@
     <string name="remote_connect">Verbinden</string>
     <string name="remote_address">Dienst-URL</string>
     <string name="remote_token">Zugriffstoken</string>
-    <string name="remote_connection_hint">Starte Filo auf deinem Computer und gib die LAN- oder Tailscale-URL sowie das Token ein. Verbindungen bleiben bis zum Schließen von Agora erhalten.</string>
+    <string name="remote_connection_hint">Starte Filo und gib seine LAN- oder Tailscale-URL und das Token ein. Verbindungen werden auf diesem Gerät gespeichert.</string>
     <string name="remote_sessions">Sitzungen</string>
     <string name="remote_empty">Keine vorhandenen Sitzungen gefunden</string>
     <string name="remote_sync_hint">Lass diese Sitzung in Codex geöffnet. Antworten werden nach dem Speichern synchronisiert.</string>
@@ -16,4 +16,6 @@
     <string name="remote_rejected">Nachricht nicht angenommen. Prüfe die Verbindung und versuche es erneut</string>
     <string name="remote_check">Ich Habe Geprüft</string>
     <string name="remote_confirm">Weiter Senden?</string>
+    <string name="remote_remove">Verbindung entfernen</string>
+    <string name="remote_storage_failed">Verbindungen konnten nicht sicher gespeichert oder wiederhergestellt werden. Zum Wiederholen tippen</string>
 </resources>

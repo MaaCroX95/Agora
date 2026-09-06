@@ -5,7 +5,7 @@
     <string name="remote_connect">Connecter</string>
     <string name="remote_address">URL du service</string>
     <string name="remote_token">Jeton d’accès</string>
-    <string name="remote_connection_hint">Démarrez Filo sur votre ordinateur, puis saisissez son URL LAN ou Tailscale et son jeton. Les connexions sont conservées jusqu’à la fermeture d’Agora.</string>
+    <string name="remote_connection_hint">Démarrez Filo, puis saisissez son URL LAN ou Tailscale et son jeton. Les connexions sont enregistrées sur cet appareil.</string>
     <string name="remote_sessions">Sessions</string>
     <string name="remote_empty">Aucune session existante trouvée</string>
     <string name="remote_sync_hint">Gardez cette session ouverte dans Codex. Les réponses sont synchronisées après leur enregistrement.</string>
@@ -16,4 +16,6 @@
     <string name="remote_rejected">Message non accepté. Vérifiez la connexion et réessayez</string>
     <string name="remote_check">J’ai Vérifié</string>
     <string name="remote_confirm">Continuer à Envoyer ?</string>
+    <string name="remote_remove">Supprimer la connexion</string>
+    <string name="remote_storage_failed">Impossible de sauvegarder ou restaurer les connexions en toute sécurité. Touchez pour réessayer</string>
 </resources>

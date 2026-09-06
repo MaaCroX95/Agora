@@ -5,7 +5,7 @@
     <string name="remote_connect">連線</string>
     <string name="remote_address">服務位址</string>
     <string name="remote_token">存取權杖</string>
-    <string name="remote_connection_hint">在電腦上啟動 Filo，填寫其區域網路或 Tailscale 位址與權杖。連線保留至 Agora 關閉。</string>
+    <string name="remote_connection_hint">啟動 Filo 後，輸入其區域網路或 Tailscale 位址與權杖。連線資訊會儲存在此裝置上。</string>
     <string name="remote_sessions">對話</string>
     <string name="remote_empty">找不到既有對話</string>
     <string name="remote_sync_hint">請在 Codex 中保持此對話開啟。回覆儲存後會同步顯示。</string>
@@ -16,4 +16,6 @@
     <string name="remote_rejected">訊息未被接收，請檢查連線後重試</string>
     <string name="remote_check">我已檢查</string>
     <string name="remote_confirm">繼續傳送？</string>
+    <string name="remote_remove">移除連線</string>
+    <string name="remote_storage_failed">無法安全儲存或還原連線，點按重試</string>
 </resources>

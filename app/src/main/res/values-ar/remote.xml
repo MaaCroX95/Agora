@@ -5,7 +5,7 @@
     <string name="remote_connect">اتصال</string>
     <string name="remote_address">عنوان الخدمة</string>
     <string name="remote_token">رمز الوصول</string>
-    <string name="remote_connection_hint">شغّل Filo على الكمبيوتر ثم أدخل عنوان الشبكة المحلية أو Tailscale ورمز الوصول. تُحفظ الاتصالات حتى إغلاق Agora.</string>
+    <string name="remote_connection_hint">شغّل Filo، ثم أدخل عنوان LAN أو Tailscale والرمز. تُحفظ الاتصالات على هذا الجهاز.</string>
     <string name="remote_sessions">الجلسات</string>
     <string name="remote_empty">لم يتم العثور على جلسات موجودة</string>
     <string name="remote_sync_hint">أبقِ هذه الجلسة مفتوحة في Codex. تتم مزامنة الردود بعد حفظها.</string>
@@ -16,4 +16,6 @@
     <string name="remote_rejected">لم تُقبل الرسالة. تحقق من الاتصال وأعد المحاولة</string>
     <string name="remote_check">لقد تحققت</string>
     <string name="remote_confirm">متابعة الإرسال؟</string>
+    <string name="remote_remove">إزالة الاتصال</string>
+    <string name="remote_storage_failed">تعذّر حفظ الاتصالات أو استعادتها بأمان. اضغط لإعادة المحاولة</string>
 </resources>

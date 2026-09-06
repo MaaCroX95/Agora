@@ -5,7 +5,7 @@
     <string name="remote_connect">接続</string>
     <string name="remote_address">サービス URL</string>
     <string name="remote_token">アクセストークン</string>
-    <string name="remote_connection_hint">パソコンで Filo を起動し、LAN または Tailscale の URL とトークンを入力します。接続は Agora を閉じるまで保持されます。</string>
+    <string name="remote_connection_hint">Filo を起動し、LAN または Tailscale の URL とトークンを入力してください。接続情報はこの端末に保存されます。</string>
     <string name="remote_sessions">セッション</string>
     <string name="remote_empty">既存のセッションが見つかりません</string>
     <string name="remote_sync_hint">Codex でこのセッションを開いたままにしてください。返信は保存後に同期されます。</string>
@@ -16,4 +16,6 @@
     <string name="remote_rejected">メッセージは受理されませんでした。接続を確認して再試行してください</string>
     <string name="remote_check">確認しました</string>
     <string name="remote_confirm">送信を続けますか？</string>
+    <string name="remote_remove">接続を削除</string>
+    <string name="remote_storage_failed">接続情報を安全に保存または復元できませんでした。タップして再試行</string>
 </resources>

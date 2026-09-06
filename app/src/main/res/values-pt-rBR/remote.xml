@@ -5,7 +5,7 @@
     <string name="remote_connect">Conectar</string>
     <string name="remote_address">URL do serviço</string>
     <string name="remote_token">Token de acesso</string>
-    <string name="remote_connection_hint">Inicie o Filo no computador e insira a URL da LAN ou do Tailscale e o token. As conexões duram até o Agora ser fechado.</string>
+    <string name="remote_connection_hint">Inicie o Filo e informe a URL da LAN ou do Tailscale e o token. As conexões são salvas neste dispositivo.</string>
     <string name="remote_sessions">Sessões</string>
     <string name="remote_empty">Nenhuma sessão existente encontrada</string>
     <string name="remote_sync_hint">Mantenha esta sessão aberta no Codex. As respostas são sincronizadas após serem salvas.</string>
@@ -16,4 +16,6 @@
     <string name="remote_rejected">Mensagem não aceita. Verifique a conexão e tente novamente</string>
     <string name="remote_check">Já Verifiquei</string>
     <string name="remote_confirm">Continuar Enviando?</string>
+    <string name="remote_remove">Remover conexão</string>
+    <string name="remote_storage_failed">Não foi possível salvar ou restaurar as conexões com segurança. Toque para tentar novamente</string>
 </resources>

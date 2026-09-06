@@ -12,7 +12,7 @@ retains execution ownership. Agora must not resume the session in a new process.
 The owner explicitly requires independent Remote transport and state. Room,
 LlmProvider, ordinary conversation draft/submission and GenerationManager remain the
 ordinary-chat owners. Remote does not write to them. Codex remains durable truth;
-Remote caches only selected-session presentation and connection state in memory.
+Remote caches selected-session presentation in memory and owns its separate saved connections.
 
 ## Shared presentation
 
@@ -35,7 +35,16 @@ text to Codex's native queue and refreshes persisted output. It never retries a 
 automatically. An unknown submission result remains visible for manual reconciliation;
 it must not be presented as a definite failure and blindly resent.
 
-The initial connection and drafts live in the Remote owner for the current app process.
+Connections are saved after successful authentication in a Remote-only atomic file under
+the app's no-backup directory. Device names and canonical service addresses accompany
+Keystore-encrypted tokens. Encryption must succeed before writing; plaintext fallback
+is rejected. Corrupt or undecryptable storage is preserved and reported, not overwritten.
+Remote owner recreation restores the device list without selecting a device, reading
+conversation history or submitting messages. Selecting a device admits its session read.
+Removing a connection updates storage before removing its runtime client and local state;
+failure retains the entry. Concurrent connection changes are serialized. Network errors
+never remove saved devices. Storage failures remain visible and can be retried.
+Drafts, selected sessions and submission attempts remain in memory and are never replayed.
 Tokens never enter ordinary settings, logs, saved instance state or conversation storage.
 Backgrounding or dismissing Remote stops its read polling. In-flight native submissions
 remain bound to their original session; reopening the UI never resubmits them.

@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
@@ -21,6 +22,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.newoether.agora.remote.RemoteConnectionStore
+import java.io.File
 import com.newoether.agora.R
 import com.newoether.agora.SettingsOverlayHost
 import com.newoether.agora.data.repository.SettingsRepository
@@ -37,7 +40,10 @@ internal fun RemoteOverlay(
     onDismiss: () -> Unit,
     onExitFinished: () -> Unit,
 ) {
-    val remote: RemoteViewModel = viewModel()
+    val context = LocalContext.current.applicationContext
+    val remote: RemoteViewModel = viewModel {
+        RemoteViewModel(RemoteConnectionStore(File(context.noBackupFilesDir, "remote-connections.json")))
+    }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(remote, visible, lifecycle) {
         fun update() = remote.setVisible(visible && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
@@ -114,14 +120,26 @@ private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () ->
     var address by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
     CollapsingSettingsScaffold(title = stringResource(R.string.remote_title), onBack = onBack) {
+        if (state.restoring) Text(stringResource(R.string.loading_label), Modifier.padding(16.dp))
+        if (state.storageError) TextButton(onClick = vm::restoreConnections,
+            enabled = !state.restoring && !state.connecting) {
+            Text(stringResource(R.string.remote_storage_failed))
+        }
         if (state.devices.isNotEmpty()) SettingsGroup(
             title = stringResource(R.string.remote_devices),
             items = state.devices.map { device -> {
                 SettingsItem(
-                    modifier = Modifier.clickable { onForward(); vm.selectDevice(device.id) },
+                    modifier = Modifier.clickable(enabled = !state.restoring && !state.connecting) {
+                        onForward(); vm.selectDevice(device.id)
+                    },
                     headlineContent = { Text(device.name) },
                     supportingContent = { Text(device.address) },
                     leadingContent = { Icon(Icons.Default.Computer, null) },
+                    trailingContent = { IconButton(onClick = { vm.removeDevice(device.id) },
+                        enabled = !state.restoring && !state.connecting) {
+                        Icon(Icons.Default.LinkOff, stringResource(R.string.remote_remove),
+                            tint = MaterialTheme.colorScheme.error)
+                    } },
                 )
             } },
         )
@@ -141,7 +159,7 @@ private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () ->
                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = { onForward(); vm.connect(address, token) },
-                    enabled = !state.connecting && address.isNotBlank() && token.isNotBlank(),
+                    enabled = !state.restoring && !state.connecting && address.isNotBlank() && token.isNotBlank(),
                     modifier = Modifier.fillMaxWidth().height(52.dp)) {
                     Text(stringResource(if (state.connecting) R.string.loading_label else R.string.remote_connect))
                 }

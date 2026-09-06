@@ -21,12 +21,14 @@ internal data class RemoteState(
     val historyCursor: String? = null, val queued: List<RemoteQueuedMessage> = emptyList(),
     val drafts: Map<String, String> = emptyMap(), val attempts: Map<String, RemoteAttempt> = emptyMap(),
     val connecting: Boolean = false, val loading: Boolean = false, val error: Boolean = false,
+    val restoring: Boolean = true, val storageError: Boolean = false,
 ) {
     val owner: String? get() = session?.let { "$deviceId/${it.id}" }
 }
 
 /** Remote owns transport and in-memory state; native Codex owns durable execution. */
 internal class RemoteViewModel(
+    private val connections: RemoteConnectionStore,
     private val createClient: (String, String) -> FiloClient = { address, token -> FiloClient(address, token) },
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(RemoteState())
@@ -38,14 +40,36 @@ internal class RemoteViewModel(
     private var paging: Job? = null
     private var connecting: Job? = null
 
+    init { restoreConnections() }
+
+    fun restoreConnections() {
+        if (connecting?.isActive == true) return
+        mutableState.value = state.value.copy(restoring = true, storageError = false)
+        connecting = viewModelScope.launch {
+            try {
+                val restored = connections.load().map { connection ->
+                    createClient(connection.address, connection.token) to connection.name
+                }
+                clients.clear()
+                restored.forEach { (client, _) -> clients[client.address] = client }
+                mutableState.value = state.value.copy(devices = restored.map { (client, name) ->
+                    RemoteDevice(client.address, name, client.address)
+                })
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { mutableState.value = state.value.copy(storageError = true) }
+            finally { mutableState.value = state.value.copy(restoring = false) }
+        }
+    }
+
     fun connect(address: String, token: String) {
-        if (state.value.connecting) return
-        mutableState.value = state.value.copy(connecting = true, error = false)
+        if (state.value.connecting || state.value.restoring) return
+        mutableState.value = state.value.copy(connecting = true, error = false, storageError = false)
         connecting = viewModelScope.launch {
             try {
                 val client = createClient(address, token.trim())
                 val name = client.connect()
                 val id = client.address
+                connections.save(RemoteConnection(name, id, token.trim()))
                 clients[id] = client
                 val device = RemoteDevice(id, name, client.address)
                 mutableState.value = state.value.copy(
@@ -54,7 +78,29 @@ internal class RemoteViewModel(
                 )
                 selectDevice(id)
             } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: RemoteStorageException) {
+                mutableState.value = state.value.copy(connecting = false, storageError = true)
+            }
             catch (_: Exception) { mutableState.value = state.value.copy(connecting = false, error = true) }
+        }
+    }
+
+    fun removeDevice(id: String) {
+        if (state.value.connecting || state.value.restoring || id !in clients) return
+        mutableState.value = state.value.copy(connecting = true, storageError = false)
+        connecting = viewModelScope.launch {
+            try {
+                connections.remove(id)
+                if (state.value.deviceId == id) selectDevice(null)
+                clients.remove(id)
+                mutableState.value = state.value.copy(
+                    devices = state.value.devices.filterNot { it.id == id },
+                    drafts = state.value.drafts.filterKeys { !it.startsWith("$id/") },
+                    attempts = state.value.attempts.filterKeys { !it.startsWith("$id/") },
+                )
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { mutableState.value = state.value.copy(storageError = true) }
+            finally { mutableState.value = state.value.copy(connecting = false) }
         }
     }
 

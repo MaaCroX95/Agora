@@ -25,9 +25,11 @@ import java.io.IOException
 class RemoteViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private val client = mockk<FiloClient>()
+    private val connections = mockk<RemoteConnectionStore>(relaxed = true)
     private val session = RemoteSession("session", "Existing", "/workspace", 1)
     @Before fun setup() {
         Dispatchers.setMain(dispatcher)
+        coEvery { connections.load() } returns emptyList()
         every { client.address } returns "http://computer/"
         coEvery { client.connect() } returns "Computer"
         coEvery { client.sessions(any()) } returns RemoteSessionPage(listOf(session), null)
@@ -38,7 +40,7 @@ class RemoteViewModelTest {
     @Test fun staleReadCannotReplaceNewSession() = runTest(dispatcher) {
         val gate = CompletableDeferred<RemoteConversationPage>()
         coEvery { client.conversation("session", null) } coAnswers { withContext(NonCancellable) { gate.await() } }
-        val vm = RemoteViewModel { _, _ -> client }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         vm.connect("http://computer/", "token"); runCurrent()
         vm.setVisible(true); runCurrent()
         vm.selectSession(session); runCurrent()
@@ -53,7 +55,7 @@ class RemoteViewModelTest {
     @Test fun sendAcceptanceIsBoundToOriginAndDoesNotClearEditedDraft() = runTest(dispatcher) {
         val gate = CompletableDeferred<String>()
         coEvery { client.send(any(), any(), any()) } coAnswers { gate.await() }
-        val vm = RemoteViewModel { _, _ -> client }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         vm.connect("http://computer/", "token"); runCurrent()
         vm.selectSession(session)
         val owner = vm.state.value.owner!!
@@ -75,7 +77,7 @@ class RemoteViewModelTest {
 
     @Test fun uncertainSendKeepsDraftAndCannotAutomaticallyRetry() = runTest(dispatcher) {
         coEvery { client.send(any(), any(), any()) } throws IOException("Lost response")
-        val vm = RemoteViewModel { _, _ -> client }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         vm.connect("http://computer/", "token"); runCurrent()
         vm.selectSession(session)
         val owner = vm.state.value.owner!!
@@ -90,12 +92,59 @@ class RemoteViewModelTest {
 
     @Test fun malformedAcceptedResponseIsUnknownRatherThanRejected() = runTest(dispatcher) {
         coEvery { client.send(any(), any(), any()) } throws SerializationException("Invalid response")
-        val vm = RemoteViewModel { _, _ -> client }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         vm.connect("http://computer/", "token"); runCurrent()
         vm.selectSession(session)
         val owner = vm.state.value.owner!!
         vm.editDraft(owner, "hello"); vm.send(); runCurrent()
         assertEquals(RemoteDelivery.UNKNOWN, vm.state.value.attempts[owner]?.delivery)
         assertEquals("hello", vm.state.value.drafts[owner])
+    }
+
+    @Test fun restoredDevicesSurviveReadFailureWithoutSendingOrOpeningHistory() = runTest(dispatcher) {
+        coEvery { connections.load() } returns listOf(RemoteConnection("Computer", "http://computer/", "token"))
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        assertEquals(1, vm.state.value.devices.size)
+        assertNull(vm.state.value.deviceId)
+        assertFalse(vm.state.value.restoring)
+        coVerify(exactly = 0) { client.connect() }
+        coVerify(exactly = 0) { client.sessions(any()) }
+        coVerify(exactly = 0) { client.conversation(any(), any()) }
+        coVerify(exactly = 0) { client.send(any(), any(), any()) }
+        coEvery { client.sessions(any()) } throws IOException("Offline")
+        vm.setVisible(true); vm.selectDevice("http://computer/"); runCurrent()
+        assertTrue(vm.state.value.error)
+        assertEquals(1, vm.state.value.devices.size)
+        coVerify(exactly = 0) { connections.remove(any()) }
+        vm.setVisible(false)
+    }
+
+    @Test fun failingPersistenceDoesNotPublishAnUnsavedConnection() = runTest(dispatcher) {
+        coEvery { connections.save(any()) } throws RemoteStorageException()
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.connect("http://computer/", "token"); runCurrent()
+        assertTrue(vm.state.value.storageError)
+        assertFalse(vm.state.value.connecting)
+        assertTrue(vm.state.value.devices.isEmpty())
+    }
+
+    @Test fun removalPublishesOnlyAfterCommitAndFencesPendingSends() = runTest(dispatcher) {
+        val removeGate = CompletableDeferred<Unit>()
+        val sendGate = CompletableDeferred<String>()
+        coEvery { connections.remove(any()) } coAnswers { removeGate.await() }
+        coEvery { client.send(any(), any(), any()) } coAnswers { sendGate.await() }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.connect("http://computer/", "token"); runCurrent()
+        vm.selectSession(session)
+        vm.editDraft(vm.state.value.owner!!, "Once"); vm.send(); runCurrent()
+        vm.removeDevice("http://computer/"); runCurrent()
+        assertEquals(1, vm.state.value.devices.size)
+        removeGate.complete(Unit); runCurrent()
+        sendGate.complete("queue"); runCurrent()
+        assertTrue(vm.state.value.devices.isEmpty())
+        assertTrue(vm.state.value.attempts.isEmpty())
+        assertTrue(vm.state.value.drafts.isEmpty())
+        assertNull(vm.state.value.deviceId)
+        coVerify(exactly = 1) { client.send(any(), any(), any()) }
     }
 }

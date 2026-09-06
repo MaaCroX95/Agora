@@ -5,7 +5,7 @@
     <string name="remote_connect">连接</string>
     <string name="remote_address">服务地址</string>
     <string name="remote_token">访问令牌</string>
-    <string name="remote_connection_hint">在电脑上启动 Filo，填写其局域网或 Tailscale 地址和令牌。连接保留至 Agora 关闭。</string>
+    <string name="remote_connection_hint">启动 Filo 后，输入其局域网或 Tailscale 地址和令牌。连接信息会保存在此设备上。</string>
     <string name="remote_sessions">会话</string>
     <string name="remote_empty">未找到已有会话</string>
     <string name="remote_sync_hint">请在 Codex 中保持此会话打开。回复保存后会同步显示。</string>
@@ -16,4 +16,6 @@
     <string name="remote_rejected">消息未被接收，请检查连接后重试</string>
     <string name="remote_check">我已检查</string>
     <string name="remote_confirm">继续发送？</string>
+    <string name="remote_remove">移除连接</string>
+    <string name="remote_storage_failed">无法安全保存或恢复连接，点按重试</string>
 </resources>

@@ -5,7 +5,7 @@
     <string name="remote_connect">Подключить</string>
     <string name="remote_address">URL сервиса</string>
     <string name="remote_token">Токен доступа</string>
-    <string name="remote_connection_hint">Запустите Filo на компьютере и введите его URL в локальной сети или Tailscale и токен. Подключения сохраняются до закрытия Agora.</string>
+    <string name="remote_connection_hint">Запустите Filo и введите URL локальной сети или Tailscale и токен. Подключения сохраняются на этом устройстве.</string>
     <string name="remote_sessions">Сеансы</string>
     <string name="remote_empty">Существующие сеансы не найдены</string>
     <string name="remote_sync_hint">Оставьте этот сеанс открытым в Codex. Ответы синхронизируются после сохранения.</string>
@@ -16,4 +16,6 @@
     <string name="remote_rejected">Сообщение не принято. Проверьте подключение и повторите попытку</string>
     <string name="remote_check">Я проверил</string>
     <string name="remote_confirm">Продолжить отправку?</string>
+    <string name="remote_remove">Удалить подключение</string>
+    <string name="remote_storage_failed">Не удалось безопасно сохранить или восстановить подключения. Нажмите, чтобы повторить</string>
 </resources>
