@@ -17,7 +17,9 @@ Remote caches only selected-session presentation and connection state in memory.
 ## Shared presentation
 
 Use MessageList and its existing message/Markdown renderers, ChatComposerLayout,
-ComposerSendButton, and ChatScrollCoordinator directly. No copied Remote message list,
+ChatComposerSurface, ComposerSendButton, and ChatScrollCoordinator directly. Queue rows,
+top-bar action capsules and the bottom-scroll button also share their original owners.
+No copied Remote message list,
 bubbles, Markdown, TextField, scrollbar or scroll animation implementation is allowed.
 Ordinary bindings retain their original behavior. Shared scroll effects accept explicit
 completion callbacks; native Remote messages supply the shared hydration callback.
@@ -35,6 +37,8 @@ it must not be presented as a definite failure and blindly resent.
 
 The initial connection and drafts live in the Remote owner for the current app process.
 Tokens never enter ordinary settings, logs, saved instance state or conversation storage.
+Backgrounding or dismissing Remote stops its read polling. In-flight native submissions
+remain bound to their original session; reopening the UI never resubmits them.
 Changing devices or sessions cancels old reads and rejects stale results by connection
 and session identity. A send remains bound to its originating session. Draft clearing
 requires successful queue acceptance and the unchanged submitted text.

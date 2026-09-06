@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="remote_title">Remote</string>
+    <string name="remote_devices">Dispositivos</string>
+    <string name="remote_connect">Conectar</string>
+    <string name="remote_address">URL do serviço</string>
+    <string name="remote_token">Token de acesso</string>
+    <string name="remote_connection_hint">Inicie o Filo no computador e insira a URL da LAN ou do Tailscale e o token. As conexões duram até o Agora ser fechado.</string>
+    <string name="remote_sessions">Sessões</string>
+    <string name="remote_empty">Nenhuma sessão existente encontrada</string>
+    <string name="remote_sync_hint">Mantenha esta sessão aberta no Codex. As respostas são sincronizadas após serem salvas.</string>
+    <string name="remote_refresh">Atualizar</string>
+    <string name="remote_load_more">Carregar Mais</string>
+    <string name="remote_failed">Falha na conexão. Verifique o Filo, a URL e o token e tente novamente</string>
+    <string name="remote_unknown">Não foi possível confirmar a entrega. Verifique esta sessão no Codex antes de enviar novamente.</string>
+    <string name="remote_rejected">Mensagem não aceita. Verifique a conexão e tente novamente</string>
+    <string name="remote_check">Já Verifiquei</string>
+    <string name="remote_confirm">Continuar Enviando?</string>
+</resources>

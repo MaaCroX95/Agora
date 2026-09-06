@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="remote_title">Remote</string>
+    <string name="remote_devices">기기</string>
+    <string name="remote_connect">연결</string>
+    <string name="remote_address">서비스 URL</string>
+    <string name="remote_token">액세스 토큰</string>
+    <string name="remote_connection_hint">컴퓨터에서 Filo를 시작하고 LAN 또는 Tailscale URL과 토큰을 입력하세요. 연결은 Agora를 닫을 때까지 유지됩니다.</string>
+    <string name="remote_sessions">세션</string>
+    <string name="remote_empty">기존 세션을 찾을 수 없음</string>
+    <string name="remote_sync_hint">Codex에서 이 세션을 열어 두세요. 답변이 저장되면 동기화됩니다.</string>
+    <string name="remote_refresh">새로고침</string>
+    <string name="remote_load_more">더 불러오기</string>
+    <string name="remote_failed">연결 실패. Filo, URL, 토큰을 확인한 후 다시 시도하세요</string>
+    <string name="remote_unknown">전달 여부를 확인할 수 없습니다. 다시 보내기 전에 Codex에서 이 세션을 확인하세요.</string>
+    <string name="remote_rejected">메시지가 수락되지 않았습니다. 연결을 확인하고 다시 시도하세요</string>
+    <string name="remote_check">확인했어요</string>
+    <string name="remote_confirm">계속 보낼까요?</string>
+</resources>

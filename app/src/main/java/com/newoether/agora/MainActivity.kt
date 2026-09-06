@@ -68,6 +68,7 @@ import com.newoether.agora.ui.settings.SettingsScreen
 import com.newoether.agora.ui.tasks.TaskEditorSessionViewModel
 import com.newoether.agora.ui.tasks.TaskHistoryPreviewPhase
 import com.newoether.agora.ui.theme.AgoraTheme
+import com.newoether.agora.util.snackbarTimeoutMillis
 import com.newoether.agora.util.CrashReporter
 import com.newoether.agora.viewmodel.ChatViewModel
 import kotlinx.coroutines.*
@@ -316,9 +317,11 @@ fun MainNavigation(
     }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showTasks by rememberSaveable { mutableStateOf(false) }
+    var showRemote by rememberSaveable { mutableStateOf(false) }
     val topLevelPresentation = remember {
         TopLevelPresentationState(
             initialOwner = when {
+                showRemote -> TopLevelPresentation.REMOTE
                 showTasks -> TopLevelPresentation.TASKS
                 showSettings -> TopLevelPresentation.SETTINGS
                 else -> TopLevelPresentation.CHAT
@@ -351,6 +354,7 @@ fun MainNavigation(
             }
             if (exists) {
                 showSettings = false
+                showRemote = false
                 showTasks = false
                 taskToOpen = null
                 taskEditorSession.clear()
@@ -759,6 +763,10 @@ fun MainNavigation(
                     topLevelPresentation.present(TopLevelPresentation.SETTINGS)
                     showSettings = true
                 },
+                onOpenRemote = {
+                    topLevelPresentation.present(TopLevelPresentation.REMOTE)
+                    showRemote = true
+                },
                 onOpenTasks = { taskId ->
                     taskToOpen = taskId
                     topLevelPresentation.present(TopLevelPresentation.TASKS)
@@ -794,6 +802,12 @@ fun MainNavigation(
                 fullScreenViewerUrls = mediaPreviewTarget?.urls,
                 topLevelPresentation = topLevelPresentation.owner,
                 onSnackbarOffsetChanged = { chatSnackbarOffset = it }
+            )
+
+            com.newoether.agora.ui.remote.RemoteOverlay(
+                visible = showRemote, settings = viewModel.settings,
+                onDismiss = { showRemote = false },
+                onExitFinished = { topLevelPresentation.release(TopLevelPresentation.REMOTE) },
             )
 
             SettingsOverlayHost(
@@ -977,21 +991,3 @@ internal fun consumeNotificationTarget(
     target: kotlinx.coroutines.flow.MutableStateFlow<String?>,
     expectedId: String,
 ): Boolean = target.compareAndSet(expectedId, null)
-
-private fun snackbarTimeoutMillis(
-    visuals: SnackbarVisuals,
-    accessibilityManager: AccessibilityManager?
-): Long {
-    val durationMillis = when (visuals.duration) {
-        SnackbarDuration.Short -> 4000L
-        SnackbarDuration.Long -> 10000L
-        SnackbarDuration.Indefinite -> Long.MAX_VALUE
-    }
-    if (durationMillis == Long.MAX_VALUE) return durationMillis
-    return accessibilityManager?.calculateRecommendedTimeoutMillis(
-        originalTimeoutMillis = durationMillis,
-        containsIcons = true,
-        containsText = true,
-        containsControls = visuals.actionLabel != null
-    ) ?: durationMillis
-}

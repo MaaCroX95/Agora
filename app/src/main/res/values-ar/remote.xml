@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="remote_title">Remote</string>
+    <string name="remote_devices">الأجهزة</string>
+    <string name="remote_connect">اتصال</string>
+    <string name="remote_address">عنوان الخدمة</string>
+    <string name="remote_token">رمز الوصول</string>
+    <string name="remote_connection_hint">شغّل Filo على الكمبيوتر ثم أدخل عنوان الشبكة المحلية أو Tailscale ورمز الوصول. تُحفظ الاتصالات حتى إغلاق Agora.</string>
+    <string name="remote_sessions">الجلسات</string>
+    <string name="remote_empty">لم يتم العثور على جلسات موجودة</string>
+    <string name="remote_sync_hint">أبقِ هذه الجلسة مفتوحة في Codex. تتم مزامنة الردود بعد حفظها.</string>
+    <string name="remote_refresh">تحديث</string>
+    <string name="remote_load_more">تحميل المزيد</string>
+    <string name="remote_failed">فشل الاتصال. تحقق من Filo والعنوان والرمز ثم أعد المحاولة</string>
+    <string name="remote_unknown">تعذر تأكيد التسليم. تحقق من هذه الجلسة في Codex قبل الإرسال مجددًا.</string>
+    <string name="remote_rejected">لم تُقبل الرسالة. تحقق من الاتصال وأعد المحاولة</string>
+    <string name="remote_check">لقد تحققت</string>
+    <string name="remote_confirm">متابعة الإرسال؟</string>
+</resources>

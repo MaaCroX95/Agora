@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -149,6 +150,7 @@ internal fun ChatDrawerContent(
     onSettingsButtonTop: (Float) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenTasks: () -> Unit,
+    onOpenRemote: () -> Unit,
     onRequestRename: (String, String) -> Unit,
     onRequestDelete: (String) -> Unit,
 ) {
@@ -291,6 +293,22 @@ internal fun ChatDrawerContent(
                             Icon(Icons.Default.Repeat, null, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(stringResource(R.string.tasks), style = ChatType.drawerButton)
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        FilledTonalButton(
+                            onClick = {
+                                focusManager.clearFocus()
+                                onOpenRemote()
+                                scope.launch { onRequestClose() }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(42.dp),
+                            shape = CircleShape
+                        ) {
+                            Icon(Icons.Default.Devices, null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.remote_title), style = ChatType.drawerButton)
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))

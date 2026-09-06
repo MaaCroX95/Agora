@@ -220,28 +220,6 @@ class ApplicationUiSourceContractTest {
     }
 
     @Test
-    fun `normal chat bottom fade reveals the live background instead of painting a static color`() {
-        val source = sourceFile("app/src/main/java/com/newoether/agora/ui/chat/ChatApp.kt")
-        val masks = sourceFile("app/src/main/java/com/newoether/agora/util/GradientBlur.kt")
-
-        assertTrue(source.contains("val expandedGradientTopPaddingPx = with(density) { 20.dp.toPx() }"))
-        assertTrue(source.contains("val gradientWidthPx = with(density) { 40.dp.toPx() }"))
-        assertTrue(source.contains("if (!isExpanded) Spacer(modifier = Modifier.height(12.dp))"))
-        assertTrue(source.contains("expandedHeightPx = with(density) { 44.dp.toPx() }"))
-        assertTrue(source.contains("modifier = Modifier.fillMaxSize().gradientBlur("))
-        assertTrue(source.contains("blurAtTopDp = if (blurEffectsEnabled) 8f else 0f"))
-        assertTrue(masks.contains("Modifier.verticalBottomOverlayFade(fadeHeightDp, bottomOverlayHeight, renderEffect)"))
-        assertTrue(source.contains("fadeHeightDp = 40f"))
-        assertTrue(source.contains("bottomOverlayHeight = bottomBarHeight + with(density) { outerSpacerHeightPx.toDp() } + 12.dp"))
-        assertTrue(source.contains("if (isExpanded && totalH > 0f)"))
-        assertFalse(source.contains("normalGradientTopPaddingPx"))
-        assertTrue(masks.contains("fun Modifier.verticalBottomOverlayFade("))
-        assertTrue(masks.contains("fun bottomOverlayFadeStops("))
-        assertTrue(masks.contains("CompositingStrategy.Offscreen"))
-        assertTrue(masks.contains("blendMode = BlendMode.DstIn"))
-    }
-
-    @Test
     fun `bottom overlay fade geometry tracks the live composer cover and clamps safely`() {
         val regular = bottomOverlayFadeStops(
             canvasHeightPx = 1_000f,

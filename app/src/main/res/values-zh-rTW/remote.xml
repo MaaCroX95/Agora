@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="remote_title">Remote</string>
+    <string name="remote_devices">裝置</string>
+    <string name="remote_connect">連線</string>
+    <string name="remote_address">服務位址</string>
+    <string name="remote_token">存取權杖</string>
+    <string name="remote_connection_hint">在電腦上啟動 Filo，填寫其區域網路或 Tailscale 位址與權杖。連線保留至 Agora 關閉。</string>
+    <string name="remote_sessions">對話</string>
+    <string name="remote_empty">找不到既有對話</string>
+    <string name="remote_sync_hint">請在 Codex 中保持此對話開啟。回覆儲存後會同步顯示。</string>
+    <string name="remote_refresh">重新整理</string>
+    <string name="remote_load_more">載入更多</string>
+    <string name="remote_failed">連線失敗，請檢查 Filo、位址與權杖後重試</string>
+    <string name="remote_unknown">無法確認是否送達。再次傳送前，請先在 Codex 中檢查此對話。</string>
+    <string name="remote_rejected">訊息未被接收，請檢查連線後重試</string>
+    <string name="remote_check">我已檢查</string>
+    <string name="remote_confirm">繼續傳送？</string>
+</resources>

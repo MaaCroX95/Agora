@@ -8,6 +8,30 @@ import org.junit.Test
 
 class ChatBottomBarControlOrderTest {
     @Test
+    fun `normal chat bottom fade reveals the live background instead of painting a static color`() {
+        val chatApp = mainSource("com/newoether/agora/ui/chat/ChatApp.kt")
+        val source = chatApp + mainSource("com/newoether/agora/ui/chat/bottombar/ChatComposerSurface.kt")
+        val masks = mainSource("com/newoether/agora/util/GradientBlur.kt")
+
+        assertTrue(chatApp.contains("ChatComposerSurface("))
+        assertTrue(source.contains("val expandedGradientTopPaddingPx = with(density) { 20.dp.toPx() }"))
+        assertTrue(source.contains("val gradientWidthPx = with(density) { 40.dp.toPx() }"))
+        assertTrue(source.contains("if (!isExpanded) Spacer(modifier = Modifier.height(12.dp))"))
+        assertTrue(source.contains("expandedHeightPx = with(density) { 44.dp.toPx() }"))
+        assertTrue(source.contains("modifier = Modifier.fillMaxSize().gradientBlur("))
+        assertTrue(source.contains("blurAtTopDp = if (blurEffectsEnabled) 8f else 0f"))
+        assertTrue(masks.contains("Modifier.verticalBottomOverlayFade(fadeHeightDp, bottomOverlayHeight, renderEffect)"))
+        assertTrue(source.contains("fadeHeightDp = 40f"))
+        assertTrue(source.contains("bottomOverlayHeight = bottomBarHeight + with(density) { outerSpacerHeightPx.toDp() } + 12.dp"))
+        assertTrue(source.contains("if (isExpanded && totalH > 0f)"))
+        assertFalse(source.contains("normalGradientTopPaddingPx"))
+        assertTrue(masks.contains("fun Modifier.verticalBottomOverlayFade("))
+        assertTrue(masks.contains("fun bottomOverlayFadeStops("))
+        assertTrue(masks.contains("CompositingStrategy.Offscreen"))
+        assertTrue(masks.contains("blendMode = BlendMode.DstIn"))
+    }
+
+    @Test
     fun `OpenAI Search appears directly below Service Tier`() {
         val source = File(
             locateMainSourceRoot(),

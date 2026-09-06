@@ -209,7 +209,7 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(submission.contains("if (request.accepted is SendAcceptance.Direct) 1L else 0L"))
         assertTrue(composer.contains("submissionController.observeState(composerOwnerId)"))
         assertTrue(composer.contains("submissionController.releaseState(composerOwnerId)"))
-        val textFieldBlock = composer.substringAfter("TextField(")
+        val textFieldBlock = source(root, "com/newoether/agora/ui/chat/bottombar/ChatComposerLayout.kt").substringAfter("TextField(")
             .substringBefore("placeholder =")
         assertFalse(textFieldBlock.contains("enabled ="))
         assertTrue(submission.contains("composers.freezeSubmission("))

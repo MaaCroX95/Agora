@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="remote_title">Remote</string>
+    <string name="remote_devices">Thiết bị</string>
+    <string name="remote_connect">Kết nối</string>
+    <string name="remote_address">URL dịch vụ</string>
+    <string name="remote_token">Mã truy cập</string>
+    <string name="remote_connection_hint">Khởi động Filo trên máy tính rồi nhập URL LAN hoặc Tailscale và mã truy cập. Kết nối được giữ cho đến khi đóng Agora.</string>
+    <string name="remote_sessions">Phiên</string>
+    <string name="remote_empty">Không tìm thấy phiên có sẵn</string>
+    <string name="remote_sync_hint">Giữ phiên này mở trong Codex. Câu trả lời sẽ đồng bộ sau khi được lưu.</string>
+    <string name="remote_refresh">Làm mới</string>
+    <string name="remote_load_more">Tải thêm</string>
+    <string name="remote_failed">Kết nối thất bại. Kiểm tra Filo, URL và mã truy cập rồi thử lại</string>
+    <string name="remote_unknown">Không thể xác nhận đã gửi. Hãy kiểm tra phiên này trong Codex trước khi gửi lại.</string>
+    <string name="remote_rejected">Tin nhắn không được chấp nhận. Kiểm tra kết nối rồi thử lại</string>
+    <string name="remote_check">Tôi đã kiểm tra</string>
+    <string name="remote_confirm">Tiếp tục gửi?</string>
+</resources>
