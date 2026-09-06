@@ -3,6 +3,8 @@ package com.newoether.agora.remote
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.Participant
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -45,6 +47,7 @@ private data class SendInput(val text: String, val clientId: String)
 private data class SendResult(val queueId: String)
 
 internal class FiloHttpException(val status: Int) : IOException("Filo HTTP $status")
+internal class FiloInputException : IllegalArgumentException("Invalid Filo message")
 
 /** A dedicated transport: credentials, redirects and retries never enter the provider client. */
 internal class FiloClient(
@@ -70,15 +73,20 @@ internal class FiloClient(
         return info.device
     }
 
-    suspend fun sessions(cursor: String? = null): RemoteSessionPage =
+    suspend fun sessions(cursor: String? = null): RemoteSessionPage = withContext(Dispatchers.Default) {
         json.decodeFromString(request("v1/sessions", cursor))
+    }
 
-    suspend fun conversation(id: String, cursor: String? = null): RemoteConversationPage =
-        json.decodeFromString(request("v1/sessions/${sessionId(id)}", cursor))
+    suspend fun conversation(id: String, cursor: String? = null): RemoteConversationPage = withContext(Dispatchers.Default) {
+        json.decodeFromString<RemoteConversationPage>(request("v1/sessions/${sessionId(id)}", cursor)).also { page ->
+            require(page.messages.all { it.role == "user" || it.role == "assistant" })
+            require(page.messages.map { it.id }.toSet().size == page.messages.size)
+        }
+    }
 
     suspend fun send(id: String, text: String, clientId: String): String {
         val body = json.encodeToString(SendInput(text, clientId))
-        require(text.isNotBlank() && body.toByteArray(Charsets.UTF_8).size <= 65536)
+        if (text.isBlank() || body.toByteArray(Charsets.UTF_8).size > 65536) throw FiloInputException()
         return json.decodeFromString<SendResult>(
             request("v1/sessions/${sessionId(id)}/messages", body = body),
         ).queueId

@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -85,5 +86,16 @@ class RemoteViewModelTest {
         coVerify(exactly = 1) { client.send(any(), any(), any()) }
         vm.acknowledgeUnknown(owner)
         assertNull(vm.state.value.attempts[owner])
+    }
+
+    @Test fun malformedAcceptedResponseIsUnknownRatherThanRejected() = runTest(dispatcher) {
+        coEvery { client.send(any(), any(), any()) } throws SerializationException("Invalid response")
+        val vm = RemoteViewModel { _, _ -> client }
+        vm.connect("http://computer/", "token"); runCurrent()
+        vm.selectSession(session)
+        val owner = vm.state.value.owner!!
+        vm.editDraft(owner, "hello"); vm.send(); runCurrent()
+        assertEquals(RemoteDelivery.UNKNOWN, vm.state.value.attempts[owner]?.delivery)
+        assertEquals("hello", vm.state.value.drafts[owner])
     }
 }

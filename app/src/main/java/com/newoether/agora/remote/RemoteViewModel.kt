@@ -124,7 +124,7 @@ internal class RemoteViewModel(
                             historyCursor = if (old.isEmpty()) page.nextCursor else state.value.historyCursor,
                             loading = false, error = false,
                         )
-                        if (accepted) accept(owner, attempt!!)
+                        if (accepted) accept(owner, attempt)
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) {
@@ -151,7 +151,8 @@ internal class RemoteViewModel(
                 } else {
                     val page = client.conversation(snapshot.session.id, cursor)
                     if (generation == epoch) mutableState.value = state.value.copy(
-                        messages = (page.messages + state.value.messages).distinctBy { it.id }, historyCursor = page.nextCursor)
+                        messages = page.messages.filterNot { item -> state.value.messages.any { it.id == item.id } } +
+                            state.value.messages, historyCursor = page.nextCursor)
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { if (generation == epoch) mutableState.value = state.value.copy(error = true) }
@@ -185,7 +186,7 @@ internal class RemoteViewModel(
             catch (error: Exception) {
                 if (state.value.attempts[owner]?.clientId == attempt.clientId &&
                     state.value.attempts[owner]?.delivery == RemoteDelivery.SUBMITTING) {
-                    val rejected = error is IllegalArgumentException ||
+                    val rejected = error is FiloInputException ||
                         error is FiloHttpException && error.status in setOf(400, 401, 403, 404, 413, 415, 429)
                     mutableState.value = state.value.copy(attempts = state.value.attempts +
                         (owner to attempt.copy(delivery = if (rejected) RemoteDelivery.REJECTED else RemoteDelivery.UNKNOWN)))
