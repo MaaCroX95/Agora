@@ -322,7 +322,9 @@ fun ChatApp(
         motionPolicy = motionPolicy,
         bottomBarHeight = bottomBarHeight,
         shareSelectionBarSpace = shareSelectionBarSpace,
-        viewModel = viewModel,
+        onRegenerationScrollFinished = viewModel::acknowledgeRegenerationScroll,
+        onRegenerationTransitionFinished = viewModel::completeRegenerationTransition,
+        onAnimatedScrollFinished = viewModel::completeAnimatedScroll,
     )
 
     ChatNavigationEffects(
@@ -817,73 +819,19 @@ fun ChatApp(
                 }
             }
 
-            val expandedGradientTopPaddingPx = with(density) { 20.dp.toPx() }
-            val gradientWidthPx = with(density) { 40.dp.toPx() }
-            val bgColor = MaterialTheme.colorScheme.background
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .then(if (isExpanded) Modifier.fillMaxHeight().statusBarsPadding() else Modifier)
-                    .drawBehind {
-                        val totalH = size.height
-                        if (isExpanded && totalH > 0f) {
-                            val h = expandedGradientTopPaddingPx.coerceAtMost(totalH * 0.12f)
-                            val w = gradientWidthPx.coerceAtMost(totalH * 0.24f)
-                            val transparentEnd = h / totalH
-                            val fadeEnd = (h + w) / totalH
-                            drawRect(
-                                brush = Brush.verticalGradient(
-                                    colorStops = arrayOf(
-                                        0.0f to bgColor.copy(alpha = 0f),
-                                        transparentEnd to bgColor.copy(alpha = 0f),
-                                        fadeEnd to bgColor,
-                                    ),
-                                    startY = 0f,
-                                    endY = totalH
-                                )
-                            )
-                        }
-                    },
-                color = Color.Transparent
+            com.newoether.agora.ui.chat.bottombar.ChatComposerSurface(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                isExpanded = isExpanded,
+                outerSpacerHeightPx = outerSpacerHeightPx,
+                onBarHeightChanged = { bottomBarHeightPx = it },
+                backdrop = {
+                    LoopStatusBackdrop(
+                        loop = currentLoop,
+                        isRunning = currentConversationId in runningLoopIds,
+                        onStop = { viewModel.stopCurrentLoop() },
+                    )
+                },
             ) {
-                Column {
-                    if (!isExpanded) Spacer(modifier = Modifier.height(12.dp))
-                    if (outerSpacerHeightPx > 0f) {
-                        Spacer(modifier = Modifier.height(with(density) { outerSpacerHeightPx.toDp() }))
-                    }
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .then(if (isExpanded) Modifier.fillMaxHeight() else Modifier)
-                            .onSizeChanged {
-                                if (!isExpanded) bottomBarHeightPx = it.height.toFloat()
-                            }
-                            .navigationBarsPadding()
-                            .imePadding()
-                            .padding(8.dp),
-                    ) {
-                        // This is a sibling behind the complete outer bar, not a child of the
-                        // composer. Its lower overflow is therefore occluded by the 28dp Surface
-                        // and shadow below.
-                        LoopStatusBackdrop(
-                            loop = currentLoop,
-                            isRunning = currentConversationId in runningLoopIds,
-                            onStop = { viewModel.stopCurrentLoop() },
-                        )
-
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .then(if (isExpanded) Modifier.weight(1f) else Modifier),
-                            color = MaterialTheme.colorScheme.surface,
-                            tonalElevation = 2.dp,
-                            shadowElevation = 8.dp,
-                            shape = CHAT_BOTTOM_BAR_OUTER_SHAPE,
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.BottomCenter,
-                            ) {
                                 ChatBottomBar(
                         submissionController = viewModel.conversationComposerSubmission,
                         composerOwnerId = composerOwnerId,
@@ -972,10 +920,6 @@ fun ChatApp(
                         onRemoveQueuedSend = viewModel::removeQueuedSend,
                         isStopping = isStopping,
                     )
-                            }
-                        }
-                    }
-                }
             }
             }
         }

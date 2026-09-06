@@ -84,6 +84,7 @@ internal fun MessageList(
     contentPadding: PaddingValues = PaddingValues(8.dp),
     state: LazyListState = rememberLazyListState(),
     userScrollEnabled: Boolean = true,
+    messageActionsEnabled: Boolean = true,
     isLoading: Boolean = false,
     isCompacting: Boolean = false, compactPreview: StateFlow<String>? = null,
     isStopping: Boolean = false,
@@ -798,7 +799,7 @@ internal fun MessageList(
                 isCompacting = isCompacting,
             ),
             isRegenerationExiting = message.id in branchReplacementExitIds,
-            isEditingAllowed = !isRetainedBranchReplacementExit &&
+            isEditingAllowed = messageActionsEnabled && !isRetainedBranchReplacementExit &&
                 !selectionMode &&
                 (editingMessageId == null || editingMessageId == message.id) &&
                 !isLoading,
@@ -820,7 +821,7 @@ internal fun MessageList(
                 if (!isRetainedBranchReplacementExit) editingMessageId = message.id
             },
             onCancelEdit = { editingMessageId = null },
-            showActions = !selectionMode && presentation?.showActions == true,
+            showActions = messageActionsEnabled && !selectionMode && presentation?.showActions == true,
             actionCopyText = presentation
                 ?.takeIf { it.showActions }
                 ?.let {
@@ -831,7 +832,7 @@ internal fun MessageList(
                     }
                     copyText.takeIf(String::isNotBlank)
                 },
-            showBranchSelector = !selectionMode && presentation?.showBranchSelector == true,
+            showBranchSelector = messageActionsEnabled && !selectionMode && presentation?.showBranchSelector == true,
             branchIndex = presentation?.branchIndex ?: 0,
             totalBranches = presentation?.totalBranches ?: 1,
             onSwitchBranch = { direction ->

@@ -172,24 +172,14 @@ internal class ChatScrollCoordinator internal constructor(
     }
 
     @Composable
-    internal fun BindTransitionEffects(
+    internal fun BindImeEffects(
         currentConversationId: String?,
-        currentConversation: ChatConversation?,
-        loadedMessagesConversationId: String?,
         messages: State<List<ChatMessage>>,
         density: Density,
-        motionPolicy: AgoraMotionPolicy,
         bottomBarHeight: Dp,
         shareSelectionBarSpace: Dp,
         imeBottomPx: Int,
-        viewModel: ChatViewModel,
-        haptics: AgoraHaptics,
     ) {
-        val latestCurrentConversationId by rememberUpdatedState(currentConversationId)
-        val latestCurrentConversation by rememberUpdatedState(currentConversation)
-        val latestLoadedMessagesConversationId by rememberUpdatedState(
-            loadedMessagesConversationId,
-        )
         val latestImeBottomAnchorState by rememberUpdatedState(imeBottomAnchorState)
         val latestImeBottomPx by rememberUpdatedState(imeBottomPx)
         LaunchedEffect(currentConversationId, imeBottomAnchorState.active) {
@@ -252,6 +242,30 @@ internal class ChatScrollCoordinator internal constructor(
                 }
             }
         }
+
+    }
+
+    @Composable
+    internal fun BindTransitionEffects(
+        currentConversationId: String?,
+        currentConversation: ChatConversation?,
+        loadedMessagesConversationId: String?,
+        messages: State<List<ChatMessage>>,
+        density: Density,
+        motionPolicy: AgoraMotionPolicy,
+        bottomBarHeight: Dp,
+        shareSelectionBarSpace: Dp,
+        imeBottomPx: Int,
+        viewModel: ChatViewModel,
+        haptics: AgoraHaptics,
+    ) {
+        val latestCurrentConversationId by rememberUpdatedState(currentConversationId)
+        val latestCurrentConversation by rememberUpdatedState(currentConversation)
+        val latestLoadedMessagesConversationId by rememberUpdatedState(
+            loadedMessagesConversationId,
+        )
+        BindImeEffects(currentConversationId, messages, density, bottomBarHeight,
+            shareSelectionBarSpace, imeBottomPx)
 
         val switchingScrollRequest by viewModel.switchingScrollRequest.collectAsState()
         val contextProjection by viewModel.conversationContextProjection.collectAsState()
@@ -366,7 +380,9 @@ internal class ChatScrollCoordinator internal constructor(
         motionPolicy: AgoraMotionPolicy,
         bottomBarHeight: Dp,
         shareSelectionBarSpace: Dp,
-        viewModel: ChatViewModel,
+        onRegenerationScrollFinished: (Long, Boolean) -> Unit = { _, _ -> },
+        onRegenerationTransitionFinished: (Long) -> Unit = {},
+        onAnimatedScrollFinished: (Long) -> Unit = {},
     ) {
         val latestGenerationCanGrow by rememberUpdatedState(isLoading && !isStopping)
         LaunchedEffect(
@@ -475,7 +491,7 @@ internal class ChatScrollCoordinator internal constructor(
             if (request.scrollFinished) return@LaunchedEffect
             val targetUserMessageId = request.targetUserMessageId ?: return@LaunchedEffect
             if (request.conversationId != currentConversationId) {
-                viewModel.acknowledgeRegenerationScroll(request.id, success = false)
+                onRegenerationScrollFinished(request.id, false)
                 return@LaunchedEffect
             }
             try {
@@ -489,9 +505,9 @@ internal class ChatScrollCoordinator internal constructor(
                     density = density,
                     motionPolicy = motionPolicy,
                 )
-                viewModel.acknowledgeRegenerationScroll(request.id, success)
+                onRegenerationScrollFinished(request.id, success)
             } catch (error: CancellationException) {
-                viewModel.acknowledgeRegenerationScroll(request.id, success = false)
+                onRegenerationScrollFinished(request.id, false)
                 throw error
             }
         }
@@ -513,13 +529,13 @@ internal class ChatScrollCoordinator internal constructor(
                 }.first { oldPathRemoved -> oldPathRemoved }
                 withFrameNanos { }
             }
-            viewModel.completeRegenerationTransition(request.id)
+            onRegenerationTransitionFinished(request.id)
         }
         LaunchedEffect(animatedScrollRequest?.id, currentConversationId) {
             val request = animatedScrollRequest ?: return@LaunchedEffect
             if (request.conversationId != currentConversationId) {
                 if (currentConversationId != null || !isNewChatMode) {
-                    viewModel.completeAnimatedScroll(request.id)
+                    onAnimatedScrollFinished(request.id)
                 }
                 return@LaunchedEffect
             }
@@ -539,7 +555,7 @@ internal class ChatScrollCoordinator internal constructor(
                             )
                         }
                     } finally {
-                        viewModel.completeAnimatedScroll(request.id)
+                        onAnimatedScrollFinished(request.id)
                     }
                 }
                 AnimatedScrollDestination.ABSOLUTE_BOTTOM -> {
@@ -551,7 +567,7 @@ internal class ChatScrollCoordinator internal constructor(
                     val targetCommitted = try {
                         awaitScrollTargetCommitted(messages, request.targetMessageId)
                     } finally {
-                        viewModel.completeAnimatedScroll(request.id)
+                        onAnimatedScrollFinished(request.id)
                     }
                     if (targetCommitted && request.conversationId == currentConversationId) {
                         val shouldScroll = shouldHonorAttachedBottomRequest(
