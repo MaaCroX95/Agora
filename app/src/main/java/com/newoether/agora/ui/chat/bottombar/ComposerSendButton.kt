@@ -77,10 +77,37 @@ internal fun ComposerSendButton(
         showStop = showStop,
         canSend = canSend,
     )
+    ComposerSendButton(
+        isActionable = isActionable,
+        isBusy = isStopping || submission.isFrozen,
+        showStop = showStop,
+        onClick = {
+            if (!isActionable) return@ComposerSendButton
+            when {
+                submission.isWaiting -> {
+                    haptics.selection()
+                    submissionController.cancelWaiting(ownerId)
+                }
+                showStop -> onStopGeneration()
+                canSend -> submissionController.submit(
+                    ownerId = ownerId,
+                    text = textFieldState.text.toString(),
+                    attachmentIds = snapshot.attachments.map(SelectedAttachment::localId),
+                )
+            }
+        },
+    )
+}
+
+@Composable
+internal fun ComposerSendButton(
+    isActionable: Boolean,
+    isBusy: Boolean,
+    showStop: Boolean = false,
+    onClick: () -> Unit,
+) {
     val icon = when {
-        isStopping || submission.isSubmitting || submission.isAcceptedPendingClear ->
-            ComposerActionIcon.BUSY
-        submission.isWaiting -> ComposerActionIcon.BUSY
+        isBusy -> ComposerActionIcon.BUSY
         showStop -> ComposerActionIcon.STOP
         else -> ComposerActionIcon.SEND
     }
@@ -104,21 +131,7 @@ internal fun ComposerSendButton(
     )
 
     Surface(
-        onClick = {
-            if (!isActionable) return@Surface
-            when {
-                submission.isWaiting -> {
-                    haptics.selection()
-                    submissionController.cancelWaiting(ownerId)
-                }
-                showStop -> onStopGeneration()
-                canSend -> submissionController.submit(
-                    ownerId = ownerId,
-                    text = textFieldState.text.toString(),
-                    attachmentIds = snapshot.attachments.map(SelectedAttachment::localId),
-                )
-            }
-        },
+        onClick = onClick,
         enabled = isActionable,
         modifier = Modifier.size(46.dp),
         shape = CircleShape,

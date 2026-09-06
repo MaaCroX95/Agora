@@ -166,7 +166,6 @@ internal fun ChatBottomBar(
     isStopping: Boolean = false,
 ) {
     val motionPolicy = LocalAgoraMotionPolicy.current
-    val allowSpatialTransitions = motionPolicy.allowSpatialTransitions
     val scrollState = rememberScrollState()
     BackHandler(enabled = isExpanded) { onCollapse() }
     val isModelValid = selectedModel.isNotBlank() && enabledModels.contains(selectedModel)
@@ -234,8 +233,6 @@ internal fun ChatBottomBar(
     }
     var showThinkingSheet by rememberSaveable { mutableStateOf(false) }
     var showOpenAiServiceTierSheet by rememberSaveable { mutableStateOf(false) }
-    val composerOcclusionColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)
-    val composerOcclusionShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     LaunchedEffect(fullScreenViewerUrls) {
         if (
             fullScreenViewerUrls == null &&
@@ -363,42 +360,25 @@ internal fun ChatBottomBar(
             cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
         }
     }
-    Box(modifier = modifier.fillMaxWidth().then(if (isExpanded) Modifier.fillMaxHeight() else Modifier).padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 12.dp)) {
-        Column(modifier = Modifier.fillMaxWidth().then(if (isExpanded) Modifier.fillMaxHeight() else Modifier)) {
-            AnimatedVisibility(
-                visible = isExpanded,
-                enter = EnterTransition.None,
-                exit = if (allowSpatialTransitions) {
-                    shrinkVertically(tween(250)) + fadeOut(tween(250))
-                } else {
-                    fadeOut(tween(250))
-                },
-            ) {
-                Spacer(modifier = Modifier.height(44.dp))
-            }
+    ChatComposerLayout(
+        textFieldState = textFieldState,
+        focusRequester = focusRequester,
+        onInputFocusChanged = onInputFocusChanged,
+        isExpanded = isExpanded,
+        isExpandAnimating = isExpandAnimating,
+        onExpand = onExpand,
+        onCollapse = onCollapse,
+        modifier = modifier,
+        inputModifier = Modifier.contentReceiver(clipboardImageReceiver),
+        scrollState = scrollState,
+        statusContent = {
             ComposerStatusColumn(
                 queuedSends = queuedSends,
                 onRemoveQueuedSend = onRemoveQueuedSend,
                 modifier = Modifier.zIndex(0f),
             )
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(if (isExpanded) Modifier.weight(1f) else Modifier)
-                    .then(
-                        if (allowSpatialTransitions) {
-                            Modifier.animateContentSize(
-                                animationSpec = tween(durationMillis = 400),
-                            )
-                        } else {
-                            Modifier
-                        },
-                    )
-                    .clip(composerOcclusionShape)
-                    .background(composerOcclusionColor)
-                    .zIndex(1f),
-            ) {
+        },
+        attachmentContent = {
         if (composerSnapshot.attachments.isNotEmpty()) {
             AttachmentPreviewRow(
                 attachments = composerSnapshot.attachments,
@@ -410,53 +390,8 @@ internal fun ChatBottomBar(
                 onPdfPagesClick = onPdfPagesClick,
             )
         }
-
-        Box(modifier = Modifier.fillMaxWidth().then(if (isExpanded) Modifier.weight(1f) else Modifier).noOpBringIntoView()) {
-            TextField(
-                state = textFieldState,
-                scrollState = scrollState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(if (isExpanded) Modifier.fillMaxHeight() else Modifier)
-                    .contentReceiver(clipboardImageReceiver)
-                    .focusRequester(focusRequester)
-                    .onFocusChanged { focusState ->
-                        onInputFocusChanged(focusState.isFocused)
-                    }
-                    .verticalScrollbar(scrollState, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
-                placeholder = {
-                    Text(
-                        stringResource(R.string.ask_agora),
-                        style = ChatType.input,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    )
-                },
-                lineLimits = TextFieldLineLimits.MultiLine(1, if (isExpanded) Int.MAX_VALUE else 6),
-                contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 16.dp),
-                colors = TextFieldDefaults.colors(
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent,
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    disabledContainerColor = Color.Transparent,
-                    cursorColor = MaterialTheme.colorScheme.primary
-                ),
-                textStyle = ChatType.input.copy(color = MaterialTheme.colorScheme.onSurface)
-            )
-            androidx.compose.animation.AnimatedVisibility(
-                visible = !isExpanded,
-                enter = fadeIn(tween(250)),
-                exit = ExitTransition.None,
-                modifier = Modifier.align(Alignment.TopEnd)
-            ) {
-                val elevatedSurface = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)
-                IconButton(onClick = { if (!isExpandAnimating) onExpand() }, modifier = Modifier.padding(end = 4.dp, top = 4.dp).size(40.dp).background(Brush.radialGradient(listOf(elevatedSurface, elevatedSurface.copy(alpha = 0.5f), Color.Transparent)), CircleShape)) { Icon(painter = androidx.compose.ui.res.painterResource(id = R.drawable.expand_all_24px), contentDescription = stringResource(R.string.expand), modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)) }
-            }
-        }
-        }
-
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp, start = 8.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        },
+    ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(48.dp).background(MaterialTheme.colorScheme.surfaceColorAtElevation(10.dp), RoundedCornerShape(100)).padding(horizontal = 8.dp, vertical = 4.dp)) {
                 AttachmentAddMenu(
                     enabled = !submission.isFrozen,
@@ -948,17 +883,6 @@ internal fun ChatBottomBar(
                 onStopGeneration = onStopGeneration,
                 onCollapse = onCollapse,
             )
-        }
-        }
-        AnimatedVisibility(
-            visible = isExpanded,
-            enter = fadeIn(tween(250)),
-            exit = fadeOut(tween(250)),
-            modifier = Modifier.align(Alignment.TopEnd).padding(end = 4.dp, top = 4.dp)
-        ) {
-            val elevatedSurface = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)
-            IconButton(onClick = { if (!isExpandAnimating) onCollapse() }, modifier = Modifier.size(40.dp).background(Brush.radialGradient(listOf(elevatedSurface, elevatedSurface.copy(alpha = 0.5f), Color.Transparent)), CircleShape)) { Icon(painter = androidx.compose.ui.res.painterResource(id = R.drawable.collapse_all_24px), contentDescription = stringResource(R.string.collapse), modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)) }
-        }
     }
 
     ChatBottomBarOverlayHost(
