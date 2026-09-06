@@ -26,5 +26,9 @@
     <string name="remote_add_device">Добавить устройство</string>
     <string name="remote_no_devices">Нет устройств</string>
     <string name="remote_no_devices_desc">Добавьте компьютер с запущенным Filo, чтобы получить доступ к его сеансам Codex.</string>
-    <string name="remote_save_failed">Не удалось сохранить подключение. Попробуйте подключиться снова</string>
+    <string name="remote_save_failed">Не удалось сохранить подключение. Попробуйте сохранить снова</string>
+    <string name="remote_connection">Подключение</string>
+    <string name="remote_edit_device">Изменить устройство</string>
+    <string name="remote_delete_title">Удалить устройство?</string>
+    <string name="remote_delete_message">Удалить сохранённое подключение к %1$s? Сеансы Codex будут сохранены.</string>
 </resources>

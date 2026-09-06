@@ -5,16 +5,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -30,6 +29,8 @@ import com.newoether.agora.SettingsOverlayHost
 import com.newoether.agora.data.repository.SettingsRepository
 import com.newoether.agora.remote.RemoteState
 import com.newoether.agora.remote.RemoteViewModel
+import com.newoether.agora.remote.RemoteDeviceStatus
+import com.newoether.agora.mcp.McpConnectionStatus
 import com.newoether.agora.ui.settings.*
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.ui.common.rememberAgoraHaptics
@@ -77,14 +78,14 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
         }
     }
     BackHandler(active, back)
-    val target = Triple(state.deviceId, state.session, state.addingDevice)
+    val target = Triple(state.deviceId, state.session, if (state.addingDevice) state.editedDeviceId.orEmpty() else null)
     GuardedAnimatedContent(targetState = target, forward = forward) { page ->
         var retained by remember(page) { mutableStateOf(state) }
         val current = page == target
         SideEffect { if (current) retained = state }
         val displayed = if (current) state else retained
         when {
-            page.third -> RemoteAddDevice(displayed, vm, back) { forward = true; focus.clearFocus() }
+            page.third != null -> RemoteAddDevice(displayed, vm, back) { forward = false; focus.clearFocus() }
             page.second != null -> RemoteConversation(displayed, vm, settings, active && current, back)
             page.first != null -> CollapsingSettingsLazyScaffold(
                 title = stringResource(R.string.remote_sessions), onBack = back,
@@ -120,10 +121,12 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
 
 @Composable
 private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () -> Unit, onForward: () -> Unit) {
+    var deleteId by remember { mutableStateOf<String?>(null) }
+    val enabled = !state.restoring && !state.saving
     CollapsingSettingsScaffold(title = stringResource(R.string.remote_title), onBack = onBack) {
         if (state.restoring) Text(stringResource(R.string.loading_label), Modifier.padding(16.dp))
         if (state.storageError) TextButton(onClick = vm::restoreConnections,
-            enabled = !state.restoring && !state.connecting) {
+            enabled = enabled) {
             Text(stringResource(R.string.remote_storage_failed))
         }
         SettingsGroup(
@@ -137,56 +140,91 @@ private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () ->
                         leadingContent = { Icon(Icons.Default.Computer, null) },
                     )
                 }
-                state.devices.forEach { device -> add {
+                state.devices.forEach { device -> add { key(device.id) {
+                    var menuOpen by remember { mutableStateOf(false) }
+                    val status = when (device.status) {
+                        RemoteDeviceStatus.IDLE -> McpConnectionStatus.IDLE
+                        RemoteDeviceStatus.CONNECTING -> McpConnectionStatus.CONNECTING
+                        RemoteDeviceStatus.CONNECTED -> McpConnectionStatus.CONNECTED
+                        RemoteDeviceStatus.ERROR -> McpConnectionStatus.ERROR
+                    }
                     SettingsItem(
-                        modifier = Modifier.clickable(enabled = !state.restoring && !state.connecting) {
+                        modifier = Modifier.clickable(enabled = enabled) {
                             onForward(); vm.selectDevice(device.id)
                         },
-                        headlineContent = { Text(device.name) },
-                        supportingContent = { Text(device.address) },
+                        headlineContent = {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(device.name, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                McpStatusDot(status)
+                            }
+                        },
+                        supportingContent = {
+                            Column {
+                                Text(device.address, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (device.failure != null) Text(remoteFailureText(device.failure), color = MaterialTheme.colorScheme.error)
+                            }
+                        },
                         leadingContent = { Icon(Icons.Default.Computer, null) },
-                        trailingContent = { IconButton(onClick = { vm.removeDevice(device.id) },
-                            enabled = !state.restoring && !state.connecting) {
-                            Icon(Icons.Default.LinkOff, stringResource(R.string.remote_remove),
-                                tint = MaterialTheme.colorScheme.error)
+                        trailingContent = { Box {
+                            IconButton(onClick = { menuOpen = true }, enabled = enabled) {
+                                Icon(Icons.Default.MoreVert, stringResource(R.string.options))
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false },
+                                shape = RoundedCornerShape(12.dp), containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                tonalElevation = 16.dp) {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.edit)) }, enabled = enabled,
+                                    leadingIcon = { Icon(Icons.Default.Edit, null) },
+                                    onClick = { menuOpen = false; onForward(); vm.editDevice(device.id) })
+                                DropdownMenuItem(text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
+                                    enabled = enabled, leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                    onClick = { menuOpen = false; deleteId = device.id })
+                            }
                         } },
                     )
-                } }
+                } } }
                 add {
                     SettingsAddItem(label = stringResource(R.string.remote_add_device),
-                        enabled = !state.restoring && !state.connecting,
+                        enabled = enabled,
                         onClick = { onForward(); vm.addDevice() })
                 }
             },
+        )
+    }
+    state.devices.firstOrNull { it.id == deleteId }?.let { device ->
+        AlertDialog(onDismissRequest = { deleteId = null },
+            title = { Text(stringResource(R.string.remote_delete_title)) },
+            text = { Text(stringResource(R.string.remote_delete_message, device.name)) },
+            confirmButton = { TextButton(enabled = enabled, onClick = { vm.removeDevice(device.id); deleteId = null }) {
+                Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+            } },
+            dismissButton = { TextButton(onClick = { deleteId = null }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }
 
 @Composable
 private fun RemoteAddDevice(state: RemoteState, vm: RemoteViewModel, onBack: () -> Unit, onForward: () -> Unit) {
-    var address by remember { mutableStateOf("") }
-    var token by remember { mutableStateOf("") }
-    CollapsingSettingsScaffold(title = stringResource(R.string.remote_add_device), onBack = onBack) {
-        SettingsGroup(title = stringResource(R.string.remote_connect), items = listOf({
+    val initial = remember { vm.editorConnection() }
+    var address by remember { mutableStateOf(initial?.address.orEmpty()) }
+    var token by remember { mutableStateOf(initial?.token.orEmpty()) }
+    CollapsingSettingsScaffold(
+        title = stringResource(if (state.editedDeviceId == null) R.string.remote_add_device else R.string.remote_edit_device),
+        onBack = onBack,
+        actions = { IconButton(onClick = { onForward(); vm.saveDevice(address, token) },
+            enabled = !state.restoring && !state.saving && address.isNotBlank() && token.isNotBlank()) {
+            Icon(Icons.Default.Save, stringResource(R.string.save))
+        } },
+    ) {
+        SettingsGroup(title = stringResource(R.string.remote_connection), items = listOf({
             SettingsIconContent(Icons.Default.Link) {
-                Text(stringResource(R.string.remote_connection_hint), style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(value = address, onValueChange = { address = it }, singleLine = true,
-                    label = { Text(stringResource(R.string.remote_address)) },
-                    placeholder = { Text("http://100.x.y.z:7435") },
-                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(value = token, onValueChange = { token = it }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
-                    label = { Text(stringResource(R.string.remote_token)) },
-                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
-                Spacer(Modifier.height(12.dp))
-                Button(onClick = { onForward(); vm.connect(address, token) },
-                    enabled = !state.restoring && !state.connecting && address.isNotBlank() && token.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                    Text(stringResource(if (state.connecting) R.string.loading_label else R.string.remote_connect))
-                }
+                McpLabeledField(label = stringResource(R.string.remote_address), value = address,
+                    onValueChange = { address = it }, keyboardType = KeyboardType.Uri,
+                    supportingText = stringResource(R.string.remote_connection_hint))
+            }
+        }, {
+            SettingsIconContent(Icons.Default.Key) {
+                McpLabeledField(label = stringResource(R.string.remote_token), value = token,
+                    onValueChange = { token = it }, keyboardType = KeyboardType.Password, password = true)
             }
         }))
         if (state.storageError) Text(stringResource(R.string.remote_save_failed), Modifier.padding(16.dp),

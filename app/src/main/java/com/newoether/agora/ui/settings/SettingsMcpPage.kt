@@ -575,7 +575,7 @@ private fun McpServerEditor(
 }
 
 @Composable
-private fun McpStatusDot(status: McpConnectionStatus) {
+internal fun McpStatusDot(status: McpConnectionStatus) {
     val description = stringResource(
         when (status) {
             McpConnectionStatus.IDLE -> R.string.mcp_status_idle
@@ -775,7 +775,7 @@ private fun McpStatusIcon(status: McpConnectionStatus) {
 }
 
 @Composable
-private fun McpLabeledField(
+internal fun McpLabeledField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,

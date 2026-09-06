@@ -26,5 +26,9 @@
     <string name="remote_add_device">إضافة جهاز</string>
     <string name="remote_no_devices">لا توجد أجهزة</string>
     <string name="remote_no_devices_desc">أضف جهاز كمبيوتر يعمل عليه Filo للوصول إلى جلسات Codex الخاصة به.</string>
-    <string name="remote_save_failed">تعذّر حفظ الاتصال. حاول الاتصال مرة أخرى</string>
+    <string name="remote_save_failed">تعذّر حفظ الاتصال. حاول الحفظ مرة أخرى</string>
+    <string name="remote_connection">الاتصال</string>
+    <string name="remote_edit_device">تعديل الجهاز</string>
+    <string name="remote_delete_title">حذف الجهاز؟</string>
+    <string name="remote_delete_message">هل تريد إزالة الاتصال المحفوظ بالجهاز %1$s؟ ستبقى جلسات Codex محفوظة.</string>
 </resources>

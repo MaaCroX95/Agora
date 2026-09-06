@@ -287,7 +287,7 @@ internal fun ChatDrawerContent(
                                 onOpenTasks()
                                 scope.launch { onRequestClose() }
                             },
-                            modifier = Modifier.fillMaxWidth().height(42.dp),
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
                             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp,
                                 bottomStart = 5.dp, bottomEnd = 5.dp)
                         ) {
@@ -304,7 +304,7 @@ internal fun ChatDrawerContent(
                                 onOpenRemote()
                                 scope.launch { onRequestClose() }
                             },
-                            modifier = Modifier.fillMaxWidth().height(42.dp),
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
                             shape = RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp,
                                 bottomStart = 24.dp, bottomEnd = 24.dp)
                         ) {

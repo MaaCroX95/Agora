@@ -69,4 +69,31 @@ class RemoteConnectionStoreTest {
         } }.awaitAll()
         assertEquals(8, store(file).load().size)
     }
+
+    @Test fun editingAtomicallyReplacesAddressAndTokenWithoutAddingADevice() = runBlocking {
+        val file = File(temporary.root, "connections.json")
+        store(file).save(RemoteConnection("Old", "http://old/", token))
+        val changedToken = "cd".repeat(32)
+        store(file).save(RemoteConnection("New", "http://new/", changedToken), "http://old/")
+        val restored = store(file).load().single()
+        assertEquals("http://new/", restored.address)
+        assertEquals(changedToken, restored.token)
+        assertFalse(file.readText().contains(changedToken))
+    }
+
+    @Test fun failedEditAndAddressCollisionPreserveBothSavedConnections() = runBlocking {
+        val file = File(temporary.root, "connections.json")
+        store(file).save(RemoteConnection("One", "http://one/", token))
+        store(file).save(RemoteConnection("Two", "http://two/", token))
+        val before = file.readText()
+        try {
+            store(file).save(RemoteConnection("Changed", "http://two/", token), "http://one/"); fail()
+        } catch (_: FiloConfigurationException) { }
+        assertEquals(before, file.readText())
+        val failing = RemoteConnectionStore(file, encrypt = { it }, decrypt = { token })
+        try {
+            failing.save(RemoteConnection("Changed", "http://new/", token), "http://one/"); fail()
+        } catch (_: RemoteStorageException) { }
+        assertEquals(before, file.readText())
+    }
 }

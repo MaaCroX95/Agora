@@ -26,5 +26,9 @@
     <string name="remote_add_device">新增裝置</string>
     <string name="remote_no_devices">尚無裝置</string>
     <string name="remote_no_devices_desc">新增執行 Filo 的電腦，存取其中的 Codex 工作階段。</string>
-    <string name="remote_save_failed">無法儲存連線，請重新嘗試連線</string>
+    <string name="remote_save_failed">無法儲存連線，請重試儲存</string>
+    <string name="remote_connection">連線</string>
+    <string name="remote_edit_device">編輯裝置</string>
+    <string name="remote_delete_title">刪除裝置？</string>
+    <string name="remote_delete_message">刪除已儲存的 %1$s 連線？Codex 工作階段會保留。</string>
 </resources>

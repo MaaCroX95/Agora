@@ -26,5 +26,9 @@
     <string name="remote_add_device">Thêm thiết bị</string>
     <string name="remote_no_devices">Chưa có thiết bị</string>
     <string name="remote_no_devices_desc">Thêm máy tính đang chạy Filo để truy cập các phiên Codex trên máy đó.</string>
-    <string name="remote_save_failed">Không thể lưu kết nối. Hãy thử kết nối lại</string>
+    <string name="remote_save_failed">Không thể lưu kết nối. Hãy thử lưu lại</string>
+    <string name="remote_connection">Kết nối</string>
+    <string name="remote_edit_device">Chỉnh sửa thiết bị</string>
+    <string name="remote_delete_title">Xóa thiết bị?</string>
+    <string name="remote_delete_message">Xóa kết nối đã lưu tới %1$s? Các phiên Codex sẽ được giữ lại.</string>
 </resources>

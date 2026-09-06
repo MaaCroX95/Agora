@@ -26,5 +26,9 @@
     <string name="remote_add_device">Añadir dispositivo</string>
     <string name="remote_no_devices">No hay dispositivos</string>
     <string name="remote_no_devices_desc">Añade un ordenador con Filo en ejecución para acceder a sus sesiones de Codex.</string>
-    <string name="remote_save_failed">No se pudo guardar la conexión. Intenta conectarte de nuevo</string>
+    <string name="remote_save_failed">No se pudo guardar la conexión. Intenta guardarla de nuevo</string>
+    <string name="remote_connection">Conexión</string>
+    <string name="remote_edit_device">Editar dispositivo</string>
+    <string name="remote_delete_title">¿Eliminar dispositivo?</string>
+    <string name="remote_delete_message">¿Eliminar la conexión guardada a %1$s? Las sesiones de Codex se conservarán.</string>
 </resources>

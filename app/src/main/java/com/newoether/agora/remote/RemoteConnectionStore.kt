@@ -31,8 +31,17 @@ internal class RemoteConnectionStore(
         mutex.withLock { read() }
     }
 
-    suspend fun save(connection: RemoteConnection): Unit = withContext(Dispatchers.IO) {
-        mutex.withLock { write(read().filterNot { it.address == connection.address } + connection) }
+    suspend fun save(connection: RemoteConnection, previousAddress: String? = null): Unit = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val saved = read()
+            if (previousAddress != null && saved.none { it.address == previousAddress }) throw RemoteStorageException()
+            if (previousAddress != null && previousAddress != connection.address &&
+                saved.any { it.address == connection.address }) throw FiloConfigurationException()
+            val replaced = previousAddress ?: connection.address
+            write(if (saved.any { it.address == replaced }) {
+                saved.map { if (it.address == replaced) connection else it }
+            } else saved + connection)
+        }
     }
 
     suspend fun remove(address: String): Unit = withContext(Dispatchers.IO) {

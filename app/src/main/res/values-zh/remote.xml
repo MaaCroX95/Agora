@@ -26,5 +26,9 @@
     <string name="remote_add_device">添加设备</string>
     <string name="remote_no_devices">暂无设备</string>
     <string name="remote_no_devices_desc">添加运行 Filo 的电脑，访问其中的 Codex 会话。</string>
-    <string name="remote_save_failed">无法保存连接，请重新尝试连接</string>
+    <string name="remote_save_failed">无法保存连接，请重试保存</string>
+    <string name="remote_connection">连接</string>
+    <string name="remote_edit_device">编辑设备</string>
+    <string name="remote_delete_title">删除设备？</string>
+    <string name="remote_delete_message">删除已保存的 %1$s 连接？Codex 会话会保留。</string>
 </resources>
