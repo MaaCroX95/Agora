@@ -93,6 +93,7 @@ internal fun ChatTopBar(
     onForkConversation: () -> Unit = {},
     onShareConversation: () -> Unit = {},
     onNewChat: () -> Unit,
+    trailingActions: (@Composable RowScope.() -> Unit)? = null,
 ) {
     var moreMenuOpen by remember { mutableStateOf(false) }
     val allowSpatialTransitions = LocalAgoraMotionPolicy.current.allowSpatialTransitions
@@ -473,6 +474,7 @@ internal fun ChatTopBar(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Spacer(modifier = Modifier.width(5.dp))
+                        if (trailingActions != null) trailingActions() else {
                         IconButton(onClick = onNewChat, modifier = Modifier.size(44.dp)) {
                             Icon(Icons.Default.Add, contentDescription = stringResource(R.string.new_chat), modifier = Modifier.size(30.dp))
                         }
@@ -539,6 +541,7 @@ internal fun ChatTopBar(
                                     },
                                 )
                             }
+                        }
                         }
                         Spacer(modifier = Modifier.width(5.dp))
                     }
