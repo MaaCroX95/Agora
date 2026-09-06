@@ -23,4 +23,8 @@
     <string name="remote_configuration_failed">Vérifiez le format de votre URL de service et du jeton</string>
     <string name="remote_protocol_failed">Filo a renvoyé des données incompatibles. Consultez le diagnostic</string>
     <string name="remote_service_failed">Filo ne peut pas terminer la requête. Vérifiez Codex sur votre ordinateur</string>
+    <string name="remote_add_device">Ajouter un appareil</string>
+    <string name="remote_no_devices">Aucun appareil</string>
+    <string name="remote_no_devices_desc">Ajoutez un ordinateur exécutant Filo pour accéder à ses sessions Codex.</string>
+    <string name="remote_save_failed">Impossible d’enregistrer la connexion. Réessayez de vous connecter</string>
 </resources>

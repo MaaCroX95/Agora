@@ -23,4 +23,8 @@
     <string name="remote_configuration_failed">Kiểm tra định dạng URL dịch vụ và mã truy cập</string>
     <string name="remote_protocol_failed">Filo trả về dữ liệu không tương thích. Kiểm tra chẩn đoán</string>
     <string name="remote_service_failed">Filo không thể hoàn tất yêu cầu. Kiểm tra Codex trên máy tính</string>
+    <string name="remote_add_device">Thêm thiết bị</string>
+    <string name="remote_no_devices">Chưa có thiết bị</string>
+    <string name="remote_no_devices_desc">Thêm máy tính đang chạy Filo để truy cập các phiên Codex trên máy đó.</string>
+    <string name="remote_save_failed">Không thể lưu kết nối. Hãy thử kết nối lại</string>
 </resources>

@@ -23,4 +23,8 @@
     <string name="remote_configuration_failed">Verifique o formato da URL do serviço e do token</string>
     <string name="remote_protocol_failed">O Filo retornou dados incompatíveis. Consulte o diagnóstico</string>
     <string name="remote_service_failed">O Filo não conseguiu concluir a solicitação. Verifique o Codex no computador</string>
+    <string name="remote_add_device">Adicionar dispositivo</string>
+    <string name="remote_no_devices">Nenhum dispositivo</string>
+    <string name="remote_no_devices_desc">Adicione um computador com o Filo em execução para acessar suas sessões do Codex.</string>
+    <string name="remote_save_failed">Não foi possível salvar a conexão. Tente conectar novamente</string>
 </resources>

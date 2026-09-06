@@ -23,4 +23,8 @@
     <string name="remote_configuration_failed">請檢查服務位址與權杖格式</string>
     <string name="remote_protocol_failed">Filo 回傳的資料格式異常，請查看診斷</string>
     <string name="remote_service_failed">Filo 無法完成請求，請檢查電腦上的 Codex</string>
+    <string name="remote_add_device">新增裝置</string>
+    <string name="remote_no_devices">尚無裝置</string>
+    <string name="remote_no_devices_desc">新增執行 Filo 的電腦，存取其中的 Codex 工作階段。</string>
+    <string name="remote_save_failed">無法儲存連線，請重新嘗試連線</string>
 </resources>

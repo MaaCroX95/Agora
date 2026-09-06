@@ -23,4 +23,8 @@
     <string name="remote_configuration_failed">Проверьте формат URL сервиса и токена</string>
     <string name="remote_protocol_failed">Filo вернул несовместимые данные. Проверьте диагностику</string>
     <string name="remote_service_failed">Filo не смог выполнить запрос. Проверьте Codex на компьютере</string>
+    <string name="remote_add_device">Добавить устройство</string>
+    <string name="remote_no_devices">Нет устройств</string>
+    <string name="remote_no_devices_desc">Добавьте компьютер с запущенным Filo, чтобы получить доступ к его сеансам Codex.</string>
+    <string name="remote_save_failed">Не удалось сохранить подключение. Попробуйте подключиться снова</string>
 </resources>

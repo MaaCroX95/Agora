@@ -62,6 +62,33 @@ be loaded in Codex. Persisted-message refresh is not token streaming. Stop, remo
 approvals, tools, attachments, editing, branching and model settings are outside this
 first simple-text slice; actual capability labels must not imply their availability.
 
+## Owner-requested device UI alignment | 2026-09-07
+
+The Drawer Tasks and Remote actions form one visually joined group. Use the existing
+grouped-card geometry: 24 dp outer corners, 5 dp adjoining corners, and a 2 dp inter-item
+gap. Both actions retain their 42 dp height, colors, content and click behavior.
+
+The Remote root follows the MCP Settings list/add structure: saved devices appear in
+the device list, with a separate shared SettingsAddItem below the device rows. Device
+addition has its own page; the root no longer contains the address/token form. Reuse
+the existing Settings scaffold, row components and guarded page transitions. Existing
+shared chat presentation and independent Remote transport remain authoritative.
+
+The owner approved this amendment on 2026-09-07. The device group uses an icon/title/
+description empty row when no devices are saved; restoration or storage failure must
+not masquerade as a known empty list. Connect remains the only submission action.
+Unsubmitted Back saves nothing. Connection/authentication/storage failure retains the
+editor, while successful connection opens the device's session list and clears the
+editor route. Back from sessions returns to the device list. The existing RemoteViewModel
+owns the add-page flag alongside device/session navigation, and the shared transition
+host protects outgoing pages. Credentials remain page-local and never use saved state.
+
+An explicitly submitted connection can finish saving after Back, but the ViewModel's
+selection generation prevents its completion or network error from taking over the
+newer page. Backgrounding only stops reads and does not change that selection generation.
+Duplicate connection submission and reopening Add remain disabled during that operation.
+No additional network retry or new routing owner is introduced.
+
 ## Verification
 
 Verify authenticated transport, strict protocol compatibility, projection identity,

@@ -72,17 +72,19 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
         when {
             state.session != null -> vm.selectSession(null)
             state.deviceId != null -> vm.selectDevice(null)
+            state.addingDevice -> vm.selectDevice(null)
             else -> onBack()
         }
     }
     BackHandler(active, back)
-    val target = state.deviceId to state.session
+    val target = Triple(state.deviceId, state.session, state.addingDevice)
     GuardedAnimatedContent(targetState = target, forward = forward) { page ->
         var retained by remember(page) { mutableStateOf(state) }
         val current = page == target
         SideEffect { if (current) retained = state }
         val displayed = if (current) state else retained
         when {
+            page.third -> RemoteAddDevice(displayed, vm, back) { forward = true; focus.clearFocus() }
             page.second != null -> RemoteConversation(displayed, vm, settings, active && current, back)
             page.first != null -> CollapsingSettingsLazyScaffold(
                 title = stringResource(R.string.remote_sessions), onBack = back,
@@ -118,32 +120,53 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
 
 @Composable
 private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () -> Unit, onForward: () -> Unit) {
-    var address by remember { mutableStateOf("") }
-    var token by remember { mutableStateOf("") }
     CollapsingSettingsScaffold(title = stringResource(R.string.remote_title), onBack = onBack) {
         if (state.restoring) Text(stringResource(R.string.loading_label), Modifier.padding(16.dp))
         if (state.storageError) TextButton(onClick = vm::restoreConnections,
             enabled = !state.restoring && !state.connecting) {
             Text(stringResource(R.string.remote_storage_failed))
         }
-        if (state.devices.isNotEmpty()) SettingsGroup(
+        SettingsGroup(
             title = stringResource(R.string.remote_devices),
-            items = state.devices.map { device -> {
-                SettingsItem(
-                    modifier = Modifier.clickable(enabled = !state.restoring && !state.connecting) {
-                        onForward(); vm.selectDevice(device.id)
-                    },
-                    headlineContent = { Text(device.name) },
-                    supportingContent = { Text(device.address) },
-                    leadingContent = { Icon(Icons.Default.Computer, null) },
-                    trailingContent = { IconButton(onClick = { vm.removeDevice(device.id) },
-                        enabled = !state.restoring && !state.connecting) {
-                        Icon(Icons.Default.LinkOff, stringResource(R.string.remote_remove),
-                            tint = MaterialTheme.colorScheme.error)
-                    } },
-                )
-            } },
+            items = buildList {
+                if (state.devices.isEmpty() && !state.restoring && !state.storageError) add {
+                    SettingsItem(
+                        headlineContent = { Text(stringResource(R.string.remote_no_devices),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                        supportingContent = { Text(stringResource(R.string.remote_no_devices_desc)) },
+                        leadingContent = { Icon(Icons.Default.Computer, null) },
+                    )
+                }
+                state.devices.forEach { device -> add {
+                    SettingsItem(
+                        modifier = Modifier.clickable(enabled = !state.restoring && !state.connecting) {
+                            onForward(); vm.selectDevice(device.id)
+                        },
+                        headlineContent = { Text(device.name) },
+                        supportingContent = { Text(device.address) },
+                        leadingContent = { Icon(Icons.Default.Computer, null) },
+                        trailingContent = { IconButton(onClick = { vm.removeDevice(device.id) },
+                            enabled = !state.restoring && !state.connecting) {
+                            Icon(Icons.Default.LinkOff, stringResource(R.string.remote_remove),
+                                tint = MaterialTheme.colorScheme.error)
+                        } },
+                    )
+                } }
+                add {
+                    SettingsAddItem(label = stringResource(R.string.remote_add_device),
+                        enabled = !state.restoring && !state.connecting,
+                        onClick = { onForward(); vm.addDevice() })
+                }
+            },
         )
+    }
+}
+
+@Composable
+private fun RemoteAddDevice(state: RemoteState, vm: RemoteViewModel, onBack: () -> Unit, onForward: () -> Unit) {
+    var address by remember { mutableStateOf("") }
+    var token by remember { mutableStateOf("") }
+    CollapsingSettingsScaffold(title = stringResource(R.string.remote_add_device), onBack = onBack) {
         SettingsGroup(title = stringResource(R.string.remote_connect), items = listOf({
             SettingsIconContent(Icons.Default.Link) {
                 Text(stringResource(R.string.remote_connection_hint), style = MaterialTheme.typography.bodyMedium)
@@ -166,6 +189,8 @@ private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () ->
                 }
             }
         }))
+        if (state.storageError) Text(stringResource(R.string.remote_save_failed), Modifier.padding(16.dp),
+            color = MaterialTheme.colorScheme.error)
         if (state.error) Text(remoteFailureText(state.failure), Modifier.padding(16.dp),
             color = MaterialTheme.colorScheme.error)
     }

@@ -23,4 +23,8 @@
     <string name="remote_configuration_failed">تحقّق من تنسيق عنوان الخدمة والرمز</string>
     <string name="remote_protocol_failed">أعاد Filo بيانات غير متوافقة. راجع التشخيص</string>
     <string name="remote_service_failed">تعذّر على Filo إكمال الطلب. تحقّق من Codex على الكمبيوتر</string>
+    <string name="remote_add_device">إضافة جهاز</string>
+    <string name="remote_no_devices">لا توجد أجهزة</string>
+    <string name="remote_no_devices_desc">أضف جهاز كمبيوتر يعمل عليه Filo للوصول إلى جلسات Codex الخاصة به.</string>
+    <string name="remote_save_failed">تعذّر حفظ الاتصال. حاول الاتصال مرة أخرى</string>
 </resources>

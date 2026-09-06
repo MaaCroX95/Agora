@@ -23,7 +23,7 @@ internal data class RemoteState(
     val historyCursor: String? = null, val queued: List<RemoteQueuedMessage> = emptyList(),
     val drafts: Map<String, String> = emptyMap(), val attempts: Map<String, RemoteAttempt> = emptyMap(),
     val connecting: Boolean = false, val loading: Boolean = false, val failure: RemoteFailure? = null,
-    val restoring: Boolean = true, val storageError: Boolean = false,
+    val restoring: Boolean = true, val storageError: Boolean = false, val addingDevice: Boolean = false,
 ) {
     val error: Boolean get() = failure != null
     val owner: String? get() = session?.let { "$deviceId/${it.id}" }
@@ -38,6 +38,7 @@ internal class RemoteViewModel(
     val state = mutableState.asStateFlow()
     private val clients = mutableMapOf<String, FiloClient>()
     private var epoch = 0L
+    private var selectionEpoch = 0L
     private var visible = false
     private var polling: Job? = null
     private var paging: Job? = null
@@ -88,8 +89,15 @@ internal class RemoteViewModel(
         }
     }
 
+    fun addDevice() {
+        if (state.value.connecting || state.value.restoring) return
+        selectDevice(null)
+        mutableState.value = state.value.copy(addingDevice = true, storageError = false)
+    }
+
     fun connect(address: String, token: String) {
         if (state.value.connecting || state.value.restoring) return
+        val generation = selectionEpoch
         mutableState.value = state.value.copy(connecting = true, failure = null, storageError = false)
         trace("connect_started")
         connecting = viewModelScope.launch {
@@ -104,7 +112,8 @@ internal class RemoteViewModel(
                     devices = state.value.devices.filterNot { it.id == id } + device,
                     connecting = false,
                 )
-                selectDevice(id)
+                // Saving an explicitly submitted connection must not undo a later Back/navigation.
+                if (generation == selectionEpoch) selectDevice(id)
                 trace("connected")
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: RemoteStorageException) {
@@ -112,7 +121,9 @@ internal class RemoteViewModel(
                 mutableState.value = state.value.copy(connecting = false, storageError = true)
             }
             catch (error: Exception) {
-                mutableState.value = state.value.copy(connecting = false, failure = trace("connect_failed", error))
+                val failure = trace("connect_failed", error)
+                mutableState.value = state.value.copy(connecting = false,
+                    failure = if (generation == selectionEpoch) failure else state.value.failure)
             }
         }
     }
@@ -142,13 +153,15 @@ internal class RemoteViewModel(
 
     fun selectDevice(id: String?) {
         if (id != null && id !in clients) return
+        selectionEpoch++
         invalidateReads()
-        mutableState.value = state.value.copy(deviceId = id, sessions = emptyList(), sessionCursor = null,
+        mutableState.value = state.value.copy(deviceId = id, addingDevice = false, sessions = emptyList(), sessionCursor = null,
             session = null, messages = emptyList(), historyCursor = null, queued = emptyList(), failure = null)
         refresh()
     }
 
     fun selectSession(session: RemoteSession?) {
+        selectionEpoch++
         invalidateReads()
         mutableState.value = state.value.copy(session = session, messages = emptyList(),
             historyCursor = null, queued = emptyList(), failure = null)

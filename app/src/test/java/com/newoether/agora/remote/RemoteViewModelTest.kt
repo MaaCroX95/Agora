@@ -40,6 +40,90 @@ class RemoteViewModelTest {
     }
     @After fun tearDown() { Dispatchers.resetMain() }
 
+    @Test fun leavingAnUnsubmittedDeviceEditorDoesNotConnectOrSave() = runTest(dispatcher) {
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.addDevice()
+        assertTrue(vm.state.value.addingDevice)
+        assertNull(vm.state.value.deviceId)
+        vm.selectDevice(null); runCurrent()
+        assertFalse(vm.state.value.addingDevice)
+        coVerify(exactly = 0) { client.connect() }
+        coVerify(exactly = 0) { connections.save(any()) }
+        coVerify(exactly = 0) { client.sessions(any()) }
+    }
+
+    @Test fun failedConnectionKeepsEditorAndSuccessOpensSessionsWithoutRevivingEditor() = runTest(dispatcher) {
+        coEvery { client.connect() } throws FiloHttpException(401)
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.addDevice(); vm.connect("http://computer/", "token"); runCurrent()
+        assertTrue(vm.state.value.addingDevice)
+        assertEquals(RemoteFailure.AUTHENTICATION, vm.state.value.failure)
+        assertNull(vm.state.value.deviceId)
+        coVerify(exactly = 0) { connections.save(any()) }
+        coEvery { client.connect() } returns "Computer"
+        vm.setVisible(true)
+        vm.connect("http://computer/", "token"); runCurrent()
+        assertFalse(vm.state.value.addingDevice)
+        assertNull(vm.state.value.failure)
+        assertEquals("http://computer/", vm.state.value.deviceId)
+        assertEquals(listOf(session), vm.state.value.sessions)
+        vm.selectDevice(null)
+        assertFalse(vm.state.value.addingDevice)
+        assertEquals(1, vm.state.value.devices.size)
+        vm.setVisible(false)
+    }
+
+    @Test fun connectionCompletedAfterLeavingEditorSavesWithoutTakingNavigation() = runTest(dispatcher) {
+        val gate = CompletableDeferred<String>()
+        coEvery { client.connect() } coAnswers { gate.await() }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.setVisible(true)
+        vm.addDevice(); vm.connect("http://computer/", "token"); runCurrent()
+        vm.selectDevice(null)
+        vm.addDevice(); vm.connect("http://computer/", "token"); runCurrent()
+        assertFalse(vm.state.value.addingDevice)
+        gate.complete("Computer"); runCurrent()
+        assertFalse(vm.state.value.connecting)
+        assertFalse(vm.state.value.addingDevice)
+        assertNull(vm.state.value.deviceId)
+        assertEquals(1, vm.state.value.devices.size)
+        coVerify(exactly = 1) { client.connect() }
+        coVerify(exactly = 1) { connections.save(any()) }
+        coVerify(exactly = 0) { client.sessions(any()) }
+        vm.setVisible(false)
+    }
+
+    @Test fun backgroundingDuringConnectionDoesNotDiscardTheEditorSuccessDestination() = runTest(dispatcher) {
+        val gate = CompletableDeferred<String>()
+        coEvery { client.connect() } coAnswers { gate.await() }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.setVisible(true)
+        vm.addDevice(); vm.connect("http://computer/", "token"); runCurrent()
+        vm.setVisible(false)
+        gate.complete("Computer"); runCurrent()
+        assertFalse(vm.state.value.addingDevice)
+        assertEquals("http://computer/", vm.state.value.deviceId)
+        coVerify(exactly = 0) { client.sessions(any()) }
+        vm.setVisible(true); runCurrent()
+        assertEquals(listOf(session), vm.state.value.sessions)
+        vm.setVisible(false)
+    }
+
+    @Test fun lateConnectionFailureDoesNotReplaceDeviceListState() = runTest(dispatcher) {
+        val gate = CompletableDeferred<String>()
+        coEvery { client.connect() } coAnswers { gate.await() }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.addDevice(); vm.connect("http://computer/", "token"); runCurrent()
+        vm.selectDevice(null)
+        gate.completeExceptionally(IOException("Offline")); runCurrent()
+        assertFalse(vm.state.value.addingDevice)
+        assertFalse(vm.state.value.connecting)
+        assertNull(vm.state.value.failure)
+        vm.addDevice()
+        assertTrue(vm.state.value.addingDevice)
+        coVerify(exactly = 0) { connections.save(any()) }
+    }
+
     @Test fun staleReadCannotReplaceNewSession() = runTest(dispatcher) {
         val gate = CompletableDeferred<RemoteConversationPage>()
         coEvery { client.conversation("session", null) } coAnswers { withContext(NonCancellable) { gate.await() } }
@@ -125,8 +209,10 @@ class RemoteViewModelTest {
     @Test fun failingPersistenceDoesNotPublishAnUnsavedConnection() = runTest(dispatcher) {
         coEvery { connections.save(any()) } throws RemoteStorageException()
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.addDevice()
         vm.connect("http://computer/", "token"); runCurrent()
         assertTrue(vm.state.value.storageError)
+        assertTrue(vm.state.value.addingDevice)
         assertFalse(vm.state.value.connecting)
         assertTrue(vm.state.value.devices.isEmpty())
     }

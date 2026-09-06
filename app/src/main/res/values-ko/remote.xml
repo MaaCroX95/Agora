@@ -23,4 +23,8 @@
     <string name="remote_configuration_failed">서비스 URL과 토큰 형식을 확인하세요</string>
     <string name="remote_protocol_failed">Filo 응답 형식이 호환되지 않습니다. 진단을 확인하세요</string>
     <string name="remote_service_failed">Filo가 요청을 완료하지 못했습니다. 컴퓨터의 Codex를 확인하세요</string>
+    <string name="remote_add_device">기기 추가</string>
+    <string name="remote_no_devices">기기 없음</string>
+    <string name="remote_no_devices_desc">Filo가 실행 중인 컴퓨터를 추가하여 해당 Codex 세션에 접근하세요.</string>
+    <string name="remote_save_failed">연결을 저장하지 못했습니다. 다시 연결해 주세요</string>
 </resources>

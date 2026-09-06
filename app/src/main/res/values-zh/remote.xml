@@ -23,4 +23,8 @@
     <string name="remote_configuration_failed">请检查服务地址和令牌格式</string>
     <string name="remote_protocol_failed">Filo 返回的数据格式异常，请查看诊断</string>
     <string name="remote_service_failed">Filo 无法完成请求，请检查电脑上的 Codex</string>
+    <string name="remote_add_device">添加设备</string>
+    <string name="remote_no_devices">暂无设备</string>
+    <string name="remote_no_devices_desc">添加运行 Filo 的电脑，访问其中的 Codex 会话。</string>
+    <string name="remote_save_failed">无法保存连接，请重新尝试连接</string>
 </resources>

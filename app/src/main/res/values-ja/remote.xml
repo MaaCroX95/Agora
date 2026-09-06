@@ -23,4 +23,8 @@
     <string name="remote_configuration_failed">サービス URL とトークンの形式を確認してください</string>
     <string name="remote_protocol_failed">Filo の応答形式に互換性がありません。診断を確認してください</string>
     <string name="remote_service_failed">Filo がリクエストを完了できませんでした。コンピューターの Codex を確認してください</string>
+    <string name="remote_add_device">デバイスを追加</string>
+    <string name="remote_no_devices">デバイスがありません</string>
+    <string name="remote_no_devices_desc">Filo を実行しているコンピューターを追加すると、その Codex セッションにアクセスできます。</string>
+    <string name="remote_save_failed">接続を保存できませんでした。もう一度接続してください</string>
 </resources>
