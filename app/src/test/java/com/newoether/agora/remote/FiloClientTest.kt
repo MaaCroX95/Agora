@@ -1,6 +1,11 @@
 package com.newoether.agora.remote
 
 import com.newoether.agora.model.Participant
+import com.newoether.agora.model.MessageStatus
+import com.newoether.agora.ui.chat.message.ToolKind
+import com.newoether.agora.ui.chat.message.ToolPresentationResolver
+import com.newoether.agora.ui.chat.message.ToolPresentationState
+import com.newoether.agora.ui.chat.message.mergeAdjacentSegments
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -9,6 +14,8 @@ import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicInteger
 import java.io.IOException
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 class FiloClientTest {
     private val token = "a".repeat(64)
@@ -33,6 +40,116 @@ class FiloClientTest {
         assertThrows(IllegalArgumentException::class.java) { FiloClient("http://localhost/", "short") }
     }
 
+    @Test fun nativeActivityUsesSharedSegmentsAndKeepsInterleaving() {
+        val records = listOf(
+            RemoteMessage("u", "turn", null, "user", "hello", 10),
+            RemoteMessage("r", "turn", null, "assistant", "Public summary", 11, RemoteActivity("thought")),
+            RemoteMessage("a", "turn", null, "assistant", "Checking", 12),
+            RemoteMessage("t", "turn", null, "assistant", "", 13,
+                RemoteActivity("tool", "execute_shell_command", "{\"command\":\"pwd\"}",
+                    "{\"output\":\"workspace\",\"exit_code\":0}", "succeeded", 30)),
+            RemoteMessage("r2", "turn", null, "assistant", "Result summary", 14, RemoteActivity("thought")),
+            RemoteMessage("a2", "turn", null, "assistant", "Done", 15),
+            RemoteMessage("a3", "turn", null, "assistant", "Details", 16),
+        )
+        val projected = projectRemoteMessages(records)
+        assertEquals(listOf("u", "r"), projected.map { it.id })
+        val answer = projected.last()
+        assertEquals("u", answer.parentId)
+        assertEquals("turn", answer.runId)
+        assertEquals("Checking\n\nDone\n\nDetails", answer.text)
+        assertNull(answer.thoughtTimeMs)
+        assertEquals(MessageStatus.SUCCESS, answer.status)
+        val segments = mergeAdjacentSegments(answer.segments!!)
+        assertEquals(listOf("thought", "answer", "tool", "thought", "answer"), segments.map { it.type })
+        assertEquals("Done\n\nDetails", segments.last().content)
+        val tool = segments[2]
+        assertEquals("t", tool.toolCallId)
+        assertEquals(30L, tool.durationMs)
+        val presentation = ToolPresentationResolver.resolve(tool)
+        assertEquals(ToolKind.SHELL_EXECUTE, presentation.kind)
+        assertEquals(ToolPresentationState.COMPLETED, presentation.state)
+        assertEquals(0, presentation.exitCode)
+    }
+
+    @Test fun userAndTurnBoundariesRemainHardEvenForActivityOnlyMessages() {
+        val records = listOf(
+            RemoteMessage("r", "turn1", null, "assistant", "Summary", 1, RemoteActivity("thought")),
+            RemoteMessage("u", "turn1", null, "user", "Interrupt", 2),
+            RemoteMessage("t", "turn1", null, "assistant", "", 3,
+                RemoteActivity("tool", "file_edit", state = "stopped")),
+            RemoteMessage("a", "turn2", null, "assistant", "Next turn", 4),
+        )
+        val projected = projectRemoteMessages(records)
+        assertEquals(listOf("r", "u", "t", "a"), projected.map { it.id })
+        assertEquals(listOf(null, "r", "u", "t"), projected.map { it.parentId })
+        assertEquals("", projected.first().text)
+        assertNull(projected[2].thoughtTimeMs)
+        assertEquals(ToolPresentationState.STOPPED,
+            ToolPresentationResolver.resolve(projected[2].segments!!.single()).state)
+    }
+
+    @Test fun refreshedToolPayloadKeepsSheetIdentityAndRecordedLifecycle() {
+        val summary = RemoteMessage("r", "turn", null, "assistant", "Checking", 10, RemoteActivity("thought"))
+        val tool = RemoteMessage("t", "turn", null, "assistant", "", 10,
+            RemoteActivity("tool", "execute_shell_command", "{\"command\":\"test\"}",
+                "{\"output\":\"partial\"}", "running"))
+        val before = projectRemoteMessages(listOf(summary, tool)).single()
+        val running = before.segments!!.last()
+        assertNull(running.toolResult)
+        assertEquals(tool.activity!!.result, running.toolProgress)
+        assertEquals(ToolPresentationState.RUNNING, ToolPresentationResolver.resolve(running).state)
+        val finished = tool.copy(activity = tool.activity.copy(
+            result = "{\"output\":\"failed test\",\"exit_code\":1}", state = "failed", durationMs = 55))
+        val refreshed = mergeRemoteHistory(listOf(summary, tool), listOf(summary, finished,
+            RemoteMessage("a", "turn", null, "assistant", "Reported", 11)))
+        val after = projectRemoteMessages(refreshed).single()
+        assertEquals(before.id, after.id)
+        val terminal = after.segments!![1]
+        assertEquals(running.toolCallId, terminal.toolCallId)
+        assertNull(terminal.toolProgress)
+        assertEquals(55L, terminal.durationMs)
+        assertEquals(ToolPresentationState.FAILED, ToolPresentationResolver.resolve(terminal).state)
+        assertEquals("Reported", after.text)
+        val older = RemoteMessage("older", "previous", null, "user", "Earlier", 1)
+        assertEquals(after.id, projectRemoteMessages(listOf(older) + refreshed).last().id)
+    }
+
+    @Test fun blankSummariesDoNotCreateEmptyThoughtBlocksOrFakeDurations() {
+        val summary = RemoteMessage("r", "turn", null, "assistant", " ", 10, RemoteActivity("thought"))
+        assertTrue(projectRemoteMessages(listOf(summary)).isEmpty())
+        val answer = RemoteMessage("a", "turn", null, "assistant", "Answer", 11)
+        val projected = projectRemoteMessages(listOf(summary, answer)).single()
+        assertEquals(listOf("answer"), mergeAdjacentSegments(projected.segments!!).map { it.type })
+        assertNull(projected.thoughtTimeMs)
+    }
+
+    @Test fun historyOptsIntoActivityAndAcceptsBothLegacyAndRichPayloads() = runBlocking {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val queries = mutableListOf<String>()
+        val legacy = RemoteMessage("a", "turn", null, "assistant", "Answer", 10)
+        val rich = legacy.copy(id = "t", text = "", activity = RemoteActivity(
+            "tool", "mcp/tools", "{}", "{\"structuredContent\":{\"count\":2}}", "succeeded"))
+        server.createContext("/v1/sessions/$id") { exchange ->
+            queries.add(exchange.requestURI.query)
+            val record = if (queries.size == 1) legacy else rich
+            val bytes = Json.encodeToString(RemoteConversationPage(listOf(record), null, emptyList())).toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        try {
+            val client = FiloClient("http://127.0.0.1:${server.address.port}/", token)
+            assertNull(client.conversation(id).messages.single().activity)
+            val loaded = client.conversation(id, "cursor + next").messages.single()
+            assertEquals(rich, loaded)
+            assertEquals("includeActivity=true", queries.first())
+            assertEquals("cursor=cursor + next&includeActivity=true", queries.last())
+            val tool = projectRemoteMessages(listOf(loaded)).single().segments!!.single()
+            assertEquals(rich.activity!!.result, ToolPresentationResolver.resolve(tool).rawResult)
+        } finally { server.stop(0) }
+    }
+
     @Test fun failuresDistinguishTransportAuthenticationAndProtocol() {
         assertEquals(RemoteFailure.NETWORK, classifyRemoteFailure(IOException("unreachable")))
         assertEquals(RemoteFailure.AUTHENTICATION, classifyRemoteFailure(FiloHttpException(401)))
@@ -51,10 +168,12 @@ class FiloClientTest {
         var auth = ""
         var path = ""
         var body = ""
+        var query: String? = null
         server.createContext("/") { exchange ->
             requests.incrementAndGet()
             auth = exchange.requestHeaders.getFirst("Authorization")
             path = exchange.requestURI.path
+            query = exchange.requestURI.query
             body = exchange.requestBody.reader().readText()
             exchange.responseHeaders.add("Location", "/must-not-retry")
             exchange.sendResponseHeaders(307, -1)
@@ -68,6 +187,7 @@ class FiloClientTest {
             assertEquals(1, requests.get())
             assertEquals("Bearer $token", auth)
             assertEquals("/v1/sessions/$id/messages", path)
+            assertNull(query)
             assertTrue(body.contains("\"text\":\"hello\""))
             assertTrue(body.contains("\"clientId\":\"$id\""))
         } finally { server.stop(0) }

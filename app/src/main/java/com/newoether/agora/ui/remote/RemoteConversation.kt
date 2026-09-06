@@ -44,6 +44,9 @@ internal fun RemoteConversation(
     val amoled by settings.amoledEnabled.collectAsState(initial = false)
     val inlineMath by settings.parseInlineDollarMath.collectAsState(initial = false)
     val stickToBottom by settings.stickToBottom.collectAsState(initial = true)
+    val toolCallDisplayMode by settings.toolCallDisplayMode.collectAsState()
+    val thinkingSegmentDisplayMode by settings.thinkingSegmentDisplayMode.collectAsState()
+    val autoExpandActiveGroup by settings.autoExpandActiveGroup.collectAsState()
     var expanded by remember(owner) { mutableStateOf(false) }
     BackHandler(active && expanded) { expanded = false }
     val spacer = rememberComposerSpacerAnimation(expanded, motion.allowSpatialTransitions, with(density) { 44.dp.toPx() })
@@ -110,6 +113,8 @@ internal fun RemoteConversation(
                 MessageList(messages = StableMessageList(renderMessages.value), allMessages = StableMessageList(messages),
                     authoritativeMessages = StableMessageList(messages), conversationId = owner,
                     state = scroll.listState, messageActionsEnabled = false, parseInlineDollarMath = inlineMath,
+                    toolCallDisplayMode = toolCallDisplayMode, thinkingSegmentDisplayMode = thinkingSegmentDisplayMode,
+                    autoExpandActiveGroup = autoExpandActiveGroup,
                     modifier = Modifier.fillMaxSize().gradientBlur(blurAtTopDp = if (blur) 8f else 0f,
                         blurAtBottomDp = 0f, fadeHeightDp = 40f, bottomOverlayHeight = barHeight + 12.dp),
                     bottomBarHeight = barHeight, viewportHeight = scroll.viewportHeightPx,
@@ -135,9 +140,9 @@ internal fun RemoteConversation(
                     val status = when (attempt?.delivery) {
                         RemoteDelivery.UNKNOWN -> R.string.remote_unknown
                         RemoteDelivery.REJECTED -> R.string.remote_rejected
-                        else -> R.string.remote_sync_hint
+                        else -> null
                     }
-                    Text(stringResource(status), Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    if (status != null) Text(stringResource(status), Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (attempt?.delivery == RemoteDelivery.UNKNOWN) TextButton(onClick = { confirmUnknown = true }) {
                         Text(stringResource(R.string.remote_check))

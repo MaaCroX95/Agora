@@ -1,7 +1,9 @@
 package com.newoether.agora.remote
 
 import com.newoether.agora.model.ChatMessage
+import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.Participant
+import com.newoether.agora.model.ToolExecutionStates
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,6 +29,12 @@ internal data class RemoteSession(val id: String, val title: String, val cwd: St
 internal data class RemoteMessage(
     val id: String, val turnId: String, val clientId: String?, val role: String,
     val text: String, val timestamp: Long,
+    val activity: RemoteActivity? = null,
+)
+@Serializable
+internal data class RemoteActivity(
+    val type: String, val toolName: String? = null, val arguments: String? = null,
+    val result: String? = null, val state: String? = null, val durationMs: Long? = null,
 )
 @Serializable
 internal data class RemoteQueuedMessage(val id: String, val clientId: String, val text: String)
@@ -89,9 +97,17 @@ internal class FiloClient(
     }
 
     suspend fun conversation(id: String, cursor: String? = null): RemoteConversationPage = withContext(Dispatchers.Default) {
-        json.decodeFromString<RemoteConversationPage>(request("v1/sessions/${sessionId(id)}", cursor)).also { page ->
+        json.decodeFromString<RemoteConversationPage>(
+            request("v1/sessions/${sessionId(id)}", cursor, includeActivity = true),
+        ).also { page ->
             require(page.messages.all { it.role == "user" || it.role == "assistant" })
             require(page.messages.map { it.id }.toSet().size == page.messages.size)
+            page.messages.forEach { message -> message.activity?.let { activity ->
+                require(message.role == "assistant" && activity.type in setOf("thought", "tool"))
+                require(activity.type != "tool" || !activity.toolName.isNullOrBlank())
+                require(activity.durationMs == null || activity.durationMs >= 0)
+                require(activity.state == null || activity.state in setOf("running", "succeeded", "failed", "stopped"))
+            } }
         }
     }
 
@@ -108,10 +124,13 @@ internal class FiloClient(
         return id
     }
 
-    private suspend fun request(path: String, cursor: String? = null, body: String? = null): String =
+    private suspend fun request(
+        path: String, cursor: String? = null, body: String? = null, includeActivity: Boolean = false,
+    ): String =
         suspendCancellableCoroutine { continuation ->
             val url = endpoint.newBuilder().addPathSegments(path).apply {
                 cursor?.let { addQueryParameter("cursor", it) }
+                if (includeActivity) addQueryParameter("includeActivity", "true")
             }.build()
             val request = Request.Builder().url(url).header("Authorization", "Bearer $token")
                 .apply { body?.let { post(it.toRequestBody("application/json".toMediaType())) } }.build()
@@ -136,15 +155,50 @@ internal class FiloClient(
         }
 }
 
-internal fun projectRemoteMessages(messages: List<RemoteMessage>): List<ChatMessage> =
-    messages.mapIndexed { index, message ->
-        require(message.role == "user" || message.role == "assistant")
-        ChatMessage(
-            id = message.id, parentId = messages.getOrNull(index - 1)?.id,
-            text = message.text, participant = if (message.role == "user") Participant.USER else Participant.MODEL,
-            timestamp = message.timestamp, modelName = "Codex", runId = message.turnId,
-        )
+/** Native records stay in the Remote cache; only presentation groups adjacent assistant records. */
+internal fun projectRemoteMessages(messages: List<RemoteMessage>): List<ChatMessage> = buildList {
+    var index = 0
+    while (index < messages.size) {
+        val first = messages[index++]
+        require(first.role == "user" || first.role == "assistant")
+        val segments = if (first.role == "assistant") buildList<MessageSegment> {
+            var current = first
+            while (true) {
+                val activity = current.activity
+                val segment = when (activity?.type) {
+                    null -> MessageSegment(type = "answer", content = current.text)
+                    "thought" -> MessageSegment(type = "thought", content = current.text)
+                    "tool" -> MessageSegment(
+                        type = "tool", toolName = activity.toolName, toolArgs = activity.arguments,
+                        toolCallId = current.id, toolState = activity.state, durationMs = activity.durationMs,
+                        toolResult = activity.result.takeUnless { activity.state == ToolExecutionStates.RUNNING },
+                        toolProgress = activity.result.takeIf { activity.state == ToolExecutionStates.RUNNING },
+                    )
+                    else -> error("Unsupported Remote activity")
+                }
+                if (segment.type == "tool" || segment.content.isNotBlank()) {
+                    // Native text items are separate paragraphs, not adjacent streaming deltas.
+                    add(if (segment.type != "tool" && lastOrNull()?.type == segment.type) {
+                        segment.copy(content = "\n\n" + segment.content)
+                    } else segment)
+                }
+                val next = messages.getOrNull(index)
+                if (next?.role != "assistant" || next.turnId != first.turnId) break
+                current = next
+                index++
+            }
+        } else null
+        if (segments != null && segments.isEmpty()) continue
+        add(ChatMessage(
+            id = first.id, parentId = lastOrNull()?.id,
+            text = segments?.filter { it.type == "answer" }?.joinToString("\n\n") { it.content.trimStart('\n') }
+                ?: first.text,
+            participant = if (first.role == "user") Participant.USER else Participant.MODEL,
+            timestamp = first.timestamp, modelName = "Codex", runId = first.turnId,
+            segments = segments,
+        ))
     }
+}
 
 /** The newest native page replaces the cached tail, including native edits/removals. */
 internal fun mergeRemoteHistory(old: List<RemoteMessage>, fresh: List<RemoteMessage>): List<RemoteMessage> {

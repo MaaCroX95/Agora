@@ -1,6 +1,6 @@
 # Remote Sessions
 
-Status: owner-approved simple-chat scope, 2026-09-06.
+Status: owner-approved existing-session chat with public activity display, 2026-09-07.
 
 ## Boundary
 
@@ -30,7 +30,7 @@ navigation; top-level presentation ownership follows SettingsOverlayHost.
 ## Initial protocol and behavior
 
 Filo v1 authenticates with a Bearer token over an explicit LAN/Tailscale address.
-The simple-chat client lists existing sessions, loads paginated text messages, submits
+The client lists existing sessions, loads paginated messages and public activity, submits
 text to Codex's native queue and refreshes persisted output. It never retries a POST
 automatically. An unknown submission result remains visible for manual reconciliation;
 it must not be presented as a definite failure and blindly resent.
@@ -60,8 +60,8 @@ requires successful queue acceptance and the unchanged submitted text.
 
 Native queue dispatch may take about ten seconds and requires the existing session to
 be loaded in Codex. Persisted-message refresh is not token streaming. Stop, remote
-approvals, tools, attachments, editing, branching and model settings are outside this
-first simple-text slice; actual capability labels must not imply their availability.
+approvals, tool execution controls, attachments, editing, branching and model settings
+remain outside this slice; actual capability labels must not imply their availability.
 
 ## Owner-requested device UI alignment | 2026-09-07
 
@@ -101,6 +101,33 @@ atomically and cannot overwrite another device. Delete follows the MCP confirmat
 and removes only the local connection. Back without Save discards form changes.
 Checks run after saving and on visible device-list entry, coalesce in-flight checks, and
 reject results from replaced/deleted clients. No periodic device-health loop is added.
+
+## Approved reasoning/tool presentation | 2026-09-07
+
+The owner requests removing the default Keep this session notice from the Remote
+composer and displaying Thinking and tool calls. Existing rejection/unknown-delivery
+feedback remains meaningful and independent of that default notice. The owner approved
+this presentation extension, Filo plugin update and configured Agora installation.
+
+Use Codex's public reasoning summaries and tool records, mapped into existing
+MessageSegment thought/tool presentation. Reuse the ordinary display preferences,
+grouping, details, Markdown and scroll components. Remote transport/state and original
+Codex execution ownership stay separate from Agora-owned generation. Preserve native
+identity/order, pagination and no automatic POST retries. This increment
+continues refreshing persisted records; visible summaries and recorded tool state are
+not evidence of a subscribed live token stream or a complete live execution snapshot.
+
+History requests opt in with includeActivity=true. Legacy text-only responses remain
+readable and old clients keep their text projection. Only public nonempty summaries
+are displayed; raw hidden reasoning and binary tool media are never transported.
+Consecutive assistant records within the same native turn become ordered answer,
+thought and tool segments in one existing ChatMessage. Its first native ID remains
+the presentation identity; native IDs still own cached records and tool-call identity.
+A real user record or another native turn always ends that presentation group.
+Native tool states and durations are preserved; partial output uses toolProgress until
+the recorded state is terminal. Turn status does not create artificial live Thinking
+timers or generation state. Tool details remain owned by MessageList and observe the
+latest projected message by ID. Ordinary tool/Thinking preferences apply unchanged.
 
 ## Verification
 
