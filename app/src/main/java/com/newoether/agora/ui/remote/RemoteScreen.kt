@@ -23,6 +23,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.newoether.agora.remote.RemoteConnectionStore
+import com.newoether.agora.remote.RemoteFailure
 import java.io.File
 import com.newoether.agora.R
 import com.newoether.agora.SettingsOverlayHost
@@ -165,13 +166,24 @@ private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () ->
                 }
             }
         }))
-        if (state.error) Text(stringResource(R.string.remote_failed), Modifier.padding(16.dp),
+        if (state.error) Text(remoteFailureText(state.failure), Modifier.padding(16.dp),
             color = MaterialTheme.colorScheme.error)
     }
 }
 
 @Composable
 internal fun RemoteReadStatus(state: RemoteState, retry: () -> Unit) {
-    if (state.error) TextButton(onClick = retry) { Text(stringResource(R.string.remote_failed)) }
+    if (state.error) TextButton(onClick = retry) { Text(remoteFailureText(state.failure)) }
     else if (state.loading) Text(stringResource(R.string.loading_label), Modifier.padding(16.dp))
 }
+
+@Composable
+private fun remoteFailureText(failure: RemoteFailure?): String = stringResource(when (failure) {
+    RemoteFailure.NETWORK -> R.string.remote_network_failed
+    RemoteFailure.AUTHENTICATION -> R.string.remote_auth_failed
+    RemoteFailure.CONFIGURATION -> R.string.remote_configuration_failed
+    RemoteFailure.PROTOCOL -> R.string.remote_protocol_failed
+    RemoteFailure.SERVICE -> R.string.remote_service_failed
+    RemoteFailure.STORAGE -> R.string.remote_storage_failed
+    else -> R.string.remote_failed
+})

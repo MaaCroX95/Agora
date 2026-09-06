@@ -11,11 +11,16 @@
     <string name="remote_sync_hint">أبقِ هذه الجلسة مفتوحة في Codex. تتم مزامنة الردود بعد حفظها.</string>
     <string name="remote_refresh">تحديث</string>
     <string name="remote_load_more">تحميل المزيد</string>
-    <string name="remote_failed">فشل الاتصال. تحقق من Filo والعنوان والرمز ثم أعد المحاولة</string>
+    <string name="remote_failed">خطأ غير متوقع في الاتصال البعيد. راجع التشخيص وأعد المحاولة</string>
     <string name="remote_unknown">تعذر تأكيد التسليم. تحقق من هذه الجلسة في Codex قبل الإرسال مجددًا.</string>
     <string name="remote_rejected">لم تُقبل الرسالة. تحقق من الاتصال وأعد المحاولة</string>
     <string name="remote_check">لقد تحققت</string>
     <string name="remote_confirm">متابعة الإرسال؟</string>
     <string name="remote_remove">إزالة الاتصال</string>
-    <string name="remote_storage_failed">تعذّر حفظ الاتصالات أو استعادتها بأمان. اضغط لإعادة المحاولة</string>
+    <string name="remote_storage_failed">تخزين الاتصالات غير متاح. اضغط لإعادة تحميل الأجهزة المحفوظة</string>
+    <string name="remote_network_failed">يتعذّر الوصول إلى Filo. تحقّق من الشبكة وأعد المحاولة</string>
+    <string name="remote_auth_failed">رُفض الرمز. أعد الاتصال باستخدام رمز Filo الحالي</string>
+    <string name="remote_configuration_failed">تحقّق من تنسيق عنوان الخدمة والرمز</string>
+    <string name="remote_protocol_failed">أعاد Filo بيانات غير متوافقة. راجع التشخيص</string>
+    <string name="remote_service_failed">تعذّر على Filo إكمال الطلب. تحقّق من Codex على الكمبيوتر</string>
 </resources>

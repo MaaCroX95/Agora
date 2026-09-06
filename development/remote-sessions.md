@@ -44,6 +44,11 @@ conversation history or submitting messages. Selecting a device admits its sessi
 Removing a connection updates storage before removing its runtime client and local state;
 failure retains the entry. Concurrent connection changes are serialized. Network errors
 never remove saved devices. Storage failures remain visible and can be retried.
+Connection and read errors distinguish network, authentication, invalid connection input,
+protocol/data, service and storage failures. Remote lifecycle and failure events use the
+existing DeveloperDiagnostics capture when enabled. Events contain a random owner ID,
+operation, elapsed time, device count, exception type and HTTP status only; never addresses,
+tokens, session IDs, exception messages, response bodies or conversation content.
 Drafts, selected sessions and submission attempts remain in memory and are never replayed.
 Tokens never enter ordinary settings, logs, saved instance state or conversation storage.
 Backgrounding or dismissing Remote stops its read polling. In-flight native submissions

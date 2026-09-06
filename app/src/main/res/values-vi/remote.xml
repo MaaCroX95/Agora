@@ -11,11 +11,16 @@
     <string name="remote_sync_hint">Giữ phiên này mở trong Codex. Câu trả lời sẽ đồng bộ sau khi được lưu.</string>
     <string name="remote_refresh">Làm mới</string>
     <string name="remote_load_more">Tải thêm</string>
-    <string name="remote_failed">Kết nối thất bại. Kiểm tra Filo, URL và mã truy cập rồi thử lại</string>
+    <string name="remote_failed">Lỗi kết nối từ xa không mong đợi. Kiểm tra chẩn đoán rồi thử lại</string>
     <string name="remote_unknown">Không thể xác nhận đã gửi. Hãy kiểm tra phiên này trong Codex trước khi gửi lại.</string>
     <string name="remote_rejected">Tin nhắn không được chấp nhận. Kiểm tra kết nối rồi thử lại</string>
     <string name="remote_check">Tôi đã kiểm tra</string>
     <string name="remote_confirm">Tiếp tục gửi?</string>
     <string name="remote_remove">Xóa kết nối</string>
-    <string name="remote_storage_failed">Không thể lưu hoặc khôi phục kết nối an toàn. Nhấn để thử lại</string>
+    <string name="remote_storage_failed">Không thể truy cập bộ nhớ kết nối. Nhấn để tải lại các thiết bị đã lưu</string>
+    <string name="remote_network_failed">Không thể truy cập Filo. Kiểm tra mạng rồi thử lại</string>
+    <string name="remote_auth_failed">Mã truy cập bị từ chối. Kết nối lại bằng mã Filo hiện tại</string>
+    <string name="remote_configuration_failed">Kiểm tra định dạng URL dịch vụ và mã truy cập</string>
+    <string name="remote_protocol_failed">Filo trả về dữ liệu không tương thích. Kiểm tra chẩn đoán</string>
+    <string name="remote_service_failed">Filo không thể hoàn tất yêu cầu. Kiểm tra Codex trên máy tính</string>
 </resources>

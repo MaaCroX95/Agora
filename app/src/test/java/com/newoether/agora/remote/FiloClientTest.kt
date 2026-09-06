@@ -7,6 +7,8 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicInteger
+import java.io.IOException
+import kotlinx.serialization.SerializationException
 
 class FiloClientTest {
     private val token = "a".repeat(64)
@@ -29,6 +31,18 @@ class FiloClientTest {
             assertThrows(IllegalArgumentException::class.java) { FiloClient(it, token) }
         }
         assertThrows(IllegalArgumentException::class.java) { FiloClient("http://localhost/", "short") }
+    }
+
+    @Test fun failuresDistinguishTransportAuthenticationAndProtocol() {
+        assertEquals(RemoteFailure.NETWORK, classifyRemoteFailure(IOException("unreachable")))
+        assertEquals(RemoteFailure.AUTHENTICATION, classifyRemoteFailure(FiloHttpException(401)))
+        assertEquals(RemoteFailure.AUTHENTICATION, classifyRemoteFailure(FiloHttpException(403)))
+        assertEquals(RemoteFailure.SERVICE, classifyRemoteFailure(FiloHttpException(502)))
+        assertEquals(RemoteFailure.PROTOCOL, classifyRemoteFailure(SerializationException("payload")))
+        assertEquals(RemoteFailure.PROTOCOL, classifyRemoteFailure(IllegalArgumentException("incompatible")))
+        assertEquals(RemoteFailure.STORAGE, classifyRemoteFailure(RemoteStorageException()))
+        val invalid = assertThrows(FiloConfigurationException::class.java) { FiloClient("broken", token) }
+        assertEquals(RemoteFailure.CONFIGURATION, classifyRemoteFailure(invalid))
     }
 
     @Test fun authenticatedQueueSendUsesExactSessionAndDoesNotFollowRedirects() = runBlocking {

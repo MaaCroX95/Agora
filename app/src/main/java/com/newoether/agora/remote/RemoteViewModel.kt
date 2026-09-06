@@ -2,6 +2,8 @@ package com.newoether.agora.remote
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.newoether.agora.diagnostics.DeveloperDiagnostics
+import com.newoether.agora.diagnostics.DiagnosticRequestContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -20,13 +22,14 @@ internal data class RemoteState(
     val session: RemoteSession? = null, val messages: List<RemoteMessage> = emptyList(),
     val historyCursor: String? = null, val queued: List<RemoteQueuedMessage> = emptyList(),
     val drafts: Map<String, String> = emptyMap(), val attempts: Map<String, RemoteAttempt> = emptyMap(),
-    val connecting: Boolean = false, val loading: Boolean = false, val error: Boolean = false,
+    val connecting: Boolean = false, val loading: Boolean = false, val failure: RemoteFailure? = null,
     val restoring: Boolean = true, val storageError: Boolean = false,
 ) {
+    val error: Boolean get() = failure != null
     val owner: String? get() = session?.let { "$deviceId/${it.id}" }
 }
 
-/** Remote owns transport and in-memory state; native Codex owns durable execution. */
+/** Remote owns saved connections and presentation; native Codex owns durable execution. */
 internal class RemoteViewModel(
     private val connections: RemoteConnectionStore,
     private val createClient: (String, String) -> FiloClient = { address, token -> FiloClient(address, token) },
@@ -39,11 +42,31 @@ internal class RemoteViewModel(
     private var polling: Job? = null
     private var paging: Job? = null
     private var connecting: Job? = null
+    private val createdAt = System.nanoTime()
+    private val diagnosticContext = DiagnosticRequestContext(
+        requestId = UUID.randomUUID().toString(), provider = "Filo", model = "Codex", requestKind = "remote",
+    )
 
-    init { restoreConnections() }
+    init { trace("owner_created"); restoreConnections() }
+
+    private fun trace(stage: String, error: Exception? = null): RemoteFailure? {
+        val failure = error?.let(::classifyRemoteFailure)
+        val suffix = if (failure == null) "" else ".${failure.name}.${error.javaClass.simpleName}"
+        DeveloperDiagnostics.recordHttpStage(diagnosticContext, "remote.$stage$suffix",
+            (System.nanoTime() - createdAt) / 1_000_000,
+            "addresses=${state.value.devices.size}" + if (error is FiloHttpException) " code=${error.status}" else "")
+        return failure
+    }
+
+    override fun onCleared() {
+        trace("owner_cleared")
+        super.onCleared()
+    }
 
     fun restoreConnections() {
         if (connecting?.isActive == true) return
+        selectDevice(null)
+        trace("restore_started")
         mutableState.value = state.value.copy(restoring = true, storageError = false)
         connecting = viewModelScope.launch {
             try {
@@ -55,15 +78,20 @@ internal class RemoteViewModel(
                 mutableState.value = state.value.copy(devices = restored.map { (client, name) ->
                     RemoteDevice(client.address, name, client.address)
                 })
+                trace("restore_completed")
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { mutableState.value = state.value.copy(storageError = true) }
+            catch (error: Exception) {
+                trace("restore_failed", error)
+                mutableState.value = state.value.copy(storageError = true)
+            }
             finally { mutableState.value = state.value.copy(restoring = false) }
         }
     }
 
     fun connect(address: String, token: String) {
         if (state.value.connecting || state.value.restoring) return
-        mutableState.value = state.value.copy(connecting = true, error = false, storageError = false)
+        mutableState.value = state.value.copy(connecting = true, failure = null, storageError = false)
+        trace("connect_started")
         connecting = viewModelScope.launch {
             try {
                 val client = createClient(address, token.trim())
@@ -77,11 +105,15 @@ internal class RemoteViewModel(
                     connecting = false,
                 )
                 selectDevice(id)
+                trace("connected")
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: RemoteStorageException) {
+            catch (error: RemoteStorageException) {
+                trace("connect_failed", error)
                 mutableState.value = state.value.copy(connecting = false, storageError = true)
             }
-            catch (_: Exception) { mutableState.value = state.value.copy(connecting = false, error = true) }
+            catch (error: Exception) {
+                mutableState.value = state.value.copy(connecting = false, failure = trace("connect_failed", error))
+            }
         }
     }
 
@@ -98,8 +130,12 @@ internal class RemoteViewModel(
                     drafts = state.value.drafts.filterKeys { !it.startsWith("$id/") },
                     attempts = state.value.attempts.filterKeys { !it.startsWith("$id/") },
                 )
+                trace("device_removed")
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { mutableState.value = state.value.copy(storageError = true) }
+            catch (error: Exception) {
+                trace("remove_failed", error)
+                mutableState.value = state.value.copy(storageError = true)
+            }
             finally { mutableState.value = state.value.copy(connecting = false) }
         }
     }
@@ -108,20 +144,21 @@ internal class RemoteViewModel(
         if (id != null && id !in clients) return
         invalidateReads()
         mutableState.value = state.value.copy(deviceId = id, sessions = emptyList(), sessionCursor = null,
-            session = null, messages = emptyList(), historyCursor = null, queued = emptyList(), error = false)
+            session = null, messages = emptyList(), historyCursor = null, queued = emptyList(), failure = null)
         refresh()
     }
 
     fun selectSession(session: RemoteSession?) {
         invalidateReads()
         mutableState.value = state.value.copy(session = session, messages = emptyList(),
-            historyCursor = null, queued = emptyList(), error = false)
+            historyCursor = null, queued = emptyList(), failure = null)
         refresh()
     }
 
     fun setVisible(value: Boolean) {
         if (visible == value) return
         visible = value
+        trace(if (value) "visible" else "hidden")
         if (value) refresh() else invalidateReads()
     }
 
@@ -146,7 +183,7 @@ internal class RemoteViewModel(
                         val page = client.sessions()
                         if (generation != epoch) return@launch
                         mutableState.value = state.value.copy(sessions = page.sessions, sessionCursor = page.nextCursor,
-                            loading = false, error = false)
+                            loading = false, failure = null)
                     } else {
                         val page = client.conversation(session.id)
                         if (generation != epoch) return@launch
@@ -168,13 +205,14 @@ internal class RemoteViewModel(
                         mutableState.value = state.value.copy(
                             messages = mergeRemoteHistory(state.value.messages, fresh), queued = page.queued,
                             historyCursor = if (old.isEmpty()) page.nextCursor else state.value.historyCursor,
-                            loading = false, error = false,
+                            loading = false, failure = null,
                         )
                         if (accepted) accept(owner, attempt)
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) {
-                    if (generation == epoch) mutableState.value = state.value.copy(loading = false, error = true)
+                catch (error: Exception) {
+                    if (generation == epoch) mutableState.value = state.value.copy(
+                        loading = false, failure = trace("read_failed", error))
                 }
                 if (session == null) break
                 delay(3000)
@@ -201,7 +239,9 @@ internal class RemoteViewModel(
                             state.value.messages, historyCursor = page.nextCursor)
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { if (generation == epoch) mutableState.value = state.value.copy(error = true) }
+            catch (error: Exception) {
+                if (generation == epoch) mutableState.value = state.value.copy(failure = trace("page_failed", error))
+            }
         }
     }
 
@@ -230,6 +270,7 @@ internal class RemoteViewModel(
                 accept(owner, attempt)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
+                trace("send_failed", error)
                 if (state.value.attempts[owner]?.clientId == attempt.clientId &&
                     state.value.attempts[owner]?.delivery == RemoteDelivery.SUBMITTING) {
                     val rejected = error is FiloInputException ||

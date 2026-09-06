@@ -11,11 +11,16 @@
     <string name="remote_sync_hint">請在 Codex 中保持此對話開啟。回覆儲存後會同步顯示。</string>
     <string name="remote_refresh">重新整理</string>
     <string name="remote_load_more">載入更多</string>
-    <string name="remote_failed">連線失敗，請檢查 Filo、位址與權杖後重試</string>
+    <string name="remote_failed">遠端連線發生未知錯誤，請查看診斷後重試</string>
     <string name="remote_unknown">無法確認是否送達。再次傳送前，請先在 Codex 中檢查此對話。</string>
     <string name="remote_rejected">訊息未被接收，請檢查連線後重試</string>
     <string name="remote_check">我已檢查</string>
     <string name="remote_confirm">繼續傳送？</string>
     <string name="remote_remove">移除連線</string>
-    <string name="remote_storage_failed">無法安全儲存或還原連線，點按重試</string>
+    <string name="remote_storage_failed">連線儲存空間無法使用，點按重新載入已儲存裝置</string>
+    <string name="remote_network_failed">無法連線至 Filo，請檢查網路後重試</string>
+    <string name="remote_auth_failed">權杖遭拒，請使用 Filo 目前的權杖重新連線</string>
+    <string name="remote_configuration_failed">請檢查服務位址與權杖格式</string>
+    <string name="remote_protocol_failed">Filo 回傳的資料格式異常，請查看診斷</string>
+    <string name="remote_service_failed">Filo 無法完成請求，請檢查電腦上的 Codex</string>
 </resources>

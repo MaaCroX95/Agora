@@ -4,6 +4,9 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
+import com.newoether.agora.diagnostics.DeveloperDiagnostics
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -146,5 +149,44 @@ class RemoteViewModelTest {
         assertTrue(vm.state.value.drafts.isEmpty())
         assertNull(vm.state.value.deviceId)
         coVerify(exactly = 1) { client.send(any(), any(), any()) }
+    }
+
+    @Test fun failedRemovalKeepsTheSavedDeviceAndRuntimeClient() = runTest(dispatcher) {
+        coEvery { connections.remove(any()) } throws RemoteStorageException()
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.connect("http://computer/", "token"); runCurrent()
+        vm.removeDevice("http://computer/"); runCurrent()
+        assertEquals(1, vm.state.value.devices.size)
+        assertTrue(vm.state.value.storageError)
+        assertFalse(vm.state.value.connecting)
+        vm.setVisible(true); vm.selectDevice("http://computer/"); runCurrent()
+        assertEquals(listOf(session), vm.state.value.sessions)
+        vm.setVisible(false)
+    }
+
+    @Test fun diagnosticsCaptureCategoriesWithoutCredentialsOrExceptionContent() = runTest(dispatcher) {
+        val events = mutableListOf<String>()
+        mockkObject(DeveloperDiagnostics)
+        every { DeveloperDiagnostics.recordHttpStage(any(), any(), any(), any()) } answers {
+            events += "${firstArg<Any>()} ${secondArg<String>()} ${arg<String>(3)}"
+        }
+        try {
+            coEvery { connections.load() } returns listOf(RemoteConnection("Computer", "http://computer/", "PRIVATE_TOKEN"))
+            coEvery { client.sessions(any()) } throws IOException("PRIVATE_PAYLOAD http://private-host/")
+            val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+            vm.setVisible(true); vm.selectDevice("http://computer/"); runCurrent()
+            assertEquals(RemoteFailure.NETWORK, vm.state.value.failure)
+            coEvery { client.sessions(any()) } throws FiloHttpException(401)
+            vm.refresh(); runCurrent()
+            assertEquals(RemoteFailure.AUTHENTICATION, vm.state.value.failure)
+            coEvery { client.sessions(any()) } returns RemoteSessionPage(listOf(session), null)
+            vm.refresh(); runCurrent()
+            assertNull(vm.state.value.failure)
+            vm.setVisible(false)
+            assertTrue(events.any { it.contains("restore_completed") })
+            assertTrue(events.any { it.contains("read_failed.NETWORK.IOException") })
+            assertTrue(events.any { it.contains("AUTHENTICATION") && it.contains("code=401") })
+            assertFalse(events.any { it.contains("PRIVATE_") || it.contains("http://") })
+        } finally { unmockkObject(DeveloperDiagnostics) }
     }
 }

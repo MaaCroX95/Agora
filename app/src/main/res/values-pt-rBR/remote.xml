@@ -11,11 +11,16 @@
     <string name="remote_sync_hint">Mantenha esta sessão aberta no Codex. As respostas são sincronizadas após serem salvas.</string>
     <string name="remote_refresh">Atualizar</string>
     <string name="remote_load_more">Carregar Mais</string>
-    <string name="remote_failed">Falha na conexão. Verifique o Filo, a URL e o token e tente novamente</string>
+    <string name="remote_failed">Erro remoto inesperado. Consulte o diagnóstico e tente novamente</string>
     <string name="remote_unknown">Não foi possível confirmar a entrega. Verifique esta sessão no Codex antes de enviar novamente.</string>
     <string name="remote_rejected">Mensagem não aceita. Verifique a conexão e tente novamente</string>
     <string name="remote_check">Já Verifiquei</string>
     <string name="remote_confirm">Continuar Enviando?</string>
     <string name="remote_remove">Remover conexão</string>
-    <string name="remote_storage_failed">Não foi possível salvar ou restaurar as conexões com segurança. Toque para tentar novamente</string>
+    <string name="remote_storage_failed">Armazenamento de conexões indisponível. Toque para recarregar os dispositivos salvos</string>
+    <string name="remote_network_failed">Não foi possível acessar o Filo. Verifique a rede e tente novamente</string>
+    <string name="remote_auth_failed">Token rejeitado. Reconecte com o token atual do Filo</string>
+    <string name="remote_configuration_failed">Verifique o formato da URL do serviço e do token</string>
+    <string name="remote_protocol_failed">O Filo retornou dados incompatíveis. Consulte o diagnóstico</string>
+    <string name="remote_service_failed">O Filo não conseguiu concluir a solicitação. Verifique o Codex no computador</string>
 </resources>

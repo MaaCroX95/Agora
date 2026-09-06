@@ -48,6 +48,17 @@ private data class SendResult(val queueId: String)
 
 internal class FiloHttpException(val status: Int) : IOException("Filo HTTP $status")
 internal class FiloInputException : IllegalArgumentException("Invalid Filo message")
+internal class FiloConfigurationException : IllegalArgumentException("Invalid Filo connection")
+internal enum class RemoteFailure { NETWORK, AUTHENTICATION, CONFIGURATION, PROTOCOL, SERVICE, STORAGE, UNKNOWN }
+
+internal fun classifyRemoteFailure(error: Exception): RemoteFailure = when (error) {
+    is RemoteStorageException -> RemoteFailure.STORAGE
+    is FiloConfigurationException, is FiloInputException -> RemoteFailure.CONFIGURATION
+    is FiloHttpException -> if (error.status == 401 || error.status == 403) RemoteFailure.AUTHENTICATION else RemoteFailure.SERVICE
+    is IllegalArgumentException -> RemoteFailure.PROTOCOL
+    is IOException -> RemoteFailure.NETWORK
+    else -> RemoteFailure.UNKNOWN
+}
 
 /** A dedicated transport: credentials, redirects and retries never enter the provider client. */
 internal class FiloClient(
@@ -57,11 +68,11 @@ internal class FiloClient(
         .retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false)
         .callTimeout(30, TimeUnit.SECONDS).build(),
 ) {
-    private val endpoint = address.trim().toHttpUrl().also {
+    private val endpoint = try { address.trim().toHttpUrl().also {
         require(it.username.isEmpty() && it.password.isEmpty() && it.query == null &&
             it.fragment == null && it.encodedPath == "/")
         require(token.matches(Regex("[a-fA-F0-9]{64}")))
-    }
+    } } catch (_: IllegalArgumentException) { throw FiloConfigurationException() }
     val address: String get() = endpoint.toString()
     private val json = Json { ignoreUnknownKeys = true }
 
