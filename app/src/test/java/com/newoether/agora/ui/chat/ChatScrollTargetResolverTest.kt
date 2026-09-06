@@ -206,7 +206,8 @@ class ChatScrollTargetResolverTest {
                     conversationSearchActive = false, shareSelectionActive = false,
                     regenerationTransition = null, animatedScrollRequest = request.value,
                     messages = rows, density = Density(1f), motionPolicy = AgoraMotionPolicy.Default,
-                    bottomBarHeight = 0.dp, shareSelectionBarSpace = 0.dp, viewModel = viewModel,
+                    bottomBarHeight = 0.dp, shareSelectionBarSpace = 0.dp,
+                    onAnimatedScrollFinished = viewModel::completeAnimatedScroll,
                 )
             }
             runCurrent()
