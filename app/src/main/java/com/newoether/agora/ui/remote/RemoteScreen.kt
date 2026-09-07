@@ -32,7 +32,7 @@ import com.newoether.agora.remote.RemoteViewModel
 import com.newoether.agora.remote.RemoteDeviceStatus
 import com.newoether.agora.mcp.McpConnectionStatus
 import com.newoether.agora.ui.settings.*
-import com.newoether.agora.ui.motion.MotionAwareLinearProgressIndicator
+import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.ui.common.rememberAgoraHaptics
 
@@ -127,7 +127,7 @@ private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () ->
     val enabled = !state.restoring && !state.saving
     CollapsingSettingsScaffold(title = stringResource(R.string.remote_title), onBack = onBack) {
         if (state.restoring || state.saving || state.devices.any { it.status == RemoteDeviceStatus.CONNECTING })
-            MotionAwareLinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp))
+            RemoteLoadingIndicator()
         if (state.storageError) TextButton(onClick = vm::restoreConnections,
             enabled = enabled) {
             Text(stringResource(R.string.remote_storage_failed))
@@ -218,7 +218,7 @@ private fun RemoteAddDevice(state: RemoteState, vm: RemoteViewModel, onBack: () 
             Icon(Icons.Default.Save, stringResource(R.string.save))
         } },
     ) {
-        if (state.saving) MotionAwareLinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp))
+        if (state.saving) RemoteLoadingIndicator()
         SettingsGroup(title = stringResource(R.string.remote_connection), items = listOf({
             SettingsIconContent(Icons.Default.Link) {
                 McpLabeledField(label = stringResource(R.string.remote_address), value = address,
@@ -239,9 +239,15 @@ private fun RemoteAddDevice(state: RemoteState, vm: RemoteViewModel, onBack: () 
 }
 
 @Composable
+private fun RemoteLoadingIndicator() {
+    Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+        MotionAwareCircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+    }
+}
+
+@Composable
 internal fun RemoteReadStatus(state: RemoteState, retry: () -> Unit) {
-    if (state.loading || state.loadingMore || state.controlling) MotionAwareLinearProgressIndicator(
-        modifier = Modifier.fillMaxWidth().height(4.dp))
+    if (state.loading || state.loadingMore || state.controlling) RemoteLoadingIndicator()
     if (state.error) TextButton(onClick = retry) { Text(remoteFailureText(state.failure)) }
 }
 
