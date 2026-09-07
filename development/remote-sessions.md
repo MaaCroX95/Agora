@@ -177,7 +177,8 @@ slot with disabled/accessibility-unavailable presentation until its host operati
 exists. Ordinary chat retains its existing actions and defaults.
 
 Remote accepted sends reuse ScrollRequestCoordinator and ChatScrollCoordinator
-for a one-shot absolute-bottom feedback request against the selected native tail.
+for a one-shot absolute-bottom feedback request against the selected projected tail
+(the native tool/thought records can share one visible message ID).
 The request is emitted only on first acceptance, never on rejection/unknown or
 repeated history reconciliation; navigation clears it and completion matches its
 exact ID. Busy presentation lasts through acceptance until unchanged composer

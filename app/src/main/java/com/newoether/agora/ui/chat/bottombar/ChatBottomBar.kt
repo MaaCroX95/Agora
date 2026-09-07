@@ -392,7 +392,7 @@ internal fun ChatBottomBar(
         }
         },
     ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(48.dp).background(MaterialTheme.colorScheme.surfaceColorAtElevation(10.dp), RoundedCornerShape(100)).padding(horizontal = 8.dp, vertical = 4.dp)) {
+            ComposerControlGroup {
                 AttachmentAddMenu(
                     enabled = !submission.isFrozen,
                     onCamera = {
@@ -452,175 +452,81 @@ internal fun ChatBottomBar(
                     else -> stringResource(R.string.no_model_selected)
                 }
                 
-                ExposedDropdownMenuBox(
+                ComposerModelSelector(
+                    displayText = displayText,
+                    isModelValid = isModelValid,
                     expanded = activeMenu == "model",
-                    onExpandedChange = { }
-                ) {
-                    TextButton(
-                        onClick = {
-                            val now = System.currentTimeMillis()
-                            if (activeMenu == "model") {
-                                activeMenu = null
-                            } else if (now - lastModelDismissTime > 200) {
-                                activeMenu = "model"
-                            }
-                        },
-                        modifier = Modifier.height(38.dp).widthIn(max = 160.dp).menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true),
-                        contentPadding = PaddingValues(8.dp)
-                    ) {
-                        Text(
-                            displayText,
-                            style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = if (isModelValid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        )
-                    }
-                    
-                    ExposedDropdownMenu(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        expanded = activeMenu == "model", 
-                        onDismissRequest = { 
-                            if (activeMenu == "model") {
-                                activeMenu = null
-                                lastModelDismissTime = System.currentTimeMillis()
-                            }
-                        },
-                        matchTextFieldWidth = false,
-                        shape = CHAT_DROPDOWN_MENU_SHAPE,
-                    ) {
-                        if (enabledModels.isEmpty()) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.models_no_models)) },
-                                onClick = {
-                                    activeMenu = null
-                                    lastModelDismissTime = 0L // Reset to allow immediate re-open
-                                },
-                                enabled = false
-                            )
-                        } else {
-                            // Grouped by provider, then alphabetical. enabledModels is a Set whose
-                            // iteration order is insertion order (i.e. whenever each model was
-                            // enabled), which scrambles providers together in the picker.
-                            val sortedModels = remember(enabledModels, customProviders) {
-                                enabledModels.sortedWith(
-                                    compareBy(
-                                        {
-                                            providerDisplayName(
-                                                com.newoether.agora.model.ModelId.parse(it).providerName,
-                                                customProviders,
-                                            ).lowercase()
-                                        },
-                                        { com.newoether.agora.model.ModelId.parse(it).apiModelName.lowercase() },
-                                    )
-                                )
-                            }
-                            sortedModels.forEach { model ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(modelDisplayName(model, modelAliases, customProviders, modelProviderNames[model] != false))
-                                    },
-                                    onClick = {
-                                        haptics.selection()
-                                        onModelSelect(model)
-                                        activeMenu = null
-                                        lastModelDismissTime = 0L
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-                
-                val contextProgressColor = if (
-                    contextUsageExceedsCompactThreshold(
-                        contextEstimatedTokens,
-                        contextTokenBudget,
-                        contextCompactThresholdPercent,
-                    )
-                ) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.primary
-                }
-                val contextProgressTarget = if (contextTokenBudget <= 0) {
-                    0f
-                } else {
-                    (contextEstimatedTokens.toFloat() / contextTokenBudget).coerceIn(0f, 1f)
-                }
-                val contextProgress by animateFloatAsState(
-                    targetValue = contextProgressTarget,
-                    animationSpec = if (motionPolicy.allowContinuousMotion) {
-                        tween(durationMillis = 400)
-                    } else {
-                        snap()
+                    onClick = {
+                        val now = System.currentTimeMillis()
+                        if (activeMenu == "model") activeMenu = null
+                        else if (now - lastModelDismissTime > 200) activeMenu = "model"
                     },
-                    label = "contextProgress",
-                )
-                ExposedDropdownMenuBox(
-                    expanded = activeMenu == "context",
-                    onExpandedChange = { },
+                    onDismissRequest = {
+                        if (activeMenu == "model") {
+                            activeMenu = null
+                            lastModelDismissTime = System.currentTimeMillis()
+                        }
+                    },
                 ) {
-                    IconButton(
-                        onClick = {
-                            val now = System.currentTimeMillis()
-                            if (activeMenu == "context") {
+                    if (enabledModels.isEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.models_no_models)) },
+                            onClick = {
                                 activeMenu = null
-                            } else if (now - lastContextDismissTime > 200) {
-                                activeMenu = "context"
-                            }
-                        },
-                        modifier = Modifier
-                            .size(32.dp)
-                            .menuAnchor(
-                                type = ExposedDropdownMenuAnchorType.PrimaryNotEditable,
-                                enabled = true,
-                            ),
-                    ) {
-                        CircularProgressIndicator(
-                            progress = { contextProgress },
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.5.dp,
-                            color = contextProgressColor,
+                                lastModelDismissTime = 0L // Reset to allow immediate re-open
+                            },
+                            enabled = false
                         )
-                    }
-                    ExposedDropdownMenu(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        expanded = activeMenu == "context",
-                        onDismissRequest = {
-                            if (activeMenu == "context") {
-                                activeMenu = null
-                                lastContextDismissTime = System.currentTimeMillis()
-                            }
-                        },
-                        matchTextFieldWidth = false,
-                        shape = CHAT_DROPDOWN_MENU_SHAPE,
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.context_title),
-                                style = MaterialTheme.typography.titleSmall,
+                    } else {
+                        // Grouped by provider, then alphabetical. enabledModels is a Set whose
+                        // iteration order is insertion order (i.e. whenever each model was
+                        // enabled), which scrambles providers together in the picker.
+                        val sortedModels = remember(enabledModels, customProviders) {
+                            enabledModels.sortedWith(
+                                compareBy(
+                                    {
+                                        providerDisplayName(
+                                            com.newoether.agora.model.ModelId.parse(it).providerName,
+                                            customProviders,
+                                        ).lowercase()
+                                    },
+                                    { com.newoether.agora.model.ModelId.parse(it).apiModelName.lowercase() },
+                                )
                             )
-                            CircularProgressIndicator(
-                                progress = { contextProgress },
-                                modifier = Modifier.size(36.dp).align(Alignment.CenterHorizontally),
-                                strokeWidth = 4.dp,
-                                color = contextProgressColor,
-                            )
-                            Text(
-                                text = stringResource(
-                                    R.string.context_usage_messages,
-                                    ContextBudget.compactLabel(contextEstimatedTokens),
-                                    ContextBudget.compactLabel(contextTokenBudget),
-                                ),
-                                style = MaterialTheme.typography.bodyMedium,
+                        }
+                        sortedModels.forEach { model ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(modelDisplayName(model, modelAliases, customProviders, modelProviderNames[model] != false))
+                                },
+                                onClick = {
+                                    haptics.selection()
+                                    onModelSelect(model)
+                                    activeMenu = null
+                                    lastModelDismissTime = 0L
+                                }
                             )
                         }
                     }
                 }
+
+                ComposerContextIndicator(
+                    estimatedTokens = contextEstimatedTokens,
+                    tokenBudget = contextTokenBudget,
+                    compactThresholdPercent = contextCompactThresholdPercent,
+                    expanded = activeMenu == "context",
+                    onClick = {
+                        val now = System.currentTimeMillis()
+                        if (activeMenu == "context") activeMenu = null
+                        else if (now - lastContextDismissTime > 200) activeMenu = "context"
+                    },
+                    onDismissRequest = {
+                        if (activeMenu == "context") {
+                            activeMenu = null
+                            lastContextDismissTime = System.currentTimeMillis()
+                        }
+                    },
+                )
 
                 ExposedDropdownMenuBox(
                     expanded = activeMenu == "tools",

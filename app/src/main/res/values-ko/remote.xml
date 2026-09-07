@@ -32,4 +32,5 @@
     <string name="remote_delete_title">기기를 삭제할까요?</string>
     <string name="remote_delete_message">%1$s의 저장된 연결을 삭제할까요? Codex 세션은 유지됩니다.</string>
     <string name="remote_new_session_unavailable">새 세션 — 이 기기에서 사용할 수 없음</string>
+    <string name="remote_model_unavailable">모델 사용 불가</string>
 </resources>

@@ -270,7 +270,11 @@ class RemoteViewModelTest {
         val gate = CompletableDeferred<String>()
         coEvery { client.send(any(), any(), any()) } coAnswers { gate.await() }
         coEvery { client.conversation(any(), any()) } returns RemoteConversationPage(
-            listOf(RemoteMessage("tail", "turn", null, "assistant", "Previous answer", 1)), null, emptyList())
+            listOf(
+                RemoteMessage("tail", "turn", null, "assistant", "Previous answer", 1),
+                RemoteMessage("tool", "turn", null, "assistant", "", 1,
+                    RemoteActivity("tool", toolName = "exec", state = "succeeded")),
+            ), null, emptyList())
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         saveAndSelect(vm)
         vm.selectSession(session); vm.setVisible(true); runCurrent()

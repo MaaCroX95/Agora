@@ -155,7 +155,17 @@ internal fun RemoteConversation(
                     }
                 },
                 controls = {
-                    Text("Codex", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 8.dp))
+                    ComposerControlGroup {
+                        ComposerModelSelector(
+                            displayText = stringResource(R.string.remote_model_unavailable),
+                            isModelValid = false, expanded = false, enabled = false,
+                            onClick = {}, onDismissRequest = {}, menuContent = {},
+                        )
+                        ComposerContextIndicator(
+                            estimatedTokens = null, tokenBudget = null, expanded = false,
+                            onClick = {}, onDismissRequest = {},
+                        )
+                    }
                     ComposerSendButton(isActionable = active && !submitting && field.text.isNotBlank() &&
                         attempt?.delivery != RemoteDelivery.UNKNOWN,
                         isBusy = submitting) {

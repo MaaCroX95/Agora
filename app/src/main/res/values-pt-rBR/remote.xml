@@ -32,4 +32,5 @@
     <string name="remote_delete_title">Excluir dispositivo?</string>
     <string name="remote_delete_message">Remover a conexão salva com %1$s? As sessões do Codex serão mantidas.</string>
     <string name="remote_new_session_unavailable">Nova sessão — indisponível neste dispositivo</string>
+    <string name="remote_model_unavailable">Modelo indisponível</string>
 </resources>

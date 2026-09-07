@@ -32,4 +32,5 @@
     <string name="remote_delete_title">Delete Device?</string>
     <string name="remote_delete_message">Remove the saved connection to %1$s? Codex sessions will be kept.</string>
     <string name="remote_new_session_unavailable">New Session — unavailable on this host</string>
+    <string name="remote_model_unavailable">Model Unavailable</string>
 </resources>

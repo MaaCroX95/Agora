@@ -32,4 +32,5 @@
     <string name="remote_delete_title">حذف الجهاز؟</string>
     <string name="remote_delete_message">هل تريد إزالة الاتصال المحفوظ بالجهاز %1$s؟ ستبقى جلسات Codex محفوظة.</string>
     <string name="remote_new_session_unavailable">جلسة جديدة — غير متاحة على هذا الجهاز</string>
+    <string name="remote_model_unavailable">النموذج غير متاح</string>
 </resources>

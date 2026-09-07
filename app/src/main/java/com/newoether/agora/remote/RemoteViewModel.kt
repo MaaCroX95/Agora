@@ -385,7 +385,9 @@ internal class RemoteViewModel(
             attempts = state.value.attempts + (owner to attempt.copy(delivery = RemoteDelivery.QUEUED)),
         )
         if (state.value.owner == owner) {
-            state.value.messages.lastOrNull()?.let { scrollRequests.requestAbsoluteBottomAfter(owner, it.id) }
+            projectRemoteMessages(state.value.messages).lastOrNull()?.let {
+                scrollRequests.requestAbsoluteBottomAfter(owner, it.id)
+            }
         }
     }
 }

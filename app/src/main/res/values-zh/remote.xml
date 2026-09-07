@@ -32,4 +32,5 @@
     <string name="remote_delete_title">删除设备？</string>
     <string name="remote_delete_message">删除已保存的 %1$s 连接？Codex 会话会保留。</string>
     <string name="remote_new_session_unavailable">新建会话（此设备暂不支持）</string>
+    <string name="remote_model_unavailable">模型暂不可用</string>
 </resources>
