@@ -18,6 +18,9 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.serialization.SerializationException
 import org.junit.After
 import org.junit.Assert.*
@@ -38,6 +41,15 @@ class RemoteViewModelTest {
         coEvery { client.connect() } returns "Computer"
         coEvery { client.sessions(any()) } returns RemoteSessionPage(listOf(session), null)
         coEvery { client.conversation(any(), any()) } returns RemoteConversationPage(emptyList(), null, emptyList())
+        coEvery { client.models() } returns listOf(RemoteModel("model", "Model", true))
+        every { client.events(any()) } answers {
+            val id = firstArg<String>()
+            flow {
+                val page = client.conversation(id)
+                emit(page.copy(runtime = page.runtime ?: RemoteRuntime("idle", model = "model")))
+                awaitCancellation()
+            }
+        }
     }
     @After fun tearDown() { Dispatchers.resetMain() }
 
@@ -232,13 +244,13 @@ class RemoteViewModelTest {
         coEvery { client.send(any(), any(), any()) } coAnswers { gate.await() }
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         saveAndSelect(vm)
-        vm.selectSession(session)
+        vm.selectSession(session); vm.setVisible(true); runCurrent()
         val owner = vm.state.value.owner!!
         vm.editDraft(owner, "first"); vm.send(); runCurrent()
         vm.editDraft(owner, "second"); vm.selectSession(session.copy(id = "other"))
         gate.complete("queued"); runCurrent()
         assertEquals("second", vm.state.value.drafts[owner])
-        assertEquals(RemoteDelivery.QUEUED, vm.state.value.attempts[owner]?.delivery)
+        assertEquals(RemoteDelivery.ACCEPTED, vm.state.value.attempts[owner]?.delivery)
         assertEquals("other", vm.state.value.session?.id)
         coVerify(exactly = 1) { client.send("session", "first", any()) }
         val acceptedId = vm.state.value.attempts[owner]!!.clientId
@@ -247,6 +259,7 @@ class RemoteViewModelTest {
         vm.selectSession(session); vm.editDraft(owner, "first")
         vm.setVisible(true); runCurrent()
         assertEquals("first", vm.state.value.drafts[owner])
+        assertEquals(RemoteDelivery.ACCEPTED, vm.state.value.attempts[owner]?.delivery)
         vm.setVisible(false)
     }
 
@@ -254,7 +267,7 @@ class RemoteViewModelTest {
         coEvery { client.send(any(), any(), any()) } throws IOException("Lost response")
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         saveAndSelect(vm)
-        vm.selectSession(session)
+        vm.selectSession(session); vm.setVisible(true); runCurrent()
         val owner = vm.state.value.owner!!
         vm.editDraft(owner, "hello"); vm.send(); runCurrent()
         vm.send(); runCurrent()
@@ -264,6 +277,7 @@ class RemoteViewModelTest {
         coVerify(exactly = 1) { client.send(any(), any(), any()) }
         vm.acknowledgeUnknown(owner)
         assertNull(vm.state.value.attempts[owner])
+        vm.setVisible(false)
     }
 
     @Test fun acceptedSendRequestsOneOwnedScrollAndNavigationClearsIt() = runTest(dispatcher) {
@@ -282,22 +296,33 @@ class RemoteViewModelTest {
         vm.editDraft(owner, "hello"); vm.send(); runCurrent()
         assertEquals(RemoteDelivery.SUBMITTING, vm.state.value.attempts[owner]?.delivery)
         assertNull(vm.animatedScrollRequest.value)
-        gate.complete("queue"); runCurrent()
-        val request = vm.animatedScrollRequest.value!!
-        assertEquals(owner, request.conversationId)
-        assertEquals("tail", request.targetMessageId)
-        assertEquals(com.newoether.agora.viewmodel.AnimatedScrollDestination.ABSOLUTE_BOTTOM, request.destination)
-        vm.completeAnimatedScroll(request.id + 1)
-        assertEquals(request, vm.animatedScrollRequest.value)
-        vm.completeAnimatedScroll(request.id)
+        gate.complete("turn"); runCurrent()
+        assertEquals(RemoteDelivery.ACCEPTED, vm.state.value.attempts[owner]?.delivery)
+        assertEquals("hello", vm.state.value.drafts[owner])
         assertNull(vm.animatedScrollRequest.value)
         val clientId = vm.state.value.attempts[owner]!!.clientId
         coEvery { client.conversation(any(), any()) } returns RemoteConversationPage(
             listOf(RemoteMessage("sent", "new-turn", clientId, "user", "hello", 2)), null, emptyList())
         vm.refresh(); runCurrent()
+        assertEquals(RemoteDelivery.DELIVERED, vm.state.value.attempts[owner]?.delivery)
+        assertNull(vm.state.value.drafts[owner])
+        val request = vm.animatedScrollRequest.value!!
+        assertEquals(owner, request.conversationId)
+        assertEquals("sent", request.targetMessageId)
+        assertEquals(com.newoether.agora.viewmodel.AnimatedScrollDestination.ABSOLUTE_BOTTOM, request.destination)
+        vm.completeAnimatedScroll(request.id + 1)
+        assertEquals(request, vm.animatedScrollRequest.value)
+        vm.completeAnimatedScroll(request.id)
         assertNull(vm.animatedScrollRequest.value)
-        coEvery { client.send(any(), any(), any()) } returns "second-queue"
+        vm.refresh(); runCurrent()
+        assertNull(vm.animatedScrollRequest.value)
+        coEvery { client.send(any(), any(), any()) } returns "second-turn"
         vm.editDraft(owner, "next"); vm.send(); runCurrent()
+        assertNull(vm.animatedScrollRequest.value)
+        val nextId = vm.state.value.attempts[owner]!!.clientId
+        coEvery { client.conversation(any(), any()) } returns RemoteConversationPage(
+            listOf(RemoteMessage("next", "next-turn", nextId, "user", "next", 3)), null, emptyList())
+        vm.refresh(); runCurrent()
         assertNotNull(vm.animatedScrollRequest.value)
         vm.selectSession(session.copy(id = "other"))
         assertNull(vm.animatedScrollRequest.value)
@@ -308,11 +333,12 @@ class RemoteViewModelTest {
         coEvery { client.send(any(), any(), any()) } throws SerializationException("Invalid response")
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         saveAndSelect(vm)
-        vm.selectSession(session)
+        vm.selectSession(session); vm.setVisible(true); runCurrent()
         val owner = vm.state.value.owner!!
         vm.editDraft(owner, "hello"); vm.send(); runCurrent()
         assertEquals(RemoteDelivery.UNKNOWN, vm.state.value.attempts[owner]?.delivery)
         assertEquals("hello", vm.state.value.drafts[owner])
+        vm.setVisible(false)
     }
 
     @Test fun restoredDevicesSurviveReadFailureWithoutSendingOrOpeningHistory() = runTest(dispatcher) {
@@ -352,7 +378,7 @@ class RemoteViewModelTest {
         coEvery { client.send(any(), any(), any()) } coAnswers { sendGate.await() }
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         saveAndSelect(vm)
-        vm.selectSession(session)
+        vm.selectSession(session); vm.setVisible(true); runCurrent()
         vm.editDraft(vm.state.value.owner!!, "Once"); vm.send(); runCurrent()
         vm.removeDevice("http://computer/"); runCurrent()
         assertEquals(1, vm.state.value.devices.size)
@@ -363,6 +389,48 @@ class RemoteViewModelTest {
         assertTrue(vm.state.value.drafts.isEmpty())
         assertNull(vm.state.value.deviceId)
         coVerify(exactly = 1) { client.send(any(), any(), any()) }
+        vm.setVisible(false)
+    }
+
+    @Test fun nativeEventBeforeLostReceiptConfirmsOnceAndDisconnectInvalidatesRuntime() = runTest(dispatcher) {
+        val events = MutableSharedFlow<RemoteConversationPage>()
+        every { client.events(any()) } returns events
+        val response = CompletableDeferred<String>()
+        coEvery { client.send(any(), any(), any()) } coAnswers { response.await() }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
+        val running = RemoteRuntime("active", "turn", "model", 1234, 256000)
+        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), running)); runCurrent()
+        val owner = vm.state.value.owner!!
+        vm.editDraft(owner, "hello"); vm.send(); runCurrent()
+        val id = vm.state.value.attempts[owner]!!.clientId
+        val message = RemoteMessage("sent", "turn", id, "user", "hello", 1)
+        events.emit(RemoteConversationPage(listOf(message), null, emptyList(), running)); runCurrent()
+        val scroll = vm.animatedScrollRequest.value
+        assertEquals(RemoteDelivery.DELIVERED, vm.state.value.attempts[owner]?.delivery)
+        response.completeExceptionally(IOException("Lost receipt")); runCurrent()
+        assertEquals(RemoteDelivery.DELIVERED, vm.state.value.attempts[owner]?.delivery)
+        assertEquals(scroll, vm.animatedScrollRequest.value)
+        assertEquals(1234, vm.state.value.runtime?.contextTokens)
+        vm.setVisible(false)
+        assertNull(vm.state.value.runtime)
+        vm.editDraft(owner, "offline"); vm.send(); runCurrent()
+        coVerify(exactly = 1) { client.send(any(), any(), any()) }
+    }
+
+    @Test fun newSessionUsesHostCreationAndLateResultDoesNotNavigateAfterBack() = runTest(dispatcher) {
+        val created = CompletableDeferred<RemoteSession>()
+        coEvery { client.create() } coAnswers { created.await() }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        saveAndSelect(vm); vm.setVisible(true); runCurrent()
+        vm.newSession(); vm.newSession(); runCurrent()
+        assertTrue(vm.state.value.controlling)
+        vm.selectDevice(null)
+        created.complete(RemoteSession("new", "New", "/host/default", 1)); runCurrent()
+        assertNull(vm.state.value.session)
+        assertFalse(vm.state.value.controlling)
+        coVerify(exactly = 1) { client.create() }
+        vm.setVisible(false)
     }
 
     @Test fun failedRemovalKeepsTheSavedDeviceAndRuntimeClient() = runTest(dispatcher) {

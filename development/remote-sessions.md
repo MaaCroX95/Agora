@@ -190,3 +190,33 @@ model selection and unknown context, without numeric zero or fabricated budget.
 No historic turn/tool snapshot creates live generation state. True original-host
 steer, New Session execution, model changes and the live generation dot remain
 backend capability work; the installed native-queue transport is unchanged here.
+
+## Approved shared-host functional implementation | 2026-09-07
+
+The owner explicitly approves the shared local App Server and the current desktop
+CODEX_APP_SERVER_WS_URL startup dependency. This supersedes disabled-control and
+native-queue behavior above. Desktop switching is arranged after source/test
+preparation; do not resume a real task into a competing still-running old host.
+
+Protocol 2 provides direct idle turn/start, exact active turn/steer without queue
+fallback, new sessions using the shared host default cwd, native model changes,
+context telemetry, Stop and live SSE snapshots driven by native item/status events.
+The shared native host survives Filo service stop/reinstall. Approval decisions
+remain desktop-owned in this increment. Never reject another client's requests.
+
+Remote submission distinguishes an HTTP/native receipt from a user message actually
+appearing in the native conversation. Keep the shared send button busy through that
+confirmation and composer clearing. Once the exact client ID is visible, clear only
+the unchanged draft and request one ordinary animated scroll against that native
+user message ID. Neither queue admission, the old history tail, replayed snapshots,
+nor an arbitrary minimum timer is a send-completion signal. Unknown POST outcomes
+are reconciled by client ID and never automatically resent.
+
+Selected-session SSE cancellation and native snapshot application use existing owner
+and read-generation guards. Disconnection invalidates current runtime truth while
+preserving saved devices, history and drafts. Only native active state drives shared
+MessageList generation/dot/stream presentation; use the native active turn identity
+for Stop. Model/context use the extracted ordinary controls, real model catalog and
+measured usage; unavailable telemetry remains unknown. Normal conversations and their
+backend remain unchanged. Existing messages, composer, scroll and motion rendering
+remain the only UI implementation. New/More actions contain only supported operations.

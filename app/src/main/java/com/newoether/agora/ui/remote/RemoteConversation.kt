@@ -55,12 +55,12 @@ internal fun RemoteConversation(
     val attempt = state.attempts[owner]
     LaunchedEffect(owner, field) { snapshotFlow { field.text.toString() }.collect { vm.editDraft(owner, it) } }
     var clearedAttempt by remember(owner) {
-        mutableStateOf(attempt?.takeIf { it.delivery == RemoteDelivery.QUEUED }?.clientId)
+        mutableStateOf(attempt?.takeIf { it.delivery == RemoteDelivery.DELIVERED }?.clientId)
     }
-    val acceptedPendingClear = attempt?.delivery == RemoteDelivery.QUEUED && clearedAttempt != attempt.clientId
-    val submitting = attempt?.delivery == RemoteDelivery.SUBMITTING || acceptedPendingClear
+    val acceptedPendingClear = attempt?.delivery == RemoteDelivery.DELIVERED && clearedAttempt != attempt.clientId
+    val submitting = attempt?.delivery in setOf(RemoteDelivery.SUBMITTING, RemoteDelivery.ACCEPTED) || acceptedPendingClear
     LaunchedEffect(attempt) {
-        if (attempt?.delivery == RemoteDelivery.QUEUED && clearedAttempt != attempt.clientId) {
+        if (attempt?.delivery == RemoteDelivery.DELIVERED && clearedAttempt != attempt.clientId) {
             clearedAttempt = attempt.clientId
             if (state.drafts[owner].isNullOrEmpty() && field.text.toString() == attempt.text) {
                 field.edit { replace(0, length, "") }

@@ -7,6 +7,11 @@ import com.newoether.agora.model.ToolExecutionStates
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -43,7 +48,17 @@ internal data class RemoteSessionPage(val sessions: List<RemoteSession>, val nex
 @Serializable
 internal data class RemoteConversationPage(
     val messages: List<RemoteMessage>, val nextCursor: String?, val queued: List<RemoteQueuedMessage>,
+    val runtime: RemoteRuntime? = null,
 )
+@Serializable
+internal data class RemoteRuntime(
+    val status: String, val activeTurnId: String? = null, val model: String? = null,
+    val contextTokens: Int? = null, val contextWindow: Int? = null,
+) { val isRunning: Boolean get() = status == "active" }
+@Serializable
+internal data class RemoteModel(val id: String, val name: String, val isDefault: Boolean = false)
+@Serializable
+private data class RemoteModels(val models: List<RemoteModel>)
 @Serializable
 private data class FiloInfo(
     val protocolVersion: Int, val agent: String, val sessionMode: String,
@@ -52,7 +67,7 @@ private data class FiloInfo(
 @Serializable
 private data class SendInput(val text: String, val clientId: String)
 @Serializable
-private data class SendResult(val queueId: String)
+private data class SendResult(val turnId: String, val clientId: String)
 
 internal class FiloHttpException(val status: Int) : IOException("Filo HTTP $status")
 internal class FiloInputException : IllegalArgumentException("Invalid Filo message")
@@ -86,9 +101,9 @@ internal class FiloClient(
 
     suspend fun connect(): String {
         val info = json.decodeFromString<FiloInfo>(request("v1/info"))
-        require(info.protocolVersion == 1 && info.agent == "codex" &&
-            info.sessionMode == "existing" && info.messageDelivery == "native-queue" &&
-            info.outputMode == "persisted-messages") { "Incompatible Filo service" }
+        require(info.protocolVersion == 2 && info.agent == "codex" &&
+            info.sessionMode == "existing" && info.messageDelivery == "native-steer" &&
+            info.outputMode == "live-messages") { "Incompatible Filo service" }
         return info.device
     }
 
@@ -97,9 +112,13 @@ internal class FiloClient(
     }
 
     suspend fun conversation(id: String, cursor: String? = null): RemoteConversationPage = withContext(Dispatchers.Default) {
-        json.decodeFromString<RemoteConversationPage>(
+        decodePage(
             request("v1/sessions/${sessionId(id)}", cursor, includeActivity = true),
-        ).also { page ->
+        )
+    }
+
+    private fun decodePage(text: String): RemoteConversationPage =
+        json.decodeFromString<RemoteConversationPage>(text).also { page ->
             require(page.messages.all { it.role == "user" || it.role == "assistant" })
             require(page.messages.map { it.id }.toSet().size == page.messages.size)
             page.messages.forEach { message -> message.activity?.let { activity ->
@@ -109,6 +128,40 @@ internal class FiloClient(
                 require(activity.state == null || activity.state in setOf("running", "succeeded", "failed", "stopped"))
             } }
         }
+
+    fun events(id: String): Flow<RemoteConversationPage> = callbackFlow {
+        val request = Request.Builder().url(endpoint.newBuilder()
+            .addPathSegments("v1/sessions/${sessionId(id)}/events").build())
+            .header("Authorization", "Bearer $token").build()
+        val call = calls.newCall(request)
+        call.timeout().clearTimeout()
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) { close(e) }
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    try {
+                        if (!it.isSuccessful) throw FiloHttpException(it.code)
+                        val source = it.body.source()
+                        while (!call.isCanceled()) {
+                            val line = source.readUtf8Line() ?: break
+                            if (line == "event: error") throw IOException("Filo stream failed")
+                            if (line.startsWith("data: ")) trySend(decodePage(line.removePrefix("data: ")))
+                        }
+                        close(IOException("Filo stream closed"))
+                    } catch (error: Exception) { close(error) }
+                }
+            }
+        })
+        awaitClose { call.cancel() }
+    }.buffer(Channel.CONFLATED)
+
+    suspend fun create(): RemoteSession = json.decodeFromString(request("v1/sessions", body = "{}"))
+    suspend fun models(): List<RemoteModel> = json.decodeFromString<RemoteModels>(request("v1/models")).models
+    suspend fun setModel(id: String, model: String) {
+        request("v1/sessions/${sessionId(id)}/model", body = json.encodeToString(mapOf("model" to model)))
+    }
+    suspend fun stop(id: String, turnId: String) {
+        request("v1/sessions/${sessionId(id)}/stop", body = json.encodeToString(mapOf("turnId" to turnId)))
     }
 
     suspend fun send(id: String, text: String, clientId: String): String {
@@ -116,7 +169,7 @@ internal class FiloClient(
         if (text.isBlank() || body.toByteArray(Charsets.UTF_8).size > 65536) throw FiloInputException()
         return json.decodeFromString<SendResult>(
             request("v1/sessions/${sessionId(id)}/messages", body = body),
-        ).queueId
+        ).also { require(it.clientId == clientId && it.turnId.isNotBlank()) }.turnId
     }
 
     private fun sessionId(id: String): String {

@@ -16,6 +16,7 @@ import java.io.IOException
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.flow.first
 
 class FiloClientTest {
     private val token = "a".repeat(64)
@@ -162,7 +163,7 @@ class FiloClientTest {
         assertEquals(RemoteFailure.CONFIGURATION, classifyRemoteFailure(invalid))
     }
 
-    @Test fun authenticatedQueueSendUsesExactSessionAndDoesNotFollowRedirects() = runBlocking {
+    @Test fun authenticatedDirectSendUsesExactSessionAndDoesNotFollowRedirects() = runBlocking {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         val requests = AtomicInteger()
         var auth = ""
@@ -190,6 +191,31 @@ class FiloClientTest {
             assertNull(query)
             assertTrue(body.contains("\"text\":\"hello\""))
             assertTrue(body.contains("\"clientId\":\"$id\""))
+        } finally { server.stop(0) }
+    }
+
+    @Test fun protocolTwoAndNativeReceiptAndEventStreamUseIndependentAuthenticatedTransport() = runBlocking {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val auth = mutableListOf<String>()
+        val page = RemoteConversationPage(listOf(RemoteMessage("native-user", "turn", id, "user", "hello", 1)),
+            null, emptyList(), RemoteRuntime("active", "turn", "model", 42, 256000))
+        server.createContext("/") { exchange ->
+            auth += exchange.requestHeaders.getFirst("Authorization")
+            val value = when (exchange.requestURI.path) {
+                "/v1/info" -> """{"protocolVersion":2,"agent":"codex","sessionMode":"existing","messageDelivery":"native-steer","outputMode":"live-messages","device":"Computer"}"""
+                "/v1/sessions/$id/messages" -> """{"turnId":"turn","clientId":"$id"}"""
+                else -> "data: ${Json.encodeToString(page)}\n\n"
+            }.toByteArray()
+            exchange.sendResponseHeaders(200, value.size.toLong())
+            exchange.responseBody.use { it.write(value) }
+        }
+        server.start()
+        try {
+            val client = FiloClient("http://127.0.0.1:${server.address.port}/", token)
+            assertEquals("Computer", client.connect())
+            assertEquals("turn", client.send(id, "hello", id))
+            assertEquals(page, client.events(id).first())
+            assertEquals(listOf("Bearer $token", "Bearer $token", "Bearer $token"), auth)
         } finally { server.stop(0) }
     }
 }

@@ -21,7 +21,7 @@ internal data class RemoteDevice(
     val id: String, val name: String, val address: String,
     val status: RemoteDeviceStatus = RemoteDeviceStatus.IDLE, val failure: RemoteFailure? = null,
 )
-internal enum class RemoteDelivery { SUBMITTING, QUEUED, REJECTED, UNKNOWN }
+internal enum class RemoteDelivery { SUBMITTING, ACCEPTED, DELIVERED, REJECTED, UNKNOWN }
 internal data class RemoteAttempt(val clientId: String, val text: String, val delivery: RemoteDelivery)
 internal data class RemoteState(
     val devices: List<RemoteDevice> = emptyList(), val deviceId: String? = null,
@@ -32,6 +32,8 @@ internal data class RemoteState(
     val saving: Boolean = false, val loading: Boolean = false, val failure: RemoteFailure? = null,
     val restoring: Boolean = true, val storageError: Boolean = false, val addingDevice: Boolean = false,
     val editedDeviceId: String? = null,
+    val runtime: RemoteRuntime? = null, val models: List<RemoteModel> = emptyList(),
+    val controlling: Boolean = false,
 ) {
     val error: Boolean get() = failure != null
     val owner: String? get() = session?.let { "$deviceId/${it.id}" }
@@ -223,7 +225,8 @@ internal class RemoteViewModel(
         invalidateReads()
         mutableState.value = state.value.copy(deviceId = id, addingDevice = false, editedDeviceId = null,
             sessions = emptyList(), sessionCursor = null,
-            session = null, messages = emptyList(), historyCursor = null, queued = emptyList(), failure = null)
+            session = null, messages = emptyList(), historyCursor = null, queued = emptyList(), failure = null,
+            runtime = null, models = emptyList())
         refresh()
     }
 
@@ -232,7 +235,7 @@ internal class RemoteViewModel(
         selectionEpoch++
         invalidateReads()
         mutableState.value = state.value.copy(session = session, messages = emptyList(),
-            historyCursor = null, queued = emptyList(), failure = null)
+            historyCursor = null, queued = emptyList(), failure = null, runtime = null)
         refresh()
     }
 
@@ -247,12 +250,12 @@ internal class RemoteViewModel(
         epoch++
         polling?.cancel()
         paging?.cancel()
-        mutableState.value = state.value.copy(loading = false)
+        mutableState.value = state.value.copy(loading = false, runtime = null)
     }
 
     fun refresh() {
         if (!visible || state.value.restoring || state.value.addingDevice) return
-        polling?.cancel()
+        invalidateReads()
         val id = state.value.deviceId
         if (id == null) {
             clients.keys.forEach(::checkDevice)
@@ -270,35 +273,18 @@ internal class RemoteViewModel(
             mutableState.value = state.value.copy(loading = true)
             do {
                 try {
+                    val models = client.models()
+                    if (generation != epoch) return@launch
+                    mutableState.value = state.value.copy(models = models)
                     if (session == null) {
                         val page = client.sessions()
                         if (generation != epoch) return@launch
                         mutableState.value = state.value.copy(sessions = page.sessions, sessionCursor = page.nextCursor,
                             loading = false, failure = null)
                     } else {
-                        val page = client.conversation(session.id)
-                        if (generation != epoch) return@launch
-                        var fresh = page.messages
-                        var cursor = page.nextCursor
-                        val old = state.value.messages
-                        val cursors = mutableSetOf<String>()
-                        while (old.isNotEmpty() && fresh.none { item -> old.any { it.id == item.id } } &&
-                            cursor != null && cursors.add(cursor)) {
-                            val older = client.conversation(session.id, cursor)
-                            fresh = older.messages + fresh
-                            cursor = older.nextCursor
+                        client.events(session.id).collect { page ->
+                            if (generation == epoch) applyPage(client, session.id, generation, page)
                         }
-                        if (generation != epoch) return@launch
-                        val owner = state.value.owner!!
-                        val attempt = state.value.attempts[owner]
-                        val accepted = attempt != null && (page.queued.any { it.clientId == attempt.clientId } ||
-                            fresh.any { it.clientId == attempt.clientId })
-                        mutableState.value = state.value.copy(
-                            messages = mergeRemoteHistory(state.value.messages, fresh), queued = page.queued,
-                            historyCursor = if (old.isEmpty()) page.nextCursor else state.value.historyCursor,
-                            loading = false, failure = null,
-                        )
-                        if (accepted) accept(owner, attempt)
                     }
                     updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTED, failure = null) }
                 } catch (cancelled: CancellationException) { throw cancelled }
@@ -306,12 +292,74 @@ internal class RemoteViewModel(
                     if (generation == epoch) {
                         val failure = trace("read_failed", error)
                         updateDevice(id) { it.copy(status = RemoteDeviceStatus.ERROR, failure = failure) }
-                        mutableState.value = state.value.copy(loading = false, failure = failure)
+                        mutableState.value = state.value.copy(loading = false, failure = failure, runtime = null)
                     }
                 }
                 if (session == null) break
                 delay(3000)
             } while (isActive && visible && generation == epoch)
+        }
+    }
+
+    private suspend fun applyPage(client: FiloClient, sessionId: String, generation: Long, page: RemoteConversationPage) {
+        var fresh = page.messages
+        var cursor = page.nextCursor
+        val old = state.value.messages
+        val cursors = mutableSetOf<String>()
+        while (old.isNotEmpty() && fresh.none { item -> old.any { it.id == item.id } } &&
+            cursor != null && cursors.add(cursor)) {
+            val older = client.conversation(sessionId, cursor)
+            fresh = older.messages + fresh
+            cursor = older.nextCursor
+        }
+        if (generation != epoch) return
+        val owner = state.value.owner ?: return
+        mutableState.value = state.value.copy(
+            messages = mergeRemoteHistory(state.value.messages, fresh), queued = page.queued,
+            historyCursor = if (old.isEmpty()) page.nextCursor else state.value.historyCursor,
+            loading = false, failure = null, runtime = page.runtime,
+        )
+        state.value.deviceId?.let { id -> updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTED, failure = null) } }
+        state.value.attempts[owner]?.let { attempt -> confirmDelivery(owner, attempt) }
+    }
+
+    fun newSession() {
+        val selected = selectionEpoch
+        control { client ->
+            val created = client.create()
+            if (selected == selectionEpoch) selectSession(created)
+        }
+    }
+
+    fun setModel(model: String) {
+        val session = state.value.session ?: return
+        if (state.value.models.none { it.id == model }) return
+        val selected = selectionEpoch
+        control { client ->
+            client.setModel(session.id, model)
+            if (selected == selectionEpoch) refresh()
+        }
+    }
+
+    fun stop() {
+        val snapshot = state.value
+        val session = snapshot.session ?: return
+        val turn = snapshot.runtime?.activeTurnId ?: return
+        control { client -> client.stop(session.id, turn) }
+    }
+
+    private fun control(operation: suspend (FiloClient) -> Unit) {
+        if (state.value.controlling) return
+        val client = clients[state.value.deviceId] ?: return
+        val selected = selectionEpoch
+        mutableState.value = state.value.copy(controlling = true)
+        viewModelScope.launch {
+            try { operation(client) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                val failure = trace("control_failed", error)
+                if (selected == selectionEpoch) mutableState.value = state.value.copy(failure = failure)
+            } finally { mutableState.value = state.value.copy(controlling = false) }
         }
     }
 
@@ -352,24 +400,30 @@ internal class RemoteViewModel(
 
     fun send() {
         val snapshot = state.value
+        if (snapshot.controlling || snapshot.runtime?.status !in setOf("idle", "active")) return
         val owner = snapshot.owner ?: return
         val client = clients[snapshot.deviceId] ?: return
         val text = snapshot.drafts[owner].orEmpty()
         if (text.isBlank() || snapshot.attempts[owner]?.delivery in
-            setOf(RemoteDelivery.SUBMITTING, RemoteDelivery.UNKNOWN)) return
+            setOf(RemoteDelivery.SUBMITTING, RemoteDelivery.ACCEPTED, RemoteDelivery.UNKNOWN)) return
         val attempt = RemoteAttempt(UUID.randomUUID().toString(), text, RemoteDelivery.SUBMITTING)
         mutableState.value = state.value.copy(attempts = state.value.attempts + (owner to attempt))
         viewModelScope.launch {
             try {
                 client.send(snapshot.session!!.id, text, attempt.clientId)
-                accept(owner, attempt)
+                if (state.value.attempts[owner]?.clientId == attempt.clientId &&
+                    state.value.attempts[owner]?.delivery == RemoteDelivery.SUBMITTING) {
+                    mutableState.value = state.value.copy(attempts = state.value.attempts +
+                        (owner to attempt.copy(delivery = RemoteDelivery.ACCEPTED)))
+                    confirmDelivery(owner, attempt)
+                }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
                 trace("send_failed", error)
                 if (state.value.attempts[owner]?.clientId == attempt.clientId &&
                     state.value.attempts[owner]?.delivery == RemoteDelivery.SUBMITTING) {
                     val rejected = error is FiloInputException ||
-                        error is FiloHttpException && error.status in setOf(400, 401, 403, 404, 413, 415, 429)
+                        error is FiloHttpException && error.status in setOf(400, 401, 403, 404, 409, 413, 415, 429)
                     mutableState.value = state.value.copy(attempts = state.value.attempts +
                         (owner to attempt.copy(delivery = if (rejected) RemoteDelivery.REJECTED else RemoteDelivery.UNKNOWN)))
                 }
@@ -377,17 +431,14 @@ internal class RemoteViewModel(
         }
     }
 
-    private fun accept(owner: String, attempt: RemoteAttempt) {
+    private fun confirmDelivery(owner: String, attempt: RemoteAttempt) {
         if (state.value.attempts[owner]?.clientId != attempt.clientId) return
-        if (state.value.attempts[owner]?.delivery == RemoteDelivery.QUEUED) return
+        if (state.value.attempts[owner]?.delivery == RemoteDelivery.DELIVERED || state.value.owner != owner) return
+        val message = state.value.messages.firstOrNull { it.role == "user" && it.clientId == attempt.clientId } ?: return
         mutableState.value = state.value.copy(
             drafts = if (state.value.drafts[owner] == attempt.text) state.value.drafts - owner else state.value.drafts,
-            attempts = state.value.attempts + (owner to attempt.copy(delivery = RemoteDelivery.QUEUED)),
+            attempts = state.value.attempts + (owner to attempt.copy(delivery = RemoteDelivery.DELIVERED)),
         )
-        if (state.value.owner == owner) {
-            projectRemoteMessages(state.value.messages).lastOrNull()?.let {
-                scrollRequests.requestAbsoluteBottomAfter(owner, it.id)
-            }
-        }
+        scrollRequests.requestAbsoluteBottomAfter(owner, message.id)
     }
 }
