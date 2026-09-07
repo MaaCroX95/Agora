@@ -1255,4 +1255,5 @@
     <string name="composer_clear_failed">訊息已傳送，但無法清除草稿。</string>
     <string name="models_show_provider_name">顯示 Provider 名稱</string>
     <string name="models_show_provider_name_desc">在模型名稱後附加服務供應商名稱。</string>
+    <string name="remote_history_read_only">唯讀歷史</string>
 </resources>

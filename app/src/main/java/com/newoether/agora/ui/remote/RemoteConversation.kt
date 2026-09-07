@@ -56,7 +56,10 @@ internal fun RemoteConversation(
     val focus = remember { FocusRequester() }
     val attempt = state.attempts[owner]
     val running = state.runtime?.isRunning == true
-    val ready = state.runtime?.status in setOf("idle", "active")
+    val ready = !session.readOnly && state.runtime?.status in setOf("idle", "active")
+    val generationVisible = running && state.messages.any {
+        it.role == "user" && it.turnId == state.runtime?.activeTurnId
+    }
     var activeMenu by remember(owner) { mutableStateOf<String?>(null) }
     LaunchedEffect(owner, field) { snapshotFlow { field.text.toString() }.collect { vm.editDraft(owner, it) } }
     var clearedAttempt by remember(owner) {
@@ -85,22 +88,26 @@ internal fun RemoteConversation(
     val animatedScrollRequest by vm.animatedScrollRequest.collectAsState()
     var barHeightPx by remember { mutableFloatStateOf(0f) }
     val barHeight = with(density) { barHeightPx.toDp() }
+    var initiallyPositioned by remember(owner) { mutableStateOf(false) }
+    val switching = !initiallyPositioned
     scroll.BindLayoutObservation(owner, owner, ime, density)
     scroll.BindImeEffects(owner, messageState, density, barHeight, 0.dp, ime)
-    scroll.BindRequestEffects(owner, false, running, false, false, false, false, null, animatedScrollRequest,
+    scroll.BindRequestEffects(owner, false, generationVisible, false, switching, false, false, null, animatedScrollRequest,
         messageState, density, motion, barHeight, 0.dp, onAnimatedScrollFinished = vm::completeAnimatedScroll)
     val renderMessages = rememberScrollIsolatedMessages(owner, messageState, scroll.listState,
         bypassScrollIsolation = scroll.absoluteBottomScrollPhase.isActive || scroll.streamingTailController.isAutoFollowing)
-    var initiallyPositioned by remember(owner) { mutableStateOf(false) }
-    LaunchedEffect(messages.lastOrNull(), scroll.viewportHeightPx) {
-        if (animatedScrollRequest != null) { initiallyPositioned = true; return@LaunchedEffect }
-        if (messages.isNotEmpty() && scroll.viewportHeightPx > 0 &&
-            (!initiallyPositioned || !running && stickToBottom && scroll.isWithinAbsoluteBottomAttachThreshold)) {
-            withFrameNanos { }
-            scroll.requestAbsoluteBottomScroll()
+    LaunchedEffect(owner, state.runtime != null) {
+        if (state.runtime != null && !initiallyPositioned) {
+            scroll.settleOpenedConversation(messageState)
             initiallyPositioned = true
         }
     }
+    val follow = streamingTailAvailability(
+        generationActive = generationVisible,
+        blocked = switching || !motion.allowProgrammaticScrollMotion,
+        programmaticHandoff = scroll.imeBottomAnchorState.active ||
+            scroll.absoluteBottomScrollPhase.isActive || animatedScrollRequest?.conversationId == owner,
+    )
     var confirmUnknown by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).clearFocusOnTap()
         .onSizeChanged { scroll.recordViewportHeight(it.height) }) {
@@ -125,10 +132,10 @@ internal fun RemoteConversation(
             Box(Modifier.fillMaxSize()) {
                 MessageList(messages = StableMessageList(renderMessages.value), allMessages = StableMessageList(messages),
                     authoritativeMessages = StableMessageList(messages), conversationId = owner,
-                    state = scroll.listState, messageActionsEnabled = false, parseInlineDollarMath = inlineMath,
-                    isLoading = running, streamingMessage = streaming,
-                    streamingAutoFollowEnabled = running && stickToBottom,
-                    streamingAutoFollowPaused = animatedScrollRequest != null || scroll.absoluteBottomScrollPhase.isActive || scroll.imeBottomAnchorState.active,
+                    state = scroll.listState, messageActionsEnabled = false, readOnlyActions = true, parseInlineDollarMath = inlineMath,
+                    isLoading = generationVisible, isSwitching = switching, streamingMessage = streaming,
+                    streamingAutoFollowEnabled = follow.enabled && stickToBottom,
+                    streamingAutoFollowPaused = follow.paused,
                     streamingTailWithinAttachThreshold = scroll.isWithinAbsoluteBottomAttachThreshold,
                     streamingTailController = scroll.streamingTailController,
                     toolCallDisplayMode = toolCallDisplayMode, thinkingSegmentDisplayMode = thinkingSegmentDisplayMode,
@@ -137,9 +144,10 @@ internal fun RemoteConversation(
                         blurAtBottomDp = 0f, fadeHeightDp = 40f, bottomOverlayHeight = barHeight + 12.dp),
                     bottomBarHeight = barHeight, viewportHeight = scroll.viewportHeightPx,
                     messageHeights = scroll.messageHeights, observeMessage = observe,
-                    programmaticScrollActive = animatedScrollRequest != null || scroll.absoluteBottomScrollPhase.isActive || scroll.imeBottomAnchorState.active,
+                    programmaticScrollActive = animatedScrollRequest?.conversationId == owner,
                     onMessageHydrated = scroll::recordMessageHydrated,
                     lifecycleAppearanceRegistry = scroll.messageLifecycleAppearanceRegistry,
+                    lifecycleEntranceTargetMessageId = animatedScrollRequest?.takeIf { it.conversationId == owner }?.targetMessageId,
                     contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 140.dp, bottom = barHeight + 8.dp))
                 ChatBottomScrollButton(shouldShowAbsoluteBottomButton(false, false, messages.isNotEmpty(), running,
                     scroll.listState.layoutInfo.totalItemsCount > 1, scroll.listState.canScrollForward,
@@ -149,7 +157,13 @@ internal fun RemoteConversation(
                 }
             }
         }
-        ChatComposerSurface(expanded, { barHeightPx = it }, Modifier.align(Alignment.BottomCenter), spacer.outerHeightPx) {
+        if (session.readOnly) {
+            Surface(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .onSizeChanged { barHeightPx = it.height.toFloat() }) {
+                Text(stringResource(R.string.remote_history_read_only),
+                    Modifier.navigationBarsPadding().padding(20.dp), style = MaterialTheme.typography.labelMedium)
+            }
+        } else ChatComposerSurface(expanded, { barHeightPx = it }, Modifier.align(Alignment.BottomCenter), spacer.outerHeightPx) {
             ChatComposerLayout(field, focus, scroll::setComposerInputFocused, expanded, spacer.isRunning,
                 onExpand = { expanded = true }, onCollapse = { expanded = false },
                 statusContent = {

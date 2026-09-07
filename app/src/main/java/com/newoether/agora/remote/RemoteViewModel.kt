@@ -273,7 +273,7 @@ internal class RemoteViewModel(
             mutableState.value = state.value.copy(loading = true)
             do {
                 try {
-                    val models = client.models()
+                    val models = if (session?.readOnly == true) emptyList() else client.models()
                     if (generation != epoch) return@launch
                     mutableState.value = state.value.copy(models = models)
                     if (session == null) {
@@ -281,6 +281,8 @@ internal class RemoteViewModel(
                         if (generation != epoch) return@launch
                         mutableState.value = state.value.copy(sessions = page.sessions, sessionCursor = page.nextCursor,
                             loading = false, failure = null)
+                    } else if (session.readOnly) {
+                        applyPage(client, session.id, generation, client.conversation(session.id))
                     } else {
                         client.events(session.id).collect { page ->
                             if (generation == epoch) applyPage(client, session.id, generation, page)
@@ -295,7 +297,7 @@ internal class RemoteViewModel(
                         mutableState.value = state.value.copy(loading = false, failure = failure, runtime = null)
                     }
                 }
-                if (session == null) break
+                if (session == null || session.readOnly) break
                 delay(3000)
             } while (isActive && visible && generation == epoch)
         }
@@ -333,7 +335,7 @@ internal class RemoteViewModel(
 
     fun setModel(model: String) {
         val session = state.value.session ?: return
-        if (state.value.models.none { it.id == model }) return
+        if (session.readOnly || state.value.models.none { it.id == model }) return
         val selected = selectionEpoch
         control { client ->
             client.setModel(session.id, model)
@@ -344,6 +346,7 @@ internal class RemoteViewModel(
     fun stop() {
         val snapshot = state.value
         val session = snapshot.session ?: return
+        if (session.readOnly) return
         val turn = snapshot.runtime?.activeTurnId ?: return
         control { client -> client.stop(session.id, turn) }
     }
@@ -400,7 +403,7 @@ internal class RemoteViewModel(
 
     fun send() {
         val snapshot = state.value
-        if (snapshot.controlling || snapshot.runtime?.status !in setOf("idle", "active")) return
+        if (snapshot.session?.readOnly == true || snapshot.controlling || snapshot.runtime?.status !in setOf("idle", "active")) return
         val owner = snapshot.owner ?: return
         val client = clients[snapshot.deviceId] ?: return
         val text = snapshot.drafts[owner].orEmpty()

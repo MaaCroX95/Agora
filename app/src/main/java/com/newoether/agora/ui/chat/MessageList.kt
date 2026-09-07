@@ -85,6 +85,7 @@ internal fun MessageList(
     state: LazyListState = rememberLazyListState(),
     userScrollEnabled: Boolean = true,
     messageActionsEnabled: Boolean = true,
+    readOnlyActions: Boolean = false,
     isLoading: Boolean = false,
     isCompacting: Boolean = false, compactPreview: StateFlow<String>? = null,
     isStopping: Boolean = false,
@@ -822,6 +823,7 @@ internal fun MessageList(
             },
             onCancelEdit = { editingMessageId = null },
             showActions = messageActionsEnabled && !selectionMode && presentation?.showActions == true,
+            readOnlyActions = readOnlyActions && !selectionMode,
             actionCopyText = presentation
                 ?.takeIf { it.showActions }
                 ?.let {

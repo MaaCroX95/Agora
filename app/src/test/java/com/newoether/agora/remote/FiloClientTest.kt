@@ -257,4 +257,15 @@ class FiloClientTest {
             assertEquals(listOf("Bearer $token", "Bearer $token", "Bearer $token"), auth)
         } finally { server.stop(0) }
     }
+    @Test fun activeTurnCannotShowAssistantIndicatorBeforeItsNativeUserMessage() {
+        val runtime = RemoteRuntime("active", "new-turn", "model")
+        assertTrue(projectRemoteMessages(emptyList(), runtime).isEmpty())
+        val oldUser = RemoteMessage("old-user", "old-turn", null, "user", "old", 1)
+        assertEquals(listOf("old-user"), projectRemoteMessages(listOf(oldUser), runtime).map { it.id })
+        val user = RemoteMessage("new-user", "new-turn", id, "user", "new", 2)
+        val visible = projectRemoteMessages(listOf(oldUser, user), runtime)
+        assertEquals(listOf("old-user", "new-user", "remote-active-new-turn"), visible.map { it.id })
+        assertEquals("new-user", visible.last().parentId)
+    }
+
 }

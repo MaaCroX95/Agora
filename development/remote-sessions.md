@@ -242,3 +242,13 @@ Plan:
 4. Persist exact revisions/artifacts and evidence. Use focused local checkpoint commits at coherent boundaries; no push/public release. A working standalone preview is not full desktop-session qualification.
 
 Initial state: Filo main 6e2d30d; owned HARNESS.md/REDLINES.md and docs/ changes from interface research exist and are preserved. Agora isolated remote-control 6038eb8e, clean. Old Windows Filo service remains disabled/stopped. Earlier crash-probe/graceful-close failure evidence remains intact. Current task log remains the one authoritative Filo log.
+
+## Owner-directed history and presentation update (2026-09-07)
+Show original Quantum sessions and paginated history through read-only native APIs.
+A session with readOnly=true must use history GET and never subscribe, send, stop,
+or update models. Its composer is replaced by a read-only label. Filo-created
+standalone sessions retain send/steer/stop. Remote removes Loading plain text,
+uses the original covered-layout settling and streaming follow policies, supplies
+the original lifecycle entrance target, and waits for the active native user
+message before creating an assistant indicator. Read-only user bubble actions
+reuse Copy, Select text and Info, with mutation menu entries hidden.

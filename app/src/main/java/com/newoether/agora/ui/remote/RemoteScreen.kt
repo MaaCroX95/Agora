@@ -105,7 +105,8 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                                 forward = true; focus.clearFocus(); vm.selectSession(session)
                             },
                             headlineContent = { Text(session.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                            supportingContent = { Text(session.cwd, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            supportingContent = { Text(if (session.readOnly) stringResource(R.string.remote_history_read_only) + " · " + session.cwd else session.cwd,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             leadingContent = { Icon(Icons.Default.ChatBubbleOutline, null) },
                         )
                     } })
@@ -124,7 +125,6 @@ private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () ->
     var deleteId by remember { mutableStateOf<String?>(null) }
     val enabled = !state.restoring && !state.saving
     CollapsingSettingsScaffold(title = stringResource(R.string.remote_title), onBack = onBack) {
-        if (state.restoring) Text(stringResource(R.string.loading_label), Modifier.padding(16.dp))
         if (state.storageError) TextButton(onClick = vm::restoreConnections,
             enabled = enabled) {
             Text(stringResource(R.string.remote_storage_failed))
@@ -237,7 +237,6 @@ private fun RemoteAddDevice(state: RemoteState, vm: RemoteViewModel, onBack: () 
 @Composable
 internal fun RemoteReadStatus(state: RemoteState, retry: () -> Unit) {
     if (state.error) TextButton(onClick = retry) { Text(remoteFailureText(state.failure)) }
-    else if (state.loading) Text(stringResource(R.string.loading_label), Modifier.padding(16.dp))
 }
 
 @Composable

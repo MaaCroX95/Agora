@@ -722,6 +722,9 @@ internal class ChatScrollCoordinator internal constructor(
         )
     }
 
+    internal suspend fun settleOpenedConversation(messages: State<List<ChatMessage>>): Boolean =
+        settleCoveredTransition(messages, null, false, true)
+
     private suspend fun settleCoveredTransition(
         messages: State<List<ChatMessage>>,
         targetMessageId: String?,

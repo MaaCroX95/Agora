@@ -30,7 +30,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 @Serializable
-internal data class RemoteSession(val id: String, val title: String, val cwd: String, val updatedAt: Long)
+internal data class RemoteSession(val id: String, val title: String, val cwd: String, val updatedAt: Long, val readOnly: Boolean = false)
 @Serializable
 internal data class RemoteMessage(
     val id: String, val turnId: String, val clientId: String?, val role: String,
@@ -252,7 +252,9 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
             segments = segments,
         ))
     }
-    val turn = runtime?.activeTurnId?.takeIf { runtime.isRunning }
+    val turn = runtime?.activeTurnId?.takeIf { active ->
+        runtime.isRunning && messages.any { it.role == "user" && it.turnId == active }
+    }
     if (turn != null) {
         val tail = lastOrNull()
         if (tail?.participant == Participant.MODEL && tail.runId == turn) {

@@ -2,6 +2,7 @@ package com.newoether.agora.remote
 
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.verify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
@@ -471,4 +472,29 @@ class RemoteViewModelTest {
             assertFalse(events.any { it.contains("PRIVATE_") || it.contains("http://") })
         } finally { unmockkObject(DeveloperDiagnostics) }
     }
+    @Test fun ordinaryHistoryLoadsAndPagesWithoutSubscriptionOrControl() = runTest(dispatcher) {
+        val historical = session.copy(id = "historical", readOnly = true)
+        val recent = RemoteMessage("recent", "turn", null, "assistant", "Recent history", 2)
+        val older = RemoteMessage("older", "old-turn", null, "user", "Earlier history", 1)
+        coEvery { client.conversation("historical", null) } returns
+            RemoteConversationPage(listOf(recent), "older", emptyList(), RemoteRuntime("active", "turn", "model"))
+        coEvery { client.conversation("historical", "older") } returns
+            RemoteConversationPage(listOf(older), null, emptyList(), RemoteRuntime("readOnly"))
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.setVisible(true); saveAndSelect(vm)
+        vm.selectSession(historical); runCurrent()
+        assertEquals(listOf(recent), vm.state.value.messages)
+        assertFalse(vm.state.value.loading)
+        vm.loadMore(); runCurrent()
+        assertEquals(listOf(older, recent), vm.state.value.messages)
+        assertNull(vm.state.value.historyCursor)
+        vm.editDraft(vm.state.value.owner!!, "must not send")
+        vm.send(); vm.stop(); vm.setModel("model"); runCurrent()
+        verify(exactly = 0) { client.events("historical") }
+        coVerify(exactly = 0) { client.send(any(), any(), any()) }
+        coVerify(exactly = 0) { client.stop(any(), any()) }
+        coVerify(exactly = 0) { client.setModel(any(), any()) }
+        vm.setVisible(false)
+    }
+
 }

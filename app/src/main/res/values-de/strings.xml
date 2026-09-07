@@ -1247,4 +1247,5 @@
     <string name="composer_clear_failed">Nachricht gesendet, aber der Entwurf konnte nicht gelöscht werden.</string>
     <string name="models_show_provider_name">Anbieternamen anzeigen</string>
     <string name="models_show_provider_name_desc">Den Anbieternamen an den Modellnamen anhängen.</string>
+    <string name="remote_history_read_only">Verlauf – schreibgeschützt</string>
 </resources>
