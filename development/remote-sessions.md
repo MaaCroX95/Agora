@@ -228,3 +228,17 @@ before it is shown. The animation specification and normal-chat defaults are
 unchanged; no minimum-duration timer or duplicate spinner is introduced. Native
 active turn state projects into the existing empty assistant/streaming message
 presentation and tail controller; idle/unknown state cannot create an activity dot.
+
+## Approved independent-host connection phase | 2026-09-07 | Codex via Conch
+### Owner instruction (verbatim)
+> 可以这么做，先实现一下已有功能吗，让我先能连通quantum
+
+The owner accepts the preceding original App Server + independent Filo client architecture and explicitly requests an initial working connection to quantum. This authorizes the bounded implementation and deployment below. Existing-desktop attachment is deferred for this phase; it is not claimed as supported, and all normal-Codex safety redlines remain binding.
+
+Plan:
+1. Filo connection phase (<500 changed lines target; hard ceiling 1000): retain withdrawn desktop/install/package entrypoints; add a separately named standalone gateway entrypoint connected to an explicitly configured original loopback host. Scope all session operations to a durable allowlist of sessions created by this gateway. Reuse native history/models/new/send/steer/stop/SSE. Use readonly/never-approval defaults for newly created Remote sessions while remote approvals remain unsupported. Fix client disconnection so it cannot hang or kill the native host. Verify scope rejection and lifecycle behavior.
+2. Agora compatibility phase: only Agora-Remote-Control on remote-control; preserve original Agora. Admit explicitly declared standalone mode, retaining all current rendering/transport behavior and clear host labeling. Focused protocol checks, then one fresh build.ps1 and configured deployment after backend verification.
+3. Quantum launch/acceptance phase: native host and gateway are separately supervised under the actual ordinary desktop account, with startup isolated from the existing Codex desktop. Do not write CODEX_APP_SERVER_WS_URL/FORCE_CLI or replace Codex. Authenticate the Filo endpoint over the existing tailnet; preserve or securely transfer its token without logs/chat exposure. Verify native-host survival on gateway stop, reconnection, normal desktop health, and actual phone connection/new message/stream/stop where supported.
+4. Persist exact revisions/artifacts and evidence. Use focused local checkpoint commits at coherent boundaries; no push/public release. A working standalone preview is not full desktop-session qualification.
+
+Initial state: Filo main 6e2d30d; owned HARNESS.md/REDLINES.md and docs/ changes from interface research exist and are preserved. Agora isolated remote-control 6038eb8e, clean. Old Windows Filo service remains disabled/stopped. Earlier crash-probe/graceful-close failure evidence remains intact. Current task log remains the one authoritative Filo log.

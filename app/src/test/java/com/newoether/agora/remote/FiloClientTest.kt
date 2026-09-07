@@ -214,6 +214,25 @@ class FiloClientTest {
         } finally { server.stop(0) }
     }
 
+    @Test fun connectionAcceptsExplicitStandaloneModeAndRejectsUnknownModes() = runBlocking {
+        for (mode in listOf("existing", "standalone", "unsupported")) {
+            val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+            server.createContext("/v1/info") { exchange ->
+                val value = """{"protocolVersion":2,"agent":"codex","sessionMode":"$mode","messageDelivery":"native-steer","outputMode":"live-messages","device":"quantum"}""".toByteArray()
+                exchange.sendResponseHeaders(200, value.size.toLong())
+                exchange.responseBody.use { it.write(value) }
+            }
+            server.start()
+            try {
+                val client = FiloClient("http://127.0.0.1:${server.address.port}/", token)
+                if (mode == "unsupported") {
+                    try { client.connect(); fail("Unknown mode must be rejected") }
+                    catch (_: IllegalArgumentException) { }
+                } else assertEquals("quantum", client.connect())
+            } finally { server.stop(0) }
+        }
+    }
+
     @Test fun protocolTwoAndNativeReceiptAndEventStreamUseIndependentAuthenticatedTransport() = runBlocking {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         val auth = mutableListOf<String>()
