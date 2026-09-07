@@ -300,6 +300,8 @@ class ApplicationUiSourceContractTest {
     fun `chat dropdown menus share the same sixteen dp rounded shape`() {
         val bottomBar = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/chat/bottombar/ChatBottomBar.kt",
+        ) + sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/chat/bottombar/ChatBottomBarComponents.kt",
         )
         val compactDialog = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/chat/ChatManualCompactDialog.kt",

@@ -61,20 +61,20 @@ class ApprovedFeatureSourceContractTest {
     @Test
     fun contextProgressTweensLocallyAndSnapsForReducedMotion() {
         val root = sourceRoot()
-        val bottomBar = source(
+        val controls = source(
             root,
-            "com/newoether/agora/ui/chat/bottombar/ChatBottomBar.kt",
+            "com/newoether/agora/ui/chat/bottombar/ChatBottomBarComponents.kt",
         )
         val sharedProgress = source(
             root,
             "com/newoether/agora/ui/motion/MotionAwareProgressIndicators.kt",
         )
 
-        assertTrue(bottomBar.contains("val contextProgress by animateFloatAsState("))
-        assertTrue(bottomBar.contains("motionPolicy.allowContinuousMotion"))
-        assertTrue(bottomBar.contains("tween(durationMillis = 400)"))
-        assertTrue(bottomBar.contains("snap()"))
-        assertTrue(bottomBar.split("progress = { contextProgress }").size - 1 == 2)
+        assertTrue(controls.contains("val contextProgress by animateFloatAsState("))
+        assertTrue(controls.contains("motionPolicy.allowContinuousMotion"))
+        assertTrue(controls.contains("tween(durationMillis = 400)"))
+        assertTrue(controls.contains("snap()"))
+        assertTrue(controls.split("progress = { contextProgress }").size - 1 == 2)
         assertFalse(sharedProgress.contains("animateFloatAsState"))
     }
 
