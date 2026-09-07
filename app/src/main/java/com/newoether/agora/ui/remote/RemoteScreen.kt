@@ -89,8 +89,8 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
             page.second != null -> RemoteConversation(displayed, vm, settings, active && current, back)
             page.first != null -> CollapsingSettingsLazyScaffold(
                 title = stringResource(R.string.remote_sessions), onBack = back,
-                actions = { IconButton(onClick = {}, enabled = false) {
-                    Icon(Icons.Default.Add, stringResource(R.string.remote_new_session_unavailable))
+                actions = { IconButton(onClick = { forward = true; vm.newSession() }, enabled = current && active && !displayed.controlling) {
+                    Icon(Icons.Default.Add, stringResource(R.string.new_chat))
                 } },
             ) {
                 item { RemoteReadStatus(displayed, vm::refresh) }

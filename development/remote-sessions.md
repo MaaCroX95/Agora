@@ -220,3 +220,11 @@ for Stop. Model/context use the extracted ordinary controls, real model catalog 
 measured usage; unavailable telemetry remains unknown. Normal conversations and their
 backend remain unchanged. Existing messages, composer, scroll and motion rendering
 remain the only UI implementation. New/More actions contain only supported operations.
+
+The existing ComposerSendButton now optionally acknowledges when its existing BUSY
+Crossfade has settled and a frame has presented it. Remote retains accepted composer
+clearing until that acknowledgement, so a fast receipt cannot remove the spinner
+before it is shown. The animation specification and normal-chat defaults are
+unchanged; no minimum-duration timer or duplicate spinner is introduced. Native
+active turn state projects into the existing empty assistant/streaming message
+presentation and tail controller; idle/unknown state cannot create an activity dot.

@@ -4,6 +4,7 @@ import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.ToolExecutionStates
+import com.newoether.agora.model.MessageStatus
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -209,7 +210,7 @@ internal class FiloClient(
 }
 
 /** Native records stay in the Remote cache; only presentation groups adjacent assistant records. */
-internal fun projectRemoteMessages(messages: List<RemoteMessage>): List<ChatMessage> = buildList {
+internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: RemoteRuntime? = null): List<ChatMessage> = buildList {
     var index = 0
     while (index < messages.size) {
         val first = messages[index++]
@@ -250,6 +251,19 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>): List<ChatMess
             timestamp = first.timestamp, modelName = "Codex", runId = first.turnId,
             segments = segments,
         ))
+    }
+    val turn = runtime?.activeTurnId?.takeIf { runtime.isRunning }
+    if (turn != null) {
+        val tail = lastOrNull()
+        if (tail?.participant == Participant.MODEL && tail.runId == turn) {
+            set(lastIndex, tail.copy(status = MessageStatus.SENDING, modelName = runtime.model ?: "Codex"))
+        } else {
+            // Display-only empty assistant uses the existing initial-generation indicator.
+            // Its authority is the real native active turn, not an inferred local request.
+            add(ChatMessage(id = "remote-active-$turn", parentId = tail?.id, text = "",
+                participant = Participant.MODEL, timestamp = tail?.timestamp ?: 0,
+                modelName = runtime.model ?: "Codex", runId = turn, status = MessageStatus.SENDING))
+        }
     }
 }
 

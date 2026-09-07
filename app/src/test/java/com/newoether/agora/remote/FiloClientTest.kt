@@ -41,6 +41,26 @@ class FiloClientTest {
         assertThrows(IllegalArgumentException::class.java) { FiloClient("http://localhost/", "short") }
     }
 
+    @Test fun onlyNativeActiveTurnOwnsSharedStreamingPresentation() {
+        val user = RemoteMessage("u", "turn", "input", "user", "hello", 1)
+        val idle = projectRemoteMessages(listOf(user), RemoteRuntime("idle", model = "model"))
+        assertEquals(1, idle.size)
+        val pending = projectRemoteMessages(listOf(user), RemoteRuntime("active", "turn", "model"))
+        assertEquals(2, pending.size)
+        assertEquals(Participant.MODEL, pending.last().participant)
+        assertEquals(MessageStatus.SENDING, pending.last().status)
+        assertEquals("turn", pending.last().runId)
+        assertEquals("u", pending.last().parentId)
+        val answer = RemoteMessage("a", "turn", null, "assistant", "Hello", 1)
+        val live = projectRemoteMessages(listOf(user, answer), RemoteRuntime("active", "turn", "model"))
+        assertEquals(listOf("u", "a"), live.map { it.id })
+        assertTrue(com.newoether.agora.ui.chat.shouldShowStreamingTailIndicator(true, false, live.last()))
+        val complete = projectRemoteMessages(listOf(user, answer), RemoteRuntime("idle", model = "model"))
+        assertEquals(MessageStatus.SUCCESS, complete.last().status)
+        assertFalse(com.newoether.agora.ui.chat.shouldShowStreamingTailIndicator(false, false, complete.last()))
+        assertEquals(1, projectRemoteMessages(listOf(user), RemoteRuntime("active")).size)
+    }
+
     @Test fun nativeActivityUsesSharedSegmentsAndKeepsInterleaving() {
         val records = listOf(
             RemoteMessage("u", "turn", null, "user", "hello", 10),

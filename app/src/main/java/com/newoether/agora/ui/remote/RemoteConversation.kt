@@ -7,6 +7,7 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
 import com.newoether.agora.data.repository.SettingsRepository
 import com.newoether.agora.model.StableMessageList
+import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.remote.*
 import com.newoether.agora.ui.chat.*
 import com.newoether.agora.ui.chat.bottombar.*
@@ -53,14 +55,18 @@ internal fun RemoteConversation(
     val field = remember(owner) { TextFieldState(state.drafts[owner].orEmpty()) }
     val focus = remember { FocusRequester() }
     val attempt = state.attempts[owner]
+    val running = state.runtime?.isRunning == true
+    val ready = state.runtime?.status in setOf("idle", "active")
+    var activeMenu by remember(owner) { mutableStateOf<String?>(null) }
     LaunchedEffect(owner, field) { snapshotFlow { field.text.toString() }.collect { vm.editDraft(owner, it) } }
     var clearedAttempt by remember(owner) {
         mutableStateOf(attempt?.takeIf { it.delivery == RemoteDelivery.DELIVERED }?.clientId)
     }
+    var shownBusyAttempt by remember(owner) { mutableStateOf(clearedAttempt) }
     val acceptedPendingClear = attempt?.delivery == RemoteDelivery.DELIVERED && clearedAttempt != attempt.clientId
     val submitting = attempt?.delivery in setOf(RemoteDelivery.SUBMITTING, RemoteDelivery.ACCEPTED) || acceptedPendingClear
-    LaunchedEffect(attempt) {
-        if (attempt?.delivery == RemoteDelivery.DELIVERED && clearedAttempt != attempt.clientId) {
+    LaunchedEffect(attempt, shownBusyAttempt) {
+        if (attempt?.delivery == RemoteDelivery.DELIVERED && clearedAttempt != attempt.clientId && shownBusyAttempt == attempt.clientId) {
             clearedAttempt = attempt.clientId
             if (state.drafts[owner].isNullOrEmpty() && field.text.toString() == attempt.text) {
                 field.edit { replace(0, length, "") }
@@ -69,7 +75,8 @@ internal fun RemoteConversation(
             haptics.confirm()
         }
     }
-    val messages = remember(state.messages) { projectRemoteMessages(state.messages) }
+    val messages = remember(state.messages, state.runtime) { projectRemoteMessages(state.messages, state.runtime) }
+    val streaming = messages.lastOrNull()?.takeIf { it.status == MessageStatus.SENDING }
     val payloads = rememberUpdatedState(remember(messages) { messages.associateBy { it.id } })
     val observe = remember(owner) { { id: String -> snapshotFlow { payloads.value[id] } } }
     val messageState = rememberUpdatedState(messages)
@@ -80,14 +87,15 @@ internal fun RemoteConversation(
     val barHeight = with(density) { barHeightPx.toDp() }
     scroll.BindLayoutObservation(owner, owner, ime, density)
     scroll.BindImeEffects(owner, messageState, density, barHeight, 0.dp, ime)
-    scroll.BindRequestEffects(owner, false, false, false, false, false, false, null, animatedScrollRequest,
+    scroll.BindRequestEffects(owner, false, running, false, false, false, false, null, animatedScrollRequest,
         messageState, density, motion, barHeight, 0.dp, onAnimatedScrollFinished = vm::completeAnimatedScroll)
     val renderMessages = rememberScrollIsolatedMessages(owner, messageState, scroll.listState,
-        bypassScrollIsolation = scroll.absoluteBottomScrollPhase.isActive)
+        bypassScrollIsolation = scroll.absoluteBottomScrollPhase.isActive || scroll.streamingTailController.isAutoFollowing)
     var initiallyPositioned by remember(owner) { mutableStateOf(false) }
     LaunchedEffect(messages.lastOrNull(), scroll.viewportHeightPx) {
+        if (animatedScrollRequest != null) { initiallyPositioned = true; return@LaunchedEffect }
         if (messages.isNotEmpty() && scroll.viewportHeightPx > 0 &&
-            (!initiallyPositioned || stickToBottom && scroll.isWithinAbsoluteBottomAttachThreshold)) {
+            (!initiallyPositioned || !running && stickToBottom && scroll.isWithinAbsoluteBottomAttachThreshold)) {
             withFrameNanos { }
             scroll.requestAbsoluteBottomScroll()
             initiallyPositioned = true
@@ -102,9 +110,8 @@ internal fun RemoteConversation(
             blurEnabled = blur, motionEnabled = false)
         Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
             ChatTopBar(false, emptyList(), session.id, session.title, 0, 0,
-                onNavigateBack = onBack, onOpenDrawer = onBack, onSystemPromptClick = {}, onNewChat = {},
-                newChatEnabled = false,
-                newChatDescription = stringResource(R.string.remote_new_session_unavailable),
+                onNavigateBack = onBack, onOpenDrawer = onBack, onSystemPromptClick = {}, onNewChat = vm::newSession,
+                newChatEnabled = active && !state.controlling,
                 moreMenuContent = { dismiss ->
                     DropdownMenuItem(text = { Text(stringResource(R.string.remote_refresh)) },
                         leadingIcon = { Icon(Icons.Default.Refresh, null) }, enabled = active,
@@ -119,17 +126,22 @@ internal fun RemoteConversation(
                 MessageList(messages = StableMessageList(renderMessages.value), allMessages = StableMessageList(messages),
                     authoritativeMessages = StableMessageList(messages), conversationId = owner,
                     state = scroll.listState, messageActionsEnabled = false, parseInlineDollarMath = inlineMath,
+                    isLoading = running, streamingMessage = streaming,
+                    streamingAutoFollowEnabled = running && stickToBottom,
+                    streamingAutoFollowPaused = animatedScrollRequest != null || scroll.absoluteBottomScrollPhase.isActive || scroll.imeBottomAnchorState.active,
+                    streamingTailWithinAttachThreshold = scroll.isWithinAbsoluteBottomAttachThreshold,
+                    streamingTailController = scroll.streamingTailController,
                     toolCallDisplayMode = toolCallDisplayMode, thinkingSegmentDisplayMode = thinkingSegmentDisplayMode,
                     autoExpandActiveGroup = autoExpandActiveGroup,
                     modifier = Modifier.fillMaxSize().gradientBlur(blurAtTopDp = if (blur) 8f else 0f,
                         blurAtBottomDp = 0f, fadeHeightDp = 40f, bottomOverlayHeight = barHeight + 12.dp),
                     bottomBarHeight = barHeight, viewportHeight = scroll.viewportHeightPx,
                     messageHeights = scroll.messageHeights, observeMessage = observe,
-                    programmaticScrollActive = scroll.absoluteBottomScrollPhase.isActive || scroll.imeBottomAnchorState.active,
+                    programmaticScrollActive = animatedScrollRequest != null || scroll.absoluteBottomScrollPhase.isActive || scroll.imeBottomAnchorState.active,
                     onMessageHydrated = scroll::recordMessageHydrated,
                     lifecycleAppearanceRegistry = scroll.messageLifecycleAppearanceRegistry,
                     contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 140.dp, bottom = barHeight + 8.dp))
-                ChatBottomScrollButton(shouldShowAbsoluteBottomButton(false, false, messages.isNotEmpty(), false,
+                ChatBottomScrollButton(shouldShowAbsoluteBottomButton(false, false, messages.isNotEmpty(), running,
                     scroll.listState.layoutInfo.totalItemsCount > 1, scroll.listState.canScrollForward,
                     scroll.isNearAbsoluteBottom, false, scroll.absoluteBottomScrollPhase,
                     scroll.imeBottomAnchorState.active), barHeight) {
@@ -157,19 +169,31 @@ internal fun RemoteConversation(
                 controls = {
                     ComposerControlGroup {
                         ComposerModelSelector(
-                            displayText = stringResource(R.string.remote_model_unavailable),
-                            isModelValid = false, expanded = false, enabled = false,
-                            onClick = {}, onDismissRequest = {}, menuContent = {},
+                            displayText = state.models.firstOrNull { it.id == state.runtime?.model }?.name
+                                ?: state.runtime?.model ?: stringResource(R.string.remote_model_unavailable),
+                            isModelValid = state.runtime?.model != null, expanded = activeMenu == "model",
+                            enabled = active && ready && !state.controlling && state.models.isNotEmpty(),
+                            onClick = { activeMenu = "model" }, onDismissRequest = { activeMenu = null },
+                            menuContent = {
+                                state.models.forEach { model -> DropdownMenuItem(
+                                    text = { Text(model.name) },
+                                    trailingIcon = { if (model.id == state.runtime?.model) Icon(Icons.Default.Check, null) },
+                                    onClick = { activeMenu = null; vm.setModel(model.id) },
+                                ) }
+                            },
                         )
                         ComposerContextIndicator(
-                            estimatedTokens = null, tokenBudget = null, expanded = false,
-                            onClick = {}, onDismissRequest = {},
+                            estimatedTokens = state.runtime?.contextTokens, tokenBudget = state.runtime?.contextWindow,
+                            expanded = activeMenu == "context", onClick = { activeMenu = "context" },
+                            onDismissRequest = { activeMenu = null },
                         )
                     }
-                    ComposerSendButton(isActionable = active && !submitting && field.text.isNotBlank() &&
+                    val showStop = running && field.text.isBlank()
+                    ComposerSendButton(isActionable = active && ready && !state.controlling && !submitting && (showStop || field.text.isNotBlank()) &&
                         attempt?.delivery != RemoteDelivery.UNKNOWN,
-                        isBusy = submitting) {
-                        vm.editDraft(owner, field.text.toString()); vm.send()
+                        isBusy = submitting, showStop = showStop,
+                        onBusyShown = { shownBusyAttempt = attempt?.clientId }) {
+                        if (showStop) vm.stop() else { vm.editDraft(owner, field.text.toString()); vm.send() }
                     }
                 })
         }
