@@ -57,6 +57,8 @@ internal fun RemoteConversation(
     var clearedAttempt by remember(owner) {
         mutableStateOf(attempt?.takeIf { it.delivery == RemoteDelivery.QUEUED }?.clientId)
     }
+    val acceptedPendingClear = attempt?.delivery == RemoteDelivery.QUEUED && clearedAttempt != attempt.clientId
+    val submitting = attempt?.delivery == RemoteDelivery.SUBMITTING || acceptedPendingClear
     LaunchedEffect(attempt) {
         if (attempt?.delivery == RemoteDelivery.QUEUED && clearedAttempt != attempt.clientId) {
             clearedAttempt = attempt.clientId
@@ -73,12 +75,13 @@ internal fun RemoteConversation(
     val messageState = rememberUpdatedState(messages)
     val ime = WindowInsets.ime.getBottom(density)
     val scroll = rememberChatScrollCoordinator(owner, ime)
+    val animatedScrollRequest by vm.animatedScrollRequest.collectAsState()
     var barHeightPx by remember { mutableFloatStateOf(0f) }
     val barHeight = with(density) { barHeightPx.toDp() }
     scroll.BindLayoutObservation(owner, owner, ime, density)
     scroll.BindImeEffects(owner, messageState, density, barHeight, 0.dp, ime)
-    scroll.BindRequestEffects(owner, false, false, false, false, false, false, null, null,
-        messageState, density, motion, barHeight, 0.dp)
+    scroll.BindRequestEffects(owner, false, false, false, false, false, false, null, animatedScrollRequest,
+        messageState, density, motion, barHeight, 0.dp, onAnimatedScrollFinished = vm::completeAnimatedScroll)
     val renderMessages = rememberScrollIsolatedMessages(owner, messageState, scroll.listState,
         bypassScrollIsolation = scroll.absoluteBottomScrollPhase.isActive)
     var initiallyPositioned by remember(owner) { mutableStateOf(false) }
@@ -100,13 +103,16 @@ internal fun RemoteConversation(
         Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
             ChatTopBar(false, emptyList(), session.id, session.title, 0, 0,
                 onNavigateBack = onBack, onOpenDrawer = onBack, onSystemPromptClick = {}, onNewChat = {},
-                trailingActions = {
-                    IconButton(onClick = vm::loadMore, enabled = active && state.historyCursor != null) {
-                        Icon(Icons.Default.History, stringResource(R.string.remote_load_more))
-                    }
-                    IconButton(onClick = vm::refresh, enabled = active) {
-                        Icon(Icons.Default.Refresh, stringResource(R.string.remote_refresh))
-                    }
+                newChatEnabled = false,
+                newChatDescription = stringResource(R.string.remote_new_session_unavailable),
+                moreMenuContent = { dismiss ->
+                    DropdownMenuItem(text = { Text(stringResource(R.string.remote_refresh)) },
+                        leadingIcon = { Icon(Icons.Default.Refresh, null) }, enabled = active,
+                        onClick = { dismiss(); vm.refresh() })
+                    if (state.historyCursor != null) DropdownMenuItem(
+                        text = { Text(stringResource(R.string.remote_load_more)) },
+                        leadingIcon = { Icon(Icons.Default.History, null) }, enabled = active && !state.loading,
+                        onClick = { dismiss(); vm.loadMore() })
                 })
         }) { _ ->
             Box(Modifier.fillMaxSize()) {
@@ -150,9 +156,9 @@ internal fun RemoteConversation(
                 },
                 controls = {
                     Text("Codex", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 8.dp))
-                    ComposerSendButton(isActionable = active && field.text.isNotBlank() &&
-                        attempt?.delivery !in setOf(RemoteDelivery.SUBMITTING, RemoteDelivery.UNKNOWN),
-                        isBusy = attempt?.delivery == RemoteDelivery.SUBMITTING) {
+                    ComposerSendButton(isActionable = active && !submitting && field.text.isNotBlank() &&
+                        attempt?.delivery != RemoteDelivery.UNKNOWN,
+                        isBusy = submitting) {
                         vm.editDraft(owner, field.text.toString()); vm.send()
                     }
                 })

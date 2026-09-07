@@ -94,6 +94,9 @@ internal fun ChatTopBar(
     onShareConversation: () -> Unit = {},
     onNewChat: () -> Unit,
     trailingActions: (@Composable RowScope.() -> Unit)? = null,
+    newChatEnabled: Boolean = true,
+    newChatDescription: String? = null,
+    moreMenuContent: (@Composable ColumnScope.(dismiss: () -> Unit) -> Unit)? = null,
 ) {
     var moreMenuOpen by remember { mutableStateOf(false) }
     val allowSpatialTransitions = LocalAgoraMotionPolicy.current.allowSpatialTransitions
@@ -475,8 +478,8 @@ internal fun ChatTopBar(
                     ) {
                         Spacer(modifier = Modifier.width(5.dp))
                         if (trailingActions != null) trailingActions() else {
-                        IconButton(onClick = onNewChat, modifier = Modifier.size(44.dp)) {
-                            Icon(Icons.Default.Add, contentDescription = stringResource(R.string.new_chat), modifier = Modifier.size(30.dp))
+                        IconButton(onClick = onNewChat, enabled = newChatEnabled, modifier = Modifier.size(44.dp)) {
+                            Icon(Icons.Default.Add, contentDescription = newChatDescription ?: stringResource(R.string.new_chat), modifier = Modifier.size(30.dp))
                         }
                         Box {
                             IconButton(
@@ -498,6 +501,7 @@ internal fun ChatTopBar(
                                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                                 tonalElevation = 16.dp,
                             ) {
+                                if (moreMenuContent != null) moreMenuContent { moreMenuOpen = false } else {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.conversation_search)) },
                                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
@@ -540,6 +544,7 @@ internal fun ChatTopBar(
                                         onShareConversation()
                                     },
                                 )
+                                }
                             }
                         }
                         }

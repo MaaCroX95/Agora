@@ -136,3 +136,56 @@ pagination, cancellation/stale-result rejection and no automatic POST retries. V
 actual queue execution in the original native owner separately from service startup.
 Compile and focused tests cover shared ordinary bindings. Run the full project build
 and configured deployment at completion; device UI acceptance remains owner-tested.
+
+## Requested session/composer parity extension | 2026-09-07
+
+Pending requirements closure and scoped implementation approval: replace the session
+list refresh with New Session; show Add/More in the applicable conversation top bar;
+reuse the ordinary model selector/context composer controls, send-progress indicator,
+animated send scroll and generation activity dot. The owner requires full existing UI
+reuse. This request expands the earlier display-only scope; creation/execution ownership,
+applicable menu actions and actual native model/context/running capabilities must be
+verified before implementation. Do not infer generation from a stored turn snapshot or
+implement cosmetic controls without their defined behavior. Original ordinary-chat owners
+and the independent Remote transport boundary remain authoritative.
+
+The owner clarified that the requested conversation top bar is the opened chat page
+inside Remote. The original ordinary-chat page is the UI reference, not a requested
+behavior change target. Its More menu reuses the ordinary presentation and includes
+only operations actually supported by Remote. System Prompt and other unsupported
+actions are omitted rather than displayed as disabled placeholders. This does not
+authorize adding unrelated session operations. The owner selected the connected host's
+default working directory for New Session, without a project/directory chooser on each
+click. Resolve that default from the host environment/configuration; do not substitute
+the Filo source/plugin directory or inherit the previously viewed session directory.
+
+The owner requests steer as the default Send behavior, superseding the installed
+native-queue behavior for this pending extension. During generation, Send targets the
+active turn in its original Codex owner. Idle sending starts a new turn. A failed steer
+must not silently become a queued submission or resume the session in another process.
+Submission acknowledgement, unknown-delivery protection, animated send scroll and
+generation presentation must use the actual accepted native operation and state.
+Implementation remains pending original-owner capability verification and scoped approval.
+
+## UI implementation directed separately from host attachment | 2026-09-07
+
+The owner directs proceeding with the requested Remote UI now, superseding the
+blanket dependency of all presentation work on original-host attachment. Reuse
+ChatTopBar Add/More and its dropdown shell; current supported menu entries are
+Refresh and, when available, Load Earlier Messages. New Session occupies the Add
+slot with disabled/accessibility-unavailable presentation until its host operation
+exists. Ordinary chat retains its existing actions and defaults.
+
+Remote accepted sends reuse ScrollRequestCoordinator and ChatScrollCoordinator
+for a one-shot absolute-bottom feedback request against the selected native tail.
+The request is emitted only on first acceptance, never on rejection/unknown or
+repeated history reconciliation; navigation clears it and completion matches its
+exact ID. Busy presentation lasts through acceptance until unchanged composer
+text is cleared. Preserve edited drafts and original-session submission identity.
+
+Model/context controls share the ordinary visual owner and geometry. Until the
+host provides usable operations/data, the requested complete layout uses disabled
+model selection and unknown context, without numeric zero or fabricated budget.
+No historic turn/tool snapshot creates live generation state. True original-host
+steer, New Session execution, model changes and the live generation dot remain
+backend capability work; the installed native-queue transport is unchanged here.

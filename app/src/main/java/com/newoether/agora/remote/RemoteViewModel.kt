@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.newoether.agora.diagnostics.DeveloperDiagnostics
 import com.newoether.agora.diagnostics.DiagnosticRequestContext
+import com.newoether.agora.viewmodel.ScrollRequestCoordinator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -43,6 +44,9 @@ internal class RemoteViewModel(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(RemoteState())
     val state = mutableState.asStateFlow()
+    private val scrollRequests = ScrollRequestCoordinator()
+    val animatedScrollRequest = scrollRequests.request
+    fun completeAnimatedScroll(id: Long) = scrollRequests.complete(id)
     private val clients = mutableMapOf<String, FiloClient>()
     private val configurations = mutableMapOf<String, RemoteConnection>()
     private val checks = mutableMapOf<String, Job>()
@@ -214,6 +218,7 @@ internal class RemoteViewModel(
 
     fun selectDevice(id: String?) {
         if (id != null && id !in clients) return
+        scrollRequests.clear()
         selectionEpoch++
         invalidateReads()
         mutableState.value = state.value.copy(deviceId = id, addingDevice = false, editedDeviceId = null,
@@ -223,6 +228,7 @@ internal class RemoteViewModel(
     }
 
     fun selectSession(session: RemoteSession?) {
+        scrollRequests.clear()
         selectionEpoch++
         invalidateReads()
         mutableState.value = state.value.copy(session = session, messages = emptyList(),
@@ -378,5 +384,8 @@ internal class RemoteViewModel(
             drafts = if (state.value.drafts[owner] == attempt.text) state.value.drafts - owner else state.value.drafts,
             attempts = state.value.attempts + (owner to attempt.copy(delivery = RemoteDelivery.QUEUED)),
         )
+        if (state.value.owner == owner) {
+            state.value.messages.lastOrNull()?.let { scrollRequests.requestAbsoluteBottomAfter(owner, it.id) }
+        }
     }
 }

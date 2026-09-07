@@ -31,4 +31,5 @@
     <string name="remote_edit_device">Chỉnh sửa thiết bị</string>
     <string name="remote_delete_title">Xóa thiết bị?</string>
     <string name="remote_delete_message">Xóa kết nối đã lưu tới %1$s? Các phiên Codex sẽ được giữ lại.</string>
+    <string name="remote_new_session_unavailable">Phiên mới — không khả dụng trên thiết bị này</string>
 </resources>

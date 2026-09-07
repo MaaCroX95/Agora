@@ -222,6 +222,7 @@ class RemoteViewModelTest {
         gate.complete(RemoteConversationPage(listOf(RemoteMessage("stale", "t", null, "user", "old", 0)), null, emptyList()))
         runCurrent()
         assertEquals("other", vm.state.value.session?.id)
+        assertNull(vm.animatedScrollRequest.value)
         assertTrue(vm.state.value.messages.isEmpty())
         vm.setVisible(false)
     }
@@ -259,9 +260,44 @@ class RemoteViewModelTest {
         vm.send(); runCurrent()
         assertEquals(RemoteDelivery.UNKNOWN, vm.state.value.attempts[owner]?.delivery)
         assertEquals("hello", vm.state.value.drafts[owner])
+        assertNull(vm.animatedScrollRequest.value)
         coVerify(exactly = 1) { client.send(any(), any(), any()) }
         vm.acknowledgeUnknown(owner)
         assertNull(vm.state.value.attempts[owner])
+    }
+
+    @Test fun acceptedSendRequestsOneOwnedScrollAndNavigationClearsIt() = runTest(dispatcher) {
+        val gate = CompletableDeferred<String>()
+        coEvery { client.send(any(), any(), any()) } coAnswers { gate.await() }
+        coEvery { client.conversation(any(), any()) } returns RemoteConversationPage(
+            listOf(RemoteMessage("tail", "turn", null, "assistant", "Previous answer", 1)), null, emptyList())
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        saveAndSelect(vm)
+        vm.selectSession(session); vm.setVisible(true); runCurrent()
+        val owner = vm.state.value.owner!!
+        vm.editDraft(owner, "hello"); vm.send(); runCurrent()
+        assertEquals(RemoteDelivery.SUBMITTING, vm.state.value.attempts[owner]?.delivery)
+        assertNull(vm.animatedScrollRequest.value)
+        gate.complete("queue"); runCurrent()
+        val request = vm.animatedScrollRequest.value!!
+        assertEquals(owner, request.conversationId)
+        assertEquals("tail", request.targetMessageId)
+        assertEquals(com.newoether.agora.viewmodel.AnimatedScrollDestination.ABSOLUTE_BOTTOM, request.destination)
+        vm.completeAnimatedScroll(request.id + 1)
+        assertEquals(request, vm.animatedScrollRequest.value)
+        vm.completeAnimatedScroll(request.id)
+        assertNull(vm.animatedScrollRequest.value)
+        val clientId = vm.state.value.attempts[owner]!!.clientId
+        coEvery { client.conversation(any(), any()) } returns RemoteConversationPage(
+            listOf(RemoteMessage("sent", "new-turn", clientId, "user", "hello", 2)), null, emptyList())
+        vm.refresh(); runCurrent()
+        assertNull(vm.animatedScrollRequest.value)
+        coEvery { client.send(any(), any(), any()) } returns "second-queue"
+        vm.editDraft(owner, "next"); vm.send(); runCurrent()
+        assertNotNull(vm.animatedScrollRequest.value)
+        vm.selectSession(session.copy(id = "other"))
+        assertNull(vm.animatedScrollRequest.value)
+        vm.setVisible(false)
     }
 
     @Test fun malformedAcceptedResponseIsUnknownRatherThanRejected() = runTest(dispatcher) {
