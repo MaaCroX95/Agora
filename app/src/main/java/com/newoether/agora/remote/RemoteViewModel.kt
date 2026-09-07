@@ -29,7 +29,7 @@ internal data class RemoteState(
     val session: RemoteSession? = null, val messages: List<RemoteMessage> = emptyList(),
     val historyCursor: String? = null, val queued: List<RemoteQueuedMessage> = emptyList(),
     val drafts: Map<String, String> = emptyMap(), val attempts: Map<String, RemoteAttempt> = emptyMap(),
-    val saving: Boolean = false, val loading: Boolean = false, val failure: RemoteFailure? = null,
+    val saving: Boolean = false, val loading: Boolean = false, val loadingMore: Boolean = false, val failure: RemoteFailure? = null,
     val restoring: Boolean = true, val storageError: Boolean = false, val addingDevice: Boolean = false,
     val editedDeviceId: String? = null,
     val runtime: RemoteRuntime? = null, val models: List<RemoteModel> = emptyList(),
@@ -250,7 +250,7 @@ internal class RemoteViewModel(
         epoch++
         polling?.cancel()
         paging?.cancel()
-        mutableState.value = state.value.copy(loading = false, runtime = null)
+        mutableState.value = state.value.copy(loading = false, loadingMore = false, runtime = null)
     }
 
     fun refresh() {
@@ -333,6 +333,21 @@ internal class RemoteViewModel(
         }
     }
 
+    fun resumeSession() {
+        val session = state.value.session ?: return
+        if (!session.readOnly || !session.canResume) return
+        val selected = selectionEpoch
+        control { client ->
+            client.resume(session.id)
+            if (selected == selectionEpoch) {
+                val connected = session.copy(readOnly = false, canResume = false)
+                mutableState.value = state.value.copy(session = connected,
+                    sessions = state.value.sessions.map { if (it.id == session.id) connected else it }, failure = null)
+                refresh()
+            }
+        }
+    }
+
     fun setModel(model: String) {
         val session = state.value.session ?: return
         if (session.readOnly || state.value.models.none { it.id == model }) return
@@ -372,6 +387,7 @@ internal class RemoteViewModel(
         val client = clients[snapshot.deviceId] ?: return
         val cursor = (if (snapshot.session == null) snapshot.sessionCursor else snapshot.historyCursor) ?: return
         val generation = epoch
+        mutableState.value = state.value.copy(loadingMore = true)
         paging = viewModelScope.launch {
             try {
                 if (snapshot.session == null) {
@@ -387,6 +403,8 @@ internal class RemoteViewModel(
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
                 if (generation == epoch) mutableState.value = state.value.copy(failure = trace("page_failed", error))
+            } finally {
+                if (generation == epoch) mutableState.value = state.value.copy(loadingMore = false)
             }
         }
     }
@@ -403,7 +421,7 @@ internal class RemoteViewModel(
 
     fun send() {
         val snapshot = state.value
-        if (snapshot.session?.readOnly == true || snapshot.controlling || snapshot.runtime?.status !in setOf("idle", "active")) return
+        if (snapshot.session?.readOnly == true || snapshot.controlling || snapshot.runtime?.status !in setOf("idle", "active", "ready")) return
         val owner = snapshot.owner ?: return
         val client = clients[snapshot.deviceId] ?: return
         val text = snapshot.drafts[owner].orEmpty()
@@ -422,7 +440,10 @@ internal class RemoteViewModel(
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
-                trace("send_failed", error)
+                val failure = trace("send_failed", error)
+                if (state.value.owner == owner && failure == RemoteFailure.SESSION_BUSY) {
+                    mutableState.value = state.value.copy(failure = failure)
+                }
                 if (state.value.attempts[owner]?.clientId == attempt.clientId &&
                     state.value.attempts[owner]?.delivery == RemoteDelivery.SUBMITTING) {
                     val rejected = error is FiloInputException ||

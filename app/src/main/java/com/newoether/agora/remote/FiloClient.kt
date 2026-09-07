@@ -30,7 +30,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 @Serializable
-internal data class RemoteSession(val id: String, val title: String, val cwd: String, val updatedAt: Long, val readOnly: Boolean = false)
+internal data class RemoteSession(val id: String, val title: String, val cwd: String, val updatedAt: Long, val readOnly: Boolean = false, val canResume: Boolean = false)
 @Serializable
 internal data class RemoteMessage(
     val id: String, val turnId: String, val clientId: String?, val role: String,
@@ -70,15 +70,22 @@ private data class SendInput(val text: String, val clientId: String)
 @Serializable
 private data class SendResult(val turnId: String, val clientId: String)
 
-internal class FiloHttpException(val status: Int) : IOException("Filo HTTP $status")
+@Serializable
+private data class FiloError(val code: String? = null)
+
+internal class FiloHttpException(val status: Int, val code: String? = null) : IOException("Filo HTTP $status")
 internal class FiloInputException : IllegalArgumentException("Invalid Filo message")
 internal class FiloConfigurationException : IllegalArgumentException("Invalid Filo connection")
-internal enum class RemoteFailure { NETWORK, AUTHENTICATION, CONFIGURATION, PROTOCOL, SERVICE, STORAGE, UNKNOWN }
+internal enum class RemoteFailure { NETWORK, AUTHENTICATION, CONFIGURATION, PROTOCOL, SERVICE, STORAGE, SESSION_BUSY, UNKNOWN }
 
 internal fun classifyRemoteFailure(error: Exception): RemoteFailure = when (error) {
     is RemoteStorageException -> RemoteFailure.STORAGE
     is FiloConfigurationException, is FiloInputException -> RemoteFailure.CONFIGURATION
-    is FiloHttpException -> if (error.status == 401 || error.status == 403) RemoteFailure.AUTHENTICATION else RemoteFailure.SERVICE
+    is FiloHttpException -> when {
+        error.status == 409 && error.code == "session_busy" -> RemoteFailure.SESSION_BUSY
+        error.status == 401 || error.status == 403 -> RemoteFailure.AUTHENTICATION
+        else -> RemoteFailure.SERVICE
+    }
     is IllegalArgumentException -> RemoteFailure.PROTOCOL
     is IOException -> RemoteFailure.NETWORK
     else -> RemoteFailure.UNKNOWN
@@ -156,6 +163,7 @@ internal class FiloClient(
         awaitClose { call.cancel() }
     }.buffer(Channel.CONFLATED)
 
+    suspend fun resume(id: String) { request("v1/sessions/${sessionId(id)}/resume", body = "{}") }
     suspend fun create(): RemoteSession = json.decodeFromString(request("v1/sessions", body = "{}"))
     suspend fun models(): List<RemoteModel> = json.decodeFromString<RemoteModels>(request("v1/models")).models
     suspend fun setModel(id: String, model: String) {
@@ -197,8 +205,9 @@ internal class FiloClient(
                 override fun onResponse(call: Call, response: Response) {
                     response.use {
                         try {
-                            if (!it.isSuccessful) throw FiloHttpException(it.code)
                             val text = it.body.string()
+                            if (!it.isSuccessful) throw FiloHttpException(it.code,
+                                runCatching { json.decodeFromString<FiloError>(text).code }.getOrNull())
                             if (!continuation.isCancelled) continuation.resume(text)
                         } catch (error: Exception) {
                             if (!continuation.isCancelled) continuation.resumeWithException(error)

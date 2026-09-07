@@ -1254,4 +1254,6 @@
     <string name="models_show_provider_name">Hiện tên nhà cung cấp</string>
     <string name="models_show_provider_name_desc">Thêm tên nhà cung cấp sau tên mô hình.</string>
     <string name="remote_history_read_only">Lịch sử chỉ đọc</string>
+    <string name="remote_resume_history">Tiếp tục cuộc trò chuyện</string>
+    <string name="remote_session_busy">Một tiến trình Codex khác đang dùng cuộc trò chuyện này. Hãy thử lại khi tiến trình đó giải phóng cuộc trò chuyện.</string>
 </resources>

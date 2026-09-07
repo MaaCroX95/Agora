@@ -1248,4 +1248,6 @@
     <string name="models_show_provider_name">إظهار اسم المزوّد</string>
     <string name="models_show_provider_name_desc">إضافة اسم المزوّد بعد اسم النموذج.</string>
     <string name="remote_history_read_only">سجل للقراءة فقط</string>
+    <string name="remote_resume_history">متابعة هذه المحادثة</string>
+    <string name="remote_session_busy">هذه المحادثة مستخدمة في عملية Codex أخرى. حاول بعد تحريرها.</string>
 </resources>

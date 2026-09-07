@@ -32,6 +32,7 @@ import com.newoether.agora.remote.RemoteViewModel
 import com.newoether.agora.remote.RemoteDeviceStatus
 import com.newoether.agora.mcp.McpConnectionStatus
 import com.newoether.agora.ui.settings.*
+import com.newoether.agora.ui.motion.MotionAwareLinearProgressIndicator
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.ui.common.rememberAgoraHaptics
 
@@ -78,7 +79,7 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
         }
     }
     BackHandler(active, back)
-    val target = Triple(state.deviceId, state.session, if (state.addingDevice) state.editedDeviceId.orEmpty() else null)
+    val target = Triple(state.deviceId, state.session?.id, if (state.addingDevice) state.editedDeviceId.orEmpty() else null)
     GuardedAnimatedContent(targetState = target, forward = forward) { page ->
         var retained by remember(page) { mutableStateOf(state) }
         val current = page == target
@@ -125,6 +126,8 @@ private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () ->
     var deleteId by remember { mutableStateOf<String?>(null) }
     val enabled = !state.restoring && !state.saving
     CollapsingSettingsScaffold(title = stringResource(R.string.remote_title), onBack = onBack) {
+        if (state.restoring || state.saving || state.devices.any { it.status == RemoteDeviceStatus.CONNECTING })
+            MotionAwareLinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp))
         if (state.storageError) TextButton(onClick = vm::restoreConnections,
             enabled = enabled) {
             Text(stringResource(R.string.remote_storage_failed))
@@ -215,6 +218,7 @@ private fun RemoteAddDevice(state: RemoteState, vm: RemoteViewModel, onBack: () 
             Icon(Icons.Default.Save, stringResource(R.string.save))
         } },
     ) {
+        if (state.saving) MotionAwareLinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp))
         SettingsGroup(title = stringResource(R.string.remote_connection), items = listOf({
             SettingsIconContent(Icons.Default.Link) {
                 McpLabeledField(label = stringResource(R.string.remote_address), value = address,
@@ -236,6 +240,8 @@ private fun RemoteAddDevice(state: RemoteState, vm: RemoteViewModel, onBack: () 
 
 @Composable
 internal fun RemoteReadStatus(state: RemoteState, retry: () -> Unit) {
+    if (state.loading || state.loadingMore || state.controlling) MotionAwareLinearProgressIndicator(
+        modifier = Modifier.fillMaxWidth().height(4.dp))
     if (state.error) TextButton(onClick = retry) { Text(remoteFailureText(state.failure)) }
 }
 
@@ -245,6 +251,7 @@ private fun remoteFailureText(failure: RemoteFailure?): String = stringResource(
     RemoteFailure.AUTHENTICATION -> R.string.remote_auth_failed
     RemoteFailure.CONFIGURATION -> R.string.remote_configuration_failed
     RemoteFailure.PROTOCOL -> R.string.remote_protocol_failed
+    RemoteFailure.SESSION_BUSY -> R.string.remote_session_busy
     RemoteFailure.SERVICE -> R.string.remote_service_failed
     RemoteFailure.STORAGE -> R.string.remote_storage_failed
     else -> R.string.remote_failed

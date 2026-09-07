@@ -1248,4 +1248,6 @@
     <string name="models_show_provider_name">Anbieternamen anzeigen</string>
     <string name="models_show_provider_name_desc">Den Anbieternamen an den Modellnamen anhängen.</string>
     <string name="remote_history_read_only">Verlauf – schreibgeschützt</string>
+    <string name="remote_resume_history">Diese Unterhaltung fortsetzen</string>
+    <string name="remote_session_busy">Diese Unterhaltung wird von einem anderen Codex-Prozess verwendet. Nach der Freigabe erneut versuchen.</string>
 </resources>

@@ -472,6 +472,66 @@ class RemoteViewModelTest {
             assertFalse(events.any { it.contains("PRIVATE_") || it.contains("http://") })
         } finally { unmockkObject(DeveloperDiagnostics) }
     }
+    @Test fun explicitHistoryResumeKeepsHistoryAndEnablesExistingStreamOnlyAfterAcceptance() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        coEvery { client.resume("history") } coAnswers { gate.await() }
+        val old = RemoteMessage("old", "old-turn", null, "user", "Preserved", 1)
+        coEvery { client.conversation("history", any()) } returns
+            RemoteConversationPage(listOf(old), null, emptyList(), RemoteRuntime("ready"))
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.setVisible(true); saveAndSelect(vm)
+        vm.selectSession(session.copy(id = "history", readOnly = true, canResume = true)); runCurrent()
+        vm.resumeSession(); vm.resumeSession(); runCurrent()
+        assertTrue(vm.state.value.controlling)
+        assertTrue(vm.state.value.session!!.readOnly)
+        verify(exactly = 0) { client.events("history") }
+        gate.complete(Unit); runCurrent()
+        assertFalse(vm.state.value.controlling)
+        assertFalse(vm.state.value.session!!.readOnly)
+        assertEquals(listOf(old), vm.state.value.messages)
+        verify(exactly = 1) { client.events("history") }
+        coVerify(exactly = 1) { client.resume("history") }
+        coVerify(exactly = 0) { client.send(any(), any(), any()) }
+        vm.setVisible(false)
+    }
+
+    @Test fun busyHistoryStaysReadableAndLateResumeCannotNavigateAfterBack() = runTest(dispatcher) {
+        coEvery { client.resume("history") } throws FiloHttpException(409, "session_busy")
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.setVisible(true); saveAndSelect(vm)
+        vm.selectSession(session.copy(id = "history", readOnly = true, canResume = true)); runCurrent()
+        vm.resumeSession(); runCurrent()
+        assertEquals(RemoteFailure.SESSION_BUSY, vm.state.value.failure)
+        assertTrue(vm.state.value.session!!.readOnly)
+        assertFalse(vm.state.value.controlling)
+        verify(exactly = 0) { client.events("history") }
+        val gate = CompletableDeferred<Unit>()
+        coEvery { client.resume("history") } coAnswers { gate.await() }
+        vm.resumeSession(); runCurrent(); vm.selectSession(null); runCurrent()
+        gate.complete(Unit); runCurrent()
+        assertNull(vm.state.value.session)
+        assertFalse(vm.state.value.controlling)
+        vm.setVisible(false)
+    }
+
+    @Test fun historyPaginationProgressEndsOnFailureAndDoesNotSurviveNavigation() = runTest(dispatcher) {
+        val page = CompletableDeferred<RemoteConversationPage>()
+        coEvery { client.conversation("history", null) } returns
+            RemoteConversationPage(emptyList(), "older", emptyList(), RemoteRuntime("readOnly"))
+        coEvery { client.conversation("history", "older") } coAnswers { page.await() }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.setVisible(true); saveAndSelect(vm)
+        vm.selectSession(session.copy(id = "history", readOnly = true)); runCurrent()
+        vm.loadMore(); runCurrent()
+        assertTrue(vm.state.value.loadingMore)
+        page.completeExceptionally(IOException("offline")); runCurrent()
+        assertFalse(vm.state.value.loadingMore)
+        assertEquals(RemoteFailure.NETWORK, vm.state.value.failure)
+        vm.selectSession(null); runCurrent()
+        assertFalse(vm.state.value.loadingMore)
+        vm.setVisible(false)
+    }
+
     @Test fun ordinaryHistoryLoadsAndPagesWithoutSubscriptionOrControl() = runTest(dispatcher) {
         val historical = session.copy(id = "historical", readOnly = true)
         val recent = RemoteMessage("recent", "turn", null, "assistant", "Recent history", 2)

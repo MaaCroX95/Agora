@@ -252,3 +252,7 @@ uses the original covered-layout settling and streaming follow policies, supplie
 the original lifecycle entrance target, and waits for the active native user
 message before creating an assistant indicator. Read-only user bubble actions
 reuse Copy, Select text and Info, with mutation menu entries hidden.
+
+## Owner-directed history continuation and progress bars | 2026-09-07
+The current instruction explicitly supersedes the read-only-only historical phase. An ordinary history with canResume=true shows Continue this conversation. Only explicit POST resume acceptance enables the existing composer and SSE; preserve messages and selected session identity. Do not auto-submit, fork, resume on browse, or navigate on a stale response. Native single-writer conflicts remain readable and display the occupied-session explanation. Ready denotes released historical ownership that must be reacquired before the next send, not active generation. Backend may use original Codex public resume in a short-lived process for dormant history; no core injection or competing writer is permitted. Generation still runs in the single native owner.
+Use MotionAwareLinearProgressIndicator for actual history/list loading, pagination and control requests in the existing Remote status position, including read-only history. No Loading plain text or fabricated percentage. Respect existing reduced-motion behavior. Success, failure, cancellation and navigation end their own progress state. Page transition keys use session identity, so capability updates do not reopen the page.

@@ -1248,4 +1248,6 @@
     <string name="models_show_provider_name">Показывать имя провайдера</string>
     <string name="models_show_provider_name_desc">Добавлять имя провайдера после имени модели.</string>
     <string name="remote_history_read_only">История только для чтения</string>
+    <string name="remote_resume_history">Продолжить разговор</string>
+    <string name="remote_session_busy">Этот разговор занят другим процессом Codex. Повторите попытку после освобождения.</string>
 </resources>

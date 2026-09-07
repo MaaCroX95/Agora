@@ -56,7 +56,7 @@ internal fun RemoteConversation(
     val focus = remember { FocusRequester() }
     val attempt = state.attempts[owner]
     val running = state.runtime?.isRunning == true
-    val ready = !session.readOnly && state.runtime?.status in setOf("idle", "active")
+    val ready = !session.readOnly && state.runtime?.status in setOf("idle", "active", "ready")
     val generationVisible = running && state.messages.any {
         it.role == "user" && it.turnId == state.runtime?.activeTurnId
     }
@@ -160,8 +160,12 @@ internal fun RemoteConversation(
         if (session.readOnly) {
             Surface(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 .onSizeChanged { barHeightPx = it.height.toFloat() }) {
-                Text(stringResource(R.string.remote_history_read_only),
-                    Modifier.navigationBarsPadding().padding(20.dp), style = MaterialTheme.typography.labelMedium)
+                Column(Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)) {
+                    RemoteReadStatus(state) { if (state.failure == RemoteFailure.SESSION_BUSY) vm.resumeSession() else vm.refresh() }
+                    if (session.canResume) TextButton(onClick = vm::resumeSession,
+                        enabled = active && !state.controlling) { Text(stringResource(R.string.remote_resume_history)) }
+                    else Text(stringResource(R.string.remote_history_read_only), style = MaterialTheme.typography.labelMedium)
+                }
             }
         } else ChatComposerSurface(expanded, { barHeightPx = it }, Modifier.align(Alignment.BottomCenter), spacer.outerHeightPx) {
             ChatComposerLayout(field, focus, scroll::setComposerInputFocused, expanded, spacer.isRunning,

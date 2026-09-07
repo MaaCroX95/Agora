@@ -1248,4 +1248,6 @@
     <string name="models_show_provider_name">제공업체 이름 표시</string>
     <string name="models_show_provider_name_desc">모델 이름 뒤에 제공업체 이름을 추가합니다.</string>
     <string name="remote_history_read_only">읽기 전용 기록</string>
+    <string name="remote_resume_history">이 대화 계속하기</string>
+    <string name="remote_session_busy">다른 Codex 프로세스가 이 대화를 사용 중입니다. 사용이 끝나면 다시 시도하세요.</string>
 </resources>
