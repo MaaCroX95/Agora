@@ -34,9 +34,19 @@ internal data class RemoteState(
     val editedDeviceId: String? = null,
     val runtime: RemoteRuntime? = null, val models: List<RemoteModel> = emptyList(),
     val controlling: Boolean = false, val composerFocusOwner: String? = null,
+    val draftSessionId: String? = null, val draftModel: String? = null,
+    val modelsLoading: Boolean = false,
+    val sessionOwners: Map<String, String> = emptyMap(),
 ) {
     val error: Boolean get() = failure != null
-    val owner: String? get() = session?.let { "$deviceId/${it.id}" }
+    val owner: String? get() = session?.let {
+        val nativeOwner = "$deviceId/${it.id}"
+        sessionOwners[nativeOwner] ?: nativeOwner
+    }
+    val isDraft: Boolean get() = session != null && session.id == draftSessionId
+    val selectedModel: String? get() = if (isDraft) {
+        draftModel ?: models.firstOrNull { it.isDefault }?.id
+    } else runtime?.model
 }
 
 /** Remote owns saved connections and presentation; native Codex owns durable execution. */
@@ -59,6 +69,8 @@ internal class RemoteViewModel(
     private var visible = false
     private var polling: Job? = null
     private var paging: Job? = null
+    private var modelLoading: Job? = null
+    private var modelEpoch = 0L
     private var storing: Job? = null
     private val createdAt = System.nanoTime()
     private val diagnosticContext = DiagnosticRequestContext(
@@ -151,6 +163,7 @@ internal class RemoteViewModel(
                     } else devices + device,
                     drafts = state.value.drafts.filterKeys { replaced == id || !it.startsWith("$replaced/") },
                     attempts = state.value.attempts.filterKeys { replaced == id || !it.startsWith("$replaced/") },
+                    sessionOwners = state.value.sessionOwners.filterKeys { replaced == id || !it.startsWith("$replaced/") },
                 )
                 // Saving an explicitly submitted connection must not undo a later Back/navigation.
                 if (generation == selectionEpoch) selectDevice(null)
@@ -183,6 +196,7 @@ internal class RemoteViewModel(
                     devices = state.value.devices.filterNot { it.id == id },
                     drafts = state.value.drafts.filterKeys { !it.startsWith("$id/") },
                     attempts = state.value.attempts.filterKeys { !it.startsWith("$id/") },
+                    sessionOwners = state.value.sessionOwners.filterKeys { !it.startsWith("$id/") },
                 )
                 if (state.value.deviceId == id) selectDevice(null)
                 trace("device_removed")
@@ -224,10 +238,13 @@ internal class RemoteViewModel(
         scrollRequests.clear()
         selectionEpoch++
         invalidateReads()
+        modelEpoch++
+        modelLoading?.cancel()
         mutableState.value = state.value.copy(deviceId = id, addingDevice = false, editedDeviceId = null,
             sessions = emptyList(), sessionCursor = null,
             session = null, messages = emptyList(), historyCursor = null, queued = emptyList(), failure = null,
-            runtime = null, models = emptyList(), composerFocusOwner = null)
+            runtime = null, models = emptyList(), modelsLoading = false, composerFocusOwner = null,
+            draftSessionId = null, draftModel = null)
         refresh()
     }
 
@@ -236,7 +253,8 @@ internal class RemoteViewModel(
         selectionEpoch++
         invalidateReads()
         mutableState.value = state.value.copy(session = session, messages = emptyList(),
-            historyCursor = null, queued = emptyList(), failure = null, runtime = null, composerFocusOwner = null)
+            historyCursor = null, queued = emptyList(), failure = null, runtime = null, composerFocusOwner = null,
+            draftSessionId = null, draftModel = null)
         historyAdmissionSelection = selectionEpoch.takeIf { session?.readOnly == true && session.canResume }
         refresh()
     }
@@ -245,7 +263,12 @@ internal class RemoteViewModel(
         if (visible == value) return
         visible = value
         trace(if (value) "visible" else "hidden")
-        if (value) refresh() else invalidateReads()
+        if (value) refresh() else {
+            invalidateReads()
+            modelEpoch++
+            modelLoading?.cancel()
+            mutableState.value = state.value.copy(modelsLoading = false)
+        }
     }
 
     private fun invalidateReads() {
@@ -256,7 +279,7 @@ internal class RemoteViewModel(
     }
 
     fun refresh() {
-        if (!visible || state.value.restoring || state.value.addingDevice) return
+        if (!visible || state.value.restoring || state.value.addingDevice || state.value.isDraft) return
         invalidateReads()
         val id = state.value.deviceId
         if (id == null) {
@@ -271,13 +294,26 @@ internal class RemoteViewModel(
         }
         val generation = epoch
         val session = state.value.session
+        if (session?.readOnly != true && modelLoading?.isActive != true) {
+            val modelGeneration = ++modelEpoch
+            mutableState.value = state.value.copy(modelsLoading = true)
+            modelLoading = viewModelScope.launch {
+                try {
+                    val models = client.models()
+                    if (modelGeneration == modelEpoch && clients[id] === client && state.value.deviceId == id) {
+                        mutableState.value = state.value.copy(models = models)
+                    }
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { trace("models_failed", error) }
+                finally {
+                    if (modelGeneration == modelEpoch) mutableState.value = state.value.copy(modelsLoading = false)
+                }
+            }
+        }
         polling = viewModelScope.launch {
             mutableState.value = state.value.copy(loading = true)
             do {
                 try {
-                    val models = if (session?.readOnly == true) emptyList() else client.models()
-                    if (generation != epoch) return@launch
-                    mutableState.value = state.value.copy(models = models)
                     if (session == null) {
                         val page = client.sessions()
                         if (generation != epoch) return@launch
@@ -337,14 +373,18 @@ internal class RemoteViewModel(
     }
 
     fun newSession() {
-        val selected = selectionEpoch
-        control { client ->
-            val created = client.create()
-            if (selected == selectionEpoch) {
-                selectSession(created)
-                mutableState.value = state.value.copy(composerFocusOwner = state.value.owner)
-            }
-        }
+        val snapshot = state.value
+        if (snapshot.deviceId !in clients || snapshot.isDraft || snapshot.controlling) return
+        scrollRequests.clear()
+        selectionEpoch++
+        invalidateReads()
+        val id = UUID.randomUUID().toString()
+        // A local composer identity survives promotion to the first native session.
+        mutableState.value = state.value.copy(
+            session = RemoteSession(id, "", "", 0), draftSessionId = id, draftModel = null,
+            messages = emptyList(), historyCursor = null, queued = emptyList(), failure = null,
+            composerFocusOwner = "${snapshot.deviceId}/$id",
+        )
     }
 
     fun completeComposerFocus(owner: String) {
@@ -373,6 +413,12 @@ internal class RemoteViewModel(
     fun setModel(model: String) {
         val session = state.value.session ?: return
         if (session.readOnly || state.value.models.none { it.id == model }) return
+        if (state.value.isDraft) {
+            if (state.value.attempts[state.value.owner]?.delivery in
+                setOf(RemoteDelivery.SUBMITTING, RemoteDelivery.ACCEPTED, RemoteDelivery.UNKNOWN)) return
+            mutableState.value = state.value.copy(draftModel = model)
+            return
+        }
         val selected = selectionEpoch
         control { client ->
             client.setModel(session.id, model)
@@ -443,17 +489,38 @@ internal class RemoteViewModel(
 
     fun send() {
         val snapshot = state.value
-        if (snapshot.session?.readOnly == true || snapshot.controlling || snapshot.runtime?.status !in setOf("idle", "active", "ready")) return
+        if (snapshot.session?.readOnly == true || snapshot.controlling ||
+            !snapshot.isDraft && snapshot.runtime?.status !in setOf("idle", "active", "ready")) return
         val owner = snapshot.owner ?: return
         val client = clients[snapshot.deviceId] ?: return
         val text = snapshot.drafts[owner].orEmpty()
         if (text.isBlank() || snapshot.attempts[owner]?.delivery in
             setOf(RemoteDelivery.SUBMITTING, RemoteDelivery.ACCEPTED, RemoteDelivery.UNKNOWN)) return
+        val selected = selectionEpoch
         val attempt = RemoteAttempt(UUID.randomUUID().toString(), text, RemoteDelivery.SUBMITTING)
         mutableState.value = state.value.copy(attempts = state.value.attempts + (owner to attempt))
         viewModelScope.launch {
             try {
-                client.send(snapshot.session!!.id, text, attempt.clientId)
+                var sessionId = snapshot.session!!.id
+                if (snapshot.isDraft) {
+                    val created = client.create()
+                    if (selected != selectionEpoch || clients[snapshot.deviceId] !== client) {
+                        if (state.value.attempts[owner]?.clientId == attempt.clientId) {
+                            mutableState.value = state.value.copy(attempts = state.value.attempts +
+                                (owner to attempt.copy(delivery = RemoteDelivery.REJECTED)))
+                        }
+                        return@launch
+                    }
+                    sessionId = created.id
+                    mutableState.value = state.value.copy(session = created,
+                        sessionOwners = state.value.sessionOwners + ("${snapshot.deviceId}/${created.id}" to owner))
+                    refresh()
+                    snapshot.draftModel?.let { client.setModel(sessionId, it) }
+                    if (selected != selectionEpoch || clients[snapshot.deviceId] !== client) {
+                        throw FiloInputException()
+                    }
+                }
+                client.send(sessionId, text, attempt.clientId)
                 if (state.value.attempts[owner]?.clientId == attempt.clientId &&
                     state.value.attempts[owner]?.delivery == RemoteDelivery.SUBMITTING) {
                     mutableState.value = state.value.copy(attempts = state.value.attempts +

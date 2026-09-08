@@ -70,7 +70,7 @@ internal fun RemoteConversation(
     val focus = remember { FocusRequester() }
     val attempt = state.attempts[owner]
     val running = state.runtime?.isRunning == true
-    val ready = !session.readOnly && state.runtime?.status in setOf("idle", "active", "ready")
+    val ready = state.isDraft || !session.readOnly && state.runtime?.status in setOf("idle", "active", "ready")
     val newChatEntry = remember(owner) { state.composerFocusOwner == owner }
     ChatLaunchInteractionEffects(
         initialComposerFocusReady = active && ready && state.composerFocusOwner == owner,
@@ -94,6 +94,13 @@ internal fun RemoteConversation(
     val thinkingBudgetTokens = 4096
     val openAiServiceTierEnabled = false
     val openAiServiceTier = "auto"
+    LaunchedEffect(active) {
+        if (!active) {
+            activeMenu = null
+            showThinkingSheet = false
+            showOpenAiServiceTierSheet = false
+        }
+    }
     LaunchedEffect(owner, field) { snapshotFlow { field.text.toString() }.collect { vm.editDraft(owner, it) } }
     var clearedAttempt by remember(owner) {
         mutableStateOf(attempt?.takeIf { it.delivery == RemoteDelivery.DELIVERED }?.clientId)
@@ -132,7 +139,7 @@ internal fun RemoteConversation(
     val animatedScrollRequest by vm.animatedScrollRequest.collectAsState()
     var barHeightPx by remember { mutableFloatStateOf(0f) }
     val barHeight = with(density) { barHeightPx.toDp() }
-    var initiallyPositioned by remember(owner) { mutableStateOf(false) }
+    var initiallyPositioned by remember(owner) { mutableStateOf(state.isDraft) }
     val switching = !initiallyPositioned
     scroll.BindLayoutObservation(owner, owner, ime, density)
     scroll.BindImeEffects(owner, messageState, density, barHeight, 0.dp, ime)
@@ -285,10 +292,11 @@ internal fun RemoteConversation(
                             onCamera = {}, onPhotos = {}, onVideos = {}, onFiles = {},
                         )
                         ComposerModelSelector(
-                            displayText = state.models.firstOrNull { it.id == state.runtime?.model }?.name
-                                ?: state.runtime?.model ?: stringResource(R.string.remote_model_unavailable),
-                            isModelValid = state.runtime?.model != null, expanded = activeMenu == "model",
-                            enabled = active && ready && !state.controlling && state.models.isNotEmpty(),
+                            displayText = state.models.firstOrNull { it.id == state.selectedModel }?.name
+                                ?: state.selectedModel ?: stringResource(
+                                    if (state.modelsLoading || state.loading) R.string.loading_label else R.string.remote_model_unavailable),
+                            isModelValid = state.selectedModel != null, expanded = activeMenu == "model",
+                            enabled = active && ready && !submitting && !state.controlling && state.models.isNotEmpty(),
                             onClick = {
                                 val now = System.currentTimeMillis()
                                 if (activeMenu == "model") activeMenu = null
@@ -305,7 +313,7 @@ internal fun RemoteConversation(
                                 sortedModels.forEach { model ->
                                     ComposerModelMenuItem(
                                         displayText = model.name,
-                                        selected = model.id == state.runtime?.model,
+                                        selected = model.id == state.selectedModel,
                                         onClick = {
                                             haptics.selection()
                                             vm.setModel(model.id)
@@ -344,7 +352,8 @@ internal fun RemoteConversation(
                                         activeMenu = "tools"
                                     }
                                 },
-                                modifier = Modifier.size(32.dp).menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true)
+                                enabled = active,
+                                modifier = Modifier.size(32.dp).menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = active)
                             ) {
                                 Icon(Icons.Default.MoreVert, stringResource(R.string.tools), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }

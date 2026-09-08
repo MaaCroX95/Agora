@@ -2,6 +2,7 @@ package com.newoether.agora.remote
 
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.verify
 import io.mockk.every
 import io.mockk.mockk
@@ -419,18 +420,154 @@ class RemoteViewModelTest {
         coVerify(exactly = 1) { client.send(any(), any(), any()) }
     }
 
-    @Test fun newSessionUsesHostCreationAndLateResultDoesNotNavigateAfterBack() = runTest(dispatcher) {
+    @Test fun newChatEntryAndRepeatedPlusStayLocalAndFocusWithoutRuntime() = runTest(dispatcher) {
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        saveAndSelect(vm); vm.setVisible(true); runCurrent()
+        vm.newSession()
+        val owner = vm.state.value.owner!!
+        assertTrue(vm.state.value.isDraft)
+        assertEquals(owner, vm.state.value.composerFocusOwner)
+        assertNull(vm.state.value.runtime)
+        assertFalse(vm.state.value.loading)
+        assertFalse(vm.state.value.controlling)
+        assertEquals("model", vm.state.value.selectedModel)
+        vm.editDraft(owner, "keep this draft")
+        vm.newSession(); vm.refresh(); vm.setVisible(false); vm.setVisible(true); runCurrent()
+        assertEquals(owner, vm.state.value.owner)
+        assertEquals("keep this draft", vm.state.value.drafts[owner])
+        coVerify(exactly = 1) { client.connect() }
+        coVerify(exactly = 1) { client.models() }
+        coVerify(exactly = 1) { client.sessions(any()) }
+        coVerify(exactly = 0) { client.create() }
+        coVerify(exactly = 0) { client.conversation(any(), any()) }
+        verify(exactly = 0) { client.events(any()) }
+        vm.selectDevice(null); vm.setVisible(false)
+        coVerify(exactly = 0) { client.create() }
+    }
+
+    @Test fun firstSendCreatesOnceAndPromotesWithoutReplacingComposerOrEditedDraft() = runTest(dispatcher) {
+        val created = CompletableDeferred<RemoteSession>()
+        val events = MutableSharedFlow<RemoteConversationPage>()
+        coEvery { client.create() } coAnswers { created.await() }
+        coEvery { client.models() } returns listOf(
+            RemoteModel("model", "Model", true), RemoteModel("chosen", "Chosen"))
+        coEvery { client.setModel(any(), any()) } returns Unit
+        coEvery { client.send(any(), any(), any()) } returns "turn"
+        every { client.events(any()) } returns events
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        saveAndSelect(vm); vm.setVisible(true); runCurrent()
+        vm.newSession()
+        val owner = vm.state.value.owner!!
+        vm.completeComposerFocus(owner)
+        vm.setModel("chosen"); runCurrent()
+        assertEquals("chosen", vm.state.value.selectedModel)
+        coVerify(exactly = 0) { client.setModel(any(), any()) }
+        vm.editDraft(owner, "hello"); vm.send(); vm.send(); runCurrent()
+        assertEquals(RemoteDelivery.SUBMITTING, vm.state.value.attempts[owner]?.delivery)
+        coVerify(exactly = 1) { client.create() }
+        coVerify(exactly = 0) { client.send(any(), any(), any()) }
+        vm.editDraft(owner, "edited while creating")
+        created.complete(RemoteSession("native", "New", "/host/default", 1)); runCurrent()
+        val attempt = vm.state.value.attempts[owner]!!
+        assertEquals(owner, vm.state.value.owner)
+        assertEquals("native", vm.state.value.session?.id)
+        assertFalse(vm.state.value.isDraft)
+        assertNull(vm.state.value.composerFocusOwner)
+        assertEquals("edited while creating", vm.state.value.drafts[owner])
+        assertEquals(RemoteDelivery.ACCEPTED, attempt.delivery)
+        coVerifyOrder {
+            client.create()
+            client.setModel("native", "chosen")
+            client.send("native", "hello", attempt.clientId)
+        }
+        events.emit(RemoteConversationPage(
+            listOf(RemoteMessage("user", "turn", attempt.clientId, "user", "hello", 1)),
+            null, emptyList(), RemoteRuntime("active", "turn", "chosen")))
+        runCurrent()
+        assertEquals(RemoteDelivery.DELIVERED, vm.state.value.attempts[owner]?.delivery)
+        assertEquals("edited while creating", vm.state.value.drafts[owner])
+        assertEquals(owner, vm.animatedScrollRequest.value?.conversationId)
+        val native = vm.state.value.session!!
+        vm.selectSession(null); runCurrent()
+        vm.selectSession(native); runCurrent()
+        assertEquals(owner, vm.state.value.owner)
+        assertEquals("edited while creating", vm.state.value.drafts[owner])
+        assertEquals(RemoteDelivery.DELIVERED, vm.state.value.attempts[owner]?.delivery)
+        vm.setVisible(false)
+    }
+
+    @Test fun lateFirstSendCreationDoesNotNavigateOrSendAfterBack() = runTest(dispatcher) {
         val created = CompletableDeferred<RemoteSession>()
         coEvery { client.create() } coAnswers { created.await() }
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.setVisible(true); runCurrent()
-        vm.newSession(); vm.newSession(); runCurrent()
-        assertTrue(vm.state.value.controlling)
+        vm.newSession()
+        val owner = vm.state.value.owner!!
+        vm.editDraft(owner, "hello"); vm.send(); vm.send(); runCurrent()
         vm.selectDevice(null)
         created.complete(RemoteSession("new", "New", "/host/default", 1)); runCurrent()
         assertNull(vm.state.value.session)
-        assertFalse(vm.state.value.controlling)
+        assertEquals(RemoteDelivery.REJECTED, vm.state.value.attempts[owner]?.delivery)
+        assertEquals("hello", vm.state.value.drafts[owner])
         coVerify(exactly = 1) { client.create() }
+        coVerify(exactly = 0) { client.send(any(), any(), any()) }
+        vm.setVisible(false)
+    }
+
+    @Test fun unknownCreationKeepsDraftAndNeverAutomaticallyRetries() = runTest(dispatcher) {
+        coEvery { client.create() } throws IOException("Lost creation receipt")
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        saveAndSelect(vm); vm.setVisible(true); runCurrent()
+        vm.newSession()
+        val owner = vm.state.value.owner!!
+        vm.editDraft(owner, "hello"); vm.send(); runCurrent()
+        assertEquals(RemoteDelivery.UNKNOWN, vm.state.value.attempts[owner]?.delivery)
+        assertTrue(vm.state.value.isDraft)
+        assertEquals("hello", vm.state.value.drafts[owner])
+        vm.send(); vm.refresh(); vm.setVisible(false); vm.setVisible(true); runCurrent()
+        coVerify(exactly = 1) { client.create() }
+        coVerify(exactly = 0) { client.send(any(), any(), any()) }
+        vm.setVisible(false)
+    }
+
+    @Test fun pendingModelCatalogDoesNotBlockDraftAndCompletesWithoutNewRequest() = runTest(dispatcher) {
+        val catalog = CompletableDeferred<List<RemoteModel>>()
+        coEvery { client.models() } coAnswers { catalog.await() }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        saveAndSelect(vm); vm.setVisible(true); runCurrent()
+        assertTrue(vm.state.value.modelsLoading)
+        vm.newSession()
+        val owner = vm.state.value.owner
+        assertEquals(owner, vm.state.value.composerFocusOwner)
+        assertTrue(vm.state.value.isDraft)
+        assertFalse(vm.state.value.loading)
+        assertNull(vm.state.value.selectedModel)
+        catalog.complete(listOf(RemoteModel("model", "Model", true))); runCurrent()
+        assertEquals(owner, vm.state.value.owner)
+        assertFalse(vm.state.value.modelsLoading)
+        assertEquals("model", vm.state.value.selectedModel)
+        coVerify(exactly = 1) { client.models() }
+        coVerify(exactly = 0) { client.create() }
+        verify(exactly = 0) { client.events(any()) }
+        vm.setVisible(false)
+    }
+
+    @Test fun failedModelCatalogEndsLoadingWithoutBlockingDraftSend() = runTest(dispatcher) {
+        val catalog = CompletableDeferred<List<RemoteModel>>()
+        coEvery { client.models() } coAnswers { catalog.await() }
+        coEvery { client.create() } returns RemoteSession("native", "New", "/host/default", 1)
+        coEvery { client.send(any(), any(), any()) } returns "turn"
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        saveAndSelect(vm); vm.setVisible(true); runCurrent()
+        vm.newSession()
+        catalog.completeExceptionally(IOException("Offline model catalog")); runCurrent()
+        assertFalse(vm.state.value.modelsLoading)
+        assertNull(vm.state.value.selectedModel)
+        val owner = vm.state.value.owner!!
+        vm.editDraft(owner, "hello"); vm.send(); runCurrent()
+        coVerify(exactly = 1) { client.create() }
+        coVerify(exactly = 1) { client.send("native", "hello", any()) }
+        assertEquals(owner, vm.state.value.owner)
         vm.setVisible(false)
     }
 

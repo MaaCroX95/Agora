@@ -84,7 +84,7 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
         }
     }
     BackHandler(active, back)
-    val target = Triple(state.deviceId, state.session?.id, if (state.addingDevice) state.editedDeviceId.orEmpty() else null)
+    val target = Triple(state.deviceId, state.owner, if (state.addingDevice) state.editedDeviceId.orEmpty() else null)
     Box(Modifier.fillMaxSize()) {
     GuardedAnimatedContent(targetState = target, forward = forward) { page ->
         var retained by remember(page) { mutableStateOf(state) }
