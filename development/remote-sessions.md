@@ -79,13 +79,19 @@ Preserve ID/history and enable composer/SSE only after native acceptance. Failur
 readable. No Continue this conversation button, background admission or automatic POST
 retry. Unavailable read-only history cannot subscribe or mutate; occupied writers fail safely.
 
-Opening a conversation loads its complete lightweight topology: native identities, order,
-groups and revisions. Bounded wire pages are internal transport only. They never define a
-visible window, evict message positions or trigger scroll compensation. Original MessageList
-and LazyColumn request composed message bodies through observeMessage; original payload LRU
-and MessagePayloadProjector bound retained bodies. Search uses the original full-topology ID
-scan, body hydration, highlights and scroll owner. Reconnecting merges native changes into
-the resident topology; payload reads and cache eviction cannot change its IDs or order.
+Opening a conversation reads only the latest bounded body page, with its identities and
+revisions in the same response. Older pages load on demand at the actual list edge; no
+initial complete-history scan or per-message network waterfall. Page bodies prime the
+original payload LRU before publication. Eviction re-reads bounded native page bookmarks.
+Already admitted IDs and presentation-page membership remain resident and immutable when
+older pages arrive or body caches are evicted. Existing rendered fragments never merge with
+an incoming older fragment. ChatMessage.displayPageId expresses this boundary to the
+canonical MessageList turn builder; ordinary null-boundary grouping remains unchanged.
+LazyColumn stable keys preserve the current drag/fling position without a second scroll
+actor, scrollToItem restoration, delayed correction or structural window trimming.
+Original MessageList, body observation, Search highlights and scroll owners remain shared.
+Explicit Search may read older pages with cancellation, without changing admitted positions.
+Reconnecting updates the native tail without replacing the historical reading position.
 A real user or different turn ends an assistant group. Remote DTOs remain separate from
 ChatMessage/MessageSegment presentation; only public summaries and tool records are mapped.
 Native imageView records hydrate real image bytes by authenticated message identity. Reuse
@@ -152,7 +158,7 @@ known creation, explicit retry uses the same native ID. Unknown creation/send st
 
 Filo bounds conversation pages to 256KiB/128 records with explicit tool previews. Android
 limits SSE lines/HTTP bodies to 1MiB before UTF-8 allocation, including missing delimiters.
-Retained payloads use a bounded window with native replay bookmarks. Eviction cannot make
+Retained payloads use a bounded cache with native replay bookmarks. Eviction cannot make
 any valid conversation permanently unenterable; both older and newer content remain readable.
 Long text parts preserve native identity, Unicode and internal whitespace. No larger heap or
 OutOfMemoryError recovery. Native records remain intact. Layered pages must not duplicate

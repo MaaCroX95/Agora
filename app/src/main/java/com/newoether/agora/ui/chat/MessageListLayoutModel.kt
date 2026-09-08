@@ -186,6 +186,9 @@ internal fun buildMessageListTurns(messages: List<ChatMessage>): List<MessageLis
     }
 
     messages.forEach { message ->
+        if (activeTurn.isNotEmpty() && message.displayPageId != activeTurn.first().displayPageId) {
+            flushActiveTurn()
+        }
         if (message.isContextCompact()) {
             flushActiveTurn()
             turns += MessageListTurn(message.id, listOf(message))

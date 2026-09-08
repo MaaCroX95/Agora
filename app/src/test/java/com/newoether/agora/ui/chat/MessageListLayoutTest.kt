@@ -16,6 +16,26 @@ import org.junit.Test
 
 class MessageListLayoutTest {
     @Test
+    fun prependingPagesNeverReparentsOrRecreatesAnExistingLazyItem() {
+        val cache = MessageListTurnCache()
+        val first = message("visible-answer", Participant.MODEL).copy(displayPageId = "page-current")
+        val tailUser = message("tail-user", Participant.USER).copy(displayPageId = "page-current")
+        var messages = listOf(first, tailUser)
+        val initial = cache.update(messages)
+        repeat(200) { index ->
+            val page = "older-$index"
+            messages = listOf(
+                message("$page-user", Participant.USER).copy(displayPageId = page),
+                message("$page-answer", Participant.MODEL).copy(displayPageId = page),
+            ) + messages
+            val turns = cache.update(messages)
+            assertSame(initial.first(), turns.first { it.key == first.id })
+            assertSame(initial.last(), turns.first { it.key == tailUser.id })
+            assertEquals(listOf(first), turns.first { it.key == first.id }.messages)
+        }
+    }
+
+    @Test
     fun lifecycleRegistryMarksOnlyActuallyComposedMessages() {
         val registry = MessageLifecycleAppearanceRegistry()
 

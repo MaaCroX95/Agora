@@ -179,6 +179,8 @@ data class ChatMessage(
     val runId: String? = null,
     val runSequence: Long? = null,
     val consumedAtPass: Int? = null,
+    /** Optional in-memory page boundary; older pages cannot reparent a rendered list item. */
+    val displayPageId: String? = null,
 )
 
 @Immutable
