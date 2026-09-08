@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -63,9 +66,27 @@ internal data class RemoteRuntime(
     val status: String, val activeTurnId: String? = null, val model: String? = null,
     val contextTokens: Int? = null, val contextWindow: Int? = null,
     val completedTurnId: String? = null,
+    val effort: String? = null, val serviceTier: String? = null,
 ) { val isRunning: Boolean get() = status == "active" }
 @Serializable
-internal data class RemoteModel(val id: String, val name: String, val isDefault: Boolean = false)
+internal data class RemoteModel(
+    val id: String, val name: String, val isDefault: Boolean = false,
+    val reasoningEfforts: List<String>? = null, val defaultReasoningEffort: String? = null,
+    val serviceTiers: List<RemoteServiceTier>? = null, val defaultServiceTier: String? = null,
+)
+@Serializable
+internal data class RemoteServiceTier(val id: String, val name: String, val description: String = "")
+internal data class RemoteSettings(
+    val model: String? = null, val effort: String? = null,
+    val serviceTier: String? = null, val updateServiceTier: Boolean = false,
+) {
+    fun merge(patch: RemoteSettings) = RemoteSettings(patch.model ?: model, patch.effort ?: effort,
+        if (patch.updateServiceTier) patch.serviceTier else serviceTier, updateServiceTier || patch.updateServiceTier)
+    fun body(): String = buildJsonObject {
+        model?.let { put("model", it) }; effort?.let { put("effort", it) }
+        if (updateServiceTier) put("serviceTier", serviceTier?.let { kotlinx.serialization.json.JsonPrimitive(it) } ?: JsonNull)
+    }.toString()
+}
 @Serializable
 private data class RemoteModels(val models: List<RemoteModel>)
 @Serializable
@@ -185,6 +206,9 @@ internal class FiloClient(
     suspend fun models(): List<RemoteModel> = json.decodeFromString<RemoteModels>(request("v1/models")).models
     suspend fun setModel(id: String, model: String) {
         request("v1/sessions/${sessionId(id)}/model", body = json.encodeToString(mapOf("model" to model)))
+    }
+    suspend fun updateSettings(id: String, settings: RemoteSettings) {
+        request("v1/sessions/${sessionId(id)}/settings", body = settings.body())
     }
     suspend fun stop(id: String, turnId: String) {
         request("v1/sessions/${sessionId(id)}/stop", body = json.encodeToString(mapOf("turnId" to turnId)))
