@@ -36,7 +36,10 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
                     "thought" -> MessageSegment(type = "thought", content = current.displayText(), durationMs = activity.durationMs)
                     "tool" -> MessageSegment(
                         type = "tool", toolName = activity.toolName, toolArgs = activity.arguments,
-                        toolCallId = current.id, toolState = activity.state, durationMs = activity.durationMs,
+                        toolCallId = current.id,
+                        // Older Filo records omit state on atomic native imageView items.
+                        toolState = activity.state ?: ToolExecutionStates.SUCCEEDED.takeIf { !activity.imagePath.isNullOrBlank() },
+                        durationMs = activity.durationMs,
                         toolImages = activity.images,
                         toolResult = activity.result.takeUnless { activity.state == ToolExecutionStates.RUNNING },
                         toolProgress = activity.result.takeIf { activity.state == ToolExecutionStates.RUNNING },

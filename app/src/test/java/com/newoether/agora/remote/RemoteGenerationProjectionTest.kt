@@ -29,6 +29,18 @@ class RemoteGenerationProjectionTest {
         assertTrue(segment.toolImages.isEmpty())
     }
 
+    @Test fun oldNativeImageViewIsCompleteButItsNameAloneNeverInventsCompletion() {
+        fun presentation(state: String? = null, path: String? = "C:/image.png") =
+            com.newoether.agora.ui.chat.message.ToolPresentationResolver.resolve(
+                projectRemoteMessages(listOf(answer.copy(text = "", activity =
+                    RemoteActivity("tool", "view_image", state = state, imagePath = path))))
+                    .single().segments!!.single())
+        assertEquals(com.newoether.agora.ui.chat.message.ToolPresentationState.COMPLETED, presentation().state)
+        assertEquals(com.newoether.agora.ui.chat.message.ToolPresentationState.RUNNING, presentation("running").state)
+        assertEquals(com.newoether.agora.ui.chat.message.ToolPresentationState.FAILED, presentation("failed").state)
+        assertEquals(com.newoether.agora.ui.chat.message.ToolPresentationState.CALLING, presentation(path = null).state)
+    }
+
     @Test fun pagingPreservesTheAssistantBubbleIdentity() {
         val newer = answer.copy(id = "newer", groupId = "native-group")
         val older = answer.copy(id = "older", groupId = "native-group")
