@@ -12,8 +12,8 @@ internal class RemoteStreamDeltas {
         val liveTurns = listOfNotNull(previousRuntime?.activeTurnId, runtime?.activeTurnId).toSet()
         return fresh.map { message ->
             val before = old[message.id]
-            val text = message.text.trimEnd('\r', '\n')
-            val oldText = before?.text?.trimEnd('\r', '\n').orEmpty()
+            val text = message.displayText()
+            val oldText = before?.displayText().orEmpty()
             val preserved = before?.streamingTextDeltas.orEmpty()
             val deltas = if (previousRuntime != null && message.role == "assistant" && message.activity == null &&
                 message.turnId in liveTurns && text.startsWith(oldText) && text.length > oldText.length) {

@@ -18,6 +18,7 @@ internal data class RemoteMessage(
     val text: String, val timestamp: Long,
     val activity: RemoteActivity? = null,
     val groupId: String? = null,
+    val nativeId: String? = null, val textOffset: Int = 0, val textContinues: Boolean = false,
     @kotlinx.serialization.Transient
     val streamingTextDeltas: List<com.newoether.agora.model.StreamingTextDelta> = emptyList(),
 )
@@ -33,7 +34,7 @@ internal data class RemoteSessionPage(val sessions: List<RemoteSession>, val nex
 @Serializable
 internal data class RemoteConversationPage(
     val messages: List<RemoteMessage>, val nextCursor: String?, val queued: List<RemoteQueuedMessage>,
-    val runtime: RemoteRuntime? = null,
+    val runtime: RemoteRuntime? = null, val pageCursor: String? = null,
 )
 @Serializable
 internal data class RemoteRuntime(

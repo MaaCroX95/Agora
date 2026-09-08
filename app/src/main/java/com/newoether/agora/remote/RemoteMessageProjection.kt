@@ -14,14 +14,24 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
     while (index < messages.size) {
         val first = messages[index++]
         require(first.role == "user" || first.role == "assistant")
+        val answerText = StringBuilder()
+        var previousAnswerId: String? = null
+        var userText = first.displayText()
+        if (first.role == "user") {
+            val nativeId = first.nativeId ?: first.id
+            while (messages.getOrNull(index)?.let {
+                it.role == "user" && (it.nativeId ?: it.id) == nativeId
+            } == true) userText += messages[index++].displayText()
+        }
         val segments = if (first.role == "assistant") buildList<MessageSegment> {
             var current = first
+            var previousNativeId: String? = null
             while (true) {
                 val activity = current.activity
                 val segment = when (activity?.type) {
-                    null -> MessageSegment(type = "answer", content = current.text.trimEnd('\r', '\n'),
+                    null -> MessageSegment(type = "answer", content = current.displayText(),
                         streamingTextDeltas = current.streamingTextDeltas)
-                    "thought" -> MessageSegment(type = "thought", content = current.text.trimEnd('\r', '\n'))
+                    "thought" -> MessageSegment(type = "thought", content = current.displayText())
                     "tool" -> MessageSegment(
                         type = "tool", toolName = activity.toolName, toolArgs = activity.arguments,
                         toolCallId = current.id, toolState = activity.state, durationMs = activity.durationMs,
@@ -30,11 +40,24 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
                     )
                     else -> error("Unsupported Remote activity")
                 }
-                if (segment.type == "tool" || segment.content.isNotBlank()) {
-                    // Native text items are separate paragraphs, not adjacent streaming deltas.
-                    add(if (segment.type != "tool" && lastOrNull()?.type == segment.type) {
-                        segment.copy(content = "\n\n" + segment.content)
-                    } else segment)
+                val nativeId = current.nativeId ?: current.id
+                if (segment.type == "answer" && (segment.content.isNotBlank() || current.textContinues)) {
+                    if (answerText.isNotEmpty() && previousAnswerId != nativeId) answerText.append("\n\n")
+                    answerText.append(segment.content)
+                    previousAnswerId = nativeId
+                }
+                if (segment.type == "tool" || segment.content.isNotBlank() || current.textContinues) {
+                    val previous = lastOrNull()
+                    if (segment.type != "tool" && previous?.type == segment.type && previousNativeId == nativeId) {
+                        set(lastIndex, previous.copy(content = previous.content + segment.content,
+                            streamingTextDeltas = previous.streamingTextDeltas + segment.streamingTextDeltas))
+                    } else {
+                        // Different native text records remain separate paragraphs.
+                        add(if (segment.type != "tool" && previous?.type == segment.type) {
+                            segment.copy(content = "\n\n" + segment.content)
+                        } else segment)
+                    }
+                    previousNativeId = nativeId
                 }
                 val next = messages.getOrNull(index)
                 if (next?.role != "assistant" || next.turnId != first.turnId) break
@@ -44,9 +67,8 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
         } else null
         if (segments != null && segments.isEmpty()) continue
         add(ChatMessage(
-            id = first.groupId ?: first.id, parentId = lastOrNull()?.id,
-            text = segments?.filter { it.type == "answer" }?.joinToString("\n\n") { it.content.trimStart('\n') }
-                ?: first.text.trimEnd('\r', '\n'),
+            id = first.groupId ?: first.nativeId ?: first.id, parentId = lastOrNull()?.id,
+            text = if (segments == null) userText else answerText.toString(),
             participant = if (first.role == "user") Participant.USER else Participant.MODEL,
             timestamp = first.timestamp, modelName = "Codex", runId = first.turnId,
             segments = segments,
@@ -80,3 +102,5 @@ internal fun mergeRemoteHistory(old: List<RemoteMessage>, fresh: List<RemoteMess
     val index = old.indexOfFirst { it.id == boundary }
     return (old.take(index.coerceAtLeast(0)) + fresh).distinctBy { it.id }
 }
+
+internal fun RemoteMessage.displayText(): String = if (textContinues) text else text.trimEnd('\r', '\n')

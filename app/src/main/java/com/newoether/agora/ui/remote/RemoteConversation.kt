@@ -80,7 +80,8 @@ internal fun RemoteConversation(
         onShowLaunchContent = {},
         onInitialFocusRequested = { vm.completeComposerFocus(owner) },
     )
-    val generationVisible = state.runtime.hasVisibleGeneration(state.messages)
+    val presentationRuntime = state.runtime.takeUnless { state.historyHasNewer }
+    val generationVisible = presentationRuntime.hasVisibleGeneration(state.messages)
     var activeMenu by remember(owner) { mutableStateOf<String?>(null) }
     var lastModelDismissTime by remember(owner) { mutableLongStateOf(0L) }
     var lastContextDismissTime by remember(owner) { mutableLongStateOf(0L) }
@@ -121,7 +122,7 @@ internal fun RemoteConversation(
             haptics.confirm()
         }
     }
-    val messages = remember(state.messages, state.runtime) { projectRemoteMessages(state.messages, state.runtime) }
+    val messages = remember(state.messages, presentationRuntime) { projectRemoteMessages(state.messages, presentationRuntime) }
     val streaming = messages.lastOrNull()?.takeIf {
         it.status in setOf(MessageStatus.SENDING, MessageStatus.THINKING, MessageStatus.TOOL_CALLING, MessageStatus.TRANSCRIBING)
     }
@@ -170,8 +171,14 @@ internal fun RemoteConversation(
     LaunchedEffect(owner, active, switching, interaction.searchActive, state.historyCursor, state.loading, state.loadingMore, state.error) {
         if (!active || switching || state.historyCursor == null || state.loading || state.loadingMore || state.error) return@LaunchedEffect
         if (interaction.searchActive) vm.loadMore()
-        else snapshotFlow { scroll.listState.firstVisibleItemIndex == 0 }.collect { atTop ->
+        else snapshotFlow { !scroll.listState.canScrollBackward }.collect { atTop ->
             if (atTop) vm.loadMore()
+        }
+    }
+    LaunchedEffect(owner, active, switching, interaction.searchActive, state.historyHasNewer, state.loadingMore, state.error) {
+        if (!active || switching || interaction.searchActive || !state.historyHasNewer || state.loadingMore || state.error) return@LaunchedEffect
+        snapshotFlow { !scroll.listState.canScrollForward }.collect { atBottom ->
+            if (atBottom) vm.loadNewerHistory()
         }
     }
     var confirmUnknown by remember { mutableStateOf(false) }
@@ -236,16 +243,17 @@ internal fun RemoteConversation(
                         isSwitching = switching,
                         conversationContentReady = initiallyPositioned,
                         shareSelectionActive = false,
-                        hasItems = scroll.listState.layoutInfo.totalItemsCount > 1,
-                        canScrollForward = scroll.listState.canScrollForward,
-                        isNearBottom = scroll.isNearAbsoluteBottom,
+                        hasItems = state.historyHasNewer || scroll.listState.layoutInfo.totalItemsCount > 1,
+                        canScrollForward = state.historyHasNewer || scroll.listState.canScrollForward,
+                        isNearBottom = !state.historyHasNewer && scroll.isNearAbsoluteBottom,
                         isStreamingAutoFollowing = scroll.streamingTailController.isAutoFollowing,
                         scrollPhase = scroll.absoluteBottomScrollPhase,
                         competingProgrammaticScrollActive = scroll.imeBottomAnchorState.active,
                     ),
                     barHeight,
                 ) {
-                    scroll.requestAbsoluteBottomScroll()
+                    if (state.historyHasNewer) vm.loadNewerHistory(latest = true)
+                    else scroll.requestAbsoluteBottomScroll()
                 }
 
                 AnimatedVisibility(

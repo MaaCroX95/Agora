@@ -137,10 +137,13 @@ known creation, explicit retry uses the same native ID. Unknown creation/send st
 
 Filo bounds conversation pages to 256KiB/128 records with explicit tool previews. Android
 limits SSE lines/HTTP bodies to 1MiB before UTF-8 allocation, including missing delimiters.
-Retained history is limited to 16MiB estimated storage and 8192 records. A limit preserves
-loaded history with explicit remaining-history guidance; no silent drops, larger heap or
+Retained payloads use a bounded window with native replay bookmarks. Eviction cannot make
+any valid conversation permanently unenterable; both older and newer content remain readable.
+Long text parts preserve native identity, Unicode and internal whitespace. No larger heap or
 OutOfMemoryError recovery. Native records remain intact. Layered pages must not duplicate
 desktop live turns; off-page native user acknowledgement still supports valid streaming.
+Older history does not acquire active-tail presentation or get replaced by incoming SSE.
+Paging starts only at the actual list edge, never merely because a huge first bubble is visible.
 
 Verify auth, exact native capability/owner/turn routing, bounded transport/history,
 cancellation, stale results, original renderer bindings, local-first Devices and persistence

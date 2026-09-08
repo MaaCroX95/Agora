@@ -11,7 +11,7 @@ internal data class RemoteDevice(
     val status: RemoteDeviceStatus = RemoteDeviceStatus.IDLE, val failure: RemoteFailure? = null,
 )
 internal data class RemoteNotice(val stage: String, val failure: RemoteFailure, val selection: Long) {
-    val canRetryRead: Boolean get() = stage in setOf("restore_failed", "check_failed", "read_failed", "page_failed")
+    val canRetryRead: Boolean get() = stage in setOf("restore_failed", "check_failed", "read_failed", "page_failed", "newer_page_failed")
 }
 internal enum class RemoteDelivery { SUBMITTING, ACCEPTED, DELIVERED, REJECTED, UNKNOWN }
 internal data class RemoteAttempt(val clientId: String, val text: String, val delivery: RemoteDelivery)
@@ -19,7 +19,7 @@ internal data class RemoteState(
     val devices: List<RemoteDevice> = emptyList(), val deviceId: String? = null,
     val sessions: List<RemoteSession> = emptyList(), val sessionCursor: String? = null,
     val session: RemoteSession? = null, val messages: List<RemoteMessage> = emptyList(),
-    val historyCursor: String? = null, val queued: List<RemoteQueuedMessage> = emptyList(),
+    val historyCursor: String? = null, val historyHasNewer: Boolean = false, val queued: List<RemoteQueuedMessage> = emptyList(),
     val drafts: Map<String, String> = emptyMap(), val attempts: Map<String, RemoteAttempt> = emptyMap(),
     val saving: Boolean = false, val loading: Boolean = false, val loadingMore: Boolean = false, val failure: RemoteFailure? = null,
     val restoring: Boolean = true, val storageError: Boolean = false, val addingDevice: Boolean = false,

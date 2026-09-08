@@ -28,6 +28,7 @@ internal class RemoteViewModel(
     private val noticeChannel = Channel<RemoteNotice>(Channel.BUFFERED)
     val notices = noticeChannel.receiveAsFlow()
     private val streamDeltas = RemoteStreamDeltas()
+    private val history = RemoteHistoryWindow()
     private val scrollRequests = ScrollRequestCoordinator()
     val animatedScrollRequest = scrollRequests.request
     fun completeAnimatedScroll(id: Long) = scrollRequests.complete(id)
@@ -69,6 +70,7 @@ internal class RemoteViewModel(
         when (notice.stage) {
             "restore_failed" -> restoreConnections()
             "page_failed" -> loadMore()
+            "newer_page_failed" -> loadNewerHistory()
             "check_failed", "read_failed" -> refresh()
         }
     }
@@ -226,6 +228,7 @@ internal class RemoteViewModel(
     fun selectDevice(id: String?) {
         if (id != null && id !in clients) return
         scrollRequests.clear()
+        history.clear()
         selectionEpoch++
         mutableState.value = state.value.copy(controlling = false, stoppingOwner = null, stoppingTurnId = null)
         invalidateReads()
@@ -233,7 +236,7 @@ internal class RemoteViewModel(
         modelLoading?.cancel()
         mutableState.value = state.value.copy(deviceId = id, addingDevice = false, editedDeviceId = null,
             sessions = emptyList(), sessionCursor = null, sessionStatuses = emptyMap(),
-            session = null, messages = emptyList(), historyCursor = null, queued = emptyList(), failure = null,
+            session = null, messages = emptyList(), historyCursor = null, historyHasNewer = false, queued = emptyList(), failure = null,
             runtime = null, models = emptyList(), modelsLoading = false, composerFocusOwner = null,
             draftSessionId = null, draftSettings = RemoteSettings(), draftNativeSession = null)
         refresh()
@@ -241,11 +244,12 @@ internal class RemoteViewModel(
 
     fun selectSession(session: RemoteSession?) {
         scrollRequests.clear()
+        history.clear()
         selectionEpoch++
         mutableState.value = state.value.copy(controlling = false, stoppingOwner = null, stoppingTurnId = null)
         invalidateReads()
         mutableState.value = state.value.copy(session = session, messages = emptyList(),
-            historyCursor = null, queued = emptyList(), failure = null, runtime = null, composerFocusOwner = null,
+            historyCursor = null, historyHasNewer = false, queued = emptyList(), failure = null, runtime = null, composerFocusOwner = null,
             draftSessionId = null, draftSettings = RemoteSettings(), draftNativeSession = null)
         historyAdmissionSelection = selectionEpoch.takeIf { session?.readOnly == true && session.canResume }
         refresh()
@@ -347,33 +351,36 @@ internal class RemoteViewModel(
 
     private suspend fun applyPage(client: FiloClient, sessionId: String, generation: Long, page: RemoteConversationPage) {
         if (generation != epoch) return
-        var fresh = checkedRemoteHistory(page.messages)
-        var cursor = page.nextCursor
         val old = state.value.messages
         val oldIds = old.mapTo(HashSet()) { it.id }
+        val incoming = mutableListOf(page)
+        var cursor = page.nextCursor
         val cursors = mutableSetOf<String>()
-        while (old.isNotEmpty() && fresh.none { it.id in oldIds } && cursor != null) {
+        while (!history.hasNewer && old.isNotEmpty() && incoming.last().messages.none { it.id in oldIds } &&
+            cursor != null && incoming.size < history.bridgePageLimit &&
+            incoming.sumOf { remoteHistoryBytes(it.messages) } < 2L * 1024 * 1024) {
             require(cursors.add(cursor)) { "Filo history cursor did not advance" }
             val older = client.conversation(sessionId, cursor)
             if (generation != epoch) return
-            fresh = checkedRemoteHistory(older.messages + fresh)
+            incoming += older
             cursor = older.nextCursor
         }
         if (generation != epoch) return
         val owner = state.value.owner ?: return
+        history.latest(incoming)
+        val fresh = if (history.hasNewer) old else streamDeltas.apply(old, history.messages,
+            state.value.runtime, page.runtime)
         mutableState.value = state.value.copy(
-            messages = streamDeltas.apply(state.value.messages, checkedRemoteHistory(mergeRemoteHistory(state.value.messages, fresh)),
-                state.value.runtime, page.runtime), queued = page.queued,
-            historyCursor = if (old.isEmpty() || fresh.none { it.id in oldIds }) cursor else state.value.historyCursor,
-            loading = false, failure = null, runtime = page.runtime,
+            messages = fresh, queued = page.queued, historyCursor = history.olderCursor,
+            historyHasNewer = history.hasNewer, loading = false, failure = null, runtime = page.runtime,
         )
         state.value.deviceId?.let { id -> updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTED, failure = null) } }
-        state.value.attempts[owner]?.let { attempt -> confirmDelivery(owner, attempt) }
+        state.value.attempts[owner]?.let { attempt -> confirmDelivery(owner, attempt, page.messages) }
         settleStop()
         page.runtime?.completedTurnId?.let { turn ->
             val address = state.value.deviceId ?: return@let
             val key = "$address/$sessionId"
-            if (visible && state.value.viewedTurns[key] != turn) {
+            if (visible && !history.hasNewer && state.value.viewedTurns[key] != turn) {
                 mutableState.value = state.value.copy(viewedTurns = state.value.viewedTurns + (key to turn))
                 viewModelScope.launch {
                     try { connections.markViewed(address, sessionId, turn) }
@@ -447,6 +454,7 @@ internal class RemoteViewModel(
         val snapshot = state.value
         if (snapshot.deviceId !in clients || snapshot.isDraft || snapshot.controlling) return
         scrollRequests.clear()
+        history.clear()
         selectionEpoch++
         mutableState.value = state.value.copy(controlling = false, stoppingOwner = null, stoppingTurnId = null)
         invalidateReads()
@@ -454,7 +462,7 @@ internal class RemoteViewModel(
         // A local composer identity survives promotion to the first native session.
         mutableState.value = state.value.copy(
             session = RemoteSession(id, "", "", 0), draftSessionId = id, draftSettings = RemoteSettings(), draftNativeSession = null,
-            messages = emptyList(), historyCursor = null, queued = emptyList(), failure = null,
+            messages = emptyList(), historyCursor = null, historyHasNewer = false, queued = emptyList(), failure = null,
             composerFocusOwner = "${snapshot.deviceId}/$id",
         )
     }
@@ -599,14 +607,44 @@ internal class RemoteViewModel(
                     val page = client.conversation(snapshot.session.id, cursor)
                     require(page.nextCursor != cursor) { "Filo history cursor did not advance" }
                     if (generation == epoch) {
-                        val oldIds = state.value.messages.mapTo(HashSet()) { it.id }
-                        mutableState.value = state.value.copy(messages = checkedRemoteHistory(
-                            page.messages.filterNot { it.id in oldIds } + state.value.messages), historyCursor = page.nextCursor, failure = null)
+                        history.prepend(page, cursor)
+                        mutableState.value = state.value.copy(messages = history.messages,
+                            historyCursor = history.olderCursor, historyHasNewer = history.hasNewer, failure = null)
                     }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
                 if (generation == epoch) mutableState.value = state.value.copy(failure = trace("page_failed", error))
+            } finally {
+                if (generation == epoch) mutableState.value = state.value.copy(loadingMore = false)
+            }
+        }
+    }
+
+    fun loadNewerHistory(latest: Boolean = false) {
+        if (paging?.isActive == true || state.value.loading || !history.hasNewer) return
+        val snapshot = state.value
+        val session = snapshot.session ?: return
+        val client = clients[snapshot.deviceId] ?: return
+        val cursor = if (latest) null else history.newerCursor
+        val generation = epoch
+        mutableState.value = state.value.copy(loadingMore = true)
+        paging = viewModelScope.launch {
+            try {
+                val page = client.conversation(session.id, cursor)
+                if (generation != epoch) return@launch
+                if (latest) { history.clear(); history.latest(listOf(page)) }
+                else history.append(cursor, page)
+                mutableState.value = state.value.copy(messages = history.messages,
+                    historyCursor = history.olderCursor, historyHasNewer = history.hasNewer, failure = null)
+                if (latest) {
+                    val tail = projectRemoteMessages(state.value.messages).lastOrNull()
+                    if (tail != null) scrollRequests.requestAbsoluteBottomAfter(snapshot.owner!!, tail.id)
+                }
+                if (!history.hasNewer) refresh()
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                if (generation == epoch) mutableState.value = state.value.copy(failure = trace("newer_page_failed", error))
             } finally {
                 if (generation == epoch) mutableState.value = state.value.copy(loadingMore = false)
             }
@@ -687,14 +725,15 @@ internal class RemoteViewModel(
         }
     }
 
-    private fun confirmDelivery(owner: String, attempt: RemoteAttempt) {
+    private fun confirmDelivery(owner: String, attempt: RemoteAttempt, fresh: List<RemoteMessage> = state.value.messages) {
         if (state.value.attempts[owner]?.clientId != attempt.clientId) return
         if (state.value.attempts[owner]?.delivery == RemoteDelivery.DELIVERED || state.value.owner != owner) return
-        val message = state.value.messages.firstOrNull { it.role == "user" && it.clientId == attempt.clientId } ?: return
+        val message = fresh.firstOrNull { it.role == "user" && it.clientId == attempt.clientId } ?: return
         mutableState.value = state.value.copy(
             drafts = if (state.value.drafts[owner] == attempt.text) state.value.drafts - owner else state.value.drafts,
             attempts = state.value.attempts + (owner to attempt.copy(delivery = RemoteDelivery.DELIVERED)),
         )
-        scrollRequests.requestAbsoluteBottomAfter(owner, message.id)
+        if (history.hasNewer) loadNewerHistory(latest = true)
+        else scrollRequests.requestAbsoluteBottomAfter(owner, message.nativeId ?: message.id)
     }
 }
