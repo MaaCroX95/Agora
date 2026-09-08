@@ -74,16 +74,28 @@ internal fun admitRemotePage(
     previous: List<RemoteMessageNode>, page: RemoteConversationPage, older: Boolean = false,
 ): List<RemoteMessageNode> {
     require(page.nodes.map { it.id } == page.messages.map { it.id }) { "Filo page metadata is missing" }
+    return admitRemoteNodes(previous, page.nodes.map { it.copy(pageCursor = it.pageCursor ?: page.pageCursor) }, older)
+}
+
+internal fun admitRemoteNodes(
+    previous: List<RemoteMessageNode>, incoming: List<RemoteMessageNode>, older: Boolean = false,
+): List<RemoteMessageNode> {
     val known = previous.associateBy { it.id }
     var preceding = if (older) null else previous.lastOrNull()
     var pageId = preceding?.displayPageId
     var pageCount = previous.count { it.displayPageId == pageId }
-    val fresh = page.nodes.map { node ->
+    val fresh = incoming.map { node ->
         val old = known[node.id]
         val admitted = if (old != null) node.copy(
-            displayPageId = old.displayPageId, displayGroupId = old.displayGroupId, pageCursor = page.pageCursor,
+            displayPageId = old.displayPageId, displayGroupId = old.displayGroupId, pageCursor = node.pageCursor,
         ) else {
-            if (pageId == null || pageCount >= 128) { pageId = node.id; pageCount = 0; preceding = null }
+            val continuingFold = preceding?.let {
+                it.role == "assistant" && node.role == "assistant" && it.turnId == node.turnId &&
+                    it.groupId == node.groupId && it.activity != null && node.activity != null
+            } == true
+            if (pageId == null || pageCount >= 128 && !continuingFold) {
+                pageId = node.id; pageCount = 0; preceding = null
+            }
             val sameGroup = preceding?.let {
                 it.displayPageId == pageId && it.role == node.role &&
                     (if (node.role == "assistant") it.turnId == node.turnId
@@ -91,7 +103,7 @@ internal fun admitRemotePage(
             } == true
             pageCount++
             node.copy(displayPageId = pageId, displayGroupId = if (sameGroup) preceding!!.displayGroupId else node.id,
-                pageCursor = page.pageCursor)
+                pageCursor = node.pageCursor)
         }
         preceding = admitted
         pageId = admitted.displayPageId

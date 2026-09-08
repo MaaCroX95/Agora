@@ -17,6 +17,18 @@ class RemoteGenerationProjectionTest {
         assertTrue(pending.hasVisibleGeneration(listOf(answer.copy(role = "user"))))
     }
 
+    @Test fun completedImageViewWithoutTextOrDownloadedBytesUsesTheOriginalCompletedPresentation() {
+        val image = answer.copy(text = "", activity = RemoteActivity("tool", "view_image",
+            arguments = """{"path":"C:/image.png"}""", state = "succeeded", imagePath = "C:/image.png"))
+        val segment = projectRemoteMessages(listOf(image)).single().segments!!.single()
+        val presentation = com.newoether.agora.ui.chat.message.ToolPresentationResolver.resolve(segment)
+        assertEquals(com.newoether.agora.ui.chat.message.ToolKind.IMAGE_VIEW, presentation.kind)
+        assertEquals(com.newoether.agora.ui.chat.message.ToolPresentationState.COMPLETED, presentation.state)
+        assertFalse(presentation.isActive)
+        assertNull(segment.toolResult)
+        assertTrue(segment.toolImages.isEmpty())
+    }
+
     @Test fun pagingPreservesTheAssistantBubbleIdentity() {
         val newer = answer.copy(id = "newer", groupId = "native-group")
         val older = answer.copy(id = "older", groupId = "native-group")

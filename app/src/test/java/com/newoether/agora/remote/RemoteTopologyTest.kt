@@ -42,6 +42,26 @@ class RemoteTopologyTest {
         assertEquals(snapshot, nodes)
     }
 
+    @Test fun continuousThoughtAndToolGroupSurvivesTheDisplayPageLimitAndPrepending() {
+        fun tool(index: Int) = RemoteMessage("tool-$index", "turn", null, "assistant", "", 1,
+            activity = RemoteActivity(if (index % 2 == 0) "thought" else "tool", state = "succeeded"))
+        val packet = bodyPage((0..349).map(::tool), "older", emptyList())
+        val nodes = admitRemotePage(emptyList(), packet)
+        val group = projectRemoteTopology(nodes, null).single()
+        assertEquals(350, group.nodes.size)
+        val cache = com.newoether.agora.ui.chat.MessageListTurnCache()
+        val before = cache.update(listOf(group.stub)).single()
+        val answer = RemoteMessage("earlier-answer", "turn", null, "assistant", "Earlier", 1)
+        val prepended = admitRemotePage(nodes, bodyPage(listOf(answer), null, emptyList()), older = true)
+        val turns = cache.update(projectRemoteTopology(prepended, null).map { it.stub })
+        assertSame(before, turns.last())
+        assertEquals(nodes, prepended.drop(1))
+        val extended = admitRemotePage(nodes, bodyPage(listOf(tool(349), tool(350)), "older", emptyList()))
+        assertEquals(351, projectRemoteTopology(extended, null).single().nodes.size)
+        val complete = admitRemotePage(extended, bodyPage(listOf(tool(350), answer.copy(id = "final")), null, emptyList()))
+        assertEquals(2, projectRemoteTopology(complete, null).size)
+    }
+
     private val revision = "a".repeat(64)
     private fun node(id: String, role: String = "assistant", turn: String = "turn") =
         RemoteMessageNode(id, turn, null, role, 1, revision, 100, groupId = if (role == "assistant") "group-$turn" else null)

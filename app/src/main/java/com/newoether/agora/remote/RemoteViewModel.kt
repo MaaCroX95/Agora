@@ -378,30 +378,31 @@ internal class RemoteViewModel(
         if (generation != epoch) return
         val old = state.value.nodes
         val oldIds = old.mapTo(HashSet()) { it.id }
-        val incoming = mutableListOf(page)
+        val owner = state.value.owner ?: return
+        val incoming = mutableListOf(cachePage(owner, page, live = true))
         var cursor = page.nextCursor
         val cursors = mutableSetOf<String>()
-        // Opening stops after one body page. Only a later tail gap requires bridging.
-        while (cursor != null && old.isNotEmpty() && incoming.last().nodes.none { it.id in oldIds }) {
+        // Complete only the leading fold group; subsequent tail updates also bridge a genuine gap.
+        while (cursor != null && (old.isNotEmpty() || incoming.last().continuationCursor != null) &&
+            incoming.last().nodes.none { it.id in oldIds }) {
             require(cursors.add(cursor)) { "Filo history cursor did not advance" }
             val older = client.conversation(sessionId, cursor)
             if (generation != epoch) return
-            incoming += older
+            incoming += cachePage(owner, older, live = false)
             cursor = older.nextCursor
         }
         if (generation != epoch) return
-        val owner = state.value.owner ?: return
         historyMutation.withLock {
             if (generation != epoch) return
             var nodes = state.value.nodes
-            for (chunk in incoming.asReversed()) nodes = admitRemotePage(nodes, chunk)
+            for (chunk in incoming.asReversed()) nodes = admitRemoteNodes(nodes, chunk.nodes)
             val runtime = page.runtime.takeUnless { state.value.session?.readOnly == true }
             val groups = projectRemoteTopology(nodes, runtime)
-            for (chunk in incoming.asReversed()) hydration.accept(owner, chunk, groups)
+            for (chunk in incoming.asReversed()) hydration.accept(owner, chunk, groups, live = false)
             if (generation != epoch) return
             mutableState.value = state.value.copy(
                 nodes = nodes, messageGroups = groups, hydrationEnabled = visible,
-                historyCursor = if (old.isEmpty()) page.nextCursor else state.value.historyCursor,
+                historyCursor = if (old.isEmpty()) incoming.last().nextCursor else state.value.historyCursor,
                 queued = page.queued, loading = false, failure = null, runtime = page.runtime,
             )
         }
@@ -675,15 +676,33 @@ internal class RemoteViewModel(
         }
     }
 
+    private suspend fun cachePage(owner: String, page: RemoteConversationPage, live: Boolean): RemoteConversationPage {
+        require(page.nodes.map { it.id } == page.messages.map { it.id }) { "Filo page metadata is missing" }
+        hydration.accept(owner, page, emptyList(), live)
+        // Retain only topology while completing a group; body retention stays in the bounded LRU.
+        return page.copy(messages = emptyList(), nodes = page.nodes.map { it.copy(pageCursor = page.pageCursor) })
+    }
+
     private suspend fun prependPage(client: FiloClient, session: String, generation: Long, cursor: String) {
-        val page = client.conversation(session, cursor)
-        require(page.nextCursor != cursor) { "Filo history cursor did not advance" }
+        val owner = state.value.owner ?: return
+        val chunks = mutableListOf(cachePage(owner, client.conversation(session, cursor), live = false))
+        val cursors = mutableSetOf(cursor)
+        require(chunks.last().nextCursor != cursor) { "Filo history cursor did not advance" }
+        while (chunks.last().continuationCursor != null) {
+            val next = chunks.last().continuationCursor!!
+            require(cursors.add(next)) { "Filo history cursor did not advance" }
+            if (generation != epoch) return
+            chunks += cachePage(owner, client.conversation(session, next), live = false)
+        }
+        val page = chunks.first().copy(
+            nodes = chunks.asReversed().flatMap { it.nodes },
+            nextCursor = chunks.last().nextCursor, continuationCursor = null,
+        )
         historyMutation.withLock {
             if (generation != epoch || state.value.historyCursor != cursor) return
-            val owner = state.value.owner ?: return
-            val nodes = admitRemotePage(state.value.nodes, page, older = true)
+            val nodes = admitRemoteNodes(state.value.nodes, page.nodes, older = true)
             val groups = projectRemoteTopology(nodes, state.value.runtime)
-            hydration.accept(owner, page, groups, live = false)
+            for (chunk in chunks.asReversed()) hydration.accept(owner, chunk, groups, live = false)
             if (generation != epoch) return
             mutableState.value = state.value.copy(nodes = nodes, messageGroups = groups,
                 historyCursor = page.nextCursor, failure = null)

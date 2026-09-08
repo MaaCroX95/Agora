@@ -80,8 +80,12 @@ Preserve ID/history and enable composer/SSE only after native acceptance. Failur
 readable. No Continue this conversation button, background admission or automatic POST
 retry. Unavailable read-only history cannot subscribe or mutate; occupied writers fail safely.
 
-Opening a conversation reads only the latest bounded body page, with its identities and
-revisions in the same response. Older pages load on demand at the actual list edge; no
+Opening reads the latest bounded body page and only the continuation packets needed to
+complete its leading contiguous Thinking/Tool Call group. No visible page divides that
+group, including beyond 128 records; ordinary answers can still form a page boundary.
+Continuation collection retains topology only; bodies stay in the original bounded LRU.
+Each node retains its physical packet bookmark. Page boundaries add no Spacer or gap.
+Older pages load on demand at the actual list edge; no
 initial complete-history scan or per-message network waterfall. Page bodies prime the
 original payload LRU before publication. Eviction re-reads bounded native page bookmarks.
 Already admitted IDs and presentation-page membership remain resident and immutable when
