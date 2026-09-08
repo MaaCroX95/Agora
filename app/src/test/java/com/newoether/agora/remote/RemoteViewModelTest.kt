@@ -21,6 +21,7 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.serialization.SerializationException
@@ -80,36 +81,49 @@ class RemoteViewModelTest {
         vm.setVisible(false)
     }
 
-    @Test fun legacyAddressTitleIsHiddenThenDiscoveredNameIsPersistedWithoutBlockingUse() = runTest(dispatcher) {
-        val network = CompletableDeferred<String>()
-        val persistence = CompletableDeferred<Unit>()
+    @Test fun configuredNameIsSavedAndHostnameNeverReplacesIt() = runTest(dispatcher) {
+        coEvery { client.connect() } returns "HOSTNAME"
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.saveDevice("http://computer/", "token", "  My work computer  "); runCurrent()
+        assertEquals("My work computer", vm.state.value.devices.single().name)
+        coVerify { connections.save(match { it.name == "My work computer" }, null) }
+        vm.editDevice("http://computer/")
+        assertEquals("My work computer", vm.editorConnection()?.name)
+        vm.saveDevice("http://computer/", "token", "Renamed"); runCurrent()
+        assertEquals("Renamed", vm.state.value.devices.single().name)
+        coVerify { connections.save(match { it.name == "Renamed" }, "http://computer/") }
+    }
+
+    @Test fun legacyUrlAndUnnamedDeviceNeverDisplayNetworkHostname() = runTest(dispatcher) {
         coEvery { connections.load() } returns listOf(RemoteConnection("http://computer/", "http://computer/", "token"))
-        coEvery { client.connect() } coAnswers { network.await() }
-        coEvery { connections.updateName(any(), any(), any()) } coAnswers { persistence.await() }
         val vm = RemoteViewModel(connections) { _, _ -> client }
         vm.setVisible(true); runCurrent()
         assertEquals("", vm.state.value.devices.single().name)
-        network.complete("Quantum-Work"); runCurrent()
-        assertEquals("Quantum-Work", vm.state.value.devices.single().name)
         assertEquals(RemoteDeviceStatus.CONNECTED, vm.state.value.devices.single().status)
-        assertFalse(vm.state.value.saving)
-        vm.selectDevice("http://computer/"); runCurrent()
-        assertEquals(listOf(session), vm.state.value.sessions)
-        persistence.complete(Unit); runCurrent()
         vm.editDevice("http://computer/")
-        assertEquals("Quantum-Work", vm.editorConnection()?.name)
-        coVerify(exactly = 1) { connections.updateName("http://computer/", "token", "Quantum-Work") }
+        vm.saveDevice("http://computer/", "token", ""); runCurrent()
+        assertEquals("", vm.state.value.devices.single().name)
         vm.setVisible(false)
     }
 
-    @Test fun failedNamePersistenceDoesNotTurnAWorkingDeviceOffline() = runTest(dispatcher) {
-        coEvery { connections.updateName(any(), any(), any()) } throws RemoteStorageException()
+    @Test fun loadFailureProducesRetryableNoticeWithoutRemovingDeviceAndStaleRetryIsIgnored() = runTest(dispatcher) {
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
-        vm.saveDevice("http://computer/", "token"); runCurrent()
-        assertTrue(vm.state.value.storageError)
-        assertEquals("Computer", vm.state.value.devices.single().name)
-        assertEquals(RemoteDeviceStatus.CONNECTED, vm.state.value.devices.single().status)
-        assertNull(vm.state.value.devices.single().failure)
+        saveAndSelect(vm)
+        coEvery { client.sessions(any()) } throws IOException("offline")
+        vm.setVisible(true); runCurrent()
+        val notice = vm.notices.first()
+        assertEquals("read_failed", notice.stage)
+        assertTrue(notice.canRetryRead)
+        assertEquals(1, vm.state.value.devices.size)
+        coEvery { client.sessions(any()) } returns RemoteSessionPage(listOf(session), null)
+        vm.retryNotice(notice); runCurrent()
+        assertEquals(listOf(session), vm.state.value.sessions)
+        assertNull(vm.state.value.failure)
+        vm.selectDevice(null); runCurrent()
+        vm.retryNotice(notice); runCurrent()
+        coVerify(exactly = 2) { client.sessions(any()) }
+        coVerify(exactly = 0) { client.send(any(), any(), any()) }
+        vm.setVisible(false)
     }
 
     @Test fun leavingAnUnsubmittedDeviceEditorDoesNotConnectOrSave() = runTest(dispatcher) {
@@ -228,7 +242,7 @@ class RemoteViewModelTest {
         saveGate.complete(Unit); runCurrent()
         oldCheck.complete("Stale computer"); runCurrent()
         assertEquals("http://new/", vm.state.value.devices.single().id)
-        assertEquals("New computer", vm.state.value.devices.single().name)
+        assertEquals("", vm.state.value.devices.single().name)
         vm.editDevice("http://new/")
         assertEquals("changed", vm.editorConnection()?.token)
     }
@@ -273,7 +287,7 @@ class RemoteViewModelTest {
         vm.saveDevice("http://computer/", "changed"); runCurrent()
         gate.completeExceptionally(IOException("Old token rejected")); runCurrent()
         assertEquals(RemoteDeviceStatus.CONNECTED, vm.state.value.devices.single().status)
-        assertEquals("Current computer", vm.state.value.devices.single().name)
+        assertEquals("", vm.state.value.devices.single().name)
         assertNull(vm.state.value.devices.single().failure)
     }
 

@@ -50,6 +50,7 @@ import com.newoether.agora.util.gradientBlur
 @Composable
 internal fun RemoteConversation(
     state: RemoteState, vm: RemoteViewModel, settings: SettingsRepository, active: Boolean, onBack: () -> Unit,
+    onSnackbarOffsetChanged: (androidx.compose.ui.unit.Dp) -> Unit,
 ) {
     val owner = state.owner ?: return
     val session = state.session ?: return
@@ -141,6 +142,11 @@ internal fun RemoteConversation(
     val animatedScrollRequest by vm.animatedScrollRequest.collectAsState()
     var barHeightPx by remember { mutableFloatStateOf(0f) }
     val barHeight = with(density) { barHeightPx.toDp() }
+    SnackbarOffsetEffect(drawerProgress = 0f, isExpanded = expanded, bottomBarHeight = barHeight,
+        settingsButtonTopDp = 0f, bottomInset = maxOf(
+            WindowInsets.ime.asPaddingValues().calculateBottomPadding(),
+            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
+        onOffsetChanged = { if (active) onSnackbarOffsetChanged(it) })
     var initiallyPositioned by remember(owner) { mutableStateOf(state.isDraft) }
     val switching = !initiallyPositioned
     scroll.BindLayoutObservation(owner, owner, ime, density)
@@ -266,7 +272,6 @@ internal fun RemoteConversation(
             Surface(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 .onSizeChanged { barHeightPx = it.height.toFloat() }) {
                 Column(Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)) {
-                    RemoteReadStatus(state) { if (session.canResume) vm.resumeSession() else vm.refresh() }
                     if (!session.canResume) Text(stringResource(R.string.remote_history_read_only), style = MaterialTheme.typography.labelMedium)
                 }
             }
@@ -274,7 +279,6 @@ internal fun RemoteConversation(
             ChatComposerLayout(field, focus, scroll::setComposerInputFocused, expanded, spacer.isRunning,
                 onExpand = { expanded = true }, onCollapse = { expanded = false },
                 statusContent = {
-                    RemoteReadStatus(state, vm::refresh)
                     ComposerStatusColumn(state.queued, { it.id }) { QueuedMessageRow(text = it.text) }
                     val status = when (attempt?.delivery) {
                         RemoteDelivery.UNKNOWN -> R.string.remote_unknown

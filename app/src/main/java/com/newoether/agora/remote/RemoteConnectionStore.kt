@@ -49,18 +49,6 @@ internal class RemoteConnectionStore(
         }
     }
 
-    suspend fun updateName(address: String, token: String, name: String): Unit = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            val saved = read()
-            val current = saved.firstOrNull { it.address == address && it.token == token }
-                ?: return@withLock
-            if (current.name == name) return@withLock
-            write(saved.map { if (it === current) RemoteConnection(
-                name, it.address, it.token, it.viewedTurns,
-            ) else it })
-        }
-    }
-
     suspend fun markViewed(address: String, sessionId: String, turnId: String): Unit = withContext(Dispatchers.IO) {
         mutex.withLock {
             val saved = read()

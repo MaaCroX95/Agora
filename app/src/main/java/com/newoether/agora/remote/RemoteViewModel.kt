@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.newoether.agora.diagnostics.DeveloperDiagnostics
 import com.newoether.agora.diagnostics.DiagnosticRequestContext
 import com.newoether.agora.viewmodel.ScrollRequestCoordinator
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,6 +25,8 @@ internal class RemoteViewModel(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(RemoteState())
     val state = mutableState.asStateFlow()
+    private val noticeChannel = Channel<RemoteNotice>(Channel.BUFFERED)
+    val notices = noticeChannel.receiveAsFlow()
     private val streamDeltas = RemoteStreamDeltas()
     private val scrollRequests = ScrollRequestCoordinator()
     val animatedScrollRequest = scrollRequests.request
@@ -51,6 +55,7 @@ internal class RemoteViewModel(
 
     private fun trace(stage: String, error: Exception? = null): RemoteFailure? {
         val failure = error?.let(::classifyRemoteFailure)
+        if (failure != null) noticeChannel.trySend(RemoteNotice(stage, failure, selectionEpoch))
         val suffix = if (failure == null) "" else ".${failure.name}.${error.javaClass.simpleName}"
         DeveloperDiagnostics.recordHttpStage(diagnosticContext, "remote.$stage$suffix",
             (System.nanoTime() - createdAt) / 1_000_000,
@@ -58,8 +63,19 @@ internal class RemoteViewModel(
         return failure
     }
 
+    fun isNoticeCurrent(notice: RemoteNotice): Boolean = notice.selection == selectionEpoch
+    fun retryNotice(notice: RemoteNotice) {
+        if (!isNoticeCurrent(notice)) return
+        when (notice.stage) {
+            "restore_failed" -> restoreConnections()
+            "page_failed" -> loadMore()
+            "check_failed", "read_failed" -> refresh()
+        }
+    }
+
     override fun onCleared() {
         trace("owner_cleared")
+        noticeChannel.close()
         super.onCleared()
     }
 
@@ -108,7 +124,7 @@ internal class RemoteViewModel(
             editedDeviceId = id, storageError = false, failure = null)
     }
 
-    fun saveDevice(address: String, token: String) {
+    fun saveDevice(address: String, token: String, name: String? = null) {
         if (state.value.saving || state.value.restoring) return
         val generation = selectionEpoch
         val previous = state.value.editedDeviceId
@@ -119,8 +135,9 @@ internal class RemoteViewModel(
                 val client = createClient(address, token.trim())
                 val id = client.address
                 if (previous != null && previous != id && id in clients) throw FiloConfigurationException()
-                val name = state.value.devices.firstOrNull { it.id == (previous ?: id) }?.name.orEmpty()
-                val connection = RemoteConnection(name, id, token.trim())
+                val savedName = name?.trim()
+                    ?: state.value.devices.firstOrNull { it.id == (previous ?: id) }?.name.orEmpty()
+                val connection = RemoteConnection(savedName, id, token.trim())
                 connections.save(connection, previous)
                 val replaced = previous ?: id
                 checks.remove(replaced)?.cancel()
@@ -128,7 +145,7 @@ internal class RemoteViewModel(
                 configurations.remove(replaced)
                 clients[id] = client
                 configurations[id] = connection
-                val device = RemoteDevice(id, name, client.address)
+                val device = RemoteDevice(id, savedName, client.address)
                 val devices = state.value.devices
                 mutableState.value = state.value.copy(
                     devices = if (devices.any { it.id == replaced }) {
@@ -188,24 +205,10 @@ internal class RemoteViewModel(
         updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTING, failure = null) }
         checks[id] = viewModelScope.launch {
             try {
-                val name = remoteDeviceName(checkSlots.withPermit { client.connect() })
+                checkSlots.withPermit { client.connect() }
                 if (clients[id] !== client) return@launch
-                updateDevice(id) { it.copy(name = name.ifBlank { it.name },
-                    status = RemoteDeviceStatus.CONNECTED, failure = null) }
+                updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTED, failure = null) }
                 if (state.value.deviceId == id) refresh()
-                // Publish network state first; metadata persistence cannot delay navigation.
-                val connection = configurations[id] ?: return@launch
-                if (name.isNotBlank() && name != connection.name) {
-                    try {
-                        connections.updateName(connection.address, connection.token, name)
-                        if (configurations[id] === connection) configurations[id] = RemoteConnection(
-                            name, connection.address, connection.token, connection.viewedTurns)
-                    } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (error: RemoteStorageException) {
-                        trace("device_name_save_failed", error)
-                        if (clients[id] === client) mutableState.value = state.value.copy(storageError = true)
-                    }
-                }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
                 if (clients[id] !== client) return@launch
@@ -591,14 +594,14 @@ internal class RemoteViewModel(
                     val page = client.sessions(cursor)
                     require(page.nextCursor != cursor) { "Filo session cursor did not advance" }
                     if (generation == epoch) mutableState.value = state.value.copy(
-                        sessions = (state.value.sessions + page.sessions).distinctBy { it.id }, sessionCursor = page.nextCursor)
+                        sessions = (state.value.sessions + page.sessions).distinctBy { it.id }, sessionCursor = page.nextCursor, failure = null)
                 } else {
                     val page = client.conversation(snapshot.session.id, cursor)
                     require(page.nextCursor != cursor) { "Filo history cursor did not advance" }
                     if (generation == epoch) {
                         val oldIds = state.value.messages.mapTo(HashSet()) { it.id }
                         mutableState.value = state.value.copy(messages = checkedRemoteHistory(
-                            page.messages.filterNot { it.id in oldIds } + state.value.messages), historyCursor = page.nextCursor)
+                            page.messages.filterNot { it.id in oldIds } + state.value.messages), historyCursor = page.nextCursor, failure = null)
                     }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }

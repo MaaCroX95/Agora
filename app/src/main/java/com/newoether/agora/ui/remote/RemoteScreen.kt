@@ -38,6 +38,7 @@ import java.io.File
 import com.newoether.agora.R
 import com.newoether.agora.SettingsOverlayHost
 import com.newoether.agora.data.repository.SettingsRepository
+import com.newoether.agora.remote.remoteDeviceName
 import com.newoether.agora.remote.displayTitle
 import com.newoether.agora.remote.RemoteState
 import com.newoether.agora.remote.RemoteViewModel
@@ -57,10 +58,23 @@ internal fun RemoteOverlay(
     settings: SettingsRepository,
     onDismiss: () -> Unit,
     onExitFinished: () -> Unit,
+    onMessage: (String, String?, (() -> Unit)?) -> Unit,
+    onSnackbarOffsetChanged: (androidx.compose.ui.unit.Dp) -> Unit,
 ) {
     val context = LocalContext.current.applicationContext
     val remote: RemoteViewModel = viewModel {
         RemoteViewModel(RemoteConnectionStore(File(context.noBackupFilesDir, "remote-connections.json")))
+    }
+    val messageHandler by rememberUpdatedState(onMessage)
+    LaunchedEffect(remote, visible) {
+        if (!visible) return@LaunchedEffect
+        remote.notices.collect { notice ->
+            if (remote.isNoticeCurrent(notice)) messageHandler(
+                context.getString(remoteFailureResource(notice.failure)),
+                if (notice.canRetryRead) context.getString(R.string.retry) else null,
+                if (notice.canRetryRead) ({ remote.retryNotice(notice) }) else null,
+            )
+        }
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(remote, visible, lifecycle) {
@@ -73,14 +87,18 @@ internal fun RemoteOverlay(
     SettingsOverlayHost(visible, onDismiss, onExitFinished = onExitFinished) {
         val hapticsEnabled by settings.hapticsEnabled.collectAsState(initial = false)
         CompositionLocalProvider(LocalAgoraHaptics provides rememberAgoraHaptics(hapticsEnabled)) {
-            RemoteScreen(remote, settings, visible, onDismiss)
+            RemoteScreen(remote, settings, visible, onDismiss, onSnackbarOffsetChanged)
         }
     }
 }
 
 @Composable
-private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, active: Boolean, onBack: () -> Unit) {
+private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, active: Boolean, onBack: () -> Unit,
+    onSnackbarOffsetChanged: (androidx.compose.ui.unit.Dp) -> Unit) {
     val state by vm.state.collectAsState()
+    val inset = maxOf(WindowInsets.ime.asPaddingValues().calculateBottomPadding(),
+        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
+    SideEffect { if (active && state.session == null) onSnackbarOffsetChanged(inset) }
     val focus = LocalFocusManager.current
     var forward by remember { mutableStateOf(true) }
     val back = {
@@ -103,7 +121,7 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
         val displayed = if (current) state else retained
         when {
             page.third != null -> RemoteAddDevice(displayed, vm, back) { forward = false; focus.clearFocus() }
-            page.second != null -> RemoteConversation(displayed, vm, settings, active && current, back)
+            page.second != null -> RemoteConversation(displayed, vm, settings, active && current, back, onSnackbarOffsetChanged)
             page.first != null -> {
                 val listState = rememberLazyListState()
                 val visibleRows = remember { mutableStateMapOf<String, Boolean>() }
@@ -128,7 +146,6 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                         }
                     },
                 ) {
-                    item { RemoteReadStatus(displayed, vm::refresh) }
                     if (!displayed.loading && displayed.sessions.isEmpty() && !displayed.error) {
                         item { Text(stringResource(R.string.remote_empty), Modifier.padding(16.dp)) }
                     }
@@ -211,10 +228,6 @@ private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () ->
     var deleteId by remember { mutableStateOf<String?>(null) }
     val enabled = !state.restoring && !state.saving
     CollapsingSettingsScaffold(title = stringResource(R.string.remote_title), onBack = onBack) {
-        if (state.storageError) TextButton(onClick = vm::restoreConnections,
-            enabled = enabled) {
-            Text(stringResource(R.string.remote_storage_failed))
-        }
         SettingsGroup(
             title = stringResource(R.string.remote_devices),
             items = buildList {
@@ -247,7 +260,6 @@ private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () ->
                         supportingContent = {
                             Column {
                                 Text(device.address, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (device.failure != null) Text(remoteFailureText(device.failure), color = MaterialTheme.colorScheme.error)
                             }
                         },
                         leadingContent = { Icon(Icons.Default.Computer, null) },
@@ -291,17 +303,23 @@ private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () ->
 @Composable
 private fun RemoteAddDevice(state: RemoteState, vm: RemoteViewModel, onBack: () -> Unit, onForward: () -> Unit) {
     val initial = remember { vm.editorConnection() }
+    var name by remember { mutableStateOf(remoteDeviceName(initial?.name.orEmpty())) }
     var address by remember { mutableStateOf(initial?.address.orEmpty()) }
     var token by remember { mutableStateOf(initial?.token.orEmpty()) }
     CollapsingSettingsScaffold(
         title = stringResource(if (state.editedDeviceId == null) R.string.remote_add_device else R.string.remote_edit_device),
         onBack = onBack,
-        actions = { IconButton(onClick = { onForward(); vm.saveDevice(address, token) },
+        actions = { IconButton(onClick = { onForward(); vm.saveDevice(address, token, name) },
             enabled = !state.restoring && !state.saving && address.isNotBlank() && token.isNotBlank()) {
             Icon(Icons.Default.Save, stringResource(R.string.save))
         } },
     ) {
         SettingsGroup(title = stringResource(R.string.remote_connection), items = listOf({
+            SettingsIconContent(Icons.Default.Computer) {
+                McpLabeledField(label = stringResource(R.string.shell_device_name), value = name,
+                    onValueChange = { name = it }, placeholder = stringResource(R.string.remote_device))
+            }
+        }, {
             SettingsIconContent(Icons.Default.Link) {
                 McpLabeledField(label = stringResource(R.string.remote_address), value = address,
                     onValueChange = { address = it }, keyboardType = KeyboardType.Uri,
@@ -315,20 +333,10 @@ private fun RemoteAddDevice(state: RemoteState, vm: RemoteViewModel, onBack: () 
                     placeholder = stringResource(R.string.remote_token_placeholder))
             }
         }))
-        if (state.storageError) Text(stringResource(R.string.remote_save_failed), Modifier.padding(16.dp),
-            color = MaterialTheme.colorScheme.error)
-        if (state.error) Text(remoteFailureText(state.failure), Modifier.padding(16.dp),
-            color = MaterialTheme.colorScheme.error)
     }
 }
 
-@Composable
-internal fun RemoteReadStatus(state: RemoteState, retry: () -> Unit) {
-    if (state.error) TextButton(onClick = retry) { Text(remoteFailureText(state.failure)) }
-}
-
-@Composable
-private fun remoteFailureText(failure: RemoteFailure?): String = stringResource(when (failure) {
+private fun remoteFailureResource(failure: RemoteFailure?): Int = when (failure) {
     RemoteFailure.NETWORK -> R.string.remote_network_failed
     RemoteFailure.AUTHENTICATION -> R.string.remote_auth_failed
     RemoteFailure.CONFIGURATION -> R.string.remote_configuration_failed
@@ -338,4 +346,4 @@ private fun remoteFailureText(failure: RemoteFailure?): String = stringResource(
     RemoteFailure.SERVICE -> R.string.remote_service_failed
     RemoteFailure.STORAGE -> R.string.remote_storage_failed
     else -> R.string.remote_failed
-})
+}

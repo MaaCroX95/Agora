@@ -35,10 +35,10 @@ idle/connecting/connected/error. A failed or delayed network check never hides t
 RemoteConnectionStore owns the atomic no-backup connection file and Keystore-encrypted
 tokens. Plaintext fallback and overwriting corrupt storage are prohibited. Local restoration
 does not select a device, open history, resume or send. Names survive owner recreation;
-old URL-as-title entries use the localized Device label until discovery. URLs appear on
-the address line. Successful discovery persists only name metadata, preserving credentials
-and viewed-turn IDs; late discovery cannot revive deleted or replaced connections.
-Connection status is published independently from name persistence.
+old URL-as-title entries use the localized Device label until explicitly edited. Add/Edit
+provides a Name input and saves its trimmed value. The configured name renders immediately;
+network hostname never replaces it. URLs appear only on the address line. Name edits preserve
+credentials and viewed-turn IDs; late connection checks cannot revive removed devices.
 
 Save is the only editor submission action. Offline configurations may be saved; successful
 persistence returns to Devices before connecting. Invalid input/storage failure retains the
@@ -49,6 +49,11 @@ and removes only that local connection. Failure retains it. The row menu is Edit
 Fields reuse MCP labeled inputs and gray URL/token examples, with no submitted defaults.
 Helper copy explains installing Filo on the target and entering its IP or URL, not Tailscale.
 Visible entry/save starts coalesced connection checks; no periodic device-health loop.
+
+Load failures use the original application Snackbar, positioned by the original composer
+inset owner in chat and the system inset on Devices/Sessions. Preserve the current page and
+loaded content; no permanent inline error rows. Read retry is bound to the current selection
+and cannot replay sends, settings, admission or other writes.
 
 Storage and protocol errors stay distinct from connection errors. Diagnostics contain only
 random owner identity, operation, elapsed time, counts, exception type and HTTP status.

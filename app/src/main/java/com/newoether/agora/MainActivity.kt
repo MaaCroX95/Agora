@@ -381,11 +381,13 @@ fun MainNavigation(
     var snackbarVersion by remember { mutableIntStateOf(0) }
     val accessibilityManager = LocalAccessibilityManager.current
     var chatSnackbarOffset by remember { mutableStateOf(0.dp) }
+    var remoteSnackbarOffset by remember { mutableStateOf(0.dp) }
     val navBarPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // Full-screen media viewer (and settings) drop the snackbar to the bottom (nav-bar inset only);
     // in chat it floats above the bottom bar. The animateDpAsState below turns the change into a
     // rise/fall animation as the viewer opens/closes.
-    val targetSnackbarPadding = if (showSettings || mediaPreviewTarget != null) navBarPadding else chatSnackbarOffset
+    val targetSnackbarPadding = if (showSettings || mediaPreviewTarget != null) navBarPadding
+        else if (showRemote) remoteSnackbarOffset else chatSnackbarOffset
     val snackbarBottomPadding by animateDpAsState(
         targetValue = targetSnackbarPadding,
         animationSpec = if (motionPolicy.allowSpatialTransitions) {
@@ -808,6 +810,8 @@ fun MainNavigation(
                 visible = showRemote, settings = viewModel.settings,
                 onDismiss = { showRemote = false },
                 onExitFinished = { topLevelPresentation.release(TopLevelPresentation.REMOTE) },
+                onMessage = viewModel::emitSnackbar,
+                onSnackbarOffsetChanged = { remoteSnackbarOffset = it },
             )
 
             SettingsOverlayHost(
