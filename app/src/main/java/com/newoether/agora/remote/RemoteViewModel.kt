@@ -29,6 +29,7 @@ internal class RemoteViewModel(
     val notices = noticeChannel.receiveAsFlow()
     private val streamDeltas = RemoteStreamDeltas()
     private val history = RemoteHistoryWindow()
+    private val historySearch = RemoteHistorySearch()
     private val scrollRequests = ScrollRequestCoordinator()
     val animatedScrollRequest = scrollRequests.request
     fun completeAnimatedScroll(id: Long) = scrollRequests.complete(id)
@@ -71,6 +72,7 @@ internal class RemoteViewModel(
             "restore_failed" -> restoreConnections()
             "page_failed" -> loadMore()
             "newer_page_failed" -> loadNewerHistory()
+            "search_failed" -> mutableState.value = state.value.copy(searchRevision = state.value.searchRevision + 1)
             "check_failed", "read_failed" -> refresh()
         }
     }
@@ -229,6 +231,7 @@ internal class RemoteViewModel(
         if (id != null && id !in clients) return
         scrollRequests.clear()
         history.clear()
+        historySearch.clear()
         selectionEpoch++
         mutableState.value = state.value.copy(controlling = false, stoppingOwner = null, stoppingTurnId = null)
         invalidateReads()
@@ -245,6 +248,7 @@ internal class RemoteViewModel(
     fun selectSession(session: RemoteSession?) {
         scrollRequests.clear()
         history.clear()
+        historySearch.clear()
         selectionEpoch++
         mutableState.value = state.value.copy(controlling = false, stoppingOwner = null, stoppingTurnId = null)
         invalidateReads()
@@ -455,6 +459,7 @@ internal class RemoteViewModel(
         if (snapshot.deviceId !in clients || snapshot.isDraft || snapshot.controlling) return
         scrollRequests.clear()
         history.clear()
+        historySearch.clear()
         selectionEpoch++
         mutableState.value = state.value.copy(controlling = false, stoppingOwner = null, stoppingTurnId = null)
         invalidateReads()
@@ -648,6 +653,48 @@ internal class RemoteViewModel(
             } finally {
                 if (generation == epoch) mutableState.value = state.value.copy(loadingMore = false)
             }
+        }
+    }
+
+    suspend fun searchHistory(query: String): List<com.newoether.agora.ui.chat.ConversationSearchMatch> {
+        val snapshot = state.value
+        val session = snapshot.session?.takeUnless { snapshot.isDraft } ?: return emptyList()
+        val client = clients[snapshot.deviceId] ?: return emptyList()
+        val generation = epoch
+        return try {
+            historySearch.find(query) { cursor ->
+                if (generation != epoch) throw CancellationException()
+                client.conversation(session.id, cursor).also {
+                    if (generation != epoch) throw CancellationException()
+                }
+            }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { trace("search_failed", error); emptyList() }
+    }
+
+    suspend fun prepareSearchMatch(match: com.newoether.agora.ui.chat.ConversationSearchMatch): Boolean {
+        val target = historySearch.target(match) ?: return false
+        val snapshot = state.value
+        val session = snapshot.session ?: return false
+        val client = clients[snapshot.deviceId] ?: return false
+        val generation = epoch
+        paging?.cancel()
+        mutableState.value = state.value.copy(loadingMore = true)
+        return try {
+            val page = client.conversation(session.id, target.cursor)
+            if (generation != epoch) return false
+            val selected = listOf(page) + target.adjacent.map { client.conversation(session.id, it) }
+            if (generation != epoch) return false
+            history.select(selected, target.newer)
+            mutableState.value = state.value.copy(messages = history.messages, historyCursor = history.olderCursor,
+                historyHasNewer = history.hasNewer, failure = null)
+            true
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            if (generation == epoch) mutableState.value = state.value.copy(failure = trace("search_failed", error))
+            false
+        } finally {
+            if (generation == epoch) mutableState.value = state.value.copy(loadingMore = false)
         }
     }
 

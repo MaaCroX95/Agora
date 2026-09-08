@@ -135,7 +135,15 @@ internal fun RemoteConversation(
     val searchMessages: suspend (String, List<String>) -> List<com.newoether.agora.model.ChatMessage> = remember(owner) {
         { _, ids -> ids.mapNotNull { payloads.value[it] } }
     }
-    val interaction = rememberConversationInteractionState(owner, messageState, scroll.listState, searchMessages)
+    val searchAllMessages: suspend (String) -> List<ConversationSearchMatch> = remember(owner, state.searchRevision) { { query: String -> vm.searchHistory(query) } }
+    val interaction = rememberConversationInteractionState(owner, messageState, scroll.listState, searchMessages,
+        searchAllMessages = searchAllMessages)
+    val searchMatch = interaction.searchMatches.getOrNull(interaction.searchMatchIndex)
+    var preparedSearchKey by remember(owner) { mutableStateOf<String?>(null) }
+    LaunchedEffect(owner, searchMatch?.key) {
+        preparedSearchKey = null
+        if (searchMatch != null && vm.prepareSearchMatch(searchMatch)) preparedSearchKey = searchMatch.key
+    }
     BackHandler(active && interaction.searchActive) {
         interaction.dismissSearch()
         focusManager.clearFocus()
@@ -169,9 +177,9 @@ internal fun RemoteConversation(
             scroll.absoluteBottomScrollPhase.isActive || animatedScrollRequest?.conversationId == owner,
     )
     LaunchedEffect(owner, active, switching, interaction.searchActive, state.historyCursor, state.loading, state.loadingMore, state.error) {
-        if (!active || switching || state.historyCursor == null || state.loading || state.loadingMore || state.error) return@LaunchedEffect
-        if (interaction.searchActive) vm.loadMore()
-        else snapshotFlow { !scroll.listState.canScrollBackward }.collect { atTop ->
+        if (!active || switching || interaction.searchActive || state.historyCursor == null ||
+            state.loading || state.loadingMore || state.error) return@LaunchedEffect
+        snapshotFlow { !scroll.listState.canScrollBackward }.collect { atTop ->
             if (atTop) vm.loadMore()
         }
     }
@@ -219,7 +227,7 @@ internal fun RemoteConversation(
                     state = scroll.listState, messageActionsEnabled = false, readOnlyActions = true, parseInlineDollarMath = inlineMath,
                     isLoading = generationVisible, isSwitching = switching, streamingMessage = streaming,
                     searchQuery = if (interaction.searchActive) interaction.searchQuery else "",
-                    activeSearchMatch = interaction.searchMatches.getOrNull(interaction.searchMatchIndex),
+                    activeSearchMatch = searchMatch?.takeIf { it.key == preparedSearchKey },
                     onSearchMatchDistance = interaction::recordSearchMatchDistance,
                     onSearchTurnsChanged = interaction::recordSearchTurns,
                     streamingAutoFollowEnabled = follow.enabled && stickToBottom,

@@ -79,7 +79,11 @@ Preserve ID/history and enable composer/SSE only after native acceptance. Failur
 readable. No Continue this conversation button, background admission or automatic POST
 retry. Unavailable read-only history cannot subscribe or mutate; occupied writers fail safely.
 
-Conversation history loads at the top and during Search through its existing paging owner.
+Conversation history loads at the actual top/bottom through its paging owner. Search scans
+bounded native page pairs, including text matches across a page boundary, and retains match
+locations and replay cursors rather than every body. It loads a selected match before handing
+its unchanged text offsets to the original search highlight and scroll owner. Different pages
+of the same native group have distinct search locations; newer pages remain reachable.
 Bounded pages preserve native record identity/order and stable assistant groupId across cuts.
 A real user or different turn ends an assistant group. Remote DTOs remain separate from
 ChatMessage/MessageSegment presentation; only public summaries and tool records are mapped.

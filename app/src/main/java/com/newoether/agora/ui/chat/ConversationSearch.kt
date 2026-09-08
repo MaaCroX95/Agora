@@ -16,10 +16,14 @@ internal data class ConversationSearchMatch(
     val endExclusive: Int,
     val occurrenceInMessage: Int,
     val citationSourceId: String? = null,
+    val pageKey: String? = null,
 ) {
-    val key: String get() = citationSourceId?.let { sourceId ->
-        "$messageId:citation:$sourceId:$start:$endExclusive"
-    } ?: "$messageId:$start:$endExclusive"
+    val key: String get() {
+        val location = citationSourceId?.let { sourceId ->
+            "$messageId:citation:$sourceId:$start:$endExclusive"
+        } ?: "$messageId:$start:$endExclusive"
+        return pageKey?.let { "$it:$location" } ?: location
+    }
 }
 
 private const val CONVERSATION_SEARCH_PAYLOAD_PAGE_SIZE = 64

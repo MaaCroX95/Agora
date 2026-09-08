@@ -16,6 +16,12 @@ internal class RemoteHistoryWindow(
 
     fun clear() { pages.clear(); newer.clear() }
 
+    fun select(selected: List<RemoteConversationPage>, newerCursors: List<String?>) {
+        clear()
+        pages += selected
+        newer.addAll(newerCursors)
+    }
+
     fun latest(fresh: List<RemoteConversationPage>) {
         if (hasNewer || fresh.isEmpty()) return
         val ordered = fresh.asReversed()
