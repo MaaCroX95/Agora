@@ -39,6 +39,31 @@ class RemoteConnectionStoreTest {
         assertTrue(store(file).load().isEmpty())
     }
 
+    @Test fun discoveredNameSurvivesRestartWithoutLosingCredentialsOrViewedHistory() = runBlocking {
+        val file = File(temporary.root, "connections.json")
+        store(file).save(RemoteConnection("http://computer/", "http://computer/", token))
+        store(file).markViewed("http://computer/", "session", "turn")
+        store(file).updateName("http://computer/", token, "Quantum-Work")
+        val restored = store(file).load().single()
+        assertEquals("Quantum-Work", restored.name)
+        assertEquals(token, restored.token)
+        assertEquals("turn", restored.viewedTurns["session"])
+        assertFalse(file.readText().contains(token))
+    }
+
+    @Test fun lateDiscoveredNameCannotRestoreDeletedOrEditedCredentials() = runBlocking {
+        val file = File(temporary.root, "connections.json")
+        store(file).save(RemoteConnection("Old", "http://computer/", token))
+        val changed = "cd".repeat(32)
+        store(file).save(RemoteConnection("Current", "http://computer/", changed), "http://computer/")
+        store(file).updateName("http://computer/", token, "Stale")
+        assertEquals("Current", store(file).load().single().name)
+        assertEquals(changed, store(file).load().single().token)
+        store(file).remove("http://computer/")
+        store(file).updateName("http://computer/", changed, "Deleted")
+        assertTrue(store(file).load().isEmpty())
+    }
+
     @Test fun failedEncryptionCannotReplacePreviouslySavedConnections() = runBlocking {
         val file = File(temporary.root, "connections.json")
         store(file).save(RemoteConnection("Saved", "http://saved/", token))

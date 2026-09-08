@@ -60,6 +60,58 @@ class RemoteViewModelTest {
         vm.selectDevice("http://computer/"); runCurrent()
     }
 
+    @Test fun savedNamesRenderBeforeNetworkAndSurviveOfflineReentry() = runTest(dispatcher) {
+        val network = CompletableDeferred<String>()
+        coEvery { connections.load() } returns listOf(RemoteConnection("Quantum-Work", "http://computer/", "token"))
+        coEvery { client.connect() } coAnswers { network.await() }
+        val vm = RemoteViewModel(connections) { _, _ -> client }
+        vm.setVisible(true); runCurrent()
+        assertEquals("Quantum-Work", vm.state.value.devices.single().name)
+        assertFalse(vm.state.value.restoring)
+        assertFalse(vm.state.value.loading)
+        assertEquals(RemoteDeviceStatus.CONNECTING, vm.state.value.devices.single().status)
+        coVerify(exactly = 0) { client.sessions(any()) }
+        vm.setVisible(false)
+        network.completeExceptionally(IOException("offline")); runCurrent()
+        vm.setVisible(true); runCurrent()
+        assertEquals("Quantum-Work", vm.state.value.devices.single().name)
+        assertFalse(vm.state.value.loading)
+        assertEquals(RemoteDeviceStatus.ERROR, vm.state.value.devices.single().status)
+        vm.setVisible(false)
+    }
+
+    @Test fun legacyAddressTitleIsHiddenThenDiscoveredNameIsPersistedWithoutBlockingUse() = runTest(dispatcher) {
+        val network = CompletableDeferred<String>()
+        val persistence = CompletableDeferred<Unit>()
+        coEvery { connections.load() } returns listOf(RemoteConnection("http://computer/", "http://computer/", "token"))
+        coEvery { client.connect() } coAnswers { network.await() }
+        coEvery { connections.updateName(any(), any(), any()) } coAnswers { persistence.await() }
+        val vm = RemoteViewModel(connections) { _, _ -> client }
+        vm.setVisible(true); runCurrent()
+        assertEquals("", vm.state.value.devices.single().name)
+        network.complete("Quantum-Work"); runCurrent()
+        assertEquals("Quantum-Work", vm.state.value.devices.single().name)
+        assertEquals(RemoteDeviceStatus.CONNECTED, vm.state.value.devices.single().status)
+        assertFalse(vm.state.value.saving)
+        vm.selectDevice("http://computer/"); runCurrent()
+        assertEquals(listOf(session), vm.state.value.sessions)
+        persistence.complete(Unit); runCurrent()
+        vm.editDevice("http://computer/")
+        assertEquals("Quantum-Work", vm.editorConnection()?.name)
+        coVerify(exactly = 1) { connections.updateName("http://computer/", "token", "Quantum-Work") }
+        vm.setVisible(false)
+    }
+
+    @Test fun failedNamePersistenceDoesNotTurnAWorkingDeviceOffline() = runTest(dispatcher) {
+        coEvery { connections.updateName(any(), any(), any()) } throws RemoteStorageException()
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.saveDevice("http://computer/", "token"); runCurrent()
+        assertTrue(vm.state.value.storageError)
+        assertEquals("Computer", vm.state.value.devices.single().name)
+        assertEquals(RemoteDeviceStatus.CONNECTED, vm.state.value.devices.single().status)
+        assertNull(vm.state.value.devices.single().failure)
+    }
+
     @Test fun leavingAnUnsubmittedDeviceEditorDoesNotConnectOrSave() = runTest(dispatcher) {
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         vm.addDevice()

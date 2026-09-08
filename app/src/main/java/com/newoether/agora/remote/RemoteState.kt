@@ -1,5 +1,10 @@
 package com.newoether.agora.remote
 
+/** Old installations persisted the address as the temporary title. */
+internal fun remoteDeviceName(name: String): String = name.trim().takeUnless {
+    it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true)
+}.orEmpty()
+
 internal enum class RemoteDeviceStatus { IDLE, CONNECTING, CONNECTED, ERROR }
 internal data class RemoteDevice(
     val id: String, val name: String, val address: String,

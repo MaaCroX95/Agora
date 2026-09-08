@@ -82,7 +82,7 @@ internal class RemoteViewModel(
                 mutableState.value = state.value.copy(viewedTurns = restored.flatMap { (client, connection) ->
                     connection.viewedTurns.map { (session, turn) -> "${client.address}/$session" to turn }
                 }.toMap(), devices = restored.map { (client, connection) ->
-                    RemoteDevice(client.address, connection.name, client.address)
+                    RemoteDevice(client.address, remoteDeviceName(connection.name), client.address)
                 })
                 trace("restore_completed")
             } catch (cancelled: CancellationException) { throw cancelled }
@@ -119,7 +119,7 @@ internal class RemoteViewModel(
                 val client = createClient(address, token.trim())
                 val id = client.address
                 if (previous != null && previous != id && id in clients) throw FiloConfigurationException()
-                val name = state.value.devices.firstOrNull { it.id == id }?.name ?: id
+                val name = state.value.devices.firstOrNull { it.id == (previous ?: id) }?.name.orEmpty()
                 val connection = RemoteConnection(name, id, token.trim())
                 connections.save(connection, previous)
                 val replaced = previous ?: id
@@ -188,10 +188,24 @@ internal class RemoteViewModel(
         updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTING, failure = null) }
         checks[id] = viewModelScope.launch {
             try {
-                val name = checkSlots.withPermit { client.connect() }
+                val name = remoteDeviceName(checkSlots.withPermit { client.connect() })
                 if (clients[id] !== client) return@launch
-                updateDevice(id) { it.copy(name = name, status = RemoteDeviceStatus.CONNECTED, failure = null) }
+                updateDevice(id) { it.copy(name = name.ifBlank { it.name },
+                    status = RemoteDeviceStatus.CONNECTED, failure = null) }
                 if (state.value.deviceId == id) refresh()
+                // Publish network state first; metadata persistence cannot delay navigation.
+                val connection = configurations[id] ?: return@launch
+                if (name.isNotBlank() && name != connection.name) {
+                    try {
+                        connections.updateName(connection.address, connection.token, name)
+                        if (configurations[id] === connection) configurations[id] = RemoteConnection(
+                            name, connection.address, connection.token, connection.viewedTurns)
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (error: RemoteStorageException) {
+                        trace("device_name_save_failed", error)
+                        if (clients[id] === client) mutableState.value = state.value.copy(storageError = true)
+                    }
+                }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
                 if (clients[id] !== client) return@launch

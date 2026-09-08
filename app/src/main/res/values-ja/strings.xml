@@ -1252,4 +1252,5 @@
     <string name="remote_session_busy">別の Codex プロセスがこの会話を使用しています。解放後に再試行してください。</string>
     <string name="thought_for_a_while">しばらく思考しました</string>
     <string name="remote_history_too_large">このデバイスで読み込める履歴の上限に達しました。残りの履歴は Codex で確認してください。</string>
+    <string name="remote_device">デバイス</string>
 </resources>

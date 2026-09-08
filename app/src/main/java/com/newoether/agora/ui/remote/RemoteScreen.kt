@@ -240,7 +240,7 @@ private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () ->
                         },
                         headlineContent = {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(device.name, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(device.name.ifBlank { stringResource(R.string.remote_device) }, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 McpStatusDot(status)
                             }
                         },
@@ -279,7 +279,7 @@ private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () ->
     state.devices.firstOrNull { it.id == deleteId }?.let { device ->
         AlertDialog(onDismissRequest = { deleteId = null },
             title = { Text(stringResource(R.string.remote_delete_title)) },
-            text = { Text(stringResource(R.string.remote_delete_message, device.name)) },
+            text = { Text(stringResource(R.string.remote_delete_message, device.name.ifBlank { stringResource(R.string.remote_device) })) },
             confirmButton = { TextButton(enabled = enabled, onClick = { vm.removeDevice(device.id); deleteId = null }) {
                 Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
             } },

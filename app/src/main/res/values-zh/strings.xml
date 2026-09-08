@@ -1357,4 +1357,5 @@
     <string name="remote_session_busy">此会话仍被其他 Codex 进程占用，请在释放后重试。</string>
     <string name="thought_for_a_while">思考了一会儿</string>
     <string name="remote_history_too_large">此设备无法继续加载这么多历史消息。请在 Codex 中查看剩余历史。</string>
+    <string name="remote_device">设备</string>
 </resources>

@@ -1252,4 +1252,5 @@
     <string name="remote_session_busy">Outro processo do Codex está usando esta conversa. Tente novamente quando ela for liberada.</string>
     <string name="thought_for_a_while">Pensou por um tempo</string>
     <string name="remote_history_too_large">Este histórico é grande demais para este dispositivo. Leia o restante no Codex.</string>
+    <string name="remote_device">Dispositivo</string>
 </resources>
