@@ -44,13 +44,37 @@ class RemoteMessageHydrationTest {
         assertEquals("body", hydration.observeMessage(owner, "group").filterNotNull().first().text)
         assertEquals(0, reads)
         repeat(30) { index ->
-            val record = native.copy(id = "other-$index", text = "x".repeat(200))
-            val metadata = node.copy(id = record.id)
-            hydration.accept(owner, page(listOf(record), listOf(metadata)), emptyList(), live = false)
+            val record = native.copy(id = "other-$index", groupId = "other-$index", text = "x".repeat(100))
+            val metadata = node.copy(id = record.id, groupId = record.groupId)
+            val groups = projectRemoteTopology(listOf(metadata), null)
+            state.value = state.value.copy(messageGroups = state.value.messageGroups + groups)
+            hydration.accept(owner, page(listOf(record), listOf(metadata)), groups, live = false)
         }
         assertTrue(hydration.retainedRecordBytes <= 512)
-        assertEquals(before, state.value.messageGroups)
+        assertEquals(before, state.value.messageGroups.take(before.size))
         assertEquals("body", hydration.loadMessages(owner, listOf("group")).single().text)
+        assertEquals(1, reads)
+    }
+
+    @Test fun streamedPageUsesOriginalDeltaBoundariesButReopeningDoesNotAnimateOfflineHistory() = runTest {
+        val state = MutableStateFlow(snapshot())
+        val hydration = RemoteMessageHydration(state, { _, _ -> error("Unexpected network") }, { throw it })
+        val owner = state.value.owner!!
+        val runtime = RemoteRuntime("active", "turn", activeTurnHasUserMessage = true)
+        suspend fun accept(text: String, revision: Char) {
+            val metadata = node.copy(revision = revision.toString().repeat(64))
+            val groups = projectRemoteTopology(listOf(metadata), runtime)
+            hydration.accept(owner, page(listOf(native.copy(text = text)), listOf(metadata)).copy(runtime = runtime), groups)
+            state.value = state.value.copy(messageGroups = groups, runtime = runtime)
+        }
+        accept("a", 'a')
+        assertTrue(hydration.cachedMessage(owner, state.value.messageGroups.single())!!.segments!!.single().streamingTextDeltas.isEmpty())
+        accept("ab", 'b')
+        assertEquals(1, hydration.cachedMessage(owner, state.value.messageGroups.single())!!.segments!!.single()
+            .streamingTextDeltas.single().codePointCount)
+        hydration.resetStreaming()
+        accept("abcdef", 'c')
+        assertTrue(hydration.cachedMessage(owner, state.value.messageGroups.single())!!.segments!!.single().streamingTextDeltas.isEmpty())
     }
 
     @Test fun changingSelectionDuringPayloadReadCannotPublishOrCacheTheOldBody() = runTest {

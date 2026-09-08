@@ -897,7 +897,7 @@ class RemoteViewModelTest {
         vm.loadMore(); runCurrent()
         assertEquals(listOf(older.id, recent.id), vm.state.value.nodes.map { it.id })
         assertEquals(group, vm.state.value.messageGroups.last())
-        coVerify(exactly = 0) { client.payloads(any(), any()) }
+        coVerify(exactly = 1) { client.conversation("historical", null) }
         coVerify(exactly = 1) { client.conversation("historical", "older") }
         vm.editDraft(vm.state.value.owner!!, "must not send")
         vm.send(); vm.stop(); vm.setModel("model"); runCurrent()

@@ -49,20 +49,30 @@ internal class RemoteMessageHydration(
         }
     }
     private fun weight(message: RemoteMessage) = 256L + 2L * (message.text.length.toLong() +
-        (message.activity?.arguments?.length ?: 0) + (message.activity?.result?.length ?: 0))
+        (message.activity?.arguments?.length ?: 0) + (message.activity?.result?.length ?: 0)) +
+        32L * message.streamingTextDeltas.size
     internal val retainedRecordBytes: Long get() = synchronized(cacheLock) { recordBytes }
+    fun resetStreaming() = synchronized(cacheLock) {
+        previousRuntime = null
+        deltas = RemoteStreamDeltas()
+    }
 
-    private fun rememberRecords(owner: String, page: RemoteConversationPage, live: Boolean) = synchronized(cacheLock) {
+    private fun rememberRecords(owner: String, page: RemoteConversationPage, live: Boolean, preserveImages: Boolean = true) = synchronized(cacheLock) {
         checkOwner(owner)
-        val messages = if (live) deltas.apply(records.values.map { it.second }, page.messages, previousRuntime, page.runtime)
+        val messages = if (live) deltas.apply(if (previousRuntime == null) emptyList() else records.values.map { it.second },
+            page.messages, previousRuntime, page.runtime)
             else page.messages
         if (live) previousRuntime = page.runtime
         val nodes = page.nodes.associateBy { it.id }
         for (message in messages) {
             val node = nodes[message.id] ?: error("Filo page metadata is missing")
-            records.remove(message.id)?.let { recordBytes -= weight(it.second) }
-            records[message.id] = node.revision to message
-            recordBytes += weight(message)
+            val old = records.remove(message.id)
+            old?.let { recordBytes -= weight(it.second) }
+            val retained = if (preserveImages && old?.first == node.revision && message.activity != null)
+                message.copy(activity = message.activity.copy(images = old.second.activity?.images.orEmpty()))
+                else message
+            records[message.id] = node.revision to retained
+            recordBytes += weight(retained)
             while (recordBytes > maxRecordBytes && records.isNotEmpty()) {
                 val key = records.keys.first()
                 recordBytes -= weight(records.remove(key)!!.second)
@@ -104,10 +114,12 @@ internal class RemoteMessageHydration(
     }
 
     suspend fun accept(owner: String, page: RemoteConversationPage, groups: List<RemoteMessageGroup>, live: Boolean = true) {
+        val firstStream = synchronized(cacheLock) { live && previousRuntime == null }
         rememberRecords(owner, page, live)
         val ids = page.nodes.mapTo(HashSet()) { it.id }
         for (group in groups) {
             if (group.nodes.none { it.id in ids }) continue
+            if (!firstStream && cachedMessage(owner, group) != null) continue
             val body = cachedRecords(owner, group) ?: continue
             val message = project(group, body)
             currentCoroutineContext().ensureActive()
@@ -159,6 +171,8 @@ internal class RemoteMessageHydration(
                     } catch (cancelled: CancellationException) { throw cancelled }
                     catch (error: Exception) { failed(error); message }
                 }
+                rememberRecords(owner, RemoteConversationPage(fresh, null, emptyList(), nodes = group.nodes),
+                    live = false, preserveImages = false)
                 val projected = project(group, fresh)
                 currentCoroutineContext().ensureActive()
                 remember(owner, group, projected)

@@ -41,6 +41,14 @@ class RemoteImageHydrationTest {
             assertEquals(shown, hydration.observeMessage(owner, "group").filterNotNull().first())
             assertEquals(1, imageReads)
             assertEquals(before, state.value.messageGroups)
+            val answer = RemoteMessage("answer", "turn", null, "assistant", "next", 2, groupId = "group")
+            val nodes = before.single().nodes + RemoteMessageNode("answer", "turn", null, "assistant",
+                2, "b".repeat(64), 4, groupId = "group")
+            val groups = projectRemoteTopology(nodes, null)
+            hydration.accept(owner, RemoteConversationPage(listOf(record, answer), null, emptyList(), nodes = nodes), groups)
+            state.value = state.value.copy(messageGroups = groups)
+            assertEquals(listOf(attachment), hydration.cachedMessage(owner, groups.single())!!.segments!!.first().toolImages)
+            assertEquals(1, imageReads)
         } finally { file.delete() }
     }
 

@@ -104,18 +104,6 @@ internal class FiloClient(
         )
     }
 
-    suspend fun topology(id: String, cursor: String? = null): RemoteTopologyPage = withContext(Dispatchers.Default) {
-        decodeTopology(request("v1/sessions/${sessionId(id)}/topology", cursor))
-    }
-
-    suspend fun payloads(id: String, requested: List<RemotePayloadRequest>): List<RemoteMessage> = withContext(Dispatchers.Default) {
-        require(requested.isNotEmpty() && requested.size <= 3)
-        json.decodeFromString<RemotePayloadResponse>(request("v1/sessions/${sessionId(id)}/payloads",
-            payloadRequests = json.encodeToString(requested))).messages.also {
-            require(it.map { message -> message.id } == requested.map { request -> request.id })
-        }
-    }
-
     suspend fun image(
         id: String, requested: RemotePayloadRequest,
         persist: (java.io.InputStream, String) -> com.newoether.agora.model.ToolImageAttachment,
@@ -144,14 +132,6 @@ internal class FiloClient(
         })
     }
 
-    private fun decodeTopology(text: String): RemoteTopologyPage =
-        json.decodeFromString<RemoteTopologyPage>(text).also { page ->
-            require(page.nodes.map { it.id }.toSet().size == page.nodes.size)
-            require(page.nodes.all { it.role in setOf("user", "assistant") && it.textLength >= 0 &&
-                it.revision.matches(Regex("[a-f0-9]{64}")) &&
-                (it.activity == null || it.role == "assistant" && it.activity.type in setOf("thought", "tool")) })
-        }
-
     private fun decodePage(text: String): RemoteConversationPage =
         json.decodeFromString<RemoteConversationPage>(text).also { page ->
             require(page.messages.all { it.role == "user" || it.role == "assistant" })
@@ -165,7 +145,6 @@ internal class FiloClient(
         }
 
     fun events(id: String): Flow<RemoteConversationPage> = eventStream(id, "paged", ::decodePage)
-    fun topologyEvents(id: String): Flow<RemoteTopologyPage> = eventStream(id, "topology", ::decodeTopology)
 
     private fun <T> eventStream(id: String, view: String?, decode: (String) -> T): Flow<T> = callbackFlow {
         val request = Request.Builder().url(endpoint.newBuilder()
@@ -222,13 +201,12 @@ internal class FiloClient(
 
     private suspend fun request(
         path: String, cursor: String? = null, body: String? = null, includeActivity: Boolean = false,
-        sessionIds: List<String>? = null, payloadRequests: String? = null, includeMetadata: Boolean = false,
+        sessionIds: List<String>? = null, includeMetadata: Boolean = false,
     ): String =
         suspendCancellableCoroutine { continuation ->
             val url = endpoint.newBuilder().addPathSegments(path).apply {
                 cursor?.let { addQueryParameter("cursor", it) }
                 sessionIds?.let { addQueryParameter("ids", it.joinToString(",")) }
-                payloadRequests?.let { addQueryParameter("messages", it) }
                 if (includeActivity) addQueryParameter("includeActivity", "true")
                 if (includeMetadata) addQueryParameter("includeMetadata", "true")
             }.build()

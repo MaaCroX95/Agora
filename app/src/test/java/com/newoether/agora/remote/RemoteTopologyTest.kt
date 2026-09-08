@@ -86,32 +86,30 @@ class RemoteTopologyTest {
         assertEquals(MessageStatus.SENDING, projectRemoteTopology(nodes + answer, active).last().stub.status)
     }
 
-    @Test fun networkTopologyDoesNotRequestPayloadUntilExplicitHydrationAndSseUsesMetadataView() = runBlocking {
+    @Test fun pageAndStreamIncludeBodiesAndMetadataWithoutPerMessageRequests() = runBlocking {
         val session = "00000000-0000-0000-0000-000000000001"
-        val topology = RemoteTopologyPage(listOf(node("a")), null, emptyList(), RemoteRuntime("idle"))
         val message = RemoteMessage("a", "turn", null, "assistant", "body", 1)
+        val page = bodyPage(listOf(message), "older", emptyList(), RemoteRuntime("idle"))
         val paths = mutableListOf<String>()
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/") { exchange ->
-            assertEquals("Bearer ${"a".repeat(64)}", exchange.requestHeaders.getFirst("Authorization"))
+            assertEquals("Bearer " + "a".repeat(64), exchange.requestHeaders.getFirst("Authorization"))
             paths += exchange.requestURI.toString()
-            val text = when {
-                exchange.requestURI.path.endsWith("/topology") -> Json.encodeToString(topology)
-                exchange.requestURI.path.endsWith("/payloads") -> Json.encodeToString(RemotePayloadResponse(listOf(message)))
-                else -> "data: ${Json.encodeToString(topology)}\n\n"
-            }.toByteArray()
-            exchange.sendResponseHeaders(200, text.size.toLong())
-            exchange.responseBody.use { it.write(text) }
+            val json = Json.encodeToString(page)
+            val text = if (exchange.requestURI.path.endsWith("/events")) "data: $json\n\n" else json
+            val bytes = text.toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
         }
         server.start()
         try {
-            val client = FiloClient("http://127.0.0.1:${server.address.port}/", "a".repeat(64))
-            assertEquals(topology, client.topology(session))
+            val client = FiloClient("http://127.0.0.1:" + server.address.port + "/", "a".repeat(64))
+            assertEquals(page, client.conversation(session))
             assertEquals(1, paths.size)
-            assertFalse(paths.any { "payloads" in it })
-            assertEquals(listOf(message), client.payloads(session, listOf(RemotePayloadRequest("a", revision))))
-            assertEquals(topology, client.topologyEvents(session).first())
-            assertTrue(paths.last().endsWith("events?view=topology"))
+            assertTrue(paths.single().endsWith("includeActivity=true&includeMetadata=true"))
+            assertEquals(page, client.events(session).first())
+            assertEquals(2, paths.size)
+            assertTrue(paths.last().endsWith("events?view=paged"))
         } finally { server.stop(0) }
     }
 }

@@ -20,21 +20,14 @@ internal data class RemoteMessageNode(
 internal data class RemoteNodeActivity(val type: String, val state: String? = null, val durationMs: Long? = null,
     val hasImage: Boolean = false)
 @Serializable
-internal data class RemoteTopologyPage(
-    val nodes: List<RemoteMessageNode>, val nextCursor: String?, val queued: List<RemoteQueuedMessage>,
-    val runtime: RemoteRuntime? = null,
-)
-@Serializable
 internal data class RemotePayloadRequest(val id: String, val revision: String)
-@Serializable
-internal data class RemotePayloadResponse(val messages: List<RemoteMessage>)
 
 internal data class RemoteMessageGroup(val stub: ChatMessage, val nodes: List<RemoteMessageNode>) {
     val revision: List<String> get() = nodes.map { it.revision }
     val requests: List<RemotePayloadRequest> get() = nodes.map { RemotePayloadRequest(it.id, it.revision) }
 }
 
-/** Full lightweight structure stays resident. Payload loading never changes its IDs or positions. */
+/** Admitted page structure stays resident. Payload loading never changes its IDs or positions. */
 internal fun projectRemoteTopology(nodes: List<RemoteMessageNode>, runtime: RemoteRuntime?): List<RemoteMessageGroup> = buildList {
     var index = 0
     while (index < nodes.size) {
@@ -107,10 +100,4 @@ internal fun admitRemotePage(
     val boundary = fresh.firstOrNull()?.id ?: return previous
     val index = previous.indexOfFirst { it.id == boundary }
     return (previous.take(if (index >= 0) index else previous.size) + fresh).distinctBy { it.id }
-}
-
-internal fun mergeRemoteTopology(old: List<RemoteMessageNode>, fresh: List<RemoteMessageNode>): List<RemoteMessageNode> {
-    val boundary = fresh.firstOrNull()?.id ?: return emptyList()
-    val index = old.indexOfFirst { it.id == boundary }
-    return (old.take(index.coerceAtLeast(0)) + fresh).distinctBy { it.id }
 }

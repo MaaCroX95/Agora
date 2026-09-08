@@ -290,6 +290,7 @@ internal class RemoteViewModel(
     }
 
     private fun invalidateReads() {
+        hydration.resetStreaming()
         epoch++
         polling?.cancel()
         paging?.cancel()
