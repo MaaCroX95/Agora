@@ -215,6 +215,7 @@ internal fun RemoteConversation(
                     }
                 })
         }
+        ChatLoadingOverlay(visible = switching && !state.loading && !state.error)
     }
     if (confirmUnknown) AlertDialog(onDismissRequest = { confirmUnknown = false },
         title = { Text(stringResource(R.string.remote_confirm), fontWeight = FontWeight.Bold) },

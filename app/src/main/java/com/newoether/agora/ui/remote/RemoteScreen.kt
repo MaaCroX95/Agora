@@ -32,7 +32,8 @@ import com.newoether.agora.remote.RemoteViewModel
 import com.newoether.agora.remote.RemoteDeviceStatus
 import com.newoether.agora.mcp.McpConnectionStatus
 import com.newoether.agora.ui.settings.*
-import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator
+import com.newoether.agora.ui.chat.ChatLoadingOverlay
+import androidx.compose.ui.input.pointer.pointerInput
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.ui.common.rememberAgoraHaptics
 
@@ -80,6 +81,7 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
     }
     BackHandler(active, back)
     val target = Triple(state.deviceId, state.session?.id, if (state.addingDevice) state.editedDeviceId.orEmpty() else null)
+    Box(Modifier.fillMaxSize()) {
     GuardedAnimatedContent(targetState = target, forward = forward) { page ->
         var retained by remember(page) { mutableStateOf(state) }
         val current = page == target
@@ -119,6 +121,14 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
             else -> RemoteDevices(displayed, vm, back) { forward = true }
         }
     }
+    ChatLoadingOverlay(
+        visible = state.loading || state.loadingMore || state.controlling || state.restoring || state.saving ||
+            (state.deviceId == null && !state.addingDevice && state.devices.any { it.status == RemoteDeviceStatus.CONNECTING }),
+        modifier = Modifier.pointerInput(Unit) {
+            awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+        },
+    )
+    }
 }
 
 @Composable
@@ -126,8 +136,6 @@ private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () ->
     var deleteId by remember { mutableStateOf<String?>(null) }
     val enabled = !state.restoring && !state.saving
     CollapsingSettingsScaffold(title = stringResource(R.string.remote_title), onBack = onBack) {
-        if (state.restoring || state.saving || state.devices.any { it.status == RemoteDeviceStatus.CONNECTING })
-            RemoteLoadingIndicator()
         if (state.storageError) TextButton(onClick = vm::restoreConnections,
             enabled = enabled) {
             Text(stringResource(R.string.remote_storage_failed))
@@ -218,7 +226,6 @@ private fun RemoteAddDevice(state: RemoteState, vm: RemoteViewModel, onBack: () 
             Icon(Icons.Default.Save, stringResource(R.string.save))
         } },
     ) {
-        if (state.saving) RemoteLoadingIndicator()
         SettingsGroup(title = stringResource(R.string.remote_connection), items = listOf({
             SettingsIconContent(Icons.Default.Link) {
                 McpLabeledField(label = stringResource(R.string.remote_address), value = address,
@@ -239,15 +246,7 @@ private fun RemoteAddDevice(state: RemoteState, vm: RemoteViewModel, onBack: () 
 }
 
 @Composable
-private fun RemoteLoadingIndicator() {
-    Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-        MotionAwareCircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-    }
-}
-
-@Composable
 internal fun RemoteReadStatus(state: RemoteState, retry: () -> Unit) {
-    if (state.loading || state.loadingMore || state.controlling) RemoteLoadingIndicator()
     if (state.error) TextButton(onClick = retry) { Text(remoteFailureText(state.failure)) }
 }
 
