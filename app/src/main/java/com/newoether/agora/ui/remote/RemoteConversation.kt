@@ -51,6 +51,7 @@ import com.newoether.agora.util.gradientBlur
 internal fun RemoteConversation(
     state: RemoteState, vm: RemoteViewModel, settings: SettingsRepository, active: Boolean, onBack: () -> Unit,
     onSnackbarOffsetChanged: (androidx.compose.ui.unit.Dp) -> Unit,
+    onMediaClick: (List<String>, Int) -> Unit,
 ) {
     val owner = state.owner ?: return
     val session = state.session ?: return
@@ -206,7 +207,7 @@ internal fun RemoteConversation(
             Box(Modifier.fillMaxSize()) {
                 MessageList(messages = StableMessageList(renderMessages.value), allMessages = StableMessageList(messages),
                     authoritativeMessages = StableMessageList(messages), conversationId = owner,
-                    state = scroll.listState, messageActionsEnabled = false, readOnlyActions = true, parseInlineDollarMath = inlineMath,
+                    state = scroll.listState, onMediaClick = onMediaClick, messageActionsEnabled = false, readOnlyActions = true, parseInlineDollarMath = inlineMath,
                     isLoading = generationVisible, isSwitching = switching, streamingMessage = streaming,
                     searchQuery = if (interaction.searchActive) interaction.searchQuery else "",
                     activeSearchMatch = searchMatch,

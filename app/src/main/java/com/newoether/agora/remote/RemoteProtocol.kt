@@ -26,6 +26,9 @@ internal data class RemoteMessage(
 internal data class RemoteActivity(
     val type: String, val toolName: String? = null, val arguments: String? = null,
     val result: String? = null, val state: String? = null, val durationMs: Long? = null,
+    val imagePath: String? = null,
+    @kotlinx.serialization.Transient
+    val images: List<com.newoether.agora.model.ToolImageAttachment> = emptyList(),
 )
 @Serializable
 internal data class RemoteQueuedMessage(val id: String, val clientId: String, val text: String)

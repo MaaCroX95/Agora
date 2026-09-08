@@ -31,10 +31,11 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
                 val segment = when (activity?.type) {
                     null -> MessageSegment(type = "answer", content = current.displayText(),
                         streamingTextDeltas = current.streamingTextDeltas)
-                    "thought" -> MessageSegment(type = "thought", content = current.displayText())
+                    "thought" -> MessageSegment(type = "thought", content = current.displayText(), durationMs = activity.durationMs)
                     "tool" -> MessageSegment(
                         type = "tool", toolName = activity.toolName, toolArgs = activity.arguments,
                         toolCallId = current.id, toolState = activity.state, durationMs = activity.durationMs,
+                        toolImages = activity.images,
                         toolResult = activity.result.takeUnless { activity.state == ToolExecutionStates.RUNNING },
                         toolProgress = activity.result.takeIf { activity.state == ToolExecutionStates.RUNNING },
                     )
@@ -96,11 +97,8 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
     }
 }
 
-/** The newest native page replaces the cached tail, including native edits/removals. */
-internal fun mergeRemoteHistory(old: List<RemoteMessage>, fresh: List<RemoteMessage>): List<RemoteMessage> {
-    val boundary = fresh.firstOrNull()?.id ?: return emptyList()
-    val index = old.indexOfFirst { it.id == boundary }
-    return (old.take(index.coerceAtLeast(0)) + fresh).distinctBy { it.id }
-}
-
 internal fun RemoteMessage.displayText(): String = if (textContinues) text else text.trimEnd('\r', '\n')
+
+internal fun RemoteRuntime?.hasVisibleGeneration(messages: List<RemoteMessage>): Boolean =
+    this?.isRunning == true && activeTurnId != null && (activeTurnHasUserMessage ||
+        messages.any { it.role == "user" && it.turnId == activeTurnId })

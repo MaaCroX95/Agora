@@ -16,12 +16,46 @@ import java.util.UUID
  * that Android can identify real raster dimensions, writes into app-private storage, fsyncs, and
  * atomically publishes the final file. Both MCP and built-in Conch tools use this exact path.
  */
-class ToolImageStore(context: Context) {
+class ToolImageStore(
+    context: Context,
+    private val directory: File = File(context.applicationContext.filesDir, "tool-media"),
+) {
     companion object {
         const val MAX_IMAGE_BYTES = 20L * 1024L * 1024L
     }
 
-    private val directory = File(context.applicationContext.filesDir, "tool-media")
+    /** Binary streams retain the same validation/atomic-file owner without an image-sized byte array. */
+    fun persistStream(input: java.io.InputStream, mimeType: String): ToolImageAttachment {
+        val mime = mimeType.substringBefore(';').trim().lowercase()
+        if (!mime.startsWith("image/")) throw IOException("Unsupported tool image type")
+        if (!directory.exists() && !directory.mkdirs()) throw IOException("Could not create tool media directory")
+        val destination = File(directory, "tool_" + UUID.randomUUID() + "." + extensionFor(mime))
+        val temporary = File(directory, "." + destination.name + ".tmp")
+        val digest = MessageDigest.getInstance("SHA-256")
+        var size = 0L
+        try {
+            temporary.outputStream().use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    size += count
+                    if (size > MAX_IMAGE_BYTES) throw IOException("Tool image exceeds its byte bound")
+                    output.write(buffer, 0, count)
+                    digest.update(buffer, 0, count)
+                }
+                output.fd.sync()
+            }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(temporary.absolutePath, bounds)
+            if (size == 0L || bounds.outWidth <= 0 || bounds.outHeight <= 0)
+                throw IOException("Tool returned an unsupported or invalid image")
+            if (!temporary.renameTo(destination)) throw IOException("Could not finalize tool image")
+            return ToolImageAttachment(destination.absolutePath, mime, size, bounds.outWidth, bounds.outHeight,
+                digest.digest().joinToString("") { "%02x".format(it) })
+        } finally { temporary.delete() }
+    }
+
 
     fun persistBase64(
         data: String,

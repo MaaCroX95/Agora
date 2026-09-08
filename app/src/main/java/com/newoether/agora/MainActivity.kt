@@ -398,6 +398,11 @@ fun MainNavigation(
         label = "snackbarPadding"
     )
     val focusManager = LocalFocusManager.current
+    val openMediaPreview: (List<String>, Int) -> Unit = { urls, index ->
+        focusManager.clearFocus()
+        mediaPreviewTarget = MediaPreviewTarget(urls, index)
+        topLevelPresentation.present(TopLevelPresentation.MEDIA_PREVIEW)
+    }
     val ratingScope = rememberCoroutineScope()
 
     // Update dialog
@@ -774,11 +779,7 @@ fun MainNavigation(
                     topLevelPresentation.present(TopLevelPresentation.TASKS)
                     showTasks = true
                 },
-                onMediaClick = { urls, index ->
-                    focusManager.clearFocus()
-                    mediaPreviewTarget = MediaPreviewTarget(urls, index)
-                    topLevelPresentation.present(TopLevelPresentation.MEDIA_PREVIEW)
-                },
+                onMediaClick = openMediaPreview,
                 onFileContentClick = { name, content ->
                     focusManager.clearFocus()
                     topLevelPresentation.present(TopLevelPresentation.TEXT_PREVIEW)
@@ -812,6 +813,7 @@ fun MainNavigation(
                 onExitFinished = { topLevelPresentation.release(TopLevelPresentation.REMOTE) },
                 onMessage = viewModel::emitSnackbar,
                 onSnackbarOffsetChanged = { remoteSnackbarOffset = it },
+                onMediaClick = openMediaPreview,
             )
 
             SettingsOverlayHost(

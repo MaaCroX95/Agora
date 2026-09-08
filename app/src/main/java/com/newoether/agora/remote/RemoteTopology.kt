@@ -11,10 +11,11 @@ internal data class RemoteMessageNode(
     val revision: String, val textLength: Int,
     val groupId: String? = null, val nativeId: String? = null,
     val textOffset: Int = 0, val textContinues: Boolean = false,
-    val activity: RemoteNodeActivity? = null,
+    val activity: RemoteNodeActivity? = null, val hasContent: Boolean? = null,
 )
 @Serializable
-internal data class RemoteNodeActivity(val type: String, val state: String? = null, val durationMs: Long? = null)
+internal data class RemoteNodeActivity(val type: String, val state: String? = null, val durationMs: Long? = null,
+    val hasImage: Boolean = false)
 @Serializable
 internal data class RemoteTopologyPage(
     val nodes: List<RemoteMessageNode>, val nextCursor: String?, val queued: List<RemoteQueuedMessage>,
@@ -44,7 +45,7 @@ internal fun projectRemoteTopology(nodes: List<RemoteMessageNode>, runtime: Remo
             group += next
             index++
         }
-        if (first.role == "assistant" && group.none { it.textLength > 0 || it.activity?.type == "tool" }) continue
+        if (first.role == "assistant" && group.none { it.hasContent ?: (it.textLength > 0 || it.activity?.type == "tool") }) continue
         val id = first.groupId ?: first.nativeId ?: first.id
         add(RemoteMessageGroup(ChatMessage(id = id, parentId = lastOrNull()?.stub?.id, text = "",
             participant = if (first.role == "user") Participant.USER else Participant.MODEL,

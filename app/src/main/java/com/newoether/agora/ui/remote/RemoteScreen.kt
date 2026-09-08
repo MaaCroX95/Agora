@@ -59,11 +59,15 @@ internal fun RemoteOverlay(
     onDismiss: () -> Unit,
     onExitFinished: () -> Unit,
     onMessage: (String, String?, (() -> Unit)?) -> Unit,
+    onMediaClick: (List<String>, Int) -> Unit,
     onSnackbarOffsetChanged: (androidx.compose.ui.unit.Dp) -> Unit,
 ) {
     val context = LocalContext.current.applicationContext
     val remote: RemoteViewModel = viewModel {
-        RemoteViewModel(RemoteConnectionStore(File(context.noBackupFilesDir, "remote-connections.json")))
+        val imageDirectory = File(context.cacheDir, "remote-images")
+        RemoteViewModel(RemoteConnectionStore(File(context.noBackupFilesDir, "remote-connections.json")),
+            com.newoether.agora.tool.ToolImageStore(context, imageDirectory),
+            com.newoether.agora.remote.RemoteImageCache(imageDirectory))
     }
     val messageHandler by rememberUpdatedState(onMessage)
     LaunchedEffect(remote, visible) {
@@ -87,14 +91,15 @@ internal fun RemoteOverlay(
     SettingsOverlayHost(visible, onDismiss, onExitFinished = onExitFinished) {
         val hapticsEnabled by settings.hapticsEnabled.collectAsState(initial = false)
         CompositionLocalProvider(LocalAgoraHaptics provides rememberAgoraHaptics(hapticsEnabled)) {
-            RemoteScreen(remote, settings, visible, onDismiss, onSnackbarOffsetChanged)
+            RemoteScreen(remote, settings, visible, onDismiss, onSnackbarOffsetChanged, onMediaClick)
         }
     }
 }
 
 @Composable
 private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, active: Boolean, onBack: () -> Unit,
-    onSnackbarOffsetChanged: (androidx.compose.ui.unit.Dp) -> Unit) {
+    onSnackbarOffsetChanged: (androidx.compose.ui.unit.Dp) -> Unit,
+    onMediaClick: (List<String>, Int) -> Unit) {
     val state by vm.state.collectAsState()
     val inset = maxOf(WindowInsets.ime.asPaddingValues().calculateBottomPadding(),
         WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
@@ -121,7 +126,7 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
         val displayed = if (current) state else retained
         when {
             page.third != null -> RemoteAddDevice(displayed, vm, back) { forward = false; focus.clearFocus() }
-            page.second != null -> RemoteConversation(displayed, vm, settings, active && current, back, onSnackbarOffsetChanged)
+            page.second != null -> RemoteConversation(displayed, vm, settings, active && current, back, onSnackbarOffsetChanged, onMediaClick)
             page.first != null -> {
                 val listState = rememberLazyListState()
                 val visibleRows = remember { mutableStateMapOf<String, Boolean>() }

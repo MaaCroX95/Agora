@@ -4,7 +4,7 @@ import com.newoether.agora.model.MessageStatus
 import org.junit.Assert.*
 import org.junit.Test
 
-class RemoteHistoryBudgetTest {
+class RemoteGenerationProjectionTest {
     private val answer = RemoteMessage("answer", "turn", null, "assistant", "Answer", 1)
 
     @Test fun nativeUserAuthoritySurvivesPagingButAnUnacknowledgedUserDoesNotStartTheIndicator() {

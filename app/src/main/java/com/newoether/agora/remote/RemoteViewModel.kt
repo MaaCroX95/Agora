@@ -21,6 +21,8 @@ import java.util.UUID
 /** Remote owns saved connections and presentation; native Codex owns durable execution. */
 internal class RemoteViewModel(
     private val connections: RemoteConnectionStore,
+    private val imageStore: com.newoether.agora.tool.ToolImageStore? = null,
+    private val imageCache: RemoteImageCache? = null,
     private val createClient: (String, String) -> FiloClient = { address, token -> FiloClient(address, token) },
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(RemoteState())
@@ -32,7 +34,16 @@ internal class RemoteViewModel(
         if (snapshot.owner != owner) throw CancellationException()
         val client = clients[snapshot.deviceId] ?: throw CancellationException()
         client.payloads(snapshot.session!!.id, requests)
-    }, { trace("payload_failed", it) })
+    }, { trace("payload_failed", it) }, { owner, request ->
+        val snapshot = state.value
+        if (snapshot.owner != owner) throw CancellationException()
+        val client = clients[snapshot.deviceId] ?: throw CancellationException()
+        val store = imageStore ?: throw java.io.IOException("Image storage is unavailable")
+        val cache = imageCache ?: throw java.io.IOException("Image cache is unavailable")
+        cache.load(owner + "/" + request.id + "/" + request.revision) {
+            client.image(snapshot.session!!.id, request, store::persistStream)
+        }
+    })
     fun observeMessage(owner: String, id: String) = hydration.observeMessage(owner, id)
     suspend fun searchMessages(owner: String, ids: List<String>) = try {
         hydration.loadMessages(owner, ids)

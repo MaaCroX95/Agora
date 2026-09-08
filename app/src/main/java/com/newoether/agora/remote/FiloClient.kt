@@ -32,6 +32,7 @@ private data class RemoteModels(val models: List<RemoteModel>)
 private data class FiloInfo(
     val protocolVersion: Int, val agent: String, val sessionMode: String,
     val messageDelivery: String, val outputMode: String, val device: String,
+    val supportsLazyMessages: Boolean = false,
 )
 @Serializable
 private data class SendInput(val text: String, val clientId: String)
@@ -80,7 +81,7 @@ internal class FiloClient(
         val info = json.decodeFromString<FiloInfo>(request("v1/info"))
         require(info.protocolVersion == 2 && info.agent == "codex" &&
             info.sessionMode in setOf("existing", "standalone") && info.messageDelivery == "native-steer" &&
-            info.outputMode == "live-messages") { "Incompatible Filo service" }
+            info.outputMode == "live-messages" && info.supportsLazyMessages) { "Incompatible Filo service" }
         return info.device
     }
 
@@ -113,6 +114,34 @@ internal class FiloClient(
             payloadRequests = json.encodeToString(requested))).messages.also {
             require(it.map { message -> message.id } == requested.map { request -> request.id })
         }
+    }
+
+    suspend fun image(
+        id: String, requested: RemotePayloadRequest,
+        persist: (java.io.InputStream, String) -> com.newoether.agora.model.ToolImageAttachment,
+    ): com.newoether.agora.model.ToolImageAttachment = suspendCancellableCoroutine { continuation ->
+        val url = endpoint.newBuilder().addPathSegments("v1/sessions/${sessionId(id)}/image")
+            .addQueryParameter("messages", json.encodeToString(listOf(requested))).build()
+        val call = calls.newCall(Request.Builder().url(url).header("Authorization", "Bearer $token").build())
+        continuation.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                if (!continuation.isCancelled) continuation.resumeWithException(e)
+            }
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    try {
+                        if (!it.isSuccessful) throw FiloHttpException(it.code)
+                        if (it.body.contentLength() > com.newoether.agora.tool.ToolImageStore.MAX_IMAGE_BYTES)
+                            throw RemoteContentLimitException()
+                        val image = persist(it.body.byteStream(), it.header("Content-Type").orEmpty())
+                        continuation.resume(image) { _, value, _ -> java.io.File(value.path).delete() }
+                    } catch (error: Exception) {
+                        if (!continuation.isCancelled) continuation.resumeWithException(error)
+                    }
+                }
+            }
+        })
     }
 
     private fun decodeTopology(text: String): RemoteTopologyPage =

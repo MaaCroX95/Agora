@@ -28,6 +28,11 @@ class RemoteTopologyTest {
         assertNotEquals(before.last().revision, after.last().revision)
     }
 
+    @Test fun whitespaceOnlyNativeBodiesDoNotCreateEmptyStructuralCards() {
+        assertTrue(projectRemoteTopology(listOf(node("blank").copy(hasContent = false)), null).isEmpty())
+        assertEquals(1, projectRemoteTopology(listOf(node("u", "user").copy(hasContent = true)), null).size)
+    }
+
     @Test fun transportPartsDoNotBecomeExtraBubblesOrAlterNativeToolCount() {
         val user = node("u", "user")
         val first = node("answer").copy(nativeId = "answer", textContinues = true)

@@ -21,7 +21,7 @@ Protocol 2 requires Bearer authentication, explicit service address, native-stee
 and live-messages output. Idle Send starts a native turn; active Send steers the exact
 original turn. Stop requires its native active ID. HTTP acceptance and native client-ID
 visibility are separate confirmations; unknown delivery is reconciled without blind resend.
-Native approvals remain with their owner. Remote attachments, approvals, transcript
+Native approvals remain with their owner. Remote attachment uploads, approvals, transcript
 editing, branching and tool-execution controls are unsupported.
 
 ## Devices and local persistence
@@ -88,6 +88,14 @@ scan, body hydration, highlights and scroll owner. Reconnecting merges native ch
 the resident topology; payload reads and cache eviction cannot change its IDs or order.
 A real user or different turn ends an assistant group. Remote DTOs remain separate from
 ChatMessage/MessageSegment presentation; only public summaries and tool records are mapped.
+Native imageView records hydrate real image bytes by authenticated message identity. Reuse
+ToolImageStore streaming validation/atomic files, original ToolImageAttachment thumbnails
+and the existing root media preview. Image files live only in the private disposable Remote
+cache (128MiB/64files, two concurrent image reads); native and ordinary durable tool images
+remain untouched. Each image retains the original 20MiB media-store bound. Search reads text
+without fetching images; missing/unsupported images preserve the card and conversation and
+report a Snackbar. No base64 image data enters topology/SSE and no arbitrary path read is
+exposed. Opening another session cancels old hydration and rejects stale results.
 Tool progress/results and genuine timing retain native semantics. Trim only terminal CR/LF
 in presentation text, not interior whitespace, tool payloads or original cached records.
 

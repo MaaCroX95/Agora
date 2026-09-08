@@ -21,7 +21,9 @@ internal class RemoteMessageHydration(
     private val state: StateFlow<RemoteState>,
     private val read: suspend (String, List<RemotePayloadRequest>) -> List<RemoteMessage>,
     private val failed: (Exception) -> Unit,
+    private val image: (suspend (String, RemotePayloadRequest) -> com.newoether.agora.model.ToolImageAttachment)? = null,
 ) {
+    private val cacheLock = Any()
     private var cacheOwner: String? = null
     private var cache = HydratedMessagePayloadLru()
     private val revisions = mutableMapOf<String, List<String>>()
@@ -37,19 +39,32 @@ internal class RemoteMessageHydration(
             snapshot.hydrationRevision)
     }
 
-    private fun cached(owner: String, group: RemoteMessageGroup): ChatMessage? {
-        if (cacheOwner != owner) {
-            cacheOwner = owner
-            cache = HydratedMessagePayloadLru()
-            revisions.clear()
-        }
-        return cache[group.stub.id]?.takeIf { revisions[group.stub.id] == group.revision }
-            ?.copy(status = group.stub.status, parentId = group.stub.parentId)
+    private suspend fun cached(owner: String, group: RemoteMessageGroup, includeImages: Boolean = false): ChatMessage? {
+        val message = synchronized(cacheLock) {
+            if (state.value.owner != owner) return null
+            if (cacheOwner != owner) {
+                cacheOwner = owner
+                cache = HydratedMessagePayloadLru()
+                revisions.clear()
+            }
+            cache[group.stub.id]?.takeIf { revisions[group.stub.id] == group.revision }
+        } ?: return null
+        if (includeImages && group.nodes.any { it.activity?.hasImage == true } && kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            group.nodes.any { node ->
+                node.activity?.hasImage == true && message.segments.orEmpty()
+                    .firstOrNull { it.toolCallId == node.id }?.toolImages.orEmpty()
+                    .none { java.io.File(it.path).isFile }
+            }
+        }) return null
+        if (state.value.owner != owner || !state.value.hydrationEnabled) throw CancellationException()
+        return message.copy(status = group.stub.status, parentId = group.stub.parentId)
     }
 
-    private fun remember(group: RemoteMessageGroup, message: ChatMessage) {
-        cache.put(message)
-        revisions[group.stub.id] = group.revision
+    private fun remember(owner: String, group: RemoteMessageGroup, message: ChatMessage) = synchronized(cacheLock) {
+        if (state.value.owner == owner && cacheOwner == owner) {
+            cache.put(message)
+            revisions[group.stub.id] = group.revision
+        }
     }
 
     private suspend fun records(owner: String, group: RemoteMessageGroup): List<RemoteMessage> = slots.withPermit {
@@ -72,11 +87,18 @@ internal class RemoteMessageHydration(
             if (target == null) { send(null); return@collectLatest }
             val group = target.group
             if (group.nodes.isEmpty()) { send(group.stub); return@collectLatest }
-            val cached = cached(owner, group)
+            val cached = cached(owner, group, includeImages = true)
             val active = group.stub.status in setOf(MessageStatus.SENDING, MessageStatus.THINKING, MessageStatus.TOOL_CALLING)
             if (cached != null && !active) { send(cached); return@collectLatest }
             try {
-                val fresh = records(owner, group)
+                val fresh = records(owner, group).map { message ->
+                    if (message.activity?.imagePath == null || image == null) message
+                    else try {
+                        val attachment = image.invoke(owner, group.requests.first { it.id == message.id })
+                        message.copy(activity = message.activity.copy(images = listOf(attachment)))
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (error: Exception) { failed(error); message }
+                }
                 val projected = projector.project {
                     val animated = deltas.apply(previous, fresh, previousRuntime, target.runtime)
                     projectRemoteMessages(animated, target.runtime).firstOrNull { it.id == id }
@@ -85,7 +107,7 @@ internal class RemoteMessageHydration(
                 currentCoroutineContext().ensureActive()
                 previous = fresh
                 previousRuntime = target.runtime
-                remember(group, projected)
+                remember(owner, group, projected)
                 send(projected)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { failed(error); send(cached) }
@@ -104,7 +126,9 @@ internal class RemoteMessageHydration(
                 projectRemoteMessages(fresh).firstOrNull { it.id == id }
                     ?.copy(parentId = group.stub.parentId) ?: group.stub
             }
-            remember(group, message)
+            currentCoroutineContext().ensureActive()
+            if (state.value.owner != owner || !state.value.hydrationEnabled) throw CancellationException()
+            remember(owner, group, message)
             add(message)
         }
     }

@@ -26,7 +26,7 @@ class FiloClientTest {
         val user = RemoteMessage("u", "turn", "client", "user", "hello", 10)
         val answer = RemoteMessage("a", "turn", null, "assistant", "old", 10)
         val edited = answer.copy(text = "new")
-        val messages = projectRemoteMessages(mergeRemoteHistory(listOf(user, answer), listOf(edited)))
+        val messages = projectRemoteMessages(listOf(user, edited))
         assertEquals(listOf("u", "a"), messages.map { it.id })
         assertEquals("u", messages.last().parentId)
         assertEquals("turn", messages.last().runId)
@@ -122,8 +122,8 @@ class FiloClientTest {
         assertEquals(ToolPresentationState.RUNNING, ToolPresentationResolver.resolve(running).state)
         val finished = tool.copy(activity = tool.activity.copy(
             result = "{\"output\":\"failed test\",\"exit_code\":1}", state = "failed", durationMs = 55))
-        val refreshed = mergeRemoteHistory(listOf(summary, tool), listOf(summary, finished,
-            RemoteMessage("a", "turn", null, "assistant", "Reported", 11)))
+        val refreshed = listOf(summary, finished,
+            RemoteMessage("a", "turn", null, "assistant", "Reported", 11))
         val after = projectRemoteMessages(refreshed).single()
         assertEquals(before.id, after.id)
         val terminal = after.segments!![1]
@@ -218,7 +218,7 @@ class FiloClientTest {
         for (mode in listOf("existing", "standalone", "unsupported")) {
             val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
             server.createContext("/v1/info") { exchange ->
-                val value = """{"protocolVersion":2,"agent":"codex","sessionMode":"$mode","messageDelivery":"native-steer","outputMode":"live-messages","device":"quantum"}""".toByteArray()
+                val value = """{"protocolVersion":2,"agent":"codex","sessionMode":"$mode","messageDelivery":"native-steer","outputMode":"live-messages","supportsLazyMessages":true,"device":"quantum"}""".toByteArray()
                 exchange.sendResponseHeaders(200, value.size.toLong())
                 exchange.responseBody.use { it.write(value) }
             }
@@ -241,7 +241,7 @@ class FiloClientTest {
         server.createContext("/") { exchange ->
             auth += exchange.requestHeaders.getFirst("Authorization")
             val value = when (exchange.requestURI.path) {
-                "/v1/info" -> """{"protocolVersion":2,"agent":"codex","sessionMode":"existing","messageDelivery":"native-steer","outputMode":"live-messages","device":"Computer"}"""
+                "/v1/info" -> """{"protocolVersion":2,"agent":"codex","sessionMode":"existing","messageDelivery":"native-steer","outputMode":"live-messages","supportsLazyMessages":true,"device":"Computer"}"""
                 "/v1/sessions/$id/messages" -> """{"turnId":"turn","clientId":"$id"}"""
                 else -> "data: ${Json.encodeToString(page)}\n\n"
             }.toByteArray()

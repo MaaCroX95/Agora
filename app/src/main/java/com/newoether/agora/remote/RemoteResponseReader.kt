@@ -20,3 +20,5 @@ internal fun BufferedSource.readRemoteEventLine(): String? {
         throw IOException("Incomplete Filo event")
     }
 }
+
+internal class RemoteContentLimitException : java.io.IOException("Filo response exceeds the transport limit")
