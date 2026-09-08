@@ -38,7 +38,7 @@ class RemoteSessionStatusTest {
         coEvery { client.sessions(any()) } returns RemoteSessionPage(listOf(session), null)
         coEvery { client.models() } returns emptyList()
         coEvery { client.sessionStatuses(any()) } returns listOf(RemoteSessionStatus("session", "idle"))
-        every { client.events(any()) } returns flow { awaitCancellation() }
+        every { client.topologyEvents(any()) } returns flow { awaitCancellation() }
     }
     @After fun tearDown() { Dispatchers.resetMain() }
 
@@ -68,8 +68,8 @@ class RemoteSessionStatusTest {
         vm.selectSession(session); runCurrent()
         coVerify(exactly = 0) { store.markViewed(any(), any(), any()) }
         assertTrue(vm.state.value.hasUnreadGeneration("session"))
-        every { client.events(any()) } returns flow {
-            emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("idle", completedTurnId = "turn")))
+        every { client.topologyEvents(any()) } returns flow {
+            emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("idle", completedTurnId = "turn")))
             awaitCancellation()
         }
         vm.refresh(); runCurrent()

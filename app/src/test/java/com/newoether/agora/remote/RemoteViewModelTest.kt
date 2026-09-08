@@ -43,12 +43,12 @@ class RemoteViewModelTest {
         every { client.address } returns "http://computer/"
         coEvery { client.connect() } returns "Computer"
         coEvery { client.sessions(any()) } returns RemoteSessionPage(listOf(session), null)
-        coEvery { client.conversation(any(), any()) } returns RemoteConversationPage(emptyList(), null, emptyList())
+        coEvery { client.topology(any(), any()) } returns topologyPage(emptyList(), null, emptyList())
         coEvery { client.models() } returns listOf(RemoteModel("model", "Model", true))
-        every { client.events(any()) } answers {
+        every { client.topologyEvents(any()) } answers {
             val id = firstArg<String>()
             flow {
-                val page = client.conversation(id)
+                val page = client.topology(id)
                 emit(page.copy(runtime = page.runtime ?: RemoteRuntime("idle", model = "model")))
                 awaitCancellation()
             }
@@ -292,18 +292,18 @@ class RemoteViewModelTest {
     }
 
     @Test fun staleReadCannotReplaceNewSession() = runTest(dispatcher) {
-        val gate = CompletableDeferred<RemoteConversationPage>()
-        coEvery { client.conversation("session", null) } coAnswers { withContext(NonCancellable) { gate.await() } }
+        val gate = CompletableDeferred<RemoteTopologyPage>()
+        coEvery { client.topology("session", null) } coAnswers { withContext(NonCancellable) { gate.await() } }
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         saveAndSelect(vm)
         vm.setVisible(true); runCurrent()
         vm.selectSession(session); runCurrent()
         vm.selectSession(session.copy(id = "other")); runCurrent()
-        gate.complete(RemoteConversationPage(listOf(RemoteMessage("stale", "t", null, "user", "old", 0)), null, emptyList()))
+        gate.complete(topologyPage(listOf(RemoteMessage("stale", "t", null, "user", "old", 0)), null, emptyList()))
         runCurrent()
         assertEquals("other", vm.state.value.session?.id)
         assertNull(vm.animatedScrollRequest.value)
-        assertTrue(vm.state.value.messages.isEmpty())
+        assertTrue(vm.state.value.nodes.isEmpty())
         vm.setVisible(false)
     }
 
@@ -322,7 +322,7 @@ class RemoteViewModelTest {
         assertEquals("other", vm.state.value.session?.id)
         coVerify(exactly = 1) { client.send("session", "first", any()) }
         val acceptedId = vm.state.value.attempts[owner]!!.clientId
-        coEvery { client.conversation(any(), any()) } returns RemoteConversationPage(
+        coEvery { client.topology(any(), any()) } returns topologyPage(
             emptyList(), null, listOf(RemoteQueuedMessage("queue", acceptedId, "first")))
         vm.selectSession(session); vm.editDraft(owner, "first")
         vm.setVisible(true); runCurrent()
@@ -351,7 +351,7 @@ class RemoteViewModelTest {
     @Test fun acceptedSendRequestsOneOwnedScrollAndNavigationClearsIt() = runTest(dispatcher) {
         val gate = CompletableDeferred<String>()
         coEvery { client.send(any(), any(), any()) } coAnswers { gate.await() }
-        coEvery { client.conversation(any(), any()) } returns RemoteConversationPage(
+        coEvery { client.topology(any(), any()) } returns topologyPage(
             listOf(
                 RemoteMessage("tail", "turn", null, "assistant", "Previous answer", 1),
                 RemoteMessage("tool", "turn", null, "assistant", "", 1,
@@ -369,7 +369,7 @@ class RemoteViewModelTest {
         assertEquals("hello", vm.state.value.drafts[owner])
         assertNull(vm.animatedScrollRequest.value)
         val clientId = vm.state.value.attempts[owner]!!.clientId
-        coEvery { client.conversation(any(), any()) } returns RemoteConversationPage(
+        coEvery { client.topology(any(), any()) } returns topologyPage(
             listOf(RemoteMessage("sent", "new-turn", clientId, "user", "hello", 2)), null, emptyList())
         vm.refresh(); runCurrent()
         assertEquals(RemoteDelivery.DELIVERED, vm.state.value.attempts[owner]?.delivery)
@@ -388,7 +388,7 @@ class RemoteViewModelTest {
         vm.editDraft(owner, "next"); vm.send(); runCurrent()
         assertNull(vm.animatedScrollRequest.value)
         val nextId = vm.state.value.attempts[owner]!!.clientId
-        coEvery { client.conversation(any(), any()) } returns RemoteConversationPage(
+        coEvery { client.topology(any(), any()) } returns topologyPage(
             listOf(RemoteMessage("next", "next-turn", nextId, "user", "next", 3)), null, emptyList())
         vm.refresh(); runCurrent()
         assertNotNull(vm.animatedScrollRequest.value)
@@ -417,7 +417,7 @@ class RemoteViewModelTest {
         assertFalse(vm.state.value.restoring)
         coVerify(exactly = 0) { client.connect() }
         coVerify(exactly = 0) { client.sessions(any()) }
-        coVerify(exactly = 0) { client.conversation(any(), any()) }
+        coVerify(exactly = 0) { client.topology(any(), any()) }
         coVerify(exactly = 0) { client.send(any(), any(), any()) }
         coEvery { client.sessions(any()) } throws IOException("Offline")
         vm.setVisible(true); vm.selectDevice("http://computer/"); runCurrent()
@@ -461,19 +461,19 @@ class RemoteViewModelTest {
     }
 
     @Test fun nativeEventBeforeLostReceiptConfirmsOnceAndDisconnectInvalidatesRuntime() = runTest(dispatcher) {
-        val events = MutableSharedFlow<RemoteConversationPage>()
-        every { client.events(any()) } returns events
+        val events = MutableSharedFlow<RemoteTopologyPage>()
+        every { client.topologyEvents(any()) } returns events
         val response = CompletableDeferred<String>()
         coEvery { client.send(any(), any(), any()) } coAnswers { response.await() }
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
         val running = RemoteRuntime("active", "turn", "model", 1234, 256000)
-        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), running)); runCurrent()
+        events.emit(topologyPage(emptyList(), null, emptyList(), running)); runCurrent()
         val owner = vm.state.value.owner!!
         vm.editDraft(owner, "hello"); vm.send(); runCurrent()
         val id = vm.state.value.attempts[owner]!!.clientId
         val message = RemoteMessage("sent", "turn", id, "user", "hello", 1)
-        events.emit(RemoteConversationPage(listOf(message), null, emptyList(), running)); runCurrent()
+        events.emit(topologyPage(listOf(message), null, emptyList(), running)); runCurrent()
         val scroll = vm.animatedScrollRequest.value
         assertEquals(RemoteDelivery.DELIVERED, vm.state.value.attempts[owner]?.delivery)
         response.completeExceptionally(IOException("Lost receipt")); runCurrent()
@@ -487,17 +487,17 @@ class RemoteViewModelTest {
     }
 
     @Test fun nativeGenerationChangesAreVisibleBeforeAnyMessageOrLocalSubmission() = runTest(dispatcher) {
-        val events = MutableSharedFlow<RemoteConversationPage>()
-        every { client.events(any()) } returns events
+        val events = MutableSharedFlow<RemoteTopologyPage>()
+        every { client.topologyEvents(any()) } returns events
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
-        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "native-turn")))
+        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "native-turn")))
         runCurrent()
         assertTrue(vm.state.value.runtime!!.isRunning)
         assertEquals("native-turn", vm.state.value.runtime?.activeTurnId)
-        assertTrue(vm.state.value.messages.isEmpty())
+        assertTrue(vm.state.value.nodes.isEmpty())
         assertTrue(vm.state.value.attempts.isEmpty())
-        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("idle")))
+        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("idle")))
         runCurrent()
         assertFalse(vm.state.value.runtime!!.isRunning)
         coVerify(exactly = 0) { client.send(any(), any(), any()) }
@@ -506,13 +506,13 @@ class RemoteViewModelTest {
     }
 
     @Test fun stopReceiptFirstKeepsBusyUntilNativeTurnEndsAndBlocksDuplicateActions() = runTest(dispatcher) {
-        val events = MutableSharedFlow<RemoteConversationPage>()
+        val events = MutableSharedFlow<RemoteTopologyPage>()
         val receipt = CompletableDeferred<Unit>()
-        every { client.events(any()) } returns events
+        every { client.topologyEvents(any()) } returns events
         coEvery { client.stop(any(), any()) } coAnswers { receipt.await() }
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
-        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
+        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
         runCurrent()
         vm.stop(); vm.stop(); runCurrent()
         assertTrue(vm.state.value.isStopping)
@@ -525,7 +525,7 @@ class RemoteViewModelTest {
         coVerify(exactly = 1) { client.stop("session", "turn") }
         coVerify(exactly = 0) { client.send(any(), any(), any()) }
         coVerify(exactly = 0) { client.setModel(any(), any()) }
-        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("idle")))
+        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("idle")))
         runCurrent()
         assertFalse(vm.state.value.isStopping)
         assertNull(vm.state.value.stoppingTurnId)
@@ -533,15 +533,15 @@ class RemoteViewModelTest {
     }
 
     @Test fun nativeTurnEndFirstKeepsBusyUntilStopReceiptArrives() = runTest(dispatcher) {
-        val events = MutableSharedFlow<RemoteConversationPage>()
+        val events = MutableSharedFlow<RemoteTopologyPage>()
         val receipt = CompletableDeferred<Unit>()
-        every { client.events(any()) } returns events
+        every { client.topologyEvents(any()) } returns events
         coEvery { client.stop(any(), any()) } coAnswers { receipt.await() }
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
-        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
+        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
         runCurrent(); vm.stop(); runCurrent()
-        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("idle")))
+        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("idle")))
         runCurrent()
         assertTrue(vm.state.value.isStopping)
         receipt.complete(Unit); runCurrent()
@@ -551,7 +551,7 @@ class RemoteViewModelTest {
     }
 
     @Test fun failedStopEndsBusyWithoutInventingIdleOrAutomaticallyRetrying() = runTest(dispatcher) {
-        coEvery { client.conversation(any(), any()) } returns RemoteConversationPage(
+        coEvery { client.topology(any(), any()) } returns topologyPage(
             emptyList(), null, emptyList(), RemoteRuntime("active", "turn"))
         coEvery { client.stop(any(), any()) } throws IOException("Lost Stop receipt")
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
@@ -567,8 +567,8 @@ class RemoteViewModelTest {
 
     @Test fun disconnectWhileAwaitingNativeStopClearsBusyAndInvalidatesControls() = runTest(dispatcher) {
         val disconnect = CompletableDeferred<Unit>()
-        every { client.events(any()) } returns flow {
-            emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
+        every { client.topologyEvents(any()) } returns flow {
+            emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
             disconnect.await()
             throw IOException("Stream disconnected")
         }
@@ -587,16 +587,16 @@ class RemoteViewModelTest {
     }
 
     @Test fun lateStopReceiptCannotChangeAnotherSessionsGeneration() = runTest(dispatcher) {
-        val events = MutableSharedFlow<RemoteConversationPage>()
+        val events = MutableSharedFlow<RemoteTopologyPage>()
         val receipt = CompletableDeferred<Unit>()
-        every { client.events(any()) } returns events
+        every { client.topologyEvents(any()) } returns events
         coEvery { client.stop(any(), any()) } coAnswers { receipt.await() }
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
-        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "old-turn")))
+        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "old-turn")))
         runCurrent(); vm.stop(); runCurrent()
         vm.selectSession(session.copy(id = "other")); runCurrent()
-        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "other-turn")))
+        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "other-turn")))
         runCurrent()
         assertFalse(vm.state.value.isStopping)
         receipt.complete(Unit); runCurrent()
@@ -609,15 +609,15 @@ class RemoteViewModelTest {
     }
 
     @Test fun replacementTurnEndsOnlyTheOriginalPendingStop() = runTest(dispatcher) {
-        val events = MutableSharedFlow<RemoteConversationPage>()
-        every { client.events(any()) } returns events
+        val events = MutableSharedFlow<RemoteTopologyPage>()
+        every { client.topologyEvents(any()) } returns events
         coEvery { client.stop(any(), any()) } returns Unit
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
-        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "old-turn")))
+        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "old-turn")))
         runCurrent(); vm.stop(); runCurrent()
         assertTrue(vm.state.value.isStopping)
-        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "new-turn")))
+        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "new-turn")))
         runCurrent()
         assertFalse(vm.state.value.isStopping)
         assertEquals("new-turn", vm.state.value.runtime?.activeTurnId)
@@ -646,21 +646,21 @@ class RemoteViewModelTest {
         coVerify(exactly = 1) { client.models() }
         coVerify(exactly = 1) { client.sessions(any()) }
         coVerify(exactly = 0) { client.create() }
-        coVerify(exactly = 0) { client.conversation(any(), any()) }
-        verify(exactly = 0) { client.events(any()) }
+        coVerify(exactly = 0) { client.topology(any(), any()) }
+        verify(exactly = 0) { client.topologyEvents(any()) }
         vm.selectDevice(null); vm.setVisible(false)
         coVerify(exactly = 0) { client.create() }
     }
 
     @Test fun firstSendCreatesOnceAndPromotesWithoutReplacingComposerOrEditedDraft() = runTest(dispatcher) {
         val created = CompletableDeferred<RemoteSession>()
-        val events = MutableSharedFlow<RemoteConversationPage>()
+        val events = MutableSharedFlow<RemoteTopologyPage>()
         coEvery { client.create() } coAnswers { created.await() }
         coEvery { client.models() } returns listOf(
             RemoteModel("model", "Model", true), RemoteModel("chosen", "Chosen"))
         coEvery { client.setModel(any(), any()) } returns Unit
         coEvery { client.send(any(), any(), any()) } returns "turn"
-        every { client.events(any()) } returns events
+        every { client.topologyEvents(any()) } returns events
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.setVisible(true); runCurrent()
         vm.newSession()
@@ -687,7 +687,7 @@ class RemoteViewModelTest {
             client.setModel("native", "chosen")
             client.send("native", "hello", attempt.clientId)
         }
-        events.emit(RemoteConversationPage(
+        events.emit(topologyPage(
             listOf(RemoteMessage("user", "turn", attempt.clientId, "user", "hello", 1)),
             null, emptyList(), RemoteRuntime("active", "turn", "chosen")))
         runCurrent()
@@ -755,7 +755,7 @@ class RemoteViewModelTest {
         assertEquals("model", vm.state.value.selectedModel)
         coVerify(exactly = 1) { client.models() }
         coVerify(exactly = 0) { client.create() }
-        verify(exactly = 0) { client.events(any()) }
+        verify(exactly = 0) { client.topologyEvents(any()) }
         vm.setVisible(false)
     }
 
@@ -820,19 +820,19 @@ class RemoteViewModelTest {
         val gate = CompletableDeferred<Unit>()
         coEvery { client.resume("history") } coAnswers { gate.await() }
         val old = RemoteMessage("old", "old-turn", null, "user", "Preserved", 1)
-        coEvery { client.conversation("history", any()) } returns
-            RemoteConversationPage(listOf(old), null, emptyList(), RemoteRuntime("ready"))
+        coEvery { client.topology("history", any()) } returns
+            topologyPage(listOf(old), null, emptyList(), RemoteRuntime("ready"))
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
         vm.selectSession(session.copy(id = "history", readOnly = true, canResume = true)); runCurrent()
         coVerify(exactly = 1) { client.resume("history") }
         assertTrue(vm.state.value.session!!.readOnly)
-        verify(exactly = 0) { client.events("history") }
+        verify(exactly = 0) { client.topologyEvents("history") }
         gate.complete(Unit); runCurrent()
         assertFalse(vm.state.value.controlling)
         assertFalse(vm.state.value.session!!.readOnly)
-        assertEquals(listOf(old), vm.state.value.messages)
-        verify(exactly = 1) { client.events("history") }
+        assertEquals(listOf(old.id), vm.state.value.nodes.map { it.id })
+        verify(exactly = 1) { client.topologyEvents("history") }
         coVerify(exactly = 1) { client.resume("history") }
         coVerify(exactly = 0) { client.send(any(), any(), any()) }
         vm.setVisible(false)
@@ -848,7 +848,7 @@ class RemoteViewModelTest {
         coVerify(exactly = 1) { client.resume("history") }
         assertTrue(vm.state.value.session!!.readOnly)
         assertFalse(vm.state.value.controlling)
-        verify(exactly = 0) { client.events("history") }
+        verify(exactly = 0) { client.topologyEvents("history") }
         val gate = CompletableDeferred<Unit>()
         coEvery { client.resume("history") } coAnswers { gate.await() }
         vm.resumeSession(); runCurrent(); vm.selectSession(null); runCurrent()
@@ -858,16 +858,16 @@ class RemoteViewModelTest {
         vm.setVisible(false)
     }
 
-    @Test fun historyPaginationProgressEndsOnFailureAndDoesNotSurviveNavigation() = runTest(dispatcher) {
-        val page = CompletableDeferred<RemoteConversationPage>()
-        coEvery { client.conversation("history", null) } returns
-            RemoteConversationPage(emptyList(), "older", emptyList(), RemoteRuntime("readOnly"))
-        coEvery { client.conversation("history", "older") } coAnswers { page.await() }
+    @Test fun topologyLoadingEndsOnFailureAndDoesNotSurviveNavigation() = runTest(dispatcher) {
+        val page = CompletableDeferred<RemoteTopologyPage>()
+        coEvery { client.topology("history", null) } returns
+            topologyPage(emptyList(), "older", emptyList(), RemoteRuntime("readOnly"))
+        coEvery { client.topology("history", "older") } coAnswers { page.await() }
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
         vm.selectSession(session.copy(id = "history", readOnly = true)); runCurrent()
-        vm.loadMore(); runCurrent()
-        assertTrue(vm.state.value.loadingMore)
+        assertTrue(vm.state.value.loading)
+        assertTrue(vm.state.value.nodes.isEmpty())
         page.completeExceptionally(IOException("offline")); runCurrent()
         assertFalse(vm.state.value.loadingMore)
         assertEquals(RemoteFailure.NETWORK, vm.state.value.failure)
@@ -876,25 +876,28 @@ class RemoteViewModelTest {
         vm.setVisible(false)
     }
 
-    @Test fun ordinaryHistoryLoadsAndPagesWithoutSubscriptionOrControl() = runTest(dispatcher) {
+    @Test fun allHistoryTopologyLoadsWithoutBodiesSubscriptionOrControl() = runTest(dispatcher) {
         val historical = session.copy(id = "historical", readOnly = true)
         val recent = RemoteMessage("recent", "turn", null, "assistant", "Recent history", 2)
         val older = RemoteMessage("older", "old-turn", null, "user", "Earlier history", 1)
-        coEvery { client.conversation("historical", null) } returns
-            RemoteConversationPage(listOf(recent), "older", emptyList(), RemoteRuntime("active", "turn", "model"))
-        coEvery { client.conversation("historical", "older") } returns
-            RemoteConversationPage(listOf(older), null, emptyList(), RemoteRuntime("readOnly"))
+        coEvery { client.topology("historical", null) } returns
+            topologyPage(listOf(recent), "older", emptyList(), RemoteRuntime("active", "turn", "model"))
+        coEvery { client.topology("historical", "older") } returns
+            topologyPage(listOf(older), null, emptyList(), RemoteRuntime("readOnly"))
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
         vm.selectSession(historical); runCurrent()
-        assertEquals(listOf(recent), vm.state.value.messages)
+        assertEquals(listOf(older.id, recent.id), vm.state.value.nodes.map { it.id })
         assertFalse(vm.state.value.loading)
+        val topology = vm.state.value.messageGroups
         vm.loadMore(); runCurrent()
-        assertEquals(listOf(older, recent), vm.state.value.messages)
-        assertNull(vm.state.value.historyCursor)
+        assertEquals(topology, vm.state.value.messageGroups)
+        assertTrue(topology.all { it.stub.text.isEmpty() && it.stub.segments == null })
+        coVerify(exactly = 0) { client.payloads(any(), any()) }
+        coVerify(exactly = 1) { client.topology("historical", "older") }
         vm.editDraft(vm.state.value.owner!!, "must not send")
         vm.send(); vm.stop(); vm.setModel("model"); runCurrent()
-        verify(exactly = 0) { client.events("historical") }
+        verify(exactly = 0) { client.topologyEvents("historical") }
         coVerify(exactly = 0) { client.send(any(), any(), any()) }
         coVerify(exactly = 0) { client.stop(any(), any()) }
         coVerify(exactly = 0) { client.setModel(any(), any()) }

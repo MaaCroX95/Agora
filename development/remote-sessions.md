@@ -79,12 +79,13 @@ Preserve ID/history and enable composer/SSE only after native acceptance. Failur
 readable. No Continue this conversation button, background admission or automatic POST
 retry. Unavailable read-only history cannot subscribe or mutate; occupied writers fail safely.
 
-Conversation history loads at the actual top/bottom through its paging owner. Search scans
-bounded native page pairs, including text matches across a page boundary, and retains match
-locations and replay cursors rather than every body. It loads a selected match before handing
-its unchanged text offsets to the original search highlight and scroll owner. Different pages
-of the same native group have distinct search locations; newer pages remain reachable.
-Bounded pages preserve native record identity/order and stable assistant groupId across cuts.
+Opening a conversation loads its complete lightweight topology: native identities, order,
+groups and revisions. Bounded wire pages are internal transport only. They never define a
+visible window, evict message positions or trigger scroll compensation. Original MessageList
+and LazyColumn request composed message bodies through observeMessage; original payload LRU
+and MessagePayloadProjector bound retained bodies. Search uses the original full-topology ID
+scan, body hydration, highlights and scroll owner. Reconnecting merges native changes into
+the resident topology; payload reads and cache eviction cannot change its IDs or order.
 A real user or different turn ends an assistant group. Remote DTOs remain separate from
 ChatMessage/MessageSegment presentation; only public summaries and tool records are mapped.
 Tool progress/results and genuine timing retain native semantics. Trim only terminal CR/LF

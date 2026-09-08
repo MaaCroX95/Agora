@@ -80,8 +80,11 @@ internal fun RemoteConversation(
         onShowLaunchContent = {},
         onInitialFocusRequested = { vm.completeComposerFocus(owner) },
     )
-    val presentationRuntime = state.runtime.takeUnless { state.historyHasNewer }
-    val generationVisible = presentationRuntime.hasVisibleGeneration(state.messages)
+    val messages = remember(state.messageGroups) { state.messageGroups.map { it.stub } }
+    val tail = messages.lastOrNull()?.takeIf {
+        it.status in setOf(MessageStatus.SENDING, MessageStatus.THINKING, MessageStatus.TOOL_CALLING)
+    }
+    val generationVisible = tail != null
     var activeMenu by remember(owner) { mutableStateOf<String?>(null) }
     var lastModelDismissTime by remember(owner) { mutableLongStateOf(0L) }
     var lastContextDismissTime by remember(owner) { mutableLongStateOf(0L) }
@@ -122,28 +125,20 @@ internal fun RemoteConversation(
             haptics.confirm()
         }
     }
-    val messages = remember(state.messages, presentationRuntime) { projectRemoteMessages(state.messages, presentationRuntime) }
-    val streaming = messages.lastOrNull()?.takeIf {
-        it.status in setOf(MessageStatus.SENDING, MessageStatus.THINKING, MessageStatus.TOOL_CALLING, MessageStatus.TRANSCRIBING)
+    val observe = remember(owner) { { id: String -> vm.observeMessage(owner, id) } }
+    val streamingFlow = remember(owner, tail?.id) {
+        tail?.let { vm.observeMessage(owner, it.id) } ?: kotlinx.coroutines.flow.flowOf(null)
     }
-    val payloads = rememberUpdatedState(remember(messages) { messages.associateBy { it.id } })
-    val observe = remember(owner) { { id: String -> snapshotFlow { payloads.value[id] } } }
+    val streamingPayload by streamingFlow.collectAsState(initial = null)
+    val streaming = streamingPayload?.takeIf { it.id == tail?.id } ?: tail
     val messageState = rememberUpdatedState(messages)
     val ime = WindowInsets.ime.getBottom(density)
     val scroll = rememberChatScrollCoordinator(owner, ime)
     val focusManager = LocalFocusManager.current
-    val searchMessages: suspend (String, List<String>) -> List<com.newoether.agora.model.ChatMessage> = remember(owner) {
-        { _, ids -> ids.mapNotNull { payloads.value[it] } }
-    }
-    val searchAllMessages: suspend (String) -> List<ConversationSearchMatch> = remember(owner, state.searchRevision) { { query: String -> vm.searchHistory(query) } }
-    val interaction = rememberConversationInteractionState(owner, messageState, scroll.listState, searchMessages,
-        searchAllMessages = searchAllMessages)
+    val searchMessages: suspend (String, List<String>) -> List<com.newoether.agora.model.ChatMessage> =
+        remember(owner, state.hydrationRevision) { { _, ids -> vm.searchMessages(owner, ids) } }
+    val interaction = rememberConversationInteractionState(owner, messageState, scroll.listState, searchMessages)
     val searchMatch = interaction.searchMatches.getOrNull(interaction.searchMatchIndex)
-    var preparedSearchKey by remember(owner) { mutableStateOf<String?>(null) }
-    LaunchedEffect(owner, searchMatch?.key) {
-        preparedSearchKey = null
-        if (searchMatch != null && vm.prepareSearchMatch(searchMatch)) preparedSearchKey = searchMatch.key
-    }
     BackHandler(active && interaction.searchActive) {
         interaction.dismissSearch()
         focusManager.clearFocus()
@@ -164,8 +159,8 @@ internal fun RemoteConversation(
         messageState, density, motion, barHeight, 0.dp, onAnimatedScrollFinished = vm::completeAnimatedScroll)
     val renderMessages = rememberScrollIsolatedMessages(owner, messageState, scroll.listState,
         bypassScrollIsolation = scroll.absoluteBottomScrollPhase.isActive || scroll.streamingTailController.isAutoFollowing)
-    LaunchedEffect(owner, state.runtime != null) {
-        if (state.runtime != null && !initiallyPositioned) {
+    LaunchedEffect(owner, state.hydrationEnabled) {
+        if (state.hydrationEnabled && !initiallyPositioned) {
             scroll.settleOpenedConversation(messageState)
             initiallyPositioned = true
         }
@@ -176,19 +171,6 @@ internal fun RemoteConversation(
         programmaticHandoff = scroll.imeBottomAnchorState.active ||
             scroll.absoluteBottomScrollPhase.isActive || animatedScrollRequest?.conversationId == owner,
     )
-    LaunchedEffect(owner, active, switching, interaction.searchActive, state.historyCursor, state.loading, state.loadingMore, state.error) {
-        if (!active || switching || interaction.searchActive || state.historyCursor == null ||
-            state.loading || state.loadingMore || state.error) return@LaunchedEffect
-        snapshotFlow { !scroll.listState.canScrollBackward }.collect { atTop ->
-            if (atTop) vm.loadMore()
-        }
-    }
-    LaunchedEffect(owner, active, switching, interaction.searchActive, state.historyHasNewer, state.loadingMore, state.error) {
-        if (!active || switching || interaction.searchActive || !state.historyHasNewer || state.loadingMore || state.error) return@LaunchedEffect
-        snapshotFlow { !scroll.listState.canScrollForward }.collect { atBottom ->
-            if (atBottom) vm.loadNewerHistory()
-        }
-    }
     var confirmUnknown by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).clearFocusOnTap()
         .onSizeChanged { scroll.recordViewportHeight(it.height) }) {
@@ -227,7 +209,7 @@ internal fun RemoteConversation(
                     state = scroll.listState, messageActionsEnabled = false, readOnlyActions = true, parseInlineDollarMath = inlineMath,
                     isLoading = generationVisible, isSwitching = switching, streamingMessage = streaming,
                     searchQuery = if (interaction.searchActive) interaction.searchQuery else "",
-                    activeSearchMatch = searchMatch?.takeIf { it.key == preparedSearchKey },
+                    activeSearchMatch = searchMatch,
                     onSearchMatchDistance = interaction::recordSearchMatchDistance,
                     onSearchTurnsChanged = interaction::recordSearchTurns,
                     streamingAutoFollowEnabled = follow.enabled && stickToBottom,
@@ -251,17 +233,16 @@ internal fun RemoteConversation(
                         isSwitching = switching,
                         conversationContentReady = initiallyPositioned,
                         shareSelectionActive = false,
-                        hasItems = state.historyHasNewer || scroll.listState.layoutInfo.totalItemsCount > 1,
-                        canScrollForward = state.historyHasNewer || scroll.listState.canScrollForward,
-                        isNearBottom = !state.historyHasNewer && scroll.isNearAbsoluteBottom,
+                        hasItems = scroll.listState.layoutInfo.totalItemsCount > 1,
+                        canScrollForward = scroll.listState.canScrollForward,
+                        isNearBottom = scroll.isNearAbsoluteBottom,
                         isStreamingAutoFollowing = scroll.streamingTailController.isAutoFollowing,
                         scrollPhase = scroll.absoluteBottomScrollPhase,
                         competingProgrammaticScrollActive = scroll.imeBottomAnchorState.active,
                     ),
                     barHeight,
                 ) {
-                    if (state.historyHasNewer) vm.loadNewerHistory(latest = true)
-                    else scroll.requestAbsoluteBottomScroll()
+                    scroll.requestAbsoluteBottomScroll()
                 }
 
                 AnimatedVisibility(
