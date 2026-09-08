@@ -342,7 +342,7 @@ private fun remoteFailureResource(failure: RemoteFailure?): Int = when (failure)
     RemoteFailure.CONFIGURATION -> R.string.remote_configuration_failed
     RemoteFailure.PROTOCOL -> R.string.remote_protocol_failed
     RemoteFailure.SESSION_BUSY -> R.string.remote_session_busy
-    RemoteFailure.CONTENT_TOO_LARGE -> R.string.remote_history_too_large
+    RemoteFailure.CONTENT_TOO_LARGE -> R.string.remote_response_too_large
     RemoteFailure.SERVICE -> R.string.remote_service_failed
     RemoteFailure.STORAGE -> R.string.remote_storage_failed
     else -> R.string.remote_failed

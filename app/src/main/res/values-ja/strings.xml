@@ -1251,6 +1251,7 @@
     <string name="remote_resume_history">この会話を続ける</string>
     <string name="remote_session_busy">別の Codex プロセスがこの会話を使用しています。解放後に再試行してください。</string>
     <string name="thought_for_a_while">しばらく思考しました</string>
-    <string name="remote_history_too_large">このデバイスで読み込める履歴の上限に達しました。残りの履歴は Codex で確認してください。</string>
+    <string name="thought_for_a_while_called_tools">しばらく思考し、%1$d 個のツールを呼び出しました</string>
+    <string name="remote_response_too_large">サービスの応答が大きすぎます。Filo を更新して再試行してください。</string>
     <string name="remote_device">デバイス</string>
 </resources>

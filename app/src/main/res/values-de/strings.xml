@@ -1251,6 +1251,7 @@
     <string name="remote_resume_history">Diese Unterhaltung fortsetzen</string>
     <string name="remote_session_busy">Diese Unterhaltung wird von einem anderen Codex-Prozess verwendet. Nach der Freigabe erneut versuchen.</string>
     <string name="thought_for_a_while">Eine Weile nachgedacht</string>
-    <string name="remote_history_too_large">Dieser Verlauf ist zu groß für dieses Gerät. Den restlichen Verlauf kannst du in Codex lesen.</string>
+    <string name="thought_for_a_while_called_tools">Eine Weile nachgedacht, %1$d Werkzeuge aufgerufen</string>
+    <string name="remote_response_too_large">Die Dienstantwort war zu groß. Aktualisiere Filo und versuche es erneut.</string>
     <string name="remote_device">Gerät</string>
 </resources>

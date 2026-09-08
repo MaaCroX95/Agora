@@ -1257,6 +1257,7 @@
     <string name="remote_resume_history">Tiếp tục cuộc trò chuyện</string>
     <string name="remote_session_busy">Một tiến trình Codex khác đang dùng cuộc trò chuyện này. Hãy thử lại khi tiến trình đó giải phóng cuộc trò chuyện.</string>
     <string name="thought_for_a_while">Đã suy nghĩ một lúc</string>
-    <string name="remote_history_too_large">Lịch sử này quá lớn để tải trên thiết bị này. Hãy đọc phần còn lại trong Codex.</string>
+    <string name="thought_for_a_while_called_tools">Đã suy nghĩ một lúc, đã gọi %1$d công cụ</string>
+    <string name="remote_response_too_large">Phản hồi của dịch vụ quá lớn. Hãy cập nhật Filo và thử lại.</string>
     <string name="remote_device">Thiết bị</string>
 </resources>

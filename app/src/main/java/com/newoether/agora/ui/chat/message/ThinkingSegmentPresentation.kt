@@ -82,12 +82,16 @@ private fun thinkingDurationBreakdownTitle(
 }
 
 @Composable
-internal fun thoughtDurationTitle(thoughtMs: Long, toolCount: Int): String =
-    thinkingDurationBreakdownTitle(
+internal fun thoughtDurationTitle(thoughtMs: Long?, toolCount: Int): String {
+    if (thoughtMs == null) return if (toolCount > 0) {
+        stringResource(R.string.thought_for_a_while_called_tools, toolCount)
+    } else stringResource(R.string.thought_for_a_while)
+    return thinkingDurationBreakdownTitle(
         seconds = (thoughtMs / 1_000L).toInt(),
         live = false,
         toolCount = toolCount.takeIf { it > 0 },
     )
+}
 
 @Composable
 internal fun compactSegmentTitle(
@@ -119,7 +123,7 @@ internal fun compactSegmentTitle(
             } else {
                 toolDisplayName(lastSeg)
             }
-        hasThought -> if (thoughtMs != null) thoughtDurationTitle(thoughtMs, toolCount) else stringResource(R.string.thought_for_a_while)
+        hasThought -> thoughtDurationTitle(thoughtMs, toolCount)
         toolCount > 0 -> stringResource(R.string.called_n_tools, toolCount)
         segs.any { it.type == "transcription" } -> transcriptionLabel(
             segs,

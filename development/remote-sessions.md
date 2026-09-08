@@ -107,7 +107,9 @@ StreamingTextDelta boundaries to the original fade tracker; initial history/rewr
 invent token events. No artificial typing timers. The last card is active only when generation
 is active AND no newer block lies below it; stale tool state cannot animate a middle card.
 Use the original active-card expansion/collapse. Unknown completed thought duration uses
-exact English fallback Thought for a while; genuine timing retains original duration text.
+exact English fallback Thought for a while; when the card contains tools it remains
+Thought for a while, called X tools. The fallback only replaces the duration, never the
+native tool count. Genuine timing retains original duration text.
 
 Reuse original ComposerSendButton: active + empty draft means Stop, text means Send/steer,
 submission/Stop settlement means Busy. Keep pending Stop through both HTTP success and

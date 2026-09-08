@@ -1251,6 +1251,7 @@
     <string name="remote_resume_history">Continuar esta conversación</string>
     <string name="remote_session_busy">Otro proceso de Codex está usando esta conversación. Inténtalo cuando la libere.</string>
     <string name="thought_for_a_while">Pensó durante un rato</string>
-    <string name="remote_history_too_large">Este historial es demasiado grande para este dispositivo. Consulta el resto en Codex.</string>
+    <string name="thought_for_a_while_called_tools">Pensó durante un rato, llamó a %1$d herramientas</string>
+    <string name="remote_response_too_large">La respuesta del servicio era demasiado grande. Actualiza Filo e inténtalo de nuevo.</string>
     <string name="remote_device">Dispositivo</string>
 </resources>

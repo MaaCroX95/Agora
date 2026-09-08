@@ -1356,6 +1356,7 @@
     <string name="remote_resume_history">继续此会话</string>
     <string name="remote_session_busy">此会话仍被其他 Codex 进程占用，请在释放后重试。</string>
     <string name="thought_for_a_while">思考了一会儿</string>
-    <string name="remote_history_too_large">此设备无法继续加载这么多历史消息。请在 Codex 中查看剩余历史。</string>
+    <string name="thought_for_a_while_called_tools">思考了一会儿，调用 %1$d 个工具</string>
+    <string name="remote_response_too_large">服务返回的数据过大。请更新 Filo 后重试。</string>
     <string name="remote_device">设备</string>
 </resources>
