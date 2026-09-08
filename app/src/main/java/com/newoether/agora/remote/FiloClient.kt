@@ -46,6 +46,7 @@ internal data class RemoteMessage(
     val id: String, val turnId: String, val clientId: String?, val role: String,
     val text: String, val timestamp: Long,
     val activity: RemoteActivity? = null,
+    val groupId: String? = null,
     @kotlinx.serialization.Transient
     val streamingTextDeltas: List<com.newoether.agora.model.StreamingTextDelta> = emptyList(),
 )
@@ -191,7 +192,7 @@ internal class FiloClient(
                         if (!it.isSuccessful) throw FiloHttpException(it.code)
                         val source = it.body.source()
                         while (!call.isCanceled()) {
-                            val line = source.readUtf8Line() ?: break
+                            val line = source.readRemoteEventLine() ?: break
                             if (line == "event: error") throw IOException("Filo stream failed")
                             if (line.startsWith("data: ")) trySend(decodePage(line.removePrefix("data: ")))
                         }
@@ -250,7 +251,7 @@ internal class FiloClient(
                 override fun onResponse(call: Call, response: Response) {
                     response.use {
                         try {
-                            val text = it.body.string()
+                            val text = it.body.source().readRemoteResponse()
                             if (!it.isSuccessful) throw FiloHttpException(it.code,
                                 runCatching { json.decodeFromString<FiloError>(text).code }.getOrNull())
                             if (!continuation.isCancelled) continuation.resume(text)
@@ -301,7 +302,7 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
         } else null
         if (segments != null && segments.isEmpty()) continue
         add(ChatMessage(
-            id = first.id, parentId = lastOrNull()?.id,
+            id = first.groupId ?: first.id, parentId = lastOrNull()?.id,
             text = segments?.filter { it.type == "answer" }?.joinToString("\n\n") { it.content.trimStart('\n') }
                 ?: first.text.trimEnd('\r', '\n'),
             participant = if (first.role == "user") Participant.USER else Participant.MODEL,

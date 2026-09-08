@@ -344,3 +344,5 @@ Owner explicitly requests real settings, superseding the NOP-only details contro
 Unknown native thought duration uses the existing generic Thinking label. Only real native timing permits a duration; no synthesized zero or local elapsed-time ticker. Owner-reported OOM makes bounded transport and oversized-history verification release-blocking.
 
 The Sessions progress indicator starts with an explicit hidden transition state, including when Remote first composes already loading. Keep the same4dpstroke and300ms fadeIn/fadeOut; retain exit composition until animation settles. No artificial network delay or thickness animation.
+
+Remote SSE lines and ordinary HTTP bodies are limited to1MiB before UTF-8/JSON allocation, including missing delimiters and chunked bodies. Oversized/truncated events fail the Remote connection with bounded memory; never enlarge Android heap or treat OutOfMemoryError recovery as the boundary. Native histories remain intact.
