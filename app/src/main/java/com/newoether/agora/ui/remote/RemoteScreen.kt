@@ -3,11 +3,8 @@ package com.newoether.agora.ui.remote
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
@@ -75,7 +72,6 @@ internal fun RemoteOverlay(
 private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, active: Boolean, onBack: () -> Unit) {
     val state by vm.state.collectAsState()
     val focus = LocalFocusManager.current
-    val motion = LocalAgoraMotionPolicy.current
     var forward by remember { mutableStateOf(true) }
     val back = {
         forward = false
@@ -133,12 +129,8 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
         visible = state.deviceId != null && state.session == null && !state.addingDevice &&
             (state.loading || state.loadingMore || state.controlling),
         modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
-        enter = if (motion.allowSpatialTransitions) {
-            expandVertically(expandFrom = Alignment.Bottom, animationSpec = tween(200)) + fadeIn(tween(200))
-        } else fadeIn(tween(200)),
-        exit = if (motion.allowSpatialTransitions) {
-            shrinkVertically(shrinkTowards = Alignment.Bottom, animationSpec = tween(200)) + fadeOut(tween(200))
-        } else fadeOut(tween(200)),
+        enter = fadeIn(tween(300)),
+        exit = fadeOut(tween(300)),
     ) {
         MotionAwareLinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp))
     }

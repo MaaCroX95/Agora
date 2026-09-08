@@ -299,3 +299,7 @@ Owner confirms a horizontal loading bar fixed at screen bottom, entering by grow
 ## Shared selected-model leading check | 2026-09-08 | Codex
 Owner explicitly clarifies: check icon belongs to current model's LEFT in the dropdown, in both ordinary and Remote bottom bars. Add one shared ComposerModelMenuItem used by both existing selectors; keep shared shell/type/size and reserve the same leading slot on unselected rows. Model operations remain original/native respectively. This supersedes the previous no-check correction with an explicitly requested leading mark.
 Full build f1094f9c hit source-size guard: existing source-contract test was999lines and the two-assert replacement addedone. Combine the two conditions into one assertion; retain both checks and limit, no guard exemption. No failed build deployed.
+
+
+## Sessions progress: fixed thickness, 300ms opacity only | 2026-09-08 | Codex via Conch
+Owner: progress bar should fade, without thickness changes,300ms. This supersedes the previous bottom expand/shrink animation. Scope: RemoteScreen.kt loading-bar enter/exit only and the owning contract. Keep existing4dp size, bottom position and loading flags. Use fadeIn(tween(300)) and fadeOut(tween(300)); remove the now-unused spatial-motion binding/imports. No new tests for this reversible presentation-only change. Verify diff, run one fresh build.ps1, then deploy.ps1 after the matching build succeeds and verify installed APK hash. Filo service and native Codex remain running.
