@@ -35,6 +35,7 @@ fun OpenAiServiceTierControlPanel(
     onTierChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     showHeader: Boolean = true,
+    showEnabledToggle: Boolean = true,
     availableTiers: List<String>? = null,
     tierLabels: Map<String, String> = emptyMap(),
     controlsEnabled: Boolean = true,
@@ -42,7 +43,7 @@ fun OpenAiServiceTierControlPanel(
 ) {
     val normalizedTier = if (availableTiers == null) OpenAiServiceTiers.normalize(tier) else tier
     val tiers = availableTiers ?: OpenAiServiceTiers.values
-    val sliderEnabled = enabled && controlsEnabled && tiers.size > 1
+    val sliderEnabled = (enabled || !showEnabledToggle) && controlsEnabled && tiers.size > 1
     val tierGate = remember(tiers, settingsRevision) {
         PersistedSliderFeedbackGate(
             initialPersisted = normalizedTier,
@@ -79,12 +80,14 @@ fun OpenAiServiceTierControlPanel(
                         modifier = Modifier.padding(top = 2.dp),
                     )
                 }
-                Spacer(modifier = Modifier.width(16.dp))
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = onEnabledChange,
-                    enabled = controlsEnabled && (enabled || tiers.isNotEmpty()),
-                )
+                if (showEnabledToggle) {
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Switch(
+                        checked = enabled,
+                        onCheckedChange = onEnabledChange,
+                        enabled = controlsEnabled && (enabled || tiers.isNotEmpty()),
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -93,7 +96,7 @@ fun OpenAiServiceTierControlPanel(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .alpha(if (enabled) 1f else 0.38f),
+                .alpha(if (enabled || !showEnabledToggle) 1f else 0.38f),
             verticalAlignment = Alignment.Top,
         ) {
             Icon(

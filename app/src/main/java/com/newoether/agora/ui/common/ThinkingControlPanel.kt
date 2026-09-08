@@ -59,6 +59,7 @@ fun ThinkingControlPanel(
     onBudgetTokensChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
     showHeader: Boolean = true,
+    showEnabledToggle: Boolean = true,
     providerName: String? = null,
     animateSections: Boolean = false,
     availableEfforts: List<String>? = null,
@@ -88,7 +89,7 @@ fun ThinkingControlPanel(
     }
     val sliderPosition = effortGate.displayed
     var showAdvanced by rememberSaveable { mutableStateOf(budgetEnabled) }
-    val sliderEnabled = enabled && !budgetEnabled && controlsEnabled && availableEfforts?.isEmpty() != true
+    val sliderEnabled = (enabled || !showEnabledToggle) && !budgetEnabled && controlsEnabled && availableEfforts?.isEmpty() != true
 
     LaunchedEffect(budgetEnabled) {
         if (budgetEnabled) showAdvanced = true
@@ -109,7 +110,7 @@ fun ThinkingControlPanel(
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = stringResource(R.string.gen_thinking_enabled),
+                        text = stringResource(if (showEnabledToggle) R.string.gen_thinking_enabled else R.string.thinking),
                         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -120,8 +121,10 @@ fun ThinkingControlPanel(
                         modifier = Modifier.padding(top = 2.dp)
                     )
                 }
-                Spacer(modifier = Modifier.width(16.dp))
-                Switch(checked = enabled, onCheckedChange = onEnabledChange, enabled = controlsEnabled && (allowDisable || !enabled))
+                if (showEnabledToggle) {
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Switch(checked = enabled, onCheckedChange = onEnabledChange, enabled = controlsEnabled && (allowDisable || !enabled))
+                }
             }
             Spacer(modifier = Modifier.height(32.dp))
         }
