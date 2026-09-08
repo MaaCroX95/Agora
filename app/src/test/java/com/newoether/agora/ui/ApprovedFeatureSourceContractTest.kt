@@ -74,7 +74,8 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(controls.contains("motionPolicy.allowContinuousMotion"))
         assertTrue(controls.contains("tween(durationMillis = 400)"))
         assertTrue(controls.contains("snap()"))
-        assertTrue(controls.split("progress = { contextProgress }").size - 1 == 2)
+        assertTrue(controls.contains("progress = { if (available) contextProgress else 0f }"))
+        assertTrue(controls.contains("progress = { contextProgress }"))
         assertFalse(sharedProgress.contains("animateFloatAsState"))
     }
 

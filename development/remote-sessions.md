@@ -290,3 +290,7 @@ Owner explicitly authorizes bottom plus attachment menu as UI-only NOP. Insert e
 ## Original bottom-scroll and streaming parity | 2026-09-08 | Codex
 Owner requires all UI to match ChatApp with no invented experience. Bottom-button review found a real argument-wiring defect: Remote passed native running into shareSelectionActive, hiding the original button throughout generation. Correct with named original arguments, actual switching/readiness, actual streaming-follow ownership and original IME competition; same ChatBottomScrollButton and scroll coordinator.
 Original MessageList/AssistantMessageContent already owns document-level glyph fade, tail activity dot and GroupedSegmentAutoExpansionController. Timeline auto expansion already uses isStreaming && blockEnd == segments.size. Keep this unchanged. Map live native last segment to original THINKING/TOOL_CALLING/SENDING and provide the active snapshot to the existing streaming slot. Stop/completion removes live status. No simulated token timer or separate dot/gradient/card renderer.
+
+
+## Sessions bottom progress animation | 2026-09-08 | Codex
+Owner confirms a horizontal loading bar fixed at screen bottom, entering by growing from zero thickness or rising. Use existing AnimatedVisibility primitives:200ms bottom-anchored expand/fade and shrink/fade, reduced-motion fade only. Actual loading/loadingMore/new-session-control flags own visibility; saved devices and chat pages never inherit it. This completes the earlier static bottom-bar correction.
