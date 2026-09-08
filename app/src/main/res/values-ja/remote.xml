@@ -5,7 +5,7 @@
     <string name="remote_connect">接続</string>
     <string name="remote_address">サービス URL</string>
     <string name="remote_token">アクセストークン</string>
-    <string name="remote_connection_hint">Filo を起動し、LAN または Tailscale の URL とトークンを入力してください。接続情報はこの端末に保存されます。</string>
+    <string name="remote_connection_hint">接続先のデバイスに Filo をインストールしてから、IP アドレスまたは URL を入力してください。</string>
     <string name="remote_sessions">セッション</string>
     <string name="remote_empty">既存のセッションが見つかりません</string>
     <string name="remote_sync_hint">Codex でこのセッションを開いたままにしてください。返信は保存後に同期されます。</string>
@@ -33,4 +33,6 @@
     <string name="remote_delete_message">%1$s への保存済み接続を削除しますか？Codex のセッションは保持されます。</string>
     <string name="remote_new_session_unavailable">新しいセッション（このデバイスでは利用できません）</string>
     <string name="remote_model_unavailable">モデル利用不可</string>
+    <string name="remote_address_placeholder">http://192.168.1.100:7435</string>
+    <string name="remote_token_placeholder">0123456789abcdef…</string>
 </resources>

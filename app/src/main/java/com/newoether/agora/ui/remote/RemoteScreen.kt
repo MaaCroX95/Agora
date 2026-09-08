@@ -236,12 +236,14 @@ private fun RemoteAddDevice(state: RemoteState, vm: RemoteViewModel, onBack: () 
             SettingsIconContent(Icons.Default.Link) {
                 McpLabeledField(label = stringResource(R.string.remote_address), value = address,
                     onValueChange = { address = it }, keyboardType = KeyboardType.Uri,
-                    supportingText = stringResource(R.string.remote_connection_hint))
+                    supportingText = stringResource(R.string.remote_connection_hint),
+                    placeholder = stringResource(R.string.remote_address_placeholder))
             }
         }, {
             SettingsIconContent(Icons.Default.Key) {
                 McpLabeledField(label = stringResource(R.string.remote_token), value = token,
-                    onValueChange = { token = it }, keyboardType = KeyboardType.Password, password = true)
+                    onValueChange = { token = it }, keyboardType = KeyboardType.Password, password = true,
+                    placeholder = stringResource(R.string.remote_token_placeholder))
             }
         }))
         if (state.storageError) Text(stringResource(R.string.remote_save_failed), Modifier.padding(16.dp),

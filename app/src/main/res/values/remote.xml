@@ -5,7 +5,7 @@
     <string name="remote_connect">Connect</string>
     <string name="remote_address">Service URL</string>
     <string name="remote_token">Access token</string>
-    <string name="remote_connection_hint">Start Filo, then enter its LAN or Tailscale URL and token. Connections are saved on this device.</string>
+    <string name="remote_connection_hint">Install Filo on the target device, then enter its IP address or URL.</string>
     <string name="remote_sessions">Sessions</string>
     <string name="remote_empty">No existing sessions found</string>
     <string name="remote_sync_hint">Keep this session open in Codex. Replies sync as they are saved.</string>
@@ -33,4 +33,6 @@
     <string name="remote_delete_message">Remove the saved connection to %1$s? Codex sessions will be kept.</string>
     <string name="remote_new_session_unavailable">New Session — unavailable on this host</string>
     <string name="remote_model_unavailable">Model Unavailable</string>
+    <string name="remote_address_placeholder">http://192.168.1.100:7435</string>
+    <string name="remote_token_placeholder">0123456789abcdef…</string>
 </resources>

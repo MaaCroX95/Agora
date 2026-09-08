@@ -785,6 +785,7 @@ internal fun McpLabeledField(
     keyboardType: KeyboardType = KeyboardType.Text,
     password: Boolean = false,
     trailingContent: (@Composable () -> Unit)? = null,
+    placeholder: String? = null,
 ) {
     Column(modifier) {
         Text(
@@ -800,6 +801,9 @@ internal fun McpLabeledField(
                 singleLine = true,
                 isError = isError,
                 supportingText = supportingText?.let { text -> { Text(text) } },
+                placeholder = placeholder?.let { text -> {
+                    Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                } },
                 keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
                 visualTransformation = if (password) {
                     PasswordVisualTransformation()

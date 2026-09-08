@@ -5,7 +5,7 @@
     <string name="remote_connect">連線</string>
     <string name="remote_address">服務位址</string>
     <string name="remote_token">存取權杖</string>
-    <string name="remote_connection_hint">啟動 Filo 後，輸入其區域網路或 Tailscale 位址與權杖。連線資訊會儲存在此裝置上。</string>
+    <string name="remote_connection_hint">在目標裝置上安裝 Filo，然後輸入該裝置的 IP 位址或 URL。</string>
     <string name="remote_sessions">對話</string>
     <string name="remote_empty">找不到既有對話</string>
     <string name="remote_sync_hint">請在 Codex 中保持此對話開啟。回覆儲存後會同步顯示。</string>
@@ -33,4 +33,6 @@
     <string name="remote_delete_message">刪除已儲存的 %1$s 連線？Codex 工作階段會保留。</string>
     <string name="remote_new_session_unavailable">新增對話（此裝置暫不支援）</string>
     <string name="remote_model_unavailable">模型暫不可用</string>
+    <string name="remote_address_placeholder">http://192.168.1.100:7435</string>
+    <string name="remote_token_placeholder">0123456789abcdef…</string>
 </resources>
