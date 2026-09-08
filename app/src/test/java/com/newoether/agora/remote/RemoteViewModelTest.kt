@@ -43,12 +43,12 @@ class RemoteViewModelTest {
         every { client.address } returns "http://computer/"
         coEvery { client.connect() } returns "Computer"
         coEvery { client.sessions(any()) } returns RemoteSessionPage(listOf(session), null)
-        coEvery { client.topology(any(), any()) } returns topologyPage(emptyList(), null, emptyList())
+        coEvery { client.conversation(any(), any()) } returns bodyPage(emptyList(), null, emptyList())
         coEvery { client.models() } returns listOf(RemoteModel("model", "Model", true))
-        every { client.topologyEvents(any()) } answers {
+        every { client.events(any()) } answers {
             val id = firstArg<String>()
             flow {
-                val page = client.topology(id)
+                val page = client.conversation(id)
                 emit(page.copy(runtime = page.runtime ?: RemoteRuntime("idle", model = "model")))
                 awaitCancellation()
             }
@@ -65,7 +65,7 @@ class RemoteViewModelTest {
         val network = CompletableDeferred<String>()
         coEvery { connections.load() } returns listOf(RemoteConnection("Quantum-Work", "http://computer/", "token"))
         coEvery { client.connect() } coAnswers { network.await() }
-        val vm = RemoteViewModel(connections) { _, _ -> client }
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }
         vm.setVisible(true); runCurrent()
         assertEquals("Quantum-Work", vm.state.value.devices.single().name)
         assertFalse(vm.state.value.restoring)
@@ -83,7 +83,7 @@ class RemoteViewModelTest {
 
     @Test fun configuredNameIsSavedAndHostnameNeverReplacesIt() = runTest(dispatcher) {
         coEvery { client.connect() } returns "HOSTNAME"
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.saveDevice("http://computer/", "token", "  My work computer  "); runCurrent()
         assertEquals("My work computer", vm.state.value.devices.single().name)
         coVerify { connections.save(match { it.name == "My work computer" }, null) }
@@ -96,7 +96,7 @@ class RemoteViewModelTest {
 
     @Test fun legacyUrlAndUnnamedDeviceNeverDisplayNetworkHostname() = runTest(dispatcher) {
         coEvery { connections.load() } returns listOf(RemoteConnection("http://computer/", "http://computer/", "token"))
-        val vm = RemoteViewModel(connections) { _, _ -> client }
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }
         vm.setVisible(true); runCurrent()
         assertEquals("", vm.state.value.devices.single().name)
         assertEquals(RemoteDeviceStatus.CONNECTED, vm.state.value.devices.single().status)
@@ -107,7 +107,7 @@ class RemoteViewModelTest {
     }
 
     @Test fun loadFailureProducesRetryableNoticeWithoutRemovingDeviceAndStaleRetryIsIgnored() = runTest(dispatcher) {
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm)
         coEvery { client.sessions(any()) } throws IOException("offline")
         vm.setVisible(true); runCurrent()
@@ -127,7 +127,7 @@ class RemoteViewModelTest {
     }
 
     @Test fun leavingAnUnsubmittedDeviceEditorDoesNotConnectOrSave() = runTest(dispatcher) {
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.addDevice()
         assertTrue(vm.state.value.addingDevice)
         assertNull(vm.state.value.deviceId)
@@ -142,7 +142,7 @@ class RemoteViewModelTest {
         val saveGate = CompletableDeferred<Unit>()
         coEvery { connections.save(any(), any()) } coAnswers { saveGate.await() }
         coEvery { client.connect() } throws FiloHttpException(401)
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true)
         vm.addDevice(); vm.saveDevice("http://computer/", "token"); runCurrent()
         assertTrue(vm.state.value.addingDevice)
@@ -165,7 +165,7 @@ class RemoteViewModelTest {
     @Test fun saveCompletedAfterBackDoesNotTakeNavigationAndDuplicateSaveIsIgnored() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
         coEvery { connections.save(any(), any()) } coAnswers { gate.await() }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true)
         vm.addDevice(); vm.saveDevice("http://computer/", "token"); runCurrent()
         vm.selectDevice(null)
@@ -185,7 +185,7 @@ class RemoteViewModelTest {
     @Test fun backgroundingDuringCheckKeepsSavedDeviceWithoutOpeningHistory() = runTest(dispatcher) {
         val gate = CompletableDeferred<String>()
         coEvery { client.connect() } coAnswers { gate.await() }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true)
         vm.addDevice(); vm.saveDevice("http://computer/", "token"); runCurrent()
         assertEquals(RemoteDeviceStatus.CONNECTING, vm.state.value.devices.single().status)
@@ -205,7 +205,7 @@ class RemoteViewModelTest {
     @Test fun lateConnectionFailureDoesNotReplaceAnEditorOrDiscardTheDevice() = runTest(dispatcher) {
         val gate = CompletableDeferred<String>()
         coEvery { client.connect() } coAnswers { gate.await() }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.addDevice(); vm.saveDevice("http://computer/", "token"); runCurrent()
         vm.editDevice("http://computer/")
         gate.completeExceptionally(IOException("Offline")); runCurrent()
@@ -224,7 +224,7 @@ class RemoteViewModelTest {
         val replacement = mockk<FiloClient>()
         every { replacement.address } returns "http://new/"
         coEvery { replacement.connect() } returns "New computer"
-        val vm = RemoteViewModel(connections) { address, _ -> if (address == "http://new/") replacement else client }
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { address, _ -> if (address == "http://new/") replacement else client }
         runCurrent()
         vm.saveDevice("http://computer/", "original"); runCurrent()
         vm.editDevice("http://computer/")
@@ -250,7 +250,7 @@ class RemoteViewModelTest {
     @Test fun removedDeviceCannotBeRevivedByLateConnectionCheck() = runTest(dispatcher) {
         val check = CompletableDeferred<String>()
         coEvery { client.connect() } coAnswers { withContext(NonCancellable) { check.await() } }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.saveDevice("http://computer/", "token"); runCurrent()
         vm.removeDevice("http://computer/"); runCurrent()
         check.complete("Deleted computer"); runCurrent()
@@ -261,7 +261,7 @@ class RemoteViewModelTest {
     @Test fun selectingWhileCheckingWaitsForProtocolValidationAndCoalescesRequests() = runTest(dispatcher) {
         val gate = CompletableDeferred<String>()
         coEvery { client.connect() } coAnswers { gate.await() }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true)
         vm.saveDevice("http://computer/", "token"); runCurrent()
         vm.selectDevice("http://computer/"); vm.refresh(); runCurrent()
@@ -280,7 +280,7 @@ class RemoteViewModelTest {
         val replacement = mockk<FiloClient>()
         every { replacement.address } returns "http://computer/"
         coEvery { replacement.connect() } returns "Current computer"
-        val vm = RemoteViewModel(connections) { _, token -> if (token == "changed") replacement else client }
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, token -> if (token == "changed") replacement else client }
         runCurrent()
         vm.saveDevice("http://computer/", "original"); runCurrent()
         vm.editDevice("http://computer/")
@@ -292,14 +292,14 @@ class RemoteViewModelTest {
     }
 
     @Test fun staleReadCannotReplaceNewSession() = runTest(dispatcher) {
-        val gate = CompletableDeferred<RemoteTopologyPage>()
-        coEvery { client.topology("session", null) } coAnswers { withContext(NonCancellable) { gate.await() } }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val gate = CompletableDeferred<RemoteConversationPage>()
+        coEvery { client.conversation("session", null) } coAnswers { withContext(NonCancellable) { gate.await() } }
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm)
         vm.setVisible(true); runCurrent()
         vm.selectSession(session); runCurrent()
         vm.selectSession(session.copy(id = "other")); runCurrent()
-        gate.complete(topologyPage(listOf(RemoteMessage("stale", "t", null, "user", "old", 0)), null, emptyList()))
+        gate.complete(bodyPage(listOf(RemoteMessage("stale", "t", null, "user", "old", 0)), null, emptyList()))
         runCurrent()
         assertEquals("other", vm.state.value.session?.id)
         assertNull(vm.animatedScrollRequest.value)
@@ -310,7 +310,7 @@ class RemoteViewModelTest {
     @Test fun sendAcceptanceIsBoundToOriginAndDoesNotClearEditedDraft() = runTest(dispatcher) {
         val gate = CompletableDeferred<String>()
         coEvery { client.send(any(), any(), any()) } coAnswers { gate.await() }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm)
         vm.selectSession(session); vm.setVisible(true); runCurrent()
         val owner = vm.state.value.owner!!
@@ -322,7 +322,7 @@ class RemoteViewModelTest {
         assertEquals("other", vm.state.value.session?.id)
         coVerify(exactly = 1) { client.send("session", "first", any()) }
         val acceptedId = vm.state.value.attempts[owner]!!.clientId
-        coEvery { client.topology(any(), any()) } returns topologyPage(
+        coEvery { client.conversation(any(), any()) } returns bodyPage(
             emptyList(), null, listOf(RemoteQueuedMessage("queue", acceptedId, "first")))
         vm.selectSession(session); vm.editDraft(owner, "first")
         vm.setVisible(true); runCurrent()
@@ -333,7 +333,7 @@ class RemoteViewModelTest {
 
     @Test fun uncertainSendKeepsDraftAndCannotAutomaticallyRetry() = runTest(dispatcher) {
         coEvery { client.send(any(), any(), any()) } throws IOException("Lost response")
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm)
         vm.selectSession(session); vm.setVisible(true); runCurrent()
         val owner = vm.state.value.owner!!
@@ -351,13 +351,13 @@ class RemoteViewModelTest {
     @Test fun acceptedSendRequestsOneOwnedScrollAndNavigationClearsIt() = runTest(dispatcher) {
         val gate = CompletableDeferred<String>()
         coEvery { client.send(any(), any(), any()) } coAnswers { gate.await() }
-        coEvery { client.topology(any(), any()) } returns topologyPage(
+        coEvery { client.conversation(any(), any()) } returns bodyPage(
             listOf(
                 RemoteMessage("tail", "turn", null, "assistant", "Previous answer", 1),
                 RemoteMessage("tool", "turn", null, "assistant", "", 1,
                     RemoteActivity("tool", toolName = "exec", state = "succeeded")),
             ), null, emptyList())
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm)
         vm.selectSession(session); vm.setVisible(true); runCurrent()
         val owner = vm.state.value.owner!!
@@ -369,7 +369,7 @@ class RemoteViewModelTest {
         assertEquals("hello", vm.state.value.drafts[owner])
         assertNull(vm.animatedScrollRequest.value)
         val clientId = vm.state.value.attempts[owner]!!.clientId
-        coEvery { client.topology(any(), any()) } returns topologyPage(
+        coEvery { client.conversation(any(), any()) } returns bodyPage(
             listOf(RemoteMessage("sent", "new-turn", clientId, "user", "hello", 2)), null, emptyList())
         vm.refresh(); runCurrent()
         assertEquals(RemoteDelivery.DELIVERED, vm.state.value.attempts[owner]?.delivery)
@@ -388,7 +388,7 @@ class RemoteViewModelTest {
         vm.editDraft(owner, "next"); vm.send(); runCurrent()
         assertNull(vm.animatedScrollRequest.value)
         val nextId = vm.state.value.attempts[owner]!!.clientId
-        coEvery { client.topology(any(), any()) } returns topologyPage(
+        coEvery { client.conversation(any(), any()) } returns bodyPage(
             listOf(RemoteMessage("next", "next-turn", nextId, "user", "next", 3)), null, emptyList())
         vm.refresh(); runCurrent()
         assertNotNull(vm.animatedScrollRequest.value)
@@ -399,7 +399,7 @@ class RemoteViewModelTest {
 
     @Test fun malformedAcceptedResponseIsUnknownRatherThanRejected() = runTest(dispatcher) {
         coEvery { client.send(any(), any(), any()) } throws SerializationException("Invalid response")
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm)
         vm.selectSession(session); vm.setVisible(true); runCurrent()
         val owner = vm.state.value.owner!!
@@ -411,13 +411,13 @@ class RemoteViewModelTest {
 
     @Test fun restoredDevicesSurviveReadFailureWithoutSendingOrOpeningHistory() = runTest(dispatcher) {
         coEvery { connections.load() } returns listOf(RemoteConnection("Computer", "http://computer/", "token"))
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         assertEquals(1, vm.state.value.devices.size)
         assertNull(vm.state.value.deviceId)
         assertFalse(vm.state.value.restoring)
         coVerify(exactly = 0) { client.connect() }
         coVerify(exactly = 0) { client.sessions(any()) }
-        coVerify(exactly = 0) { client.topology(any(), any()) }
+        coVerify(exactly = 0) { client.conversation(any(), any()) }
         coVerify(exactly = 0) { client.send(any(), any(), any()) }
         coEvery { client.sessions(any()) } throws IOException("Offline")
         vm.setVisible(true); vm.selectDevice("http://computer/"); runCurrent()
@@ -429,7 +429,7 @@ class RemoteViewModelTest {
 
     @Test fun failingPersistenceDoesNotPublishAnUnsavedConnection() = runTest(dispatcher) {
         coEvery { connections.save(any(), any()) } throws RemoteStorageException()
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.addDevice()
         vm.saveDevice("http://computer/", "token"); runCurrent()
         assertTrue(vm.state.value.storageError)
@@ -444,7 +444,7 @@ class RemoteViewModelTest {
         val sendGate = CompletableDeferred<String>()
         coEvery { connections.remove(any()) } coAnswers { removeGate.await() }
         coEvery { client.send(any(), any(), any()) } coAnswers { sendGate.await() }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm)
         vm.selectSession(session); vm.setVisible(true); runCurrent()
         vm.editDraft(vm.state.value.owner!!, "Once"); vm.send(); runCurrent()
@@ -461,19 +461,19 @@ class RemoteViewModelTest {
     }
 
     @Test fun nativeEventBeforeLostReceiptConfirmsOnceAndDisconnectInvalidatesRuntime() = runTest(dispatcher) {
-        val events = MutableSharedFlow<RemoteTopologyPage>()
-        every { client.topologyEvents(any()) } returns events
+        val events = MutableSharedFlow<RemoteConversationPage>()
+        every { client.events(any()) } returns events
         val response = CompletableDeferred<String>()
         coEvery { client.send(any(), any(), any()) } coAnswers { response.await() }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
         val running = RemoteRuntime("active", "turn", "model", 1234, 256000)
-        events.emit(topologyPage(emptyList(), null, emptyList(), running)); runCurrent()
+        events.emit(bodyPage(emptyList(), null, emptyList(), running)); runCurrent()
         val owner = vm.state.value.owner!!
         vm.editDraft(owner, "hello"); vm.send(); runCurrent()
         val id = vm.state.value.attempts[owner]!!.clientId
         val message = RemoteMessage("sent", "turn", id, "user", "hello", 1)
-        events.emit(topologyPage(listOf(message), null, emptyList(), running)); runCurrent()
+        events.emit(bodyPage(listOf(message), null, emptyList(), running)); runCurrent()
         val scroll = vm.animatedScrollRequest.value
         assertEquals(RemoteDelivery.DELIVERED, vm.state.value.attempts[owner]?.delivery)
         response.completeExceptionally(IOException("Lost receipt")); runCurrent()
@@ -487,17 +487,17 @@ class RemoteViewModelTest {
     }
 
     @Test fun nativeGenerationChangesAreVisibleBeforeAnyMessageOrLocalSubmission() = runTest(dispatcher) {
-        val events = MutableSharedFlow<RemoteTopologyPage>()
-        every { client.topologyEvents(any()) } returns events
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val events = MutableSharedFlow<RemoteConversationPage>()
+        every { client.events(any()) } returns events
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
-        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "native-turn")))
+        events.emit(bodyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "native-turn")))
         runCurrent()
         assertTrue(vm.state.value.runtime!!.isRunning)
         assertEquals("native-turn", vm.state.value.runtime?.activeTurnId)
         assertTrue(vm.state.value.nodes.isEmpty())
         assertTrue(vm.state.value.attempts.isEmpty())
-        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("idle")))
+        events.emit(bodyPage(emptyList(), null, emptyList(), RemoteRuntime("idle")))
         runCurrent()
         assertFalse(vm.state.value.runtime!!.isRunning)
         coVerify(exactly = 0) { client.send(any(), any(), any()) }
@@ -506,13 +506,13 @@ class RemoteViewModelTest {
     }
 
     @Test fun stopReceiptFirstKeepsBusyUntilNativeTurnEndsAndBlocksDuplicateActions() = runTest(dispatcher) {
-        val events = MutableSharedFlow<RemoteTopologyPage>()
+        val events = MutableSharedFlow<RemoteConversationPage>()
         val receipt = CompletableDeferred<Unit>()
-        every { client.topologyEvents(any()) } returns events
+        every { client.events(any()) } returns events
         coEvery { client.stop(any(), any()) } coAnswers { receipt.await() }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
-        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
+        events.emit(bodyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
         runCurrent()
         vm.stop(); vm.stop(); runCurrent()
         assertTrue(vm.state.value.isStopping)
@@ -525,7 +525,7 @@ class RemoteViewModelTest {
         coVerify(exactly = 1) { client.stop("session", "turn") }
         coVerify(exactly = 0) { client.send(any(), any(), any()) }
         coVerify(exactly = 0) { client.setModel(any(), any()) }
-        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("idle")))
+        events.emit(bodyPage(emptyList(), null, emptyList(), RemoteRuntime("idle")))
         runCurrent()
         assertFalse(vm.state.value.isStopping)
         assertNull(vm.state.value.stoppingTurnId)
@@ -533,15 +533,15 @@ class RemoteViewModelTest {
     }
 
     @Test fun nativeTurnEndFirstKeepsBusyUntilStopReceiptArrives() = runTest(dispatcher) {
-        val events = MutableSharedFlow<RemoteTopologyPage>()
+        val events = MutableSharedFlow<RemoteConversationPage>()
         val receipt = CompletableDeferred<Unit>()
-        every { client.topologyEvents(any()) } returns events
+        every { client.events(any()) } returns events
         coEvery { client.stop(any(), any()) } coAnswers { receipt.await() }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
-        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
+        events.emit(bodyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
         runCurrent(); vm.stop(); runCurrent()
-        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("idle")))
+        events.emit(bodyPage(emptyList(), null, emptyList(), RemoteRuntime("idle")))
         runCurrent()
         assertTrue(vm.state.value.isStopping)
         receipt.complete(Unit); runCurrent()
@@ -551,10 +551,10 @@ class RemoteViewModelTest {
     }
 
     @Test fun failedStopEndsBusyWithoutInventingIdleOrAutomaticallyRetrying() = runTest(dispatcher) {
-        coEvery { client.topology(any(), any()) } returns topologyPage(
+        coEvery { client.conversation(any(), any()) } returns bodyPage(
             emptyList(), null, emptyList(), RemoteRuntime("active", "turn"))
         coEvery { client.stop(any(), any()) } throws IOException("Lost Stop receipt")
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
         vm.stop(); runCurrent()
         assertFalse(vm.state.value.isStopping)
@@ -567,13 +567,13 @@ class RemoteViewModelTest {
 
     @Test fun disconnectWhileAwaitingNativeStopClearsBusyAndInvalidatesControls() = runTest(dispatcher) {
         val disconnect = CompletableDeferred<Unit>()
-        every { client.topologyEvents(any()) } returns flow {
-            emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
+        every { client.events(any()) } returns flow {
+            emit(bodyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
             disconnect.await()
             throw IOException("Stream disconnected")
         }
         coEvery { client.stop(any(), any()) } returns Unit
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
         vm.stop(); runCurrent()
         assertTrue(vm.state.value.isStopping)
@@ -587,16 +587,16 @@ class RemoteViewModelTest {
     }
 
     @Test fun lateStopReceiptCannotChangeAnotherSessionsGeneration() = runTest(dispatcher) {
-        val events = MutableSharedFlow<RemoteTopologyPage>()
+        val events = MutableSharedFlow<RemoteConversationPage>()
         val receipt = CompletableDeferred<Unit>()
-        every { client.topologyEvents(any()) } returns events
+        every { client.events(any()) } returns events
         coEvery { client.stop(any(), any()) } coAnswers { receipt.await() }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
-        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "old-turn")))
+        events.emit(bodyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "old-turn")))
         runCurrent(); vm.stop(); runCurrent()
         vm.selectSession(session.copy(id = "other")); runCurrent()
-        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "other-turn")))
+        events.emit(bodyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "other-turn")))
         runCurrent()
         assertFalse(vm.state.value.isStopping)
         receipt.complete(Unit); runCurrent()
@@ -609,15 +609,15 @@ class RemoteViewModelTest {
     }
 
     @Test fun replacementTurnEndsOnlyTheOriginalPendingStop() = runTest(dispatcher) {
-        val events = MutableSharedFlow<RemoteTopologyPage>()
-        every { client.topologyEvents(any()) } returns events
+        val events = MutableSharedFlow<RemoteConversationPage>()
+        every { client.events(any()) } returns events
         coEvery { client.stop(any(), any()) } returns Unit
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
-        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "old-turn")))
+        events.emit(bodyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "old-turn")))
         runCurrent(); vm.stop(); runCurrent()
         assertTrue(vm.state.value.isStopping)
-        events.emit(topologyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "new-turn")))
+        events.emit(bodyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "new-turn")))
         runCurrent()
         assertFalse(vm.state.value.isStopping)
         assertEquals("new-turn", vm.state.value.runtime?.activeTurnId)
@@ -628,7 +628,7 @@ class RemoteViewModelTest {
     }
 
     @Test fun newChatEntryAndRepeatedPlusStayLocalAndFocusWithoutRuntime() = runTest(dispatcher) {
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.setVisible(true); runCurrent()
         vm.newSession()
         val owner = vm.state.value.owner!!
@@ -646,22 +646,22 @@ class RemoteViewModelTest {
         coVerify(exactly = 1) { client.models() }
         coVerify(exactly = 1) { client.sessions(any()) }
         coVerify(exactly = 0) { client.create() }
-        coVerify(exactly = 0) { client.topology(any(), any()) }
-        verify(exactly = 0) { client.topologyEvents(any()) }
+        coVerify(exactly = 0) { client.conversation(any(), any()) }
+        verify(exactly = 0) { client.events(any()) }
         vm.selectDevice(null); vm.setVisible(false)
         coVerify(exactly = 0) { client.create() }
     }
 
     @Test fun firstSendCreatesOnceAndPromotesWithoutReplacingComposerOrEditedDraft() = runTest(dispatcher) {
         val created = CompletableDeferred<RemoteSession>()
-        val events = MutableSharedFlow<RemoteTopologyPage>()
+        val events = MutableSharedFlow<RemoteConversationPage>()
         coEvery { client.create() } coAnswers { created.await() }
         coEvery { client.models() } returns listOf(
             RemoteModel("model", "Model", true), RemoteModel("chosen", "Chosen"))
         coEvery { client.setModel(any(), any()) } returns Unit
         coEvery { client.send(any(), any(), any()) } returns "turn"
-        every { client.topologyEvents(any()) } returns events
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        every { client.events(any()) } returns events
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.setVisible(true); runCurrent()
         vm.newSession()
         val owner = vm.state.value.owner!!
@@ -687,7 +687,7 @@ class RemoteViewModelTest {
             client.setModel("native", "chosen")
             client.send("native", "hello", attempt.clientId)
         }
-        events.emit(topologyPage(
+        events.emit(bodyPage(
             listOf(RemoteMessage("user", "turn", attempt.clientId, "user", "hello", 1)),
             null, emptyList(), RemoteRuntime("active", "turn", "chosen")))
         runCurrent()
@@ -706,7 +706,7 @@ class RemoteViewModelTest {
     @Test fun lateFirstSendCreationDoesNotNavigateOrSendAfterBack() = runTest(dispatcher) {
         val created = CompletableDeferred<RemoteSession>()
         coEvery { client.create() } coAnswers { created.await() }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.setVisible(true); runCurrent()
         vm.newSession()
         val owner = vm.state.value.owner!!
@@ -723,7 +723,7 @@ class RemoteViewModelTest {
 
     @Test fun unknownCreationKeepsDraftAndNeverAutomaticallyRetries() = runTest(dispatcher) {
         coEvery { client.create() } throws IOException("Lost creation receipt")
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.setVisible(true); runCurrent()
         vm.newSession()
         val owner = vm.state.value.owner!!
@@ -740,7 +740,7 @@ class RemoteViewModelTest {
     @Test fun pendingModelCatalogDoesNotBlockDraftAndCompletesWithoutNewRequest() = runTest(dispatcher) {
         val catalog = CompletableDeferred<List<RemoteModel>>()
         coEvery { client.models() } coAnswers { catalog.await() }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.setVisible(true); runCurrent()
         assertTrue(vm.state.value.modelsLoading)
         vm.newSession()
@@ -755,7 +755,7 @@ class RemoteViewModelTest {
         assertEquals("model", vm.state.value.selectedModel)
         coVerify(exactly = 1) { client.models() }
         coVerify(exactly = 0) { client.create() }
-        verify(exactly = 0) { client.topologyEvents(any()) }
+        verify(exactly = 0) { client.events(any()) }
         vm.setVisible(false)
     }
 
@@ -764,7 +764,7 @@ class RemoteViewModelTest {
         coEvery { client.models() } coAnswers { catalog.await() }
         coEvery { client.create() } returns RemoteSession("native", "New", "/host/default", 1)
         coEvery { client.send(any(), any(), any()) } returns "turn"
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.setVisible(true); runCurrent()
         vm.newSession()
         catalog.completeExceptionally(IOException("Offline model catalog")); runCurrent()
@@ -780,7 +780,7 @@ class RemoteViewModelTest {
 
     @Test fun failedRemovalKeepsTheSavedDeviceAndRuntimeClient() = runTest(dispatcher) {
         coEvery { connections.remove(any()) } throws RemoteStorageException()
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         saveAndSelect(vm)
         vm.removeDevice("http://computer/"); runCurrent()
         assertEquals(1, vm.state.value.devices.size)
@@ -800,7 +800,7 @@ class RemoteViewModelTest {
         try {
             coEvery { connections.load() } returns listOf(RemoteConnection("Computer", "http://computer/", "PRIVATE_TOKEN"))
             coEvery { client.sessions(any()) } throws IOException("PRIVATE_PAYLOAD http://private-host/")
-            val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+            val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
             vm.setVisible(true); vm.selectDevice("http://computer/"); runCurrent()
             assertEquals(RemoteFailure.NETWORK, vm.state.value.failure)
             coEvery { client.sessions(any()) } throws FiloHttpException(401)
@@ -820,19 +820,19 @@ class RemoteViewModelTest {
         val gate = CompletableDeferred<Unit>()
         coEvery { client.resume("history") } coAnswers { gate.await() }
         val old = RemoteMessage("old", "old-turn", null, "user", "Preserved", 1)
-        coEvery { client.topology("history", any()) } returns
-            topologyPage(listOf(old), null, emptyList(), RemoteRuntime("ready"))
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        coEvery { client.conversation("history", any()) } returns
+            bodyPage(listOf(old), null, emptyList(), RemoteRuntime("ready"))
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
         vm.selectSession(session.copy(id = "history", readOnly = true, canResume = true)); runCurrent()
         coVerify(exactly = 1) { client.resume("history") }
         assertTrue(vm.state.value.session!!.readOnly)
-        verify(exactly = 0) { client.topologyEvents("history") }
+        verify(exactly = 0) { client.events("history") }
         gate.complete(Unit); runCurrent()
         assertFalse(vm.state.value.controlling)
         assertFalse(vm.state.value.session!!.readOnly)
         assertEquals(listOf(old.id), vm.state.value.nodes.map { it.id })
-        verify(exactly = 1) { client.topologyEvents("history") }
+        verify(exactly = 1) { client.events("history") }
         coVerify(exactly = 1) { client.resume("history") }
         coVerify(exactly = 0) { client.send(any(), any(), any()) }
         vm.setVisible(false)
@@ -840,7 +840,7 @@ class RemoteViewModelTest {
 
     @Test fun busyHistoryStaysReadableAndLateResumeCannotNavigateAfterBack() = runTest(dispatcher) {
         coEvery { client.resume("history") } throws FiloHttpException(409, "session_busy")
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
         vm.selectSession(session.copy(id = "history", readOnly = true, canResume = true)); runCurrent()
         assertEquals(RemoteFailure.SESSION_BUSY, vm.state.value.failure)
@@ -848,7 +848,7 @@ class RemoteViewModelTest {
         coVerify(exactly = 1) { client.resume("history") }
         assertTrue(vm.state.value.session!!.readOnly)
         assertFalse(vm.state.value.controlling)
-        verify(exactly = 0) { client.topologyEvents("history") }
+        verify(exactly = 0) { client.events("history") }
         val gate = CompletableDeferred<Unit>()
         coEvery { client.resume("history") } coAnswers { gate.await() }
         vm.resumeSession(); runCurrent(); vm.selectSession(null); runCurrent()
@@ -858,16 +858,18 @@ class RemoteViewModelTest {
         vm.setVisible(false)
     }
 
-    @Test fun topologyLoadingEndsOnFailureAndDoesNotSurviveNavigation() = runTest(dispatcher) {
-        val page = CompletableDeferred<RemoteTopologyPage>()
-        coEvery { client.topology("history", null) } returns
-            topologyPage(emptyList(), "older", emptyList(), RemoteRuntime("readOnly"))
-        coEvery { client.topology("history", "older") } coAnswers { page.await() }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+    @Test fun olderPageLoadingEndsOnFailureAndDoesNotSurviveNavigation() = runTest(dispatcher) {
+        val page = CompletableDeferred<RemoteConversationPage>()
+        coEvery { client.conversation("history", null) } returns
+            bodyPage(emptyList(), "older", emptyList(), RemoteRuntime("readOnly"))
+        coEvery { client.conversation("history", "older") } coAnswers { page.await() }
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
         vm.selectSession(session.copy(id = "history", readOnly = true)); runCurrent()
-        assertTrue(vm.state.value.loading)
-        assertTrue(vm.state.value.nodes.isEmpty())
+        assertFalse(vm.state.value.loading)
+        coVerify(exactly = 0) { client.conversation("history", "older") }
+        vm.loadMore(); runCurrent()
+        assertTrue(vm.state.value.loadingMore)
         page.completeExceptionally(IOException("offline")); runCurrent()
         assertFalse(vm.state.value.loadingMore)
         assertEquals(RemoteFailure.NETWORK, vm.state.value.failure)
@@ -876,28 +878,30 @@ class RemoteViewModelTest {
         vm.setVisible(false)
     }
 
-    @Test fun allHistoryTopologyLoadsWithoutBodiesSubscriptionOrControl() = runTest(dispatcher) {
+    @Test fun openingReadsOneBodyPageAndOlderAdmissionKeepsExistingItemsUnchanged() = runTest(dispatcher) {
         val historical = session.copy(id = "historical", readOnly = true)
         val recent = RemoteMessage("recent", "turn", null, "assistant", "Recent history", 2)
         val older = RemoteMessage("older", "old-turn", null, "user", "Earlier history", 1)
-        coEvery { client.topology("historical", null) } returns
-            topologyPage(listOf(recent), "older", emptyList(), RemoteRuntime("active", "turn", "model"))
-        coEvery { client.topology("historical", "older") } returns
-            topologyPage(listOf(older), null, emptyList(), RemoteRuntime("readOnly"))
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        coEvery { client.conversation("historical", null) } returns
+            bodyPage(listOf(recent), "older", emptyList(), RemoteRuntime("active", "turn", "model"))
+        coEvery { client.conversation("historical", "older") } returns
+            bodyPage(listOf(older), null, emptyList(), RemoteRuntime("readOnly"))
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
         vm.selectSession(historical); runCurrent()
-        assertEquals(listOf(older.id, recent.id), vm.state.value.nodes.map { it.id })
+        assertEquals(listOf(recent.id), vm.state.value.nodes.map { it.id })
         assertFalse(vm.state.value.loading)
-        val topology = vm.state.value.messageGroups
+        coVerify(exactly = 0) { client.conversation("historical", "older") }
+        val group = vm.state.value.messageGroups.single()
+        assertEquals(recent.text, vm.cachedMessage(vm.state.value.owner!!, group.stub.id)!!.text)
         vm.loadMore(); runCurrent()
-        assertEquals(topology, vm.state.value.messageGroups)
-        assertTrue(topology.all { it.stub.text.isEmpty() && it.stub.segments == null })
+        assertEquals(listOf(older.id, recent.id), vm.state.value.nodes.map { it.id })
+        assertEquals(group, vm.state.value.messageGroups.last())
         coVerify(exactly = 0) { client.payloads(any(), any()) }
-        coVerify(exactly = 1) { client.topology("historical", "older") }
+        coVerify(exactly = 1) { client.conversation("historical", "older") }
         vm.editDraft(vm.state.value.owner!!, "must not send")
         vm.send(); vm.stop(); vm.setModel("model"); runCurrent()
-        verify(exactly = 0) { client.topologyEvents("historical") }
+        verify(exactly = 0) { client.events("historical") }
         coVerify(exactly = 0) { client.send(any(), any(), any()) }
         coVerify(exactly = 0) { client.stop(any(), any()) }
         coVerify(exactly = 0) { client.setModel(any(), any()) }
@@ -907,7 +911,7 @@ class RemoteViewModelTest {
     @Test fun lateSelectionAdmissionCannotReplaceAnotherSessionOrReplayOnVisibility() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
         coEvery { client.resume("history") } coAnswers { withContext(NonCancellable) { gate.await() } }
-        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
         vm.selectSession(session.copy(id = "history", readOnly = true, canResume = true)); runCurrent()
         vm.selectSession(session); runCurrent()

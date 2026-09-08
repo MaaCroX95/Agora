@@ -164,8 +164,8 @@ class FiloClientTest {
             assertNull(client.conversation(id).messages.single().activity)
             val loaded = client.conversation(id, "cursor + next").messages.single()
             assertEquals(rich, loaded)
-            assertEquals("includeActivity=true", queries.first())
-            assertEquals("cursor=cursor + next&includeActivity=true", queries.last())
+            assertEquals("includeActivity=true&includeMetadata=true", queries.first())
+            assertEquals("cursor=cursor + next&includeActivity=true&includeMetadata=true", queries.last())
             val tool = projectRemoteMessages(listOf(loaded)).single().segments!!.single()
             assertEquals(rich.activity!!.result, ToolPresentationResolver.resolve(tool).rawResult)
         } finally { server.stop(0) }

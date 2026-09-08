@@ -100,7 +100,7 @@ internal class FiloClient(
 
     suspend fun conversation(id: String, cursor: String? = null): RemoteConversationPage = withContext(Dispatchers.Default) {
         decodePage(
-            request("v1/sessions/${sessionId(id)}", cursor, includeActivity = true),
+            request("v1/sessions/${sessionId(id)}", cursor, includeActivity = true, includeMetadata = true),
         )
     }
 
@@ -164,7 +164,7 @@ internal class FiloClient(
             } }
         }
 
-    fun events(id: String): Flow<RemoteConversationPage> = eventStream(id, null, ::decodePage)
+    fun events(id: String): Flow<RemoteConversationPage> = eventStream(id, "paged", ::decodePage)
     fun topologyEvents(id: String): Flow<RemoteTopologyPage> = eventStream(id, "topology", ::decodeTopology)
 
     private fun <T> eventStream(id: String, view: String?, decode: (String) -> T): Flow<T> = callbackFlow {
@@ -222,7 +222,7 @@ internal class FiloClient(
 
     private suspend fun request(
         path: String, cursor: String? = null, body: String? = null, includeActivity: Boolean = false,
-        sessionIds: List<String>? = null, payloadRequests: String? = null,
+        sessionIds: List<String>? = null, payloadRequests: String? = null, includeMetadata: Boolean = false,
     ): String =
         suspendCancellableCoroutine { continuation ->
             val url = endpoint.newBuilder().addPathSegments(path).apply {
@@ -230,6 +230,7 @@ internal class FiloClient(
                 sessionIds?.let { addQueryParameter("ids", it.joinToString(",")) }
                 payloadRequests?.let { addQueryParameter("messages", it) }
                 if (includeActivity) addQueryParameter("includeActivity", "true")
+                if (includeMetadata) addQueryParameter("includeMetadata", "true")
             }.build()
             val request = Request.Builder().url(url).header("Authorization", "Bearer $token")
                 .apply { body?.let { post(it.toRequestBody("application/json".toMediaType())) } }.build()

@@ -12,6 +12,9 @@ internal data class RemoteMessageNode(
     val groupId: String? = null, val nativeId: String? = null,
     val textOffset: Int = 0, val textContinues: Boolean = false,
     val activity: RemoteNodeActivity? = null, val hasContent: Boolean? = null,
+    @kotlinx.serialization.Transient val displayPageId: String? = null,
+    @kotlinx.serialization.Transient val displayGroupId: String? = null,
+    @kotlinx.serialization.Transient val pageCursor: String? = null,
 )
 @Serializable
 internal data class RemoteNodeActivity(val type: String, val state: String? = null, val durationMs: Long? = null,
@@ -41,15 +44,18 @@ internal fun projectRemoteTopology(nodes: List<RemoteMessageNode>, runtime: Remo
             val next = nodes[index]
             val same = if (first.role == "assistant") next.role == "assistant" && next.turnId == first.turnId
             else next.role == "user" && (next.nativeId ?: next.id) == (first.nativeId ?: first.id)
-            if (!same) break
+            if (!same || next.displayGroupId != first.displayGroupId) break
             group += next
             index++
         }
         if (first.role == "assistant" && group.none { it.hasContent ?: (it.textLength > 0 || it.activity?.type == "tool") }) continue
-        val id = first.groupId ?: first.nativeId ?: first.id
-        add(RemoteMessageGroup(ChatMessage(id = id, parentId = lastOrNull()?.stub?.id, text = "",
+        val id = first.displayGroupId ?: first.groupId ?: first.nativeId ?: first.id
+        add(RemoteMessageGroup(ChatMessage(id = id, parentId = lastOrNull()?.stub?.takeIf {
+                it.displayPageId == first.displayPageId
+            }?.id, text = "",
             participant = if (first.role == "user") Participant.USER else Participant.MODEL,
-            timestamp = first.timestamp, modelName = "Codex", runId = first.turnId), group))
+            timestamp = first.timestamp, modelName = "Codex", runId = first.turnId,
+            displayPageId = first.displayPageId), group))
     }
     if (runtime?.isRunning == true && runtime.activeTurnId != null &&
         (runtime.activeTurnHasUserMessage || nodes.any { it.role == "user" && it.turnId == runtime.activeTurnId })) {
@@ -64,11 +70,45 @@ internal fun projectRemoteTopology(nodes: List<RemoteMessageNode>, runtime: Remo
         } else add(RemoteMessageGroup(ChatMessage(id = "remote-active-${runtime.activeTurnId}",
             parentId = tail?.stub?.id, text = "", participant = Participant.MODEL,
             timestamp = tail?.stub?.timestamp ?: 0, modelName = runtime.model ?: "Codex",
-            runId = runtime.activeTurnId, status = MessageStatus.SENDING), emptyList()))
+            runId = runtime.activeTurnId, status = MessageStatus.SENDING,
+            displayPageId = tail?.stub?.displayPageId), emptyList()))
     }
 }
 
-/** Only native topology changes replace structure; payload hydration cannot evict its prefix. */
+/** Assign page fragments once. Prepending never merges into an already rendered fragment. */
+internal fun admitRemotePage(
+    previous: List<RemoteMessageNode>, page: RemoteConversationPage, older: Boolean = false,
+): List<RemoteMessageNode> {
+    require(page.nodes.map { it.id } == page.messages.map { it.id }) { "Filo page metadata is missing" }
+    val known = previous.associateBy { it.id }
+    var preceding = if (older) null else previous.lastOrNull()
+    var pageId = preceding?.displayPageId
+    var pageCount = previous.count { it.displayPageId == pageId }
+    val fresh = page.nodes.map { node ->
+        val old = known[node.id]
+        val admitted = if (old != null) node.copy(
+            displayPageId = old.displayPageId, displayGroupId = old.displayGroupId, pageCursor = page.pageCursor,
+        ) else {
+            if (pageId == null || pageCount >= 128) { pageId = node.id; pageCount = 0; preceding = null }
+            val sameGroup = preceding?.let {
+                it.displayPageId == pageId && it.role == node.role &&
+                    (if (node.role == "assistant") it.turnId == node.turnId
+                    else (it.nativeId ?: it.id) == (node.nativeId ?: node.id))
+            } == true
+            pageCount++
+            node.copy(displayPageId = pageId, displayGroupId = if (sameGroup) preceding!!.displayGroupId else node.id,
+                pageCursor = page.pageCursor)
+        }
+        preceding = admitted
+        pageId = admitted.displayPageId
+        admitted
+    }
+    if (older) return fresh.filterNot { it.id in known } + previous
+    val boundary = fresh.firstOrNull()?.id ?: return previous
+    val index = previous.indexOfFirst { it.id == boundary }
+    return (previous.take(if (index >= 0) index else previous.size) + fresh).distinctBy { it.id }
+}
+
 internal fun mergeRemoteTopology(old: List<RemoteMessageNode>, fresh: List<RemoteMessageNode>): List<RemoteMessageNode> {
     val boundary = fresh.firstOrNull()?.id ?: return emptyList()
     val index = old.indexOfFirst { it.id == boundary }

@@ -30,9 +30,9 @@ class RemoteSettingsTest {
         coEvery { client.connect() } returns "Computer"
         coEvery { client.sessions(any()) } returns RemoteSessionPage(listOf(session), null)
         coEvery { client.models() } returns listOf(model)
-        coEvery { client.topology(any(), any()) } answers { topologyPage(emptyList(), null, emptyList(), runtime) }
-        every { client.topologyEvents(any()) } answers {
-            flow { emit(client.topology(firstArg())); awaitCancellation() }
+        coEvery { client.conversation(any(), any()) } answers { bodyPage(emptyList(), null, emptyList(), runtime) }
+        every { client.events(any()) } answers {
+            flow { emit(client.conversation(firstArg())); awaitCancellation() }
         }
         coEvery { client.updateSettings(any(), any()) } coAnswers {
             val settings = secondArg<RemoteSettings>()

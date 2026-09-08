@@ -26,7 +26,7 @@ class RemoteImageHydrationTest {
             val state = MutableStateFlow(snapshot())
             var imageReads = 0
             val attachment = ToolImageAttachment(file.path, "image/png", 128, 128, 64, "hash")
-            val hydration = RemoteMessageHydration(state, { _, _ -> listOf(record) }, { throw it },
+            val hydration = RemoteMessageHydration(state, { _, _ -> RemoteConversationPage(listOf(record), null, emptyList(), nodes = state.value.messageGroups.single().nodes) }, { throw it },
                 { owner, request ->
                     assertEquals(state.value.owner, owner); assertEquals("image", request.id)
                     imageReads++; attachment
@@ -35,7 +35,7 @@ class RemoteImageHydrationTest {
             val owner = state.value.owner!!
             assertTrue(hydration.loadMessages(owner, listOf("group")).single().segments!!.single().toolImages.isEmpty())
             assertEquals(0, imageReads)
-            val shown = hydration.observeMessage(owner, "group").filterNotNull().first()
+            val shown = hydration.observeMessage(owner, "group").filterNotNull().first { it.segments!!.single().toolImages.isNotEmpty() }
             assertEquals(listOf(attachment), shown.segments!!.single().toolImages)
             assertEquals(1, imageReads)
             assertEquals(shown, hydration.observeMessage(owner, "group").filterNotNull().first())
@@ -47,7 +47,7 @@ class RemoteImageHydrationTest {
     @Test fun missingImageDoesNotDiscardToolCardOrConversationTopology() = runTest {
         val state = MutableStateFlow(snapshot())
         var failures = 0
-        val hydration = RemoteMessageHydration(state, { _, _ -> listOf(record) }, { failures++ },
+        val hydration = RemoteMessageHydration(state, { _, _ -> RemoteConversationPage(listOf(record), null, emptyList(), nodes = state.value.messageGroups.single().nodes) }, { failures++ },
             { _, _ -> throw java.io.IOException("Missing image") })
         val message = hydration.observeMessage(state.value.owner!!, "group").filterNotNull().first()
         assertEquals("view_image", message.segments!!.single().toolName)

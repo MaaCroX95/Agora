@@ -21,6 +21,7 @@ internal data class RemoteState(
     val session: RemoteSession? = null, val nodes: List<RemoteMessageNode> = emptyList(),
     val messageGroups: List<RemoteMessageGroup> = emptyList(),
     val hydrationEnabled: Boolean = false, val hydrationRevision: Long = 0,
+    val historyCursor: String? = null,
     val queued: List<RemoteQueuedMessage> = emptyList(),
     val drafts: Map<String, String> = emptyMap(), val attempts: Map<String, RemoteAttempt> = emptyMap(),
     val saving: Boolean = false, val loading: Boolean = false, val loadingMore: Boolean = false, val failure: RemoteFailure? = null,

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import java.util.UUID
@@ -23,17 +24,18 @@ internal class RemoteViewModel(
     private val connections: RemoteConnectionStore,
     private val imageStore: com.newoether.agora.tool.ToolImageStore? = null,
     private val imageCache: RemoteImageCache? = null,
+    projectionDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
     private val createClient: (String, String) -> FiloClient = { address, token -> FiloClient(address, token) },
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(RemoteState())
     val state = mutableState.asStateFlow()
     private val noticeChannel = Channel<RemoteNotice>(Channel.BUFFERED)
     val notices = noticeChannel.receiveAsFlow()
-    private val hydration = RemoteMessageHydration(state, { owner, requests ->
+    private val hydration = RemoteMessageHydration(state, { owner, cursor ->
         val snapshot = state.value
         if (snapshot.owner != owner) throw CancellationException()
         val client = clients[snapshot.deviceId] ?: throw CancellationException()
-        client.payloads(snapshot.session!!.id, requests)
+        client.conversation(snapshot.session!!.id, cursor)
     }, { trace("payload_failed", it) }, { owner, request ->
         val snapshot = state.value
         if (snapshot.owner != owner) throw CancellationException()
@@ -43,7 +45,10 @@ internal class RemoteViewModel(
         cache.load(owner + "/" + request.id + "/" + request.revision) {
             client.image(snapshot.session!!.id, request, store::persistStream)
         }
-    })
+    }, projectionDispatcher = projectionDispatcher)
+    private val historyMutation = kotlinx.coroutines.sync.Mutex()
+    fun cachedMessage(owner: String, id: String) = state.value.messageGroups.firstOrNull { it.stub.id == id }
+        ?.let { hydration.cachedMessage(owner, it) }
     fun observeMessage(owner: String, id: String) = hydration.observeMessage(owner, id)
     suspend fun searchMessages(owner: String, ids: List<String>) = try {
         hydration.loadMessages(owner, ids)
@@ -255,7 +260,7 @@ internal class RemoteViewModel(
         modelLoading?.cancel()
         mutableState.value = state.value.copy(deviceId = id, addingDevice = false, editedDeviceId = null,
             sessions = emptyList(), sessionCursor = null, sessionStatuses = emptyMap(),
-            session = null, nodes = emptyList(), messageGroups = emptyList(), queued = emptyList(), failure = null,
+            session = null, nodes = emptyList(), messageGroups = emptyList(), historyCursor = null, queued = emptyList(), failure = null,
             runtime = null, models = emptyList(), modelsLoading = false, composerFocusOwner = null,
             draftSessionId = null, draftSettings = RemoteSettings(), draftNativeSession = null)
         refresh()
@@ -266,7 +271,7 @@ internal class RemoteViewModel(
         selectionEpoch++
         mutableState.value = state.value.copy(controlling = false, stoppingOwner = null, stoppingTurnId = null)
         invalidateReads()
-        mutableState.value = state.value.copy(session = session, nodes = emptyList(), messageGroups = emptyList(), queued = emptyList(), failure = null, runtime = null, composerFocusOwner = null,
+        mutableState.value = state.value.copy(session = session, nodes = emptyList(), messageGroups = emptyList(), historyCursor = null, queued = emptyList(), failure = null, runtime = null, composerFocusOwner = null,
             draftSessionId = null, draftSettings = RemoteSettings(), draftNativeSession = null)
         historyAdmissionSelection = selectionEpoch.takeIf { session?.readOnly == true && session.canResume }
         refresh()
@@ -336,7 +341,7 @@ internal class RemoteViewModel(
                             loading = false, failure = null)
                         startSessionStatusReads()
                     } else if (session.readOnly) {
-                        applyPage(client, session.id, generation, client.topology(session.id))
+                        applyPage(client, session.id, generation, client.conversation(session.id))
                         if (generation != epoch) return@launch
                         if (historyAdmissionSelection == selectionEpoch) {
                             historyAdmissionSelection = null // A selection admits once; refresh/reconnect never resends.
@@ -347,7 +352,7 @@ internal class RemoteViewModel(
                             return@launch
                         }
                     } else {
-                        client.topologyEvents(session.id).collect { page ->
+                        client.events(session.id).collect { page ->
                             if (generation == epoch) applyPage(client, session.id, generation, page)
                         }
                     }
@@ -368,32 +373,39 @@ internal class RemoteViewModel(
         }
     }
 
-    private suspend fun applyPage(client: FiloClient, sessionId: String, generation: Long, page: RemoteTopologyPage) {
+    private suspend fun applyPage(client: FiloClient, sessionId: String, generation: Long, page: RemoteConversationPage) {
         if (generation != epoch) return
         val old = state.value.nodes
         val oldIds = old.mapTo(HashSet()) { it.id }
         val incoming = mutableListOf(page)
         var cursor = page.nextCursor
         val cursors = mutableSetOf<String>()
-        // Read all structure initially, or bridge new native records back to the resident prefix.
-        while (cursor != null && (old.isEmpty() || incoming.last().nodes.none { it.id in oldIds })) {
+        // Opening stops after one body page. Only a later tail gap requires bridging.
+        while (cursor != null && old.isNotEmpty() && incoming.last().nodes.none { it.id in oldIds }) {
             require(cursors.add(cursor)) { "Filo history cursor did not advance" }
-            val older = client.topology(sessionId, cursor)
+            val older = client.conversation(sessionId, cursor)
             if (generation != epoch) return
             incoming += older
             cursor = older.nextCursor
         }
         if (generation != epoch) return
         val owner = state.value.owner ?: return
-        val fresh = incoming.asReversed().flatMap { it.nodes }.distinctBy { it.id }
-        val nodes = if (cursor == null) fresh else mergeRemoteTopology(old, fresh)
-        val runtime = page.runtime.takeUnless { state.value.session?.readOnly == true }
-        mutableState.value = state.value.copy(
-            nodes = nodes, messageGroups = projectRemoteTopology(nodes, runtime), hydrationEnabled = visible,
-            queued = page.queued, loading = false, failure = null, runtime = page.runtime,
-        )
+        historyMutation.withLock {
+            if (generation != epoch) return
+            var nodes = state.value.nodes
+            for (chunk in incoming.asReversed()) nodes = admitRemotePage(nodes, chunk)
+            val runtime = page.runtime.takeUnless { state.value.session?.readOnly == true }
+            val groups = projectRemoteTopology(nodes, runtime)
+            for (chunk in incoming.asReversed()) hydration.accept(owner, chunk, groups)
+            if (generation != epoch) return
+            mutableState.value = state.value.copy(
+                nodes = nodes, messageGroups = groups, hydrationEnabled = visible,
+                historyCursor = if (old.isEmpty()) page.nextCursor else state.value.historyCursor,
+                queued = page.queued, loading = false, failure = null, runtime = page.runtime,
+            )
+        }
         state.value.deviceId?.let { id -> updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTED, failure = null) } }
-        state.value.attempts[owner]?.let { attempt -> confirmDelivery(owner, attempt, nodes) }
+        state.value.attempts[owner]?.let { attempt -> confirmDelivery(owner, attempt, state.value.nodes) }
         settleStop()
         page.runtime?.completedTurnId?.let { turn ->
             val address = state.value.deviceId ?: return@let
@@ -479,7 +491,7 @@ internal class RemoteViewModel(
         // A local composer identity survives promotion to the first native session.
         mutableState.value = state.value.copy(
             session = RemoteSession(id, "", "", 0), draftSessionId = id, draftSettings = RemoteSettings(), draftNativeSession = null,
-            nodes = emptyList(), messageGroups = emptyList(), queued = emptyList(), failure = null,
+            nodes = emptyList(), messageGroups = emptyList(), historyCursor = null, queued = emptyList(), failure = null,
             composerFocusOwner = "${snapshot.deviceId}/$id",
         )
     }
@@ -565,7 +577,7 @@ internal class RemoteViewModel(
             client.updateSettings(id, settings)
             if (selected == selectionEpoch && clients[snapshot.deviceId] === client && visible) {
                 val generation = epoch
-                applyPage(client, id, generation, client.topology(id))
+                applyPage(client, id, generation, client.conversation(id))
             }
         }
     }
@@ -609,18 +621,21 @@ internal class RemoteViewModel(
     fun loadMore() {
         if (paging?.isActive == true || state.value.loading) return
         val snapshot = state.value
-        if (snapshot.session != null) return
         val client = clients[snapshot.deviceId] ?: return
-        val cursor = snapshot.sessionCursor ?: return
+        val cursor = (if (snapshot.session != null) snapshot.historyCursor else snapshot.sessionCursor) ?: return
         val generation = epoch
         mutableState.value = state.value.copy(loadingMore = true)
         paging = viewModelScope.launch {
             try {
-                val page = client.sessions(cursor)
-                require(page.nextCursor != cursor) { "Filo session cursor did not advance" }
-                if (generation == epoch) mutableState.value = state.value.copy(
-                    sessions = (state.value.sessions + page.sessions).distinctBy { it.id },
-                    sessionCursor = page.nextCursor, failure = null)
+                if (snapshot.session != null) {
+                    prependPage(client, snapshot.session.id, generation, cursor)
+                } else {
+                    val page = client.sessions(cursor)
+                    require(page.nextCursor != cursor) { "Filo session cursor did not advance" }
+                    if (generation == epoch) mutableState.value = state.value.copy(
+                        sessions = (state.value.sessions + page.sessions).distinctBy { it.id },
+                        sessionCursor = page.nextCursor, failure = null)
+                }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
                 if (generation == epoch) mutableState.value = state.value.copy(failure = trace("page_failed", error))
@@ -628,6 +643,41 @@ internal class RemoteViewModel(
                 if (generation == epoch) mutableState.value = state.value.copy(loadingMore = false)
             }
         }
+    }
+
+    private suspend fun prependPage(client: FiloClient, session: String, generation: Long, cursor: String) {
+        val page = client.conversation(session, cursor)
+        require(page.nextCursor != cursor) { "Filo history cursor did not advance" }
+        historyMutation.withLock {
+            if (generation != epoch || state.value.historyCursor != cursor) return
+            val owner = state.value.owner ?: return
+            val nodes = admitRemotePage(state.value.nodes, page, older = true)
+            val groups = projectRemoteTopology(nodes, state.value.runtime)
+            hydration.accept(owner, page, groups, live = false)
+            if (generation != epoch) return
+            mutableState.value = state.value.copy(nodes = nodes, messageGroups = groups,
+                historyCursor = page.nextCursor, failure = null)
+        }
+    }
+
+    suspend fun searchHistory(query: String): List<com.newoether.agora.ui.chat.ConversationSearchMatch> {
+        val snapshot = state.value
+        val owner = snapshot.owner ?: return emptyList()
+        val client = clients[snapshot.deviceId] ?: return emptyList()
+        val session = snapshot.session ?: return emptyList()
+        val generation = epoch
+        try {
+            // Explicit Search may discover older pages; opening and ordinary scrolling never scan ahead.
+            while (generation == epoch) {
+                val cursor = state.value.historyCursor ?: break
+                prependPage(client, session.id, generation, cursor)
+            }
+            if (generation != epoch) return emptyList()
+            return com.newoether.agora.ui.chat.scanConversationSearchMatches(
+                state.value.messageGroups.map { it.stub.id }, query,
+            ) { ids -> hydration.loadMessages(owner, ids) }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { trace("page_failed", error); return emptyList() }
     }
 
     fun editDraft(owner: String, text: String) {

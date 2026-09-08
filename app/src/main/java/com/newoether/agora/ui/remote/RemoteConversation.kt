@@ -130,7 +130,7 @@ internal fun RemoteConversation(
     val streamingFlow = remember(owner, tail?.id) {
         tail?.let { vm.observeMessage(owner, it.id) } ?: kotlinx.coroutines.flow.flowOf(null)
     }
-    val streamingPayload by streamingFlow.collectAsState(initial = null)
+    val streamingPayload by streamingFlow.collectAsState(initial = tail?.let { vm.cachedMessage(owner, it.id) })
     val streaming = streamingPayload?.takeIf { it.id == tail?.id } ?: tail
     val messageState = rememberUpdatedState(messages)
     val ime = WindowInsets.ime.getBottom(density)
@@ -138,7 +138,9 @@ internal fun RemoteConversation(
     val focusManager = LocalFocusManager.current
     val searchMessages: suspend (String, List<String>) -> List<com.newoether.agora.model.ChatMessage> =
         remember(owner, state.hydrationRevision) { { _, ids -> vm.searchMessages(owner, ids) } }
-    val interaction = rememberConversationInteractionState(owner, messageState, scroll.listState, searchMessages)
+    val searchAllMessages: suspend (String) -> List<ConversationSearchMatch> = remember(owner) { vm::searchHistory }
+    val interaction = rememberConversationInteractionState(owner, messageState, scroll.listState, searchMessages,
+        searchAllMessages = searchAllMessages)
     val searchMatch = interaction.searchMatches.getOrNull(interaction.searchMatchIndex)
     BackHandler(active && interaction.searchActive) {
         interaction.dismissSearch()
@@ -172,6 +174,13 @@ internal fun RemoteConversation(
         programmaticHandoff = scroll.imeBottomAnchorState.active ||
             scroll.absoluteBottomScrollPhase.isActive || animatedScrollRequest?.conversationId == owner,
     )
+    LaunchedEffect(owner, active, switching, interaction.searchActive, state.historyCursor, state.loadingMore, state.error) {
+        if (!active || switching || interaction.searchActive || state.historyCursor == null ||
+            state.loadingMore || state.error) return@LaunchedEffect
+        snapshotFlow { !scroll.listState.canScrollBackward }.collect { atTop ->
+            if (atTop) vm.loadMore()
+        }
+    }
     var confirmUnknown by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).clearFocusOnTap()
         .onSizeChanged { scroll.recordViewportHeight(it.height) }) {

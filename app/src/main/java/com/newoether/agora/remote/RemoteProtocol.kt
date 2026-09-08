@@ -38,6 +38,7 @@ internal data class RemoteSessionPage(val sessions: List<RemoteSession>, val nex
 internal data class RemoteConversationPage(
     val messages: List<RemoteMessage>, val nextCursor: String?, val queued: List<RemoteQueuedMessage>,
     val runtime: RemoteRuntime? = null, val pageCursor: String? = null,
+    val nodes: List<RemoteMessageNode> = emptyList(),
 )
 @Serializable
 internal data class RemoteRuntime(

@@ -149,6 +149,7 @@ internal class ConversationInteractionState internal constructor(
         messages: State<List<ChatMessage>>,
         listState: LazyListState,
         searchMessages: suspend (String, List<String>) -> List<ChatMessage>,
+        searchAllMessages: (suspend (String) -> List<ConversationSearchMatch>)? = null,
     ): ConversationInteractionProjection {
         val selectedPathSearchMessages = remember(messages.value) {
             messages.value.filter(::isConversationSearchBodyEligible)
@@ -164,12 +165,13 @@ internal class ConversationInteractionState internal constructor(
             currentConversationId,
             searchActive,
             searchQuery,
-            selectedPathSearchRevision,
+            selectedPathSearchRevision.takeIf { searchAllMessages == null },
             searchMessages,
+            searchAllMessages,
         ) {
             value = emptyList()
             if (searchActive && currentConversationId != null && searchQuery.isNotBlank()) {
-                value = scanConversationSearchMatches(
+                value = searchAllMessages?.invoke(searchQuery) ?: scanConversationSearchMatches(
                     selectedPathMessageIds = selectedPathSearchMessageIds,
                     query = searchQuery,
                     loadMessages = { messageIds ->
@@ -303,6 +305,7 @@ internal fun rememberConversationInteractionState(
     messages: State<List<ChatMessage>>,
     listState: LazyListState,
     searchMessages: suspend (String, List<String>) -> List<ChatMessage> = { _, _ -> emptyList() },
+    searchAllMessages: (suspend (String) -> List<ConversationSearchMatch>)? = null,
 ): ConversationInteractionProjection {
     val state = rememberSaveable(saver = ConversationInteractionState.Saver) {
         ConversationInteractionState()
@@ -312,5 +315,6 @@ internal fun rememberConversationInteractionState(
         messages = messages,
         listState = listState,
         searchMessages = searchMessages,
+        searchAllMessages = searchAllMessages,
     )
 }

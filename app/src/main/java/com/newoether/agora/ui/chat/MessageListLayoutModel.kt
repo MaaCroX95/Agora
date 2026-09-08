@@ -213,7 +213,9 @@ internal fun buildMessageListTurns(messages: List<ChatMessage>): List<MessageLis
 internal fun messageListTailAnchorKey(turns: List<MessageListTurn>): String? = turns
     .lastOrNull { turn ->
         turn.messages.firstOrNull()?.let { message ->
-            MessageGenerationBoundaryResolver.isRealUser(message) || message.isContextCompact()
+            (turns.lastOrNull()?.messages?.lastOrNull()?.displayPageId == null ||
+                message.displayPageId == turns.last().messages.last().displayPageId) &&
+                (MessageGenerationBoundaryResolver.isRealUser(message) || message.isContextCompact())
         } == true
     }
     ?.key

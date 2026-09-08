@@ -11,6 +11,37 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class RemoteTopologyTest {
+    @Test fun olderPagesPreserveCanonicalLazyItemsEvenWhenNativeRepliesCrossEveryPage() {
+        fun record(id: String, role: String = "assistant") = RemoteMessage(id, "same-turn", null, role, id, 1)
+        var nodes = admitRemotePage(emptyList(), bodyPage(listOf(record("visible")), "older", emptyList()))
+        val cache = com.newoether.agora.ui.chat.MessageListTurnCache()
+        val before = cache.update(projectRemoteTopology(nodes, null).map { it.stub }).single()
+        repeat(200) { index ->
+            val page = bodyPage(listOf(record("user-$index", "user"), record("older-$index")), "next", emptyList())
+            nodes = admitRemotePage(nodes, page, older = true)
+            val turns = cache.update(projectRemoteTopology(nodes, null).map { it.stub })
+            assertSame(before, turns.first { it.key == before.key })
+            assertEquals(listOf("visible"), turns.last().messages.map { it.id })
+            assertNull(com.newoether.agora.ui.chat.messageListTailAnchorKey(turns))
+        }
+        assertEquals(401, nodes.size)
+        assertEquals(nodes.size, nodes.map { it.id }.distinct().size)
+    }
+
+    @Test fun overlappingStreamUpdatesCannotReassignSealedPageKeysOrDropItsNativePrefix() {
+        fun record(index: Int) = RemoteMessage("a$index", "turn", null, "assistant", "text $index", 1)
+        var nodes = admitRemotePage(emptyList(), bodyPage((0..127).map(::record), null, emptyList()))
+        val firstPage = projectRemoteTopology(nodes, null).single()
+        nodes = admitRemotePage(nodes, bodyPage(listOf(record(127), record(128)), "older", emptyList()))
+        val after = projectRemoteTopology(nodes, null)
+        assertEquals(firstPage, after.first())
+        assertNotEquals(after.first().stub.displayPageId, after.last().stub.displayPageId)
+        assertEquals((0..128).map { "a$it" }, nodes.map { it.id })
+        val snapshot = nodes
+        nodes = admitRemotePage(nodes, bodyPage(listOf(record(127), record(128)), "older", emptyList()))
+        assertEquals(snapshot, nodes)
+    }
+
     private val revision = "a".repeat(64)
     private fun node(id: String, role: String = "assistant", turn: String = "turn") =
         RemoteMessageNode(id, turn, null, role, 1, revision, 100, groupId = if (role == "assistant") "group-$turn" else null)
