@@ -132,6 +132,18 @@ class RemoteSettingsTest {
         vm.setVisible(false)
     }
 
+    @Test fun failedSettingSettlesPanelRevisionAndKeepsAuthoritativeValue() = runTest(dispatcher) {
+        val vm = open()
+        val revision = vm.state.value.settingsRevision
+        coEvery { client.updateSettings(any(), any()) } throws IOException("unconfirmed settings")
+        vm.setThinkingLevel("ultra"); runCurrent()
+        assertEquals("high", vm.state.value.selectedEffort)
+        assertEquals(revision + 1, vm.state.value.settingsRevision)
+        assertFalse(vm.state.value.controlling)
+        assertTrue(vm.state.value.error)
+        vm.setVisible(false)
+    }
+
     @Test fun changingModelResetsOnlyIncompatibleOptions() {
         val state = RemoteState(session = session, runtime = runtime.copy(effort = "ultra", serviceTier = "priority"), models = listOf(model))
         assertEquals(RemoteSettings("small", "low", null, true),

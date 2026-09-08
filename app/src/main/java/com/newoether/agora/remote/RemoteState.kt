@@ -24,6 +24,7 @@ internal data class RemoteState(
     val sessionOwners: Map<String, String> = emptyMap(),
     val sessionStatuses: Map<String, RemoteSessionStatus> = emptyMap(),
     val viewedTurns: Map<String, String> = emptyMap(),
+    val settingsRevision: Long = 0,
     val stoppingOwner: String? = null, val stoppingTurnId: String? = null,
 ) {
     val error: Boolean get() = failure != null
@@ -47,6 +48,7 @@ internal data class RemoteState(
         if (draftSettings.updateServiceTier) draftSettings.serviceTier else settingsModel?.defaultServiceTier
     } else runtime?.serviceTier).takeUnless { it == "default" }
     val canEditSettings: Boolean get() = session?.readOnly == false && settingsModel != null &&
+        (isDraft || runtime?.status in setOf("idle", "active", "ready")) &&
         !controlling && !isStopping && attempts[owner]?.delivery !in
             setOf(RemoteDelivery.SUBMITTING, RemoteDelivery.ACCEPTED, RemoteDelivery.UNKNOWN)
     fun settingsForModel(model: RemoteModel) = RemoteSettings(model.id,

@@ -88,13 +88,15 @@ internal fun RemoteConversation(
     var lastToolsDismissTime by remember(owner) { mutableLongStateOf(0L) }
     var showThinkingSheet by remember(owner) { mutableStateOf(false) }
     var showOpenAiServiceTierSheet by remember(owner) { mutableStateOf(false) }
-    // Owner-approved UI placeholders; these values are not remote settings.
-    val thinkingEnabled = true
-    val thinkingLevel = "medium"
+    val effortChoices = state.settingsModel?.reasoningEfforts.orEmpty()
+    val tierChoices = state.settingsModel?.serviceTiers.orEmpty()
+    val settingsEnabled = active && state.canEditSettings
+    val thinkingEnabled = state.selectedEffort != null && state.selectedEffort != "none"
+    val thinkingLevel = state.selectedEffort.orEmpty()
     val thinkingBudgetEnabled = false
     val thinkingBudgetTokens = 4096
-    val openAiServiceTierEnabled = false
-    val openAiServiceTier = "auto"
+    val openAiServiceTierEnabled = state.selectedServiceTier != null
+    val openAiServiceTier = state.selectedServiceTier.orEmpty()
     LaunchedEffect(active) {
         if (!active) {
             activeMenu = null
@@ -383,7 +385,8 @@ internal fun RemoteConversation(
                                                         thinkingEnabled,
                                                         thinkingLevel,
                                                         thinkingBudgetEnabled,
-                                                        thinkingBudgetTokens
+                                                        thinkingBudgetTokens,
+                                                        normalizeLevel = false,
                                                     ),
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -394,14 +397,16 @@ internal fun RemoteConversation(
                                     trailingIcon = {
                                         Switch(
                                             checked = thinkingEnabled,
-                                            onCheckedChange = {},
+                                            onCheckedChange = vm::setThinkingEnabled,
+                                            enabled = settingsEnabled && "none" in effortChoices,
                                             modifier = Modifier.scale(0.7f)
                                         )
                                     },
                                     onClick = {
                                         activeMenu = null
                                         showThinkingSheet = true
-                                    }
+                                    },
+                                    enabled = effortChoices.isNotEmpty(),
                                 )
                                 DropdownMenuItem(
                                     text = {
@@ -418,6 +423,8 @@ internal fun RemoteConversation(
                                                     text = openAiServiceTierShortLabel(
                                                         openAiServiceTierEnabled,
                                                         openAiServiceTier,
+                                                        nativeLabel = tierChoices.firstOrNull { it.id == openAiServiceTier }?.name
+                                                            ?: openAiServiceTier,
                                                     ),
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -428,12 +435,12 @@ internal fun RemoteConversation(
                                     trailingIcon = {
                                         Switch(
                                             checked = openAiServiceTierEnabled,
-                                            onCheckedChange = {},
-                                            enabled = true,
+                                            onCheckedChange = vm::setServiceTierEnabled,
+                                            enabled = settingsEnabled && (openAiServiceTierEnabled || tierChoices.isNotEmpty()),
                                             modifier = Modifier.scale(0.7f),
                                         )
                                     },
-                                    enabled = true,
+                                    enabled = openAiServiceTierEnabled || tierChoices.isNotEmpty(),
                                     onClick = {
                                         activeMenu = null
                                         showOpenAiServiceTierSheet = true
@@ -470,12 +477,17 @@ internal fun RemoteConversation(
                     level = thinkingLevel,
                     budgetEnabled = thinkingBudgetEnabled,
                     budgetTokens = thinkingBudgetTokens,
-                    onEnabledChange = {},
-                    onLevelChange = {},
+                    onEnabledChange = vm::setThinkingEnabled,
+                    onLevelChange = vm::setThinkingLevel,
                     onBudgetEnabledChange = {},
                     onBudgetTokensChange = {},
                     providerName = "OpenAI",
                     animateSections = true,
+                    availableEfforts = effortChoices.filterNot { it == "none" },
+                    controlsEnabled = settingsEnabled,
+                    allowDisable = "none" in effortChoices,
+                    showBudgetControls = false,
+                    settingsRevision = state.settingsRevision,
                 )
                 Spacer(modifier = Modifier.height(24.dp))
             }
@@ -497,8 +509,12 @@ internal fun RemoteConversation(
                 OpenAiServiceTierControlPanel(
                     enabled = openAiServiceTierEnabled,
                     tier = openAiServiceTier,
-                    onEnabledChange = {},
-                    onTierChange = {},
+                    onEnabledChange = vm::setServiceTierEnabled,
+                    onTierChange = vm::setServiceTier,
+                    availableTiers = tierChoices.map { it.id },
+                    tierLabels = tierChoices.associate { it.id to it.name },
+                    controlsEnabled = settingsEnabled,
+                    settingsRevision = state.settingsRevision,
                 )
                 Spacer(modifier = Modifier.height(24.dp))
             }

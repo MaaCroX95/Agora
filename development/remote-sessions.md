@@ -346,3 +346,6 @@ Unknown native thought duration uses the existing generic Thinking label. Only r
 The Sessions progress indicator starts with an explicit hidden transition state, including when Remote first composes already loading. Keep the same4dpstroke and300ms fadeIn/fadeOut; retain exit composition until animation settles. No artificial network delay or thickness animation.
 
 Remote SSE lines and ordinary HTTP bodies are limited to1MiB before UTF-8/JSON allocation, including missing delimiters and chunked bodies. Oversized/truncated events fail the Remote connection with bounded memory; never enlarge Android heap or treat OutOfMemoryError recovery as the boundary. Native histories remain intact.
+
+### Native settings controls (2026-09-08)
+Remote uses the original Thinking and Service Tier panels with actual native capability lists, preserving ordinary ChatApp defaults. Ultra is not normalized to Medium. Each user change issues one native settings request; absent none/budget/tier capabilities are not invented. The native priority tier uses its actual Fast label. Failed writes retain authoritative values and settle the original slider feedback gate. Draft changes remain local until Send. Settings changes affect subsequent native turns without interrupting the active one.

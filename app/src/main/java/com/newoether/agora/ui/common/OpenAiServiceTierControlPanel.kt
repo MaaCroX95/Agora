@@ -35,17 +35,23 @@ fun OpenAiServiceTierControlPanel(
     onTierChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     showHeader: Boolean = true,
+    availableTiers: List<String>? = null,
+    tierLabels: Map<String, String> = emptyMap(),
+    controlsEnabled: Boolean = true,
+    settingsRevision: Long = 0,
 ) {
-    val normalizedTier = OpenAiServiceTiers.normalize(tier)
-    val tierGate = remember {
+    val normalizedTier = if (availableTiers == null) OpenAiServiceTiers.normalize(tier) else tier
+    val tiers = availableTiers ?: OpenAiServiceTiers.values
+    val sliderEnabled = enabled && controlsEnabled && tiers.size > 1
+    val tierGate = remember(tiers, settingsRevision) {
         PersistedSliderFeedbackGate(
             initialPersisted = normalizedTier,
             toDisplay = { persisted ->
-                OpenAiServiceTiers.indexForTier(persisted).toFloat()
+                tiers.indexOf(persisted).coerceAtLeast(0).toFloat()
             },
         )
     }
-    LaunchedEffect(normalizedTier) { tierGate.reconcile(normalizedTier) }
+    LaunchedEffect(normalizedTier, tierGate) { tierGate.reconcile(normalizedTier) }
     val sliderPosition = tierGate.displayed
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -77,6 +83,7 @@ fun OpenAiServiceTierControlPanel(
                 Switch(
                     checked = enabled,
                     onCheckedChange = onEnabledChange,
+                    enabled = controlsEnabled && (enabled || tiers.isNotEmpty()),
                 )
             }
 
@@ -107,11 +114,10 @@ fun OpenAiServiceTierControlPanel(
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        text = serviceTierLabel(
-                            OpenAiServiceTiers.tierForIndex(
-                                sliderPosition.roundToInt(),
-                            )
-                        ),
+                        text = tiers.getOrNull(sliderPosition.roundToInt()).let { selected ->
+                            tierLabels[selected] ?: if (availableTiers == null) serviceTierLabel(selected.orEmpty())
+                            else selected.orEmpty()
+                        },
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold,
@@ -125,28 +131,28 @@ fun OpenAiServiceTierControlPanel(
                 )
                 Slider(
                     value = sliderPosition,
-                    onValueChange = { if (enabled) tierGate.updateFromGesture(it) },
+                    onValueChange = { if (sliderEnabled) tierGate.updateFromGesture(it) },
                     onValueChangeFinished = {
-                        if (enabled) {
+                        if (sliderEnabled) {
                             val index = sliderPosition
                                 .roundToInt()
-                                .coerceIn(OpenAiServiceTiers.values.indices)
-                            val selectedTier = OpenAiServiceTiers.tierForIndex(index)
+                                .coerceIn(tiers.indices)
+                            val selectedTier = tiers[index]
                             if (selectedTier == normalizedTier) {
                                 tierGate.settleWithoutWrite(normalizedTier, index.toFloat())
                             } else {
                                 tierGate.expectPersisted(selectedTier, index.toFloat())
                             }
-                            onEnabledChange(true)
+                            if (availableTiers == null) onEnabledChange(true)
                             onTierChange(selectedTier)
                         }
                     },
-                    valueRange = 0f..OpenAiServiceTiers.values.lastIndex.toFloat(),
-                    steps = OpenAiServiceTiers.values.size - 2,
+                    valueRange = 0f..tiers.lastIndex.coerceAtLeast(1).toFloat(),
+                    steps = (tiers.size - 2).coerceAtLeast(0),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 8.dp),
-                    enabled = enabled,
+                    enabled = sliderEnabled,
                 )
             }
         }
@@ -154,9 +160,9 @@ fun OpenAiServiceTierControlPanel(
 }
 
 @Composable
-fun openAiServiceTierShortLabel(enabled: Boolean, tier: String): String =
+fun openAiServiceTierShortLabel(enabled: Boolean, tier: String, nativeLabel: String? = null): String =
     if (enabled) {
-        serviceTierLabel(OpenAiServiceTiers.normalize(tier))
+        nativeLabel ?: serviceTierLabel(OpenAiServiceTiers.normalize(tier))
     } else {
         stringResource(R.string.openai_service_tier_off)
     }

@@ -549,7 +549,8 @@ internal class RemoteViewModel(
                 val failure = trace("control_failed", error)
                 if (selected == selectionEpoch) mutableState.value = state.value.copy(failure = failure)
             } finally {
-                if (selected == selectionEpoch) mutableState.value = state.value.copy(controlling = false)
+                if (selected == selectionEpoch) mutableState.value = state.value.copy(controlling = false,
+                    settingsRevision = state.value.settingsRevision + 1)
                 if (stoppingTurnId != null && state.value.stoppingOwner == owner &&
                     state.value.stoppingTurnId == stoppingTurnId && (!succeeded || selected != selectionEpoch)) {
                     mutableState.value = state.value.copy(stoppingOwner = null, stoppingTurnId = null)
