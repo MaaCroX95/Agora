@@ -303,3 +303,7 @@ Full build f1094f9c hit source-size guard: existing source-contract test was999l
 
 ## Sessions progress: fixed thickness, 300ms opacity only | 2026-09-08 | Codex via Conch
 Owner: progress bar should fade, without thickness changes,300ms. This supersedes the previous bottom expand/shrink animation. Scope: RemoteScreen.kt loading-bar enter/exit only and the owning contract. Keep existing4dp size, bottom position and loading flags. Use fadeIn(tween(300)) and fadeOut(tween(300)); remove the now-unused spatial-motion binding/imports. No new tests for this reversible presentation-only change. Verify diff, run one fresh build.ps1, then deploy.ps1 after the matching build succeeds and verify installed APK hash. Filo service and native Codex remain running.
+
+
+## Composer details UI only | 2026-09-08 | Codex via Conch
+Owner explicitly chooses UI-only Thinking and Service Tier. Reproduce original ChatBottomBar MoreVert button, menu shell/rows/switch geometry and original ThinkingControlPanel/OpenAiServiceTierControlPanel sheets. Menu navigation works; setting callbacks are NOP and do not persist or send requests. Original default presentation values are placeholders, not claimed remote telemetry. Preserve ordinary ChatApp behavior and the original Agora checkout.

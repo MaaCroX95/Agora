@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.ui.draw.scale
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,6 +35,12 @@ import com.newoether.agora.remote.*
 import com.newoether.agora.ui.chat.*
 import com.newoether.agora.ui.chat.bottombar.*
 import com.newoether.agora.ui.common.LocalAgoraHaptics
+import com.newoether.agora.ui.common.ThinkingControlPanel
+import com.newoether.agora.ui.common.OpenAiServiceTierControlPanel
+import com.newoether.agora.ui.common.thinkingControlShortLabel
+import com.newoether.agora.ui.common.openAiServiceTierShortLabel
+import com.newoether.agora.ui.components.DialogWindowEdgeToEdge
+import com.newoether.agora.ui.motion.MotionAwareModalBottomSheet
 import com.newoether.agora.ui.components.AnimatedBlobBackground
 import com.newoether.agora.ui.components.clearFocusOnTap
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
@@ -75,6 +84,16 @@ internal fun RemoteConversation(
     var activeMenu by remember(owner) { mutableStateOf<String?>(null) }
     var lastModelDismissTime by remember(owner) { mutableLongStateOf(0L) }
     var lastContextDismissTime by remember(owner) { mutableLongStateOf(0L) }
+    var lastToolsDismissTime by remember(owner) { mutableLongStateOf(0L) }
+    var showThinkingSheet by remember(owner) { mutableStateOf(false) }
+    var showOpenAiServiceTierSheet by remember(owner) { mutableStateOf(false) }
+    // Owner-approved UI placeholders; these values are not remote settings.
+    val thinkingEnabled = true
+    val thinkingLevel = "medium"
+    val thinkingBudgetEnabled = false
+    val thinkingBudgetTokens = 4096
+    val openAiServiceTierEnabled = false
+    val openAiServiceTier = "auto"
     LaunchedEffect(owner, field) { snapshotFlow { field.text.toString() }.collect { vm.editDraft(owner, it) } }
     var clearedAttempt by remember(owner) {
         mutableStateOf(attempt?.takeIf { it.delivery == RemoteDelivery.DELIVERED }?.clientId)
@@ -312,6 +331,106 @@ internal fun RemoteConversation(
                                 }
                             },
                         )
+                        ExposedDropdownMenuBox(
+                            expanded = activeMenu == "tools",
+                            onExpandedChange = { }
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    val now = System.currentTimeMillis()
+                                    if (activeMenu == "tools") {
+                                        activeMenu = null
+                                    } else if (now - lastToolsDismissTime > 200) {
+                                        activeMenu = "tools"
+                                    }
+                                },
+                                modifier = Modifier.size(32.dp).menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true)
+                            ) {
+                                Icon(Icons.Default.MoreVert, stringResource(R.string.tools), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+
+                            ExposedDropdownMenu(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                expanded = activeMenu == "tools",
+                                onDismissRequest = {
+                                    if (activeMenu == "tools") {
+                                        activeMenu = null
+                                        lastToolsDismissTime = System.currentTimeMillis()
+                                    }
+                                },
+                                matchTextFieldWidth = false,
+                                shape = CHAT_DROPDOWN_MENU_SHAPE,
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(androidx.compose.ui.res.painterResource(id = com.newoether.agora.R.drawable.neurology_24), null, modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp))
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column {
+                                                Text(stringResource(R.string.thinking))
+                                                Text(
+                                                    text = thinkingControlShortLabel(
+                                                        thinkingEnabled,
+                                                        thinkingLevel,
+                                                        thinkingBudgetEnabled,
+                                                        thinkingBudgetTokens
+                                                    ),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    },
+                                    trailingIcon = {
+                                        Switch(
+                                            checked = thinkingEnabled,
+                                            onCheckedChange = {},
+                                            modifier = Modifier.scale(0.7f)
+                                        )
+                                    },
+                                    onClick = {
+                                        activeMenu = null
+                                        showThinkingSheet = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                Icons.Default.Speed,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp),
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column {
+                                                Text(stringResource(R.string.openai_service_tier_title))
+                                                Text(
+                                                    text = openAiServiceTierShortLabel(
+                                                        openAiServiceTierEnabled,
+                                                        openAiServiceTier,
+                                                    ),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                        }
+                                    },
+                                    trailingIcon = {
+                                        Switch(
+                                            checked = openAiServiceTierEnabled,
+                                            onCheckedChange = {},
+                                            enabled = true,
+                                            modifier = Modifier.scale(0.7f),
+                                        )
+                                    },
+                                    enabled = true,
+                                    onClick = {
+                                        activeMenu = null
+                                        showOpenAiServiceTierSheet = true
+                                    },
+                                )
+                            }
+                        }
                     }
                     val showStop = running && field.text.isBlank()
                     ComposerSendButton(isActionable = active && ready && !state.controlling && !submitting && (showStop || field.text.isNotBlank()) &&
@@ -323,6 +442,58 @@ internal fun RemoteConversation(
                 })
         }
     }
+    if (showThinkingSheet) {
+        MotionAwareModalBottomSheet(
+            onDismissRequest = { showThinkingSheet = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
+            DialogWindowEdgeToEdge()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+            ) {
+                ThinkingControlPanel(
+                    enabled = thinkingEnabled,
+                    level = thinkingLevel,
+                    budgetEnabled = thinkingBudgetEnabled,
+                    budgetTokens = thinkingBudgetTokens,
+                    onEnabledChange = {},
+                    onLevelChange = {},
+                    onBudgetEnabledChange = {},
+                    onBudgetTokensChange = {},
+                    providerName = "OpenAI",
+                    animateSections = true,
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+    }
+
+    if (showOpenAiServiceTierSheet) {
+        MotionAwareModalBottomSheet(
+            onDismissRequest = { showOpenAiServiceTierSheet = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
+            DialogWindowEdgeToEdge()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+            ) {
+                OpenAiServiceTierControlPanel(
+                    enabled = openAiServiceTierEnabled,
+                    tier = openAiServiceTier,
+                    onEnabledChange = {},
+                    onTierChange = {},
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+    }
+
     if (confirmUnknown) AlertDialog(onDismissRequest = { confirmUnknown = false },
         title = { Text(stringResource(R.string.remote_confirm), fontWeight = FontWeight.Bold) },
         text = { Text(stringResource(R.string.remote_unknown)) },
