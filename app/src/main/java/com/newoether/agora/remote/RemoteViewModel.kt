@@ -295,8 +295,8 @@ internal class RemoteViewModel(
         polling?.cancel()
         paging?.cancel()
         statusPolling?.cancel()
-        mutableState.value = state.value.copy(loading = false, loadingMore = false, runtime = null, hydrationEnabled = false,
-            messageGroups = projectRemoteTopology(state.value.nodes, null))
+        // Suspend control readiness, not the last native presentation. Reconnecting is not completion.
+        mutableState.value = state.value.copy(loading = false, loadingMore = false, runtime = null, hydrationEnabled = false)
     }
 
     fun refresh() {
@@ -364,7 +364,6 @@ internal class RemoteViewModel(
                         val failure = trace("read_failed", error)
                         updateDevice(id) { it.copy(status = RemoteDeviceStatus.ERROR, failure = failure) }
                         mutableState.value = state.value.copy(loading = false, failure = failure, runtime = null,
-                            messageGroups = projectRemoteTopology(state.value.nodes, null),
                             stoppingOwner = null, stoppingTurnId = null)
                     }
                 }

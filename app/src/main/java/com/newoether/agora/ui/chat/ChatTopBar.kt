@@ -78,6 +78,7 @@ internal fun ChatTopBar(
     contextTokenBudget: Int,
     contextAvailable: Boolean = totalTokens > 0,
     subtitle: String? = null,
+    subtitleLeading: (@Composable () -> Unit)? = null,
     searchActive: Boolean = false,
     searchQuery: String = "",
     searchMatchIndex: Int = -1,
@@ -303,7 +304,8 @@ internal fun ChatTopBar(
                             softWrap = false,
                         ).size.width.toDp()
                     } ?: 0.dp
-                    minOf(maxOf(primaryWidth, subtitleWidth), 180.dp)
+                    val leadingWidth = if (subtitleLeading != null && tokenSubtitle != null) 14.dp else 0.dp
+                    minOf(maxOf(primaryWidth, subtitleWidth + leadingWidth), 180.dp)
                 }
                 val targetTitleCapsuleWidth = minOf(
                     5.dp + 44.dp + 5.dp + targetTitleContentWidth + 20.dp,
@@ -453,12 +455,16 @@ internal fun ChatTopBar(
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         if (tokenSubtitle != null) {
-                                            Text(
-                                                text = tokenSubtitle,
-                                                style = ChatType.micro,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                                maxLines = 1
-                                            )
+                                            Row(verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                subtitleLeading?.invoke()
+                                                Text(
+                                                    text = tokenSubtitle,
+                                                    style = ChatType.micro,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                    maxLines = 1
+                                                )
+                                            }
                                         }
                                     }
                                 }

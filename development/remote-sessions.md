@@ -97,6 +97,10 @@ actor, scrollToItem restoration, delayed correction or structural window trimmin
 While an older page loads, the original 20dp/2dp circular indicator appears in the existing
 top boundary inset with 300ms opacity enter/exit. Its fixed slot never adds a list item or
 changes content padding, message geometry, keys or scroll position.
+The chat subtitle renders Online/Offline/Connecting beside the exact Devices McpStatusDot,
+with its shared state colors; a literal bullet glyph is not a status indicator.
+Hiding or reconnecting suspends control readiness but preserves the last native generation
+presentation. Only a new native snapshot may complete a group and trigger auto-collapse.
 Viewport mutation anchors use the actually measured visual key, never an old-layout index
 into newly prepended rows. Drag ownership lasts until gesture Stop/Cancel even while held
 stationary or generation has ended; hydration/card mutations cannot claim that viewport.
