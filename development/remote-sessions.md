@@ -76,7 +76,9 @@ bar for actual loading/paging/control work: opacity enter/exit 300ms, fixed thic
 initially hidden transition state, retained composition until exit finishes. No overlay.
 
 Selecting eligible history is the explicit one-time admission after its readable page loads.
-Preserve ID/history and enable composer/SSE only after native acceptance. Failure remains
+Preserve ID/history. Compose the original input bar immediately, allowing a local draft while
+history and native admission are pending; only Send/settings/SSE wait for native acceptance.
+Unsupported history retains its read-only notice inside the composer. Failure remains
 readable. No Continue this conversation button, background admission or automatic POST
 retry. Unavailable read-only history cannot subscribe or mutate; occupied writers fail safely.
 
@@ -95,7 +97,9 @@ canonical MessageList turn builder; ordinary null-boundary grouping remains unch
 LazyColumn stable keys preserve the current drag/fling position without a second scroll
 actor, scrollToItem restoration, delayed correction or structural window trimming.
 While an older page loads, the original 20dp/2dp circular indicator appears in the existing
-top boundary inset with 300ms opacity enter/exit. Its fixed slot never adds a list item or
+top boundary inset with 300ms opacity enter/exit. Start exit immediately when the page is
+published or the list can scroll back away from that boundary, even if a request is pending.
+Its fixed slot never adds a list item or
 changes content padding, message geometry, keys or scroll position.
 The chat subtitle renders Online/Offline/Connecting beside the exact Devices McpStatusDot,
 with its shared state colors; a literal bullet glyph is not a status indicator.
@@ -174,7 +178,8 @@ not Model Unavailable. Display cached native defaults or local choices without f
 Both original and Remote model dropdowns share the leading check for the selected model.
 Remote Thinking and Service Tier use plain rows in the original details dropdown. Those rows
 open the original bottom sheets and slider panels; neither the dropdown nor panel exposes a
-toggle. Native None, when supported, and default tier remain selectable on their sliders.
+toggle. Remote sheets omit the panels' top header/description item and its spacing.
+Native None, when supported, and default tier remain selectable on their sliders.
 Unknown current values do not open a falsely preselected panel.
 Ordinary ChatApp defaults and panels remain unchanged. Ultra remains Ultra. Unsupported
 none/budget/tier options are absent/disabled; unknown current values stay unknown.

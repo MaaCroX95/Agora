@@ -185,8 +185,10 @@ internal fun RemoteConversation(
         }
     }
     val historyProgress = remember(owner) { androidx.compose.animation.core.MutableTransitionState(false) }
+    val atHistoryBoundary = !scroll.listState.canScrollBackward
     SideEffect {
-        historyProgress.targetState = active && !switching && !interaction.searchActive && state.loadingMore
+        historyProgress.targetState = active && !switching && !interaction.searchActive &&
+            state.loadingMore && atHistoryBoundary
     }
     var confirmUnknown by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).clearFocusOnTap()
@@ -305,17 +307,15 @@ internal fun RemoteConversation(
                 }
             }
         }
-        if (session.readOnly) {
-            Surface(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                .onSizeChanged { barHeightPx = it.height.toFloat() }) {
-                Column(Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)) {
-                    if (!session.canResume) Text(stringResource(R.string.remote_history_read_only), style = MaterialTheme.typography.labelMedium)
-                }
-            }
-        } else ChatComposerSurface(expanded, { barHeightPx = it }, Modifier.align(Alignment.BottomCenter), spacer.outerHeightPx) {
+        ChatComposerSurface(expanded, { barHeightPx = it }, Modifier.align(Alignment.BottomCenter), spacer.outerHeightPx) {
             ChatComposerLayout(field, focus, scroll::setComposerInputFocused, expanded, spacer.isRunning,
                 onExpand = { expanded = true }, onCollapse = { expanded = false },
                 statusContent = {
+                    if (session.readOnly && !session.canResume) {
+                        Text(stringResource(R.string.remote_history_read_only),
+                            Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelMedium)
+                    }
                     ComposerStatusColumn(state.queued, { it.id }) { QueuedMessageRow(text = it.text) }
                     val status = when (attempt?.delivery) {
                         RemoteDelivery.UNKNOWN -> R.string.remote_unknown
@@ -490,7 +490,7 @@ internal fun RemoteConversation(
                     onBudgetEnabledChange = {}, onBudgetTokensChange = {},
                     providerName = "OpenAI", animateSections = true,
                     availableEfforts = effortChoices, controlsEnabled = settingsEnabled,
-                    showEnabledToggle = false, showBudgetControls = false,
+                    showHeader = false, showEnabledToggle = false, showBudgetControls = false,
                     settingsRevision = state.settingsRevision,
                 )
                 Spacer(Modifier.height(24.dp))
@@ -510,7 +510,7 @@ internal fun RemoteConversation(
                     availableTiers = listOf("") + tierChoices.filterNot { it.id == "default" }.map { it.id },
                     tierLabels = tierChoices.associate { it.id to it.name } +
                         ("" to stringResource(R.string.openai_service_tier_default)),
-                    controlsEnabled = settingsEnabled, showEnabledToggle = false,
+                    controlsEnabled = settingsEnabled, showHeader = false, showEnabledToggle = false,
                     settingsRevision = state.settingsRevision,
                 )
                 Spacer(Modifier.height(24.dp))

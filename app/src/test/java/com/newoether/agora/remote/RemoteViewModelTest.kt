@@ -820,17 +820,28 @@ class RemoteViewModelTest {
         val gate = CompletableDeferred<Unit>()
         coEvery { client.resume("history") } coAnswers { gate.await() }
         val old = RemoteMessage("old", "old-turn", null, "user", "Preserved", 1)
-        coEvery { client.conversation("history", any()) } returns
-            bodyPage(listOf(old), null, emptyList(), RemoteRuntime("ready"))
+        val history = CompletableDeferred<RemoteConversationPage>()
+        coEvery { client.conversation("history", any()) } coAnswers { history.await() }
         val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
         vm.selectSession(session.copy(id = "history", readOnly = true, canResume = true)); runCurrent()
+        val owner = vm.state.value.owner!!
+        vm.editDraft(owner, "Written while history loads")
+        vm.send(); runCurrent()
+        assertTrue(vm.state.value.loading)
+        coVerify(exactly = 0) { client.resume("history") }
+        coVerify(exactly = 0) { client.send(any(), any(), any()) }
+        history.complete(bodyPage(listOf(old), null, emptyList(), RemoteRuntime("ready"))); runCurrent()
+        vm.send(); runCurrent()
+        assertEquals("Written while history loads", vm.state.value.drafts[owner])
         coVerify(exactly = 1) { client.resume("history") }
         assertTrue(vm.state.value.session!!.readOnly)
         verify(exactly = 0) { client.events("history") }
         gate.complete(Unit); runCurrent()
         assertFalse(vm.state.value.controlling)
         assertFalse(vm.state.value.session!!.readOnly)
+        assertEquals(owner, vm.state.value.owner)
+        assertEquals("Written while history loads", vm.state.value.drafts[owner])
         assertEquals(listOf(old.id), vm.state.value.nodes.map { it.id })
         verify(exactly = 1) { client.events("history") }
         coVerify(exactly = 1) { client.resume("history") }
