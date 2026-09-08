@@ -19,6 +19,8 @@ internal data class RemoteState(
     val devices: List<RemoteDevice> = emptyList(), val deviceId: String? = null,
     val sessions: List<RemoteSession> = emptyList(), val sessionCursor: String? = null,
     val session: RemoteSession? = null, val messages: List<RemoteMessage> = emptyList(),
+    val messageGroups: List<RemoteMessageGroup> = emptyList(),
+    val hydrationEnabled: Boolean = false, val hydrationRevision: Long = 0,
     val historyCursor: String? = null, val historyHasNewer: Boolean = false, val queued: List<RemoteQueuedMessage> = emptyList(),
     val drafts: Map<String, String> = emptyMap(), val attempts: Map<String, RemoteAttempt> = emptyMap(),
     val saving: Boolean = false, val loading: Boolean = false, val loadingMore: Boolean = false, val failure: RemoteFailure? = null,
