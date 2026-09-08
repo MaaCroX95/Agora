@@ -1,10 +1,5 @@
 package com.newoether.agora.remote
 
-import com.newoether.agora.model.ChatMessage
-import com.newoether.agora.model.MessageSegment
-import com.newoether.agora.model.Participant
-import com.newoether.agora.model.ToolExecutionStates
-import com.newoether.agora.model.MessageStatus
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,9 +11,6 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -33,64 +25,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 @Serializable
-internal data class RemoteSession(val id: String, val title: String, val cwd: String, val updatedAt: Long, val readOnly: Boolean = false, val canResume: Boolean = false)
-@Serializable
-internal data class RemoteSessionStatus(
-    val id: String, val status: String? = null, val activeTurnId: String? = null,
-    val completedTurnId: String? = null, val hasUnreadTurn: Boolean = false,
-)
-@Serializable
 private data class RemoteSessionStatuses(val statuses: List<RemoteSessionStatus>)
-@Serializable
-internal data class RemoteMessage(
-    val id: String, val turnId: String, val clientId: String?, val role: String,
-    val text: String, val timestamp: Long,
-    val activity: RemoteActivity? = null,
-    val groupId: String? = null,
-    @kotlinx.serialization.Transient
-    val streamingTextDeltas: List<com.newoether.agora.model.StreamingTextDelta> = emptyList(),
-)
-@Serializable
-internal data class RemoteActivity(
-    val type: String, val toolName: String? = null, val arguments: String? = null,
-    val result: String? = null, val state: String? = null, val durationMs: Long? = null,
-)
-@Serializable
-internal data class RemoteQueuedMessage(val id: String, val clientId: String, val text: String)
-@Serializable
-internal data class RemoteSessionPage(val sessions: List<RemoteSession>, val nextCursor: String?)
-@Serializable
-internal data class RemoteConversationPage(
-    val messages: List<RemoteMessage>, val nextCursor: String?, val queued: List<RemoteQueuedMessage>,
-    val runtime: RemoteRuntime? = null,
-)
-@Serializable
-internal data class RemoteRuntime(
-    val status: String, val activeTurnId: String? = null, val model: String? = null,
-    val contextTokens: Int? = null, val contextWindow: Int? = null,
-    val completedTurnId: String? = null,
-    val effort: String? = null, val serviceTier: String? = null,
-    val serviceTierKnown: Boolean = false, val activeTurnHasUserMessage: Boolean = false,
-) { val isRunning: Boolean get() = status == "active" }
-@Serializable
-internal data class RemoteModel(
-    val id: String, val name: String, val isDefault: Boolean = false,
-    val reasoningEfforts: List<String>? = null, val defaultReasoningEffort: String? = null,
-    val serviceTiers: List<RemoteServiceTier>? = null, val defaultServiceTier: String? = null,
-)
-@Serializable
-internal data class RemoteServiceTier(val id: String, val name: String, val description: String = "")
-internal data class RemoteSettings(
-    val model: String? = null, val effort: String? = null,
-    val serviceTier: String? = null, val updateServiceTier: Boolean = false,
-) {
-    fun merge(patch: RemoteSettings) = RemoteSettings(patch.model ?: model, patch.effort ?: effort,
-        if (patch.updateServiceTier) patch.serviceTier else serviceTier, updateServiceTier || patch.updateServiceTier)
-    fun body(): String = buildJsonObject {
-        model?.let { put("model", it) }; effort?.let { put("effort", it) }
-        if (updateServiceTier) put("serviceTier", serviceTier?.let { kotlinx.serialization.json.JsonPrimitive(it) } ?: JsonNull)
-    }.toString()
-}
 @Serializable
 private data class RemoteModels(val models: List<RemoteModel>)
 @Serializable
@@ -264,79 +199,4 @@ internal class FiloClient(
                 }
             })
         }
-}
-
-internal fun RemoteSession.displayTitle(untitled: String): String = title.takeUnless { it.isBlank() || it == id } ?: untitled
-
-/** Native records stay in the Remote cache; only presentation groups adjacent assistant records. */
-internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: RemoteRuntime? = null): List<ChatMessage> = buildList {
-    var index = 0
-    while (index < messages.size) {
-        val first = messages[index++]
-        require(first.role == "user" || first.role == "assistant")
-        val segments = if (first.role == "assistant") buildList<MessageSegment> {
-            var current = first
-            while (true) {
-                val activity = current.activity
-                val segment = when (activity?.type) {
-                    null -> MessageSegment(type = "answer", content = current.text.trimEnd('\r', '\n'),
-                        streamingTextDeltas = current.streamingTextDeltas)
-                    "thought" -> MessageSegment(type = "thought", content = current.text.trimEnd('\r', '\n'))
-                    "tool" -> MessageSegment(
-                        type = "tool", toolName = activity.toolName, toolArgs = activity.arguments,
-                        toolCallId = current.id, toolState = activity.state, durationMs = activity.durationMs,
-                        toolResult = activity.result.takeUnless { activity.state == ToolExecutionStates.RUNNING },
-                        toolProgress = activity.result.takeIf { activity.state == ToolExecutionStates.RUNNING },
-                    )
-                    else -> error("Unsupported Remote activity")
-                }
-                if (segment.type == "tool" || segment.content.isNotBlank()) {
-                    // Native text items are separate paragraphs, not adjacent streaming deltas.
-                    add(if (segment.type != "tool" && lastOrNull()?.type == segment.type) {
-                        segment.copy(content = "\n\n" + segment.content)
-                    } else segment)
-                }
-                val next = messages.getOrNull(index)
-                if (next?.role != "assistant" || next.turnId != first.turnId) break
-                current = next
-                index++
-            }
-        } else null
-        if (segments != null && segments.isEmpty()) continue
-        add(ChatMessage(
-            id = first.groupId ?: first.id, parentId = lastOrNull()?.id,
-            text = segments?.filter { it.type == "answer" }?.joinToString("\n\n") { it.content.trimStart('\n') }
-                ?: first.text.trimEnd('\r', '\n'),
-            participant = if (first.role == "user") Participant.USER else Participant.MODEL,
-            timestamp = first.timestamp, modelName = "Codex", runId = first.turnId,
-            segments = segments,
-        ))
-    }
-    val turn = runtime?.activeTurnId?.takeIf { active ->
-        runtime.hasVisibleGeneration(messages)
-    }
-    if (turn != null) {
-        val tail = lastOrNull()
-        if (tail?.participant == Participant.MODEL && tail.runId == turn) {
-            val status = when (tail.segments?.lastOrNull()?.type) {
-                "thought" -> MessageStatus.THINKING
-                "tool" -> MessageStatus.TOOL_CALLING
-                else -> MessageStatus.SENDING
-            }
-            set(lastIndex, tail.copy(status = status, modelName = runtime.model ?: "Codex"))
-        } else {
-            // Display-only empty assistant uses the existing initial-generation indicator.
-            // Its authority is the real native active turn, not an inferred local request.
-            add(ChatMessage(id = "remote-active-$turn", parentId = tail?.id, text = "",
-                participant = Participant.MODEL, timestamp = tail?.timestamp ?: 0,
-                modelName = runtime.model ?: "Codex", runId = turn, status = MessageStatus.SENDING))
-        }
-    }
-}
-
-/** The newest native page replaces the cached tail, including native edits/removals. */
-internal fun mergeRemoteHistory(old: List<RemoteMessage>, fresh: List<RemoteMessage>): List<RemoteMessage> {
-    val boundary = fresh.firstOrNull()?.id ?: return emptyList()
-    val index = old.indexOfFirst { it.id == boundary }
-    return (old.take(index.coerceAtLeast(0)) + fresh).distinctBy { it.id }
 }
