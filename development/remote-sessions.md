@@ -294,3 +294,8 @@ Original MessageList/AssistantMessageContent already owns document-level glyph f
 
 ## Sessions bottom progress animation | 2026-09-08 | Codex
 Owner confirms a horizontal loading bar fixed at screen bottom, entering by growing from zero thickness or rising. Use existing AnimatedVisibility primitives:200ms bottom-anchored expand/fade and shrink/fade, reduced-motion fade only. Actual loading/loadingMore/new-session-control flags own visibility; saved devices and chat pages never inherit it. This completes the earlier static bottom-bar correction.
+
+
+## Shared selected-model leading check | 2026-09-08 | Codex
+Owner explicitly clarifies: check icon belongs to current model's LEFT in the dropdown, in both ordinary and Remote bottom bars. Add one shared ComposerModelMenuItem used by both existing selectors; keep shared shell/type/size and reserve the same leading slot on unselected rows. Model operations remain original/native respectively. This supersedes the previous no-check correction with an explicitly requested leading mark.
+Full build f1094f9c hit source-size guard: existing source-contract test was999lines and the two-assert replacement addedone. Combine the two conditions into one assertion; retain both checks and limit, no guard exemption. No failed build deployed.

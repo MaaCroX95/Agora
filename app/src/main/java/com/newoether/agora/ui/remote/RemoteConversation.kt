@@ -284,8 +284,9 @@ internal fun RemoteConversation(
                             menuContent = {
                                 val sortedModels = remember(state.models) { state.models.sortedBy { it.id.lowercase() } }
                                 sortedModels.forEach { model ->
-                                    DropdownMenuItem(
-                                        text = { Text(model.name) },
+                                    ComposerModelMenuItem(
+                                        displayText = model.name,
+                                        selected = model.id == state.runtime?.model,
                                         onClick = {
                                             haptics.selection()
                                             vm.setModel(model.id)

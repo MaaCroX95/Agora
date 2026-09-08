@@ -495,10 +495,9 @@ internal fun ChatBottomBar(
                             )
                         }
                         sortedModels.forEach { model ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(modelDisplayName(model, modelAliases, customProviders, modelProviderNames[model] != false))
-                                },
+                            ComposerModelMenuItem(
+                                displayText = modelDisplayName(model, modelAliases, customProviders, modelProviderNames[model] != false),
+                                selected = model == selectedModel,
                                 onClick = {
                                     haptics.selection()
                                     onModelSelect(model)
