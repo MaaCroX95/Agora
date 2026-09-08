@@ -260,3 +260,33 @@ The owner clarified circular loading on 2026-09-07. Use the existing MotionAware
 ## Full-screen Remote loading overlay | 2026-09-08
 Owner: loading bar去掉，模仿原始聊天页面做overlay全屏.
 This supersedes the inline 20dp loading indicator amendment. Remote uses the original ChatApp full-content theme-background overlay, centered MotionAwareCircularProgressIndicator at48dp/5dp stroke and200ms opacity transitions. It covers session list/history/device save/restore/control loading, including the bottom composer, consumes underlying pointer input, and preserves Back cancellation/navigation. Generation alone never shows this overlay. Remove inline loading status rows, bars and plain Loading text. Existing Remote state epochs terminate loading on success/failure/cancellation; retain native message/composer/scroll ownership.
+
+
+## Owner correction: page-specific loading and original ChatApp layering | 2026-09-08 | Codex
+Owner: Remote has no loading cover; display saved devices immediately with existing status dots. Sessions has only a bottom loading bar, no overlay. Chat overlay must reproduce past ChatApp, not an invented Remote-wide cover.
+This explicitly supersedes the preceding full-Remote overlay amendment. Correction scope: isolated Agora RemoteScreen/RemoteConversation; restore ChatApp exactly to pre-extraction source and remove the added ChatLoadingOverlay file. Copy the original loading block into the corresponding Scaffold content Box before the composer, with its existing48dp/5dp circle and200ms fades. Its lifetime is initial history opening/scroll settling only, terminated by errors; no generic control/save/generation overlay and no new pointer interceptor. Sessions uses shared motion-aware linear progress at bottom while actual list/pagination/new-session requests are pending. Device rows retain existing status dots.
+
+
+## Direct historical selection and unavailable context | 2026-09-08 | Codex
+Owner removes Continue this conversation because existing native owner attachment now works. Selecting an eligible history is the explicit admission action; attempt once for that selection after loading its readable history, then enable the existing stream/composer only after native acceptance. No list/background/reconnect/pagination admission and no message submission. A failed admission preserves history; no automatic POST retry. Native owner discovery remains first and cannot be bypassed on failure. Remove the redundant Continue control and eligible-history read-only label. Retry is explicit existing error action.
+Owner: context N/A shows an empty circular bar without a dash. Reuse existing determinate context indicator at zero for unavailable telemetry, retaining unknown accessibility state and disabled interaction; do not invent usage.
+
+
+## Composer model-menu parity correction | 2026-09-08 | Codex
+Owner reports the model dropdown styling was invented. Read original Agora ChatBottomBar read-only: surfaceContainer/16dp shared menu, ordinary text rows without selected trailing check, provider/model ordering, selection haptic, toggle behavior,200ms dismiss gate and immediate reopen after selection. Isolated Remote retains the shared menu shell and copies these original row and interaction semantics for native Codex models. Remove added Check icon. No original Agora edit.
+
+
+## Search-only conversation menu and real title context | 2026-09-08 | Codex
+Owner removes conversation-menu Refresh and Load More, keeping only Search. Reuse ChatTopBar search capsule, ConversationInteractionState scan/navigation and MessageList highlights/positioning. Remote history pages load on reaching the top and while search is active; cancellation, original read epochs and error feedback remain authoritative. No alternative search UI or scrolling algorithm. Sessions-list pagination is separate from this conversation-menu request.
+Owner requests context in upper-left title capsule when available. Bind actual native used/budget telemetry into original ChatTopBar subtitle. Add an optional availability flag defaulting to original totalTokens>0, so Remote can show a known zero while hiding missing telemetry; original callers retain behavior.
+
+
+## UI completion: text boundary, New Chat, original keyboard, attachment menu | 2026-09-08 | Codex
+Owner directs prioritizing UI. Native HTTP sample from dedicated qualification history shows six assistant commentary records each already end in one actual newline; sampled user/final records do not. No literal backslash-n suffix was found. Remote projection forwarded native terminal line breaks into segment rendering. Remove terminal CR/LF only from presentation text/answer/thought segments; preserve original Remote cache, interior newlines, indentation/spaces, literal escapes and tool payloads. Add regression coverage.
+Owner requires New Chat instead of UUID: localize only absent/ID fallback titles, preserving native named titles and IDs. Reuse ChatLaunchInteractionEffects for new-session focus; acknowledge once after its original50ms focus step. Preserve existing TextField and ChatScrollCoordinator IME behavior. No recurring autofocus after reconnection/history opening.
+Owner explicitly authorizes bottom plus attachment menu as UI-only NOP. Insert exact AttachmentAddMenu into existing ComposerControlGroup with original Camera/Photos/Videos/Files rows; callbacks do nothing. No capture, picker, upload or remote tool behavior.
+
+
+## Original bottom-scroll and streaming parity | 2026-09-08 | Codex
+Owner requires all UI to match ChatApp with no invented experience. Bottom-button review found a real argument-wiring defect: Remote passed native running into shareSelectionActive, hiding the original button throughout generation. Correct with named original arguments, actual switching/readiness, actual streaming-follow ownership and original IME competition; same ChatBottomScrollButton and scroll coordinator.
+Original MessageList/AssistantMessageContent already owns document-level glyph fade, tail activity dot and GroupedSegmentAutoExpansionController. Timeline auto expansion already uses isStreaming && blockEnd == segments.size. Keep this unchanged. Map live native last segment to original THINKING/TOOL_CALLING/SENDING and provide the active snapshot to the existing streaming slot. Stop/completion removes live status. No simulated token timer or separate dot/gradient/card renderer.

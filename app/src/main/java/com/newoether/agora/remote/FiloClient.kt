@@ -218,6 +218,8 @@ internal class FiloClient(
         }
 }
 
+internal fun RemoteSession.displayTitle(untitled: String): String = title.takeUnless { it.isBlank() || it == id } ?: untitled
+
 /** Native records stay in the Remote cache; only presentation groups adjacent assistant records. */
 internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: RemoteRuntime? = null): List<ChatMessage> = buildList {
     var index = 0
@@ -229,8 +231,8 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
             while (true) {
                 val activity = current.activity
                 val segment = when (activity?.type) {
-                    null -> MessageSegment(type = "answer", content = current.text)
-                    "thought" -> MessageSegment(type = "thought", content = current.text)
+                    null -> MessageSegment(type = "answer", content = current.text.trimEnd('\r', '\n'))
+                    "thought" -> MessageSegment(type = "thought", content = current.text.trimEnd('\r', '\n'))
                     "tool" -> MessageSegment(
                         type = "tool", toolName = activity.toolName, toolArgs = activity.arguments,
                         toolCallId = current.id, toolState = activity.state, durationMs = activity.durationMs,
@@ -255,7 +257,7 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
         add(ChatMessage(
             id = first.id, parentId = lastOrNull()?.id,
             text = segments?.filter { it.type == "answer" }?.joinToString("\n\n") { it.content.trimStart('\n') }
-                ?: first.text,
+                ?: first.text.trimEnd('\r', '\n'),
             participant = if (first.role == "user") Participant.USER else Participant.MODEL,
             timestamp = first.timestamp, modelName = "Codex", runId = first.turnId,
             segments = segments,
@@ -267,7 +269,12 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
     if (turn != null) {
         val tail = lastOrNull()
         if (tail?.participant == Participant.MODEL && tail.runId == turn) {
-            set(lastIndex, tail.copy(status = MessageStatus.SENDING, modelName = runtime.model ?: "Codex"))
+            val status = when (tail.segments?.lastOrNull()?.type) {
+                "thought" -> MessageStatus.THINKING
+                "tool" -> MessageStatus.TOOL_CALLING
+                else -> MessageStatus.SENDING
+            }
+            set(lastIndex, tail.copy(status = status, modelName = runtime.model ?: "Codex"))
         } else {
             // Display-only empty assistant uses the existing initial-generation indicator.
             // Its authority is the real native active turn, not an inferred local request.

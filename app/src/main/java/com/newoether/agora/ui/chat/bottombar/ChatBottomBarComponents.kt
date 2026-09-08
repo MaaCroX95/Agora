@@ -135,12 +135,12 @@ internal fun ComposerContextIndicator(
                 .semantics { contentDescription = title; stateDescription = usage }
                 .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = available),
         ) {
-            if (available) CircularProgressIndicator(
-                progress = { contextProgress },
+            CircularProgressIndicator(
+                progress = { if (available) contextProgress else 0f },
                 modifier = Modifier.size(20.dp),
                 strokeWidth = 2.5.dp,
                 color = contextProgressColor,
-            ) else Text("—", style = MaterialTheme.typography.labelMedium)
+            )
         }
         ExposedDropdownMenu(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,

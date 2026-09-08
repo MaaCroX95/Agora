@@ -27,13 +27,13 @@ import java.io.File
 import com.newoether.agora.R
 import com.newoether.agora.SettingsOverlayHost
 import com.newoether.agora.data.repository.SettingsRepository
+import com.newoether.agora.remote.displayTitle
 import com.newoether.agora.remote.RemoteState
 import com.newoether.agora.remote.RemoteViewModel
 import com.newoether.agora.remote.RemoteDeviceStatus
 import com.newoether.agora.mcp.McpConnectionStatus
 import com.newoether.agora.ui.settings.*
-import com.newoether.agora.ui.chat.ChatLoadingOverlay
-import androidx.compose.ui.input.pointer.pointerInput
+import com.newoether.agora.ui.motion.MotionAwareLinearProgressIndicator
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.ui.common.rememberAgoraHaptics
 
@@ -107,27 +107,26 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                             modifier = Modifier.clickable(enabled = current) {
                                 forward = true; focus.clearFocus(); vm.selectSession(session)
                             },
-                            headlineContent = { Text(session.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                            supportingContent = { Text(if (session.readOnly) stringResource(R.string.remote_history_read_only) + " · " + session.cwd else session.cwd,
+                            headlineContent = { Text(session.displayTitle(stringResource(R.string.new_chat)), maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                            supportingContent = { Text(if (session.readOnly && !session.canResume) stringResource(R.string.remote_history_read_only) + " · " + session.cwd else session.cwd,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             leadingContent = { Icon(Icons.Default.ChatBubbleOutline, null) },
                         )
                     } })
                 }
                 if (displayed.sessionCursor != null) item {
-                    TextButton(onClick = vm::loadMore, enabled = current) { Text(stringResource(R.string.remote_load_more)) }
+                    TextButton(onClick = vm::loadMore, enabled = current && !displayed.loading && !displayed.loadingMore) { Text(stringResource(R.string.remote_load_more)) }
                 }
             }
             else -> RemoteDevices(displayed, vm, back) { forward = true }
         }
     }
-    ChatLoadingOverlay(
-        visible = state.loading || state.loadingMore || state.controlling || state.restoring || state.saving ||
-            (state.deviceId == null && !state.addingDevice && state.devices.any { it.status == RemoteDeviceStatus.CONNECTING }),
-        modifier = Modifier.pointerInput(Unit) {
-            awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
-        },
-    )
+    if (state.deviceId != null && state.session == null && !state.addingDevice &&
+        (state.loading || state.loadingMore || state.controlling)) {
+        MotionAwareLinearProgressIndicator(
+            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().fillMaxWidth().height(4.dp),
+        )
+    }
     }
 }
 

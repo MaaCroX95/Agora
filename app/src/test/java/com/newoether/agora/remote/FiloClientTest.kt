@@ -268,4 +268,43 @@ class FiloClientTest {
         assertEquals("new-user", visible.last().parentId)
     }
 
+    @Test fun presentationRemovesOnlyTerminalLineBreaksAndPreservesNativeRecords() {
+        val source = "  first  \n    code\nlast  \r\n"
+        val user = RemoteMessage("u", "t", null, "user", "  input\nline  \r\n", 1)
+        val answer = RemoteMessage("a", "t", null, "assistant", source, 2)
+        val literal = RemoteMessage("b", "t2", null, "assistant", "literal\\n", 3)
+        val projected = projectRemoteMessages(listOf(user, answer, literal))
+        assertEquals("  input\nline  ", projected[0].text)
+        assertEquals(source.trimEnd('\r', '\n'), projected[1].text)
+        assertEquals(source.trimEnd('\r', '\n'), projected[1].segments!!.single().content)
+        assertEquals("literal\\n", projected[2].text)
+        assertTrue(user.text.endsWith("\r\n"))
+        assertEquals(source, answer.text)
+    }
+
+    @Test fun unnamedSessionUsesLocalizedNewChatWithoutChangingNativeId() {
+        val unnamed = RemoteSession("native-id", "native-id", "/workspace", 0)
+        assertEquals("New Chat", unnamed.displayTitle("New Chat"))
+        assertEquals("native-id", unnamed.id)
+        assertEquals("Named task", unnamed.copy(title = "Named task").displayTitle("New Chat"))
+    }
+
+    @Test fun nativeStreamingTailUsesOriginalThoughtToolAndAnswerLifecycle() {
+        val user = RemoteMessage("u", "turn", null, "user", "go", 1)
+        val thought = RemoteMessage("r", "turn", null, "assistant", "Thinking", 2, RemoteActivity("thought"))
+        val tool = RemoteMessage("t", "turn", null, "assistant", "", 3,
+            RemoteActivity("tool", "shell", state = "running"))
+        val answer = RemoteMessage("a", "turn", null, "assistant", "Hello", 4)
+        val active = RemoteRuntime("active", "turn", "model")
+        assertEquals(MessageStatus.THINKING, projectRemoteMessages(listOf(user, thought), active).last().status)
+        assertEquals(MessageStatus.TOOL_CALLING, projectRemoteMessages(listOf(user, thought, tool), active).last().status)
+        val streaming = projectRemoteMessages(listOf(user, thought, tool, answer), active).last()
+        val grown = projectRemoteMessages(listOf(user, thought, tool, answer.copy(text = "Hello world")), active).last()
+        assertEquals(streaming.id, grown.id)
+        assertEquals(MessageStatus.SENDING, grown.status)
+        assertEquals("Hello world", grown.text)
+        assertEquals(MessageStatus.SUCCESS,
+            projectRemoteMessages(listOf(user, thought, tool, answer), RemoteRuntime("idle")).last().status)
+    }
+
 }

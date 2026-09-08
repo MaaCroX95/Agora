@@ -472,7 +472,7 @@ class RemoteViewModelTest {
             assertFalse(events.any { it.contains("PRIVATE_") || it.contains("http://") })
         } finally { unmockkObject(DeveloperDiagnostics) }
     }
-    @Test fun explicitHistoryResumeKeepsHistoryAndEnablesExistingStreamOnlyAfterAcceptance() = runTest(dispatcher) {
+    @Test fun selectingHistoryAdmitsOnceAndEnablesExistingStreamOnlyAfterAcceptance() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
         coEvery { client.resume("history") } coAnswers { gate.await() }
         val old = RemoteMessage("old", "old-turn", null, "user", "Preserved", 1)
@@ -481,8 +481,7 @@ class RemoteViewModelTest {
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
         vm.selectSession(session.copy(id = "history", readOnly = true, canResume = true)); runCurrent()
-        vm.resumeSession(); vm.resumeSession(); runCurrent()
-        assertTrue(vm.state.value.controlling)
+        coVerify(exactly = 1) { client.resume("history") }
         assertTrue(vm.state.value.session!!.readOnly)
         verify(exactly = 0) { client.events("history") }
         gate.complete(Unit); runCurrent()
@@ -500,8 +499,9 @@ class RemoteViewModelTest {
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
         vm.selectSession(session.copy(id = "history", readOnly = true, canResume = true)); runCurrent()
-        vm.resumeSession(); runCurrent()
         assertEquals(RemoteFailure.SESSION_BUSY, vm.state.value.failure)
+        vm.refresh(); runCurrent()
+        coVerify(exactly = 1) { client.resume("history") }
         assertTrue(vm.state.value.session!!.readOnly)
         assertFalse(vm.state.value.controlling)
         verify(exactly = 0) { client.events("history") }
@@ -554,6 +554,21 @@ class RemoteViewModelTest {
         coVerify(exactly = 0) { client.send(any(), any(), any()) }
         coVerify(exactly = 0) { client.stop(any(), any()) }
         coVerify(exactly = 0) { client.setModel(any(), any()) }
+        vm.setVisible(false)
+    }
+
+    @Test fun lateSelectionAdmissionCannotReplaceAnotherSessionOrReplayOnVisibility() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        coEvery { client.resume("history") } coAnswers { withContext(NonCancellable) { gate.await() } }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        vm.setVisible(true); saveAndSelect(vm)
+        vm.selectSession(session.copy(id = "history", readOnly = true, canResume = true)); runCurrent()
+        vm.selectSession(session); runCurrent()
+        gate.complete(Unit); runCurrent()
+        assertEquals("session", vm.state.value.session!!.id)
+        vm.setVisible(false); vm.setVisible(true); runCurrent()
+        coVerify(exactly = 1) { client.resume("history") }
+        coVerify(exactly = 0) { client.send(any(), any(), any()) }
         vm.setVisible(false)
     }
 

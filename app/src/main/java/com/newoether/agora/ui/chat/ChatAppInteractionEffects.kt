@@ -263,8 +263,10 @@ internal fun ChatLaunchInteractionEffects(
     initialComposerFocusReady: Boolean,
     inputFocusRequester: FocusRequester,
     onShowLaunchContent: () -> Unit,
+    onInitialFocusRequested: () -> Unit = {},
 ) {
     val latestOnShowLaunchContent by rememberUpdatedState(onShowLaunchContent)
+    val latestOnInitialFocusRequested by rememberUpdatedState(onInitialFocusRequested)
     LaunchedEffect(Unit) {
         delay(50)
         latestOnShowLaunchContent()
@@ -273,6 +275,7 @@ internal fun ChatLaunchInteractionEffects(
         if (initialComposerFocusReady) {
             delay(50)
             inputFocusRequester.requestFocus()
+            latestOnInitialFocusRequested()
         }
     }
 }

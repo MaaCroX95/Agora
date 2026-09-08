@@ -33,7 +33,7 @@ internal data class RemoteState(
     val restoring: Boolean = true, val storageError: Boolean = false, val addingDevice: Boolean = false,
     val editedDeviceId: String? = null,
     val runtime: RemoteRuntime? = null, val models: List<RemoteModel> = emptyList(),
-    val controlling: Boolean = false,
+    val controlling: Boolean = false, val composerFocusOwner: String? = null,
 ) {
     val error: Boolean get() = failure != null
     val owner: String? get() = session?.let { "$deviceId/${it.id}" }
@@ -55,6 +55,7 @@ internal class RemoteViewModel(
     private val checkSlots = Semaphore(2)
     private var epoch = 0L
     private var selectionEpoch = 0L
+    private var historyAdmissionSelection: Long? = null
     private var visible = false
     private var polling: Job? = null
     private var paging: Job? = null
@@ -226,7 +227,7 @@ internal class RemoteViewModel(
         mutableState.value = state.value.copy(deviceId = id, addingDevice = false, editedDeviceId = null,
             sessions = emptyList(), sessionCursor = null,
             session = null, messages = emptyList(), historyCursor = null, queued = emptyList(), failure = null,
-            runtime = null, models = emptyList())
+            runtime = null, models = emptyList(), composerFocusOwner = null)
         refresh()
     }
 
@@ -235,7 +236,8 @@ internal class RemoteViewModel(
         selectionEpoch++
         invalidateReads()
         mutableState.value = state.value.copy(session = session, messages = emptyList(),
-            historyCursor = null, queued = emptyList(), failure = null, runtime = null)
+            historyCursor = null, queued = emptyList(), failure = null, runtime = null, composerFocusOwner = null)
+        historyAdmissionSelection = selectionEpoch.takeIf { session?.readOnly == true && session.canResume }
         refresh()
     }
 
@@ -283,6 +285,15 @@ internal class RemoteViewModel(
                             loading = false, failure = null)
                     } else if (session.readOnly) {
                         applyPage(client, session.id, generation, client.conversation(session.id))
+                        if (generation != epoch) return@launch
+                        if (historyAdmissionSelection == selectionEpoch) {
+                            historyAdmissionSelection = null // A selection admits once; refresh/reconnect never resends.
+                            client.resume(session.id)
+                            if (generation != epoch) return@launch
+                            markConnected(session)
+                            refresh()
+                            return@launch
+                        }
                     } else {
                         client.events(session.id).collect { page ->
                             if (generation == epoch) applyPage(client, session.id, generation, page)
@@ -329,8 +340,15 @@ internal class RemoteViewModel(
         val selected = selectionEpoch
         control { client ->
             val created = client.create()
-            if (selected == selectionEpoch) selectSession(created)
+            if (selected == selectionEpoch) {
+                selectSession(created)
+                mutableState.value = state.value.copy(composerFocusOwner = state.value.owner)
+            }
         }
+    }
+
+    fun completeComposerFocus(owner: String) {
+        if (state.value.composerFocusOwner == owner) mutableState.value = state.value.copy(composerFocusOwner = null)
     }
 
     fun resumeSession() {
@@ -340,12 +358,16 @@ internal class RemoteViewModel(
         control { client ->
             client.resume(session.id)
             if (selected == selectionEpoch) {
-                val connected = session.copy(readOnly = false, canResume = false)
-                mutableState.value = state.value.copy(session = connected,
-                    sessions = state.value.sessions.map { if (it.id == session.id) connected else it }, failure = null)
+                markConnected(session)
                 refresh()
             }
         }
+    }
+
+    private fun markConnected(session: RemoteSession) {
+        val connected = session.copy(readOnly = false, canResume = false)
+        mutableState.value = state.value.copy(session = connected,
+            sessions = state.value.sessions.map { if (it.id == session.id) connected else it }, failure = null)
     }
 
     fun setModel(model: String) {

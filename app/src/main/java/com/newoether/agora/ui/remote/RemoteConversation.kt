@@ -1,13 +1,16 @@
 package com.newoether.agora.ui.remote
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,6 +37,7 @@ import com.newoether.agora.ui.components.clearFocusOnTap
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import com.newoether.agora.util.gradientBlur
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RemoteConversation(
     state: RemoteState, vm: RemoteViewModel, settings: SettingsRepository, active: Boolean, onBack: () -> Unit,
@@ -57,10 +62,19 @@ internal fun RemoteConversation(
     val attempt = state.attempts[owner]
     val running = state.runtime?.isRunning == true
     val ready = !session.readOnly && state.runtime?.status in setOf("idle", "active", "ready")
+    val newChatEntry = remember(owner) { state.composerFocusOwner == owner }
+    ChatLaunchInteractionEffects(
+        initialComposerFocusReady = active && ready && state.composerFocusOwner == owner,
+        inputFocusRequester = focus,
+        onShowLaunchContent = {},
+        onInitialFocusRequested = { vm.completeComposerFocus(owner) },
+    )
     val generationVisible = running && state.messages.any {
         it.role == "user" && it.turnId == state.runtime?.activeTurnId
     }
     var activeMenu by remember(owner) { mutableStateOf<String?>(null) }
+    var lastModelDismissTime by remember(owner) { mutableLongStateOf(0L) }
+    var lastContextDismissTime by remember(owner) { mutableLongStateOf(0L) }
     LaunchedEffect(owner, field) { snapshotFlow { field.text.toString() }.collect { vm.editDraft(owner, it) } }
     var clearedAttempt by remember(owner) {
         mutableStateOf(attempt?.takeIf { it.delivery == RemoteDelivery.DELIVERED }?.clientId)
@@ -79,12 +93,23 @@ internal fun RemoteConversation(
         }
     }
     val messages = remember(state.messages, state.runtime) { projectRemoteMessages(state.messages, state.runtime) }
-    val streaming = messages.lastOrNull()?.takeIf { it.status == MessageStatus.SENDING }
+    val streaming = messages.lastOrNull()?.takeIf {
+        it.status in setOf(MessageStatus.SENDING, MessageStatus.THINKING, MessageStatus.TOOL_CALLING, MessageStatus.TRANSCRIBING)
+    }
     val payloads = rememberUpdatedState(remember(messages) { messages.associateBy { it.id } })
     val observe = remember(owner) { { id: String -> snapshotFlow { payloads.value[id] } } }
     val messageState = rememberUpdatedState(messages)
     val ime = WindowInsets.ime.getBottom(density)
     val scroll = rememberChatScrollCoordinator(owner, ime)
+    val focusManager = LocalFocusManager.current
+    val searchMessages: suspend (String, List<String>) -> List<com.newoether.agora.model.ChatMessage> = remember(owner) {
+        { _, ids -> ids.mapNotNull { payloads.value[it] } }
+    }
+    val interaction = rememberConversationInteractionState(owner, messageState, scroll.listState, searchMessages)
+    BackHandler(active && interaction.searchActive) {
+        interaction.dismissSearch()
+        focusManager.clearFocus()
+    }
     val animatedScrollRequest by vm.animatedScrollRequest.collectAsState()
     var barHeightPx by remember { mutableFloatStateOf(0f) }
     val barHeight = with(density) { barHeightPx.toDp() }
@@ -92,7 +117,7 @@ internal fun RemoteConversation(
     val switching = !initiallyPositioned
     scroll.BindLayoutObservation(owner, owner, ime, density)
     scroll.BindImeEffects(owner, messageState, density, barHeight, 0.dp, ime)
-    scroll.BindRequestEffects(owner, false, generationVisible, false, switching, false, false, null, animatedScrollRequest,
+    scroll.BindRequestEffects(owner, false, generationVisible, false, switching, interaction.searchActive, false, null, animatedScrollRequest,
         messageState, density, motion, barHeight, 0.dp, onAnimatedScrollFinished = vm::completeAnimatedScroll)
     val renderMessages = rememberScrollIsolatedMessages(owner, messageState, scroll.listState,
         bypassScrollIsolation = scroll.absoluteBottomScrollPhase.isActive || scroll.streamingTailController.isAutoFollowing)
@@ -104,10 +129,17 @@ internal fun RemoteConversation(
     }
     val follow = streamingTailAvailability(
         generationActive = generationVisible,
-        blocked = switching || !motion.allowProgrammaticScrollMotion,
+        blocked = switching || interaction.searchActive || !motion.allowProgrammaticScrollMotion,
         programmaticHandoff = scroll.imeBottomAnchorState.active ||
             scroll.absoluteBottomScrollPhase.isActive || animatedScrollRequest?.conversationId == owner,
     )
+    LaunchedEffect(owner, active, switching, interaction.searchActive, state.historyCursor, state.loading, state.loadingMore, state.error) {
+        if (!active || switching || state.historyCursor == null || state.loading || state.loadingMore || state.error) return@LaunchedEffect
+        if (interaction.searchActive) vm.loadMore()
+        else snapshotFlow { scroll.listState.firstVisibleItemIndex == 0 }.collect { atTop ->
+            if (atTop) vm.loadMore()
+        }
+    }
     var confirmUnknown by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).clearFocusOnTap()
         .onSizeChanged { scroll.recordViewportHeight(it.height) }) {
@@ -116,24 +148,39 @@ internal fun RemoteConversation(
             quarterAlpha = if (dark) 0.01f else 0f, blurRadius = 40f, dark = dark,
             blurEnabled = blur, motionEnabled = false)
         Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
-            ChatTopBar(false, emptyList(), session.id, session.title, 0, 0,
+            ChatTopBar(
+                isNewChatMode = false, conversations = emptyList(),
+                currentConversationId = session.id, currentConversationTitle = session.displayTitle(stringResource(R.string.new_chat)),
+                totalTokens = state.runtime?.contextTokens ?: 0,
+                contextTokenBudget = state.runtime?.contextWindow ?: 0,
+                contextAvailable = state.runtime?.contextTokens != null && state.runtime?.contextWindow != null,
+                searchActive = interaction.searchActive, searchQuery = interaction.searchQuery,
+                searchMatchIndex = interaction.searchMatchIndex, searchMatchCount = interaction.searchMatches.size,
+                onSearchQueryChange = interaction::updateSearchQuery,
+                onSearchPrevious = { if (interaction.previousSearchMatch()) haptics.selection() },
+                onSearchNext = { if (interaction.nextSearchMatch()) haptics.selection() },
+                onSearchDismiss = { interaction.dismissSearch(); focusManager.clearFocus() },
                 onNavigateBack = onBack, onOpenDrawer = onBack, onSystemPromptClick = {}, onNewChat = vm::newSession,
                 newChatEnabled = active && !state.controlling,
                 moreMenuContent = { dismiss ->
-                    DropdownMenuItem(text = { Text(stringResource(R.string.remote_refresh)) },
-                        leadingIcon = { Icon(Icons.Default.Refresh, null) }, enabled = active,
-                        onClick = { dismiss(); vm.refresh() })
-                    if (state.historyCursor != null) DropdownMenuItem(
-                        text = { Text(stringResource(R.string.remote_load_more)) },
-                        leadingIcon = { Icon(Icons.Default.History, null) }, enabled = active && !state.loading,
-                        onClick = { dismiss(); vm.loadMore() })
-                })
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.conversation_search)) },
+                        leadingIcon = { Icon(Icons.Default.Search, null) },
+                        enabled = active && !switching,
+                        onClick = { dismiss(); interaction.activateSearch() },
+                    )
+                },
+            )
         }) { _ ->
             Box(Modifier.fillMaxSize()) {
                 MessageList(messages = StableMessageList(renderMessages.value), allMessages = StableMessageList(messages),
                     authoritativeMessages = StableMessageList(messages), conversationId = owner,
                     state = scroll.listState, messageActionsEnabled = false, readOnlyActions = true, parseInlineDollarMath = inlineMath,
                     isLoading = generationVisible, isSwitching = switching, streamingMessage = streaming,
+                    searchQuery = if (interaction.searchActive) interaction.searchQuery else "",
+                    activeSearchMatch = interaction.searchMatches.getOrNull(interaction.searchMatchIndex),
+                    onSearchMatchDistance = interaction::recordSearchMatchDistance,
+                    onSearchTurnsChanged = interaction::recordSearchTurns,
                     streamingAutoFollowEnabled = follow.enabled && stickToBottom,
                     streamingAutoFollowPaused = follow.paused,
                     streamingTailWithinAttachThreshold = scroll.isWithinAbsoluteBottomAttachThreshold,
@@ -141,7 +188,7 @@ internal fun RemoteConversation(
                     toolCallDisplayMode = toolCallDisplayMode, thinkingSegmentDisplayMode = thinkingSegmentDisplayMode,
                     autoExpandActiveGroup = autoExpandActiveGroup,
                     modifier = Modifier.fillMaxSize().gradientBlur(blurAtTopDp = if (blur) 8f else 0f,
-                        blurAtBottomDp = 0f, fadeHeightDp = 40f, bottomOverlayHeight = barHeight + 12.dp),
+                        blurAtBottomDp = 0f, fadeHeightDp = 40f, bottomOverlayHeight = barHeight + with(density) { spacer.outerHeightPx.toDp() } + 12.dp),
                     bottomBarHeight = barHeight, viewportHeight = scroll.viewportHeightPx,
                     messageHeights = scroll.messageHeights, observeMessage = observe,
                     programmaticScrollActive = animatedScrollRequest?.conversationId == owner,
@@ -149,11 +196,41 @@ internal fun RemoteConversation(
                     lifecycleAppearanceRegistry = scroll.messageLifecycleAppearanceRegistry,
                     lifecycleEntranceTargetMessageId = animatedScrollRequest?.takeIf { it.conversationId == owner }?.targetMessageId,
                     contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 140.dp, bottom = barHeight + 8.dp))
-                ChatBottomScrollButton(shouldShowAbsoluteBottomButton(false, false, messages.isNotEmpty(), running,
-                    scroll.listState.layoutInfo.totalItemsCount > 1, scroll.listState.canScrollForward,
-                    scroll.isNearAbsoluteBottom, false, scroll.absoluteBottomScrollPhase,
-                    scroll.imeBottomAnchorState.active), barHeight) {
+                ChatBottomScrollButton(
+                    shouldShowAbsoluteBottomButton(
+                        isNewChatMode = newChatEntry && messages.isEmpty(),
+                        isSwitching = switching,
+                        conversationContentReady = initiallyPositioned,
+                        shareSelectionActive = false,
+                        hasItems = scroll.listState.layoutInfo.totalItemsCount > 1,
+                        canScrollForward = scroll.listState.canScrollForward,
+                        isNearBottom = scroll.isNearAbsoluteBottom,
+                        isStreamingAutoFollowing = scroll.streamingTailController.isAutoFollowing,
+                        scrollPhase = scroll.absoluteBottomScrollPhase,
+                        competingProgrammaticScrollActive = scroll.imeBottomAnchorState.active,
+                    ),
+                    barHeight,
+                ) {
                     scroll.requestAbsoluteBottomScroll()
+                }
+
+                AnimatedVisibility(
+                    visible = switching && !newChatEntry && !state.error,
+                    enter = fadeIn(animationSpec = tween(200)),
+                    exit = fadeOut(animationSpec = tween(200))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        MotionAwareCircularProgressIndicator(
+                            modifier = Modifier.size(48.dp),
+                            strokeWidth = 5.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
         }
@@ -161,10 +238,8 @@ internal fun RemoteConversation(
             Surface(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 .onSizeChanged { barHeightPx = it.height.toFloat() }) {
                 Column(Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)) {
-                    RemoteReadStatus(state) { if (state.failure == RemoteFailure.SESSION_BUSY) vm.resumeSession() else vm.refresh() }
-                    if (session.canResume) TextButton(onClick = vm::resumeSession,
-                        enabled = active && !state.controlling) { Text(stringResource(R.string.remote_resume_history)) }
-                    else Text(stringResource(R.string.remote_history_read_only), style = MaterialTheme.typography.labelMedium)
+                    RemoteReadStatus(state) { if (session.canResume) vm.resumeSession() else vm.refresh() }
+                    if (!session.canResume) Text(stringResource(R.string.remote_history_read_only), style = MaterialTheme.typography.labelMedium)
                 }
             }
         } else ChatComposerSurface(expanded, { barHeightPx = it }, Modifier.align(Alignment.BottomCenter), spacer.outerHeightPx) {
@@ -186,24 +261,55 @@ internal fun RemoteConversation(
                 },
                 controls = {
                     ComposerControlGroup {
+                        AttachmentAddMenu(
+                            enabled = active && !submitting,
+                            onCamera = {}, onPhotos = {}, onVideos = {}, onFiles = {},
+                        )
                         ComposerModelSelector(
                             displayText = state.models.firstOrNull { it.id == state.runtime?.model }?.name
                                 ?: state.runtime?.model ?: stringResource(R.string.remote_model_unavailable),
                             isModelValid = state.runtime?.model != null, expanded = activeMenu == "model",
                             enabled = active && ready && !state.controlling && state.models.isNotEmpty(),
-                            onClick = { activeMenu = "model" }, onDismissRequest = { activeMenu = null },
+                            onClick = {
+                                val now = System.currentTimeMillis()
+                                if (activeMenu == "model") activeMenu = null
+                                else if (now - lastModelDismissTime > 200) activeMenu = "model"
+                            },
+                            onDismissRequest = {
+                                if (activeMenu == "model") {
+                                    activeMenu = null
+                                    lastModelDismissTime = System.currentTimeMillis()
+                                }
+                            },
                             menuContent = {
-                                state.models.forEach { model -> DropdownMenuItem(
-                                    text = { Text(model.name) },
-                                    trailingIcon = { if (model.id == state.runtime?.model) Icon(Icons.Default.Check, null) },
-                                    onClick = { activeMenu = null; vm.setModel(model.id) },
-                                ) }
+                                val sortedModels = remember(state.models) { state.models.sortedBy { it.id.lowercase() } }
+                                sortedModels.forEach { model ->
+                                    DropdownMenuItem(
+                                        text = { Text(model.name) },
+                                        onClick = {
+                                            haptics.selection()
+                                            vm.setModel(model.id)
+                                            activeMenu = null
+                                            lastModelDismissTime = 0L
+                                        },
+                                    )
+                                }
                             },
                         )
                         ComposerContextIndicator(
                             estimatedTokens = state.runtime?.contextTokens, tokenBudget = state.runtime?.contextWindow,
-                            expanded = activeMenu == "context", onClick = { activeMenu = "context" },
-                            onDismissRequest = { activeMenu = null },
+                            expanded = activeMenu == "context",
+                            onClick = {
+                                val now = System.currentTimeMillis()
+                                if (activeMenu == "context") activeMenu = null
+                                else if (now - lastContextDismissTime > 200) activeMenu = "context"
+                            },
+                            onDismissRequest = {
+                                if (activeMenu == "context") {
+                                    activeMenu = null
+                                    lastContextDismissTime = System.currentTimeMillis()
+                                }
+                            },
                         )
                     }
                     val showStop = running && field.text.isBlank()
@@ -215,7 +321,6 @@ internal fun RemoteConversation(
                     }
                 })
         }
-        ChatLoadingOverlay(visible = switching && !state.loading && !state.error)
     }
     if (confirmUnknown) AlertDialog(onDismissRequest = { confirmUnknown = false },
         title = { Text(stringResource(R.string.remote_confirm), fontWeight = FontWeight.Bold) },
