@@ -45,6 +45,9 @@ import com.newoether.agora.remote.RemoteViewModel
 import com.newoether.agora.remote.RemoteDeviceStatus
 import com.newoether.agora.mcp.McpConnectionStatus
 import com.newoether.agora.ui.settings.*
+import com.newoether.agora.ui.chat.ChatRenameDialog
+import com.newoether.agora.ui.chat.ChatDeleteConfirmDialog
+import com.newoether.agora.ui.chat.ChatDeleteDialogPhase
 import com.newoether.agora.ui.chat.DrawerConversationIndicator
 import com.newoether.agora.ui.chat.resolveDrawerConversationIndicator
 import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator
@@ -159,6 +162,9 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                             title = displayed.devices.firstOrNull { it.id == displayed.deviceId }?.name.orEmpty(),
                             items = displayed.sessions.map { session -> {
                                 key(session.id) {
+                                    var showMenu by remember { mutableStateOf(false) }
+                                    var action by remember { mutableStateOf<String?>(null) }
+                                    val actionsEnabled = current && active && !displayed.controlling
                                     DisposableEffect(session.id) { onDispose { visibleRows.remove(session.id) } }
                                     SettingsItem(
                                         modifier = Modifier.onGloballyPositioned { coordinates ->
@@ -173,12 +179,48 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                                             maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                         leadingContent = { Icon(Icons.Default.ChatBubbleOutline, null) },
                                         trailingContent = {
-                                            RemoteSessionIndicator(resolveDrawerConversationIndicator(
-                                                isGenerating = displayed.sessionStatuses[session.id]?.status == "active",
-                                                isSelected = false,
-                                                hasUnreadGeneration = displayed.hasUnreadGeneration(session.id),
-                                            ))
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                RemoteSessionIndicator(resolveDrawerConversationIndicator(
+                                                    isGenerating = displayed.sessionStatuses[session.id]?.status == "active",
+                                                    isSelected = false,
+                                                    hasUnreadGeneration = displayed.hasUnreadGeneration(session.id),
+                                                ))
+                                                Box {
+                                                    IconButton(onClick = { showMenu = true }, enabled = actionsEnabled) {
+                                                        Icon(Icons.Default.MoreVert, stringResource(R.string.more))
+                                                    }
+                                                    DropdownMenu(
+                                                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                                        tonalElevation = 16.dp, shape = RoundedCornerShape(12.dp),
+                                                        expanded = showMenu, onDismissRequest = { showMenu = false },
+                                                    ) {
+                                                        DropdownMenuItem(
+                                                            text = { Text(stringResource(R.string.rename)) },
+                                                            leadingIcon = { Icon(Icons.Default.Edit, null) },
+                                                            enabled = actionsEnabled,
+                                                            onClick = { showMenu = false; action = "rename" },
+                                                        )
+                                                        DropdownMenuItem(
+                                                            text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
+                                                            leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                                            enabled = actionsEnabled && displayed.sessionStatuses[session.id]?.status != "active",
+                                                            onClick = { showMenu = false; action = "delete" },
+                                                        )
+                                                    }
+                                                }
+                                            }
                                         },
+                                    )
+                                    if (action == "rename") ChatRenameDialog(
+                                        initialName = session.title,
+                                        initialDisplayName = session.displayTitle(stringResource(R.string.new_chat)),
+                                        onSave = { vm.renameSession(session.id, it); action = null },
+                                        onDismiss = { action = null },
+                                    )
+                                    if (action == "delete") ChatDeleteConfirmDialog(
+                                        phase = ChatDeleteDialogPhase.CONFIRM,
+                                        onConfirm = { vm.deleteSession(session.id); action = null },
+                                        onDismiss = { action = null },
                                     )
                                 }
                             } },

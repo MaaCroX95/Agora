@@ -173,6 +173,14 @@ internal class FiloClient(
         awaitClose { call.cancel() }
     }.buffer(Channel.CONFLATED)
 
+    suspend fun rename(id: String, name: String): RemoteSession =
+        json.decodeFromString<RemoteSession>(request("v1/sessions/${sessionId(id)}/rename",
+            body = json.encodeToString(mapOf("name" to name)))).also { require(it.id == id) }
+    suspend fun deleteSession(id: String) {
+        val result = json.decodeFromString<Map<String, Boolean>>(request("v1/sessions/${sessionId(id)}/delete", body = "{}"))
+        require(result["deleted"] == true)
+    }
+
     suspend fun resume(id: String) { request("v1/sessions/${sessionId(id)}/resume", body = "{}") }
     suspend fun create(): RemoteSession = json.decodeFromString(request("v1/sessions", body = "{}"))
     suspend fun models(): List<RemoteModel> = json.decodeFromString<RemoteModels>(request("v1/models")).models

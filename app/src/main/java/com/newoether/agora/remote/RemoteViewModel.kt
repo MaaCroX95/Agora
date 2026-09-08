@@ -619,6 +619,35 @@ internal class RemoteViewModel(
         }
     }
 
+    fun renameSession(id: String, name: String) {
+        if (name.isBlank() || name.length > 4096) return
+        manageSession(id) { it.rename(id, name) }
+    }
+    fun deleteSession(id: String) = manageSession(id) { it.deleteSession(id); null }
+
+    private fun manageSession(id: String, operation: suspend (FiloClient) -> RemoteSession?) {
+        val snapshot = state.value
+        if (snapshot.session != null || snapshot.controlling || snapshot.sessions.none { it.id == id }) return
+        val selected = selectionEpoch
+        invalidateReads()
+        control { client ->
+            try {
+                val updated = operation(client)
+                if (selected != selectionEpoch || clients[snapshot.deviceId] !== client) return@control
+                val owner = snapshot.sessionOwners["${snapshot.deviceId}/$id"] ?: "${snapshot.deviceId}/$id"
+                mutableState.value = state.value.copy(
+                    sessions = state.value.sessions.mapNotNull { session ->
+                        if (session.id != id) session else updated?.let { session.copy(title = it.title, updatedAt = it.updatedAt) }
+                    },
+                    sessionStatuses = if (updated == null) state.value.sessionStatuses - id else state.value.sessionStatuses,
+                    drafts = if (updated == null) state.value.drafts - owner else state.value.drafts,
+                    attempts = if (updated == null) state.value.attempts - owner else state.value.attempts,
+                    failure = null,
+                )
+            } finally { if (selected == selectionEpoch) startSessionStatusReads() }
+        }
+    }
+
     fun loadMore() {
         if (paging?.isActive == true || state.value.loading) return
         val snapshot = state.value
