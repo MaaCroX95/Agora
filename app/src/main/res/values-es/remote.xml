@@ -35,4 +35,7 @@
     <string name="remote_model_unavailable">Modelo no disponible</string>
     <string name="remote_address_placeholder">http://192.168.1.100:7435</string>
     <string name="remote_token_placeholder">0123456789abcdef…</string>
+    <string name="remote_online">En línea</string>
+    <string name="remote_offline">Sin conexión</string>
+    <string name="remote_connecting">Conectando</string>
 </resources>

@@ -45,6 +45,7 @@ import com.newoether.agora.ui.components.AnimatedBlobBackground
 import com.newoether.agora.ui.components.clearFocusOnTap
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import com.newoether.agora.util.gradientBlur
+import kotlinx.coroutines.flow.filterNotNull
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -127,11 +128,14 @@ internal fun RemoteConversation(
         }
     }
     val observe = remember(owner) { { id: String -> vm.observeMessage(owner, id) } }
-    val streamingFlow = remember(owner, tail?.id) {
-        tail?.let { vm.observeMessage(owner, it.id) } ?: kotlinx.coroutines.flow.flowOf(null)
+    val streaming = tail?.let { message ->
+        key(owner, message.id) {
+            // A suspended observer does not delete the body already shown during navigation.
+            val flow = remember(owner, message.id) { vm.observeMessage(owner, message.id).filterNotNull() }
+            val payload by flow.collectAsState(initial = vm.cachedMessage(owner, message.id))
+            payload
+        }
     }
-    val streamingPayload by streamingFlow.collectAsState(initial = tail?.let { vm.cachedMessage(owner, it.id) })
-    val streaming = streamingPayload?.takeIf { it.id == tail?.id } ?: tail
     val messageState = rememberUpdatedState(messages)
     val ime = WindowInsets.ime.getBottom(density)
     val scroll = rememberChatScrollCoordinator(owner, ime)
@@ -181,6 +185,10 @@ internal fun RemoteConversation(
             if (atTop) vm.loadMore()
         }
     }
+    val historyProgress = remember(owner) { androidx.compose.animation.core.MutableTransitionState(false) }
+    SideEffect {
+        historyProgress.targetState = active && !switching && !interaction.searchActive && state.loadingMore
+    }
     var confirmUnknown by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).clearFocusOnTap()
         .onSizeChanged { scroll.recordViewportHeight(it.height) }) {
@@ -195,6 +203,14 @@ internal fun RemoteConversation(
                 totalTokens = state.runtime?.contextTokens ?: 0,
                 contextTokenBudget = state.runtime?.contextWindow ?: 0,
                 contextAvailable = state.runtime?.contextTokens != null && state.runtime?.contextWindow != null,
+                subtitle = "• " + stringResource(when {
+                    state.error -> R.string.remote_offline
+                    state.loading || state.devices.firstOrNull { it.id == state.deviceId }?.status == RemoteDeviceStatus.CONNECTING ->
+                        R.string.remote_connecting
+                    state.devices.firstOrNull { it.id == state.deviceId }?.status == RemoteDeviceStatus.CONNECTED ->
+                        R.string.remote_online
+                    else -> R.string.remote_offline
+                }),
                 searchActive = interaction.searchActive, searchQuery = interaction.searchQuery,
                 searchMatchIndex = interaction.searchMatchIndex, searchMatchCount = interaction.searchMatches.size,
                 onSearchQueryChange = interaction::updateSearchQuery,
@@ -237,6 +253,23 @@ internal fun RemoteConversation(
                     lifecycleAppearanceRegistry = scroll.messageLifecycleAppearanceRegistry,
                     lifecycleEntranceTargetMessageId = animatedScrollRequest?.takeIf { it.conversationId == owner }?.targetMessageId,
                     contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 140.dp, bottom = barHeight + 8.dp))
+                // Use the existing top content inset; loading never adds or removes a list row.
+                Box(
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 100.dp).size(40.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AnimatedVisibility(
+                        visibleState = historyProgress,
+                        enter = fadeIn(tween(300)),
+                        exit = fadeOut(tween(300)),
+                    ) {
+                        MotionAwareCircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
                 ChatBottomScrollButton(
                     shouldShowAbsoluteBottomButton(
                         isNewChatMode = newChatEntry && messages.isEmpty(),

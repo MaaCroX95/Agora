@@ -17,9 +17,10 @@ internal enum class MessageListLayoutMode {
 internal fun messageListLayoutMode(
     isSwitching: Boolean,
     isScrollInProgress: Boolean,
+    isUserDragging: Boolean = false,
 ): MessageListLayoutMode = when {
     isSwitching -> MessageListLayoutMode.COVERED_TRANSITION
-    isScrollInProgress -> MessageListLayoutMode.ACTIVE_SCROLL
+    isScrollInProgress || isUserDragging -> MessageListLayoutMode.ACTIVE_SCROLL
     else -> MessageListLayoutMode.STABLE
 }
 
@@ -290,16 +291,14 @@ internal data class MessageListViewportAnchor(
 
 internal fun LazyListState.captureMessageListViewportAnchor(
     turns: List<MessageListTurn>,
-): MessageListViewportAnchor? = turns
-    .getOrNull(firstVisibleItemIndex)
-    ?.messages
-    ?.firstOrNull()
-    ?.let { message ->
-        MessageListViewportAnchor(
-            messageId = message.id,
-            scrollOffsetPx = firstVisibleItemScrollOffset,
-        )
-    }
+    visualKey: (String) -> String = { it },
+): MessageListViewportAnchor? {
+    // The measured index belongs to the old list until prepend's next measure pass.
+    val measuredKey = layoutInfo.visibleItemsInfo
+        .firstOrNull { it.index == firstVisibleItemIndex }?.key ?: return null
+    val message = turns.firstOrNull { visualKey(it.key) == measuredKey }?.messages?.firstOrNull() ?: return null
+    return MessageListViewportAnchor(message.id, firstVisibleItemScrollOffset)
+}
 
 internal fun LazyListState.restoreMessageListViewportAnchor(
     turns: List<MessageListTurn>,

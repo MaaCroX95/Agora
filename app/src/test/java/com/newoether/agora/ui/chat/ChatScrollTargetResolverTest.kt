@@ -47,6 +47,48 @@ import kotlinx.coroutines.test.runTest
 
 class ChatScrollTargetResolverTest {
     @Test
+    fun prependBetweenCompositionAndMeasureKeepsTheMeasuredMessageInsteadOfTheOldIndex() {
+        val state = io.mockk.mockk<androidx.compose.foundation.lazy.LazyListState>()
+        val measured = io.mockk.mockk<androidx.compose.foundation.lazy.LazyListItemInfo>()
+        val layout = io.mockk.mockk<androidx.compose.foundation.lazy.LazyListLayoutInfo>()
+        io.mockk.every { state.firstVisibleItemIndex } returns 0
+        io.mockk.every { state.firstVisibleItemScrollOffset } returns 37
+        io.mockk.every { state.layoutInfo } returns layout
+        io.mockk.every { layout.visibleItemsInfo } returns listOf(measured)
+        io.mockk.every { measured.index } returns 0
+        io.mockk.every { measured.key } returns "visible"
+        io.mockk.every { state.requestScrollToItem(any(), any()) } returns Unit
+        val previous = message("visible", Participant.USER)
+        val turns = buildMessageListTurns(listOf(
+            message("older-a", Participant.USER),
+            message("older-b", Participant.USER),
+            previous,
+        ))
+
+        val anchor = state.captureMessageListViewportAnchor(turns)
+        assertEquals(MessageListViewportAnchor("visible", 37), anchor)
+        org.junit.Assert.assertTrue(state.restoreMessageListViewportAnchor(turns, checkNotNull(anchor)))
+        io.mockk.verify(exactly = 1) { state.requestScrollToItem(2, 37) }
+        io.mockk.verify(exactly = 0) { state.requestScrollToItem(0, any()) }
+
+        // A removed measured key must not silently acquire the new row occupying its index.
+        assertNull(state.captureMessageListViewportAnchor(turns.dropLast(1)))
+        val replacement = buildMessageListTurns(listOf(message("replacement", Participant.USER)))
+        assertEquals(MessageListViewportAnchor("replacement", 37),
+            state.captureMessageListViewportAnchor(replacement) { if (it == "replacement") "visible" else it })
+    }
+
+    @Test
+    fun aStationaryHeldDragStillOwnsTheViewport() {
+        assertEquals(
+            MessageListLayoutMode.ACTIVE_SCROLL,
+            messageListLayoutMode(isSwitching = false, isScrollInProgress = false, isUserDragging = true),
+        )
+    }
+
+
+
+    @Test
     fun readyRequestBeforeDestinationPublicationUsesTheDestinationHydration() =
         verifyDestinationHydration("old")
 

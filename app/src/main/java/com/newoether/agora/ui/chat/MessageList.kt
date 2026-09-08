@@ -168,7 +168,7 @@ internal fun MessageList(
     var streamingTailFollowMode by remember(state, conversationId) {
         mutableStateOf(StreamingTailFollowMode.INACTIVE)
     }
-    var streamingTailUserDragInProgress by remember(state, conversationId) {
+    var userDragInProgress by remember(state, conversationId) {
         mutableStateOf(false)
     }
     val latestIsLoading by rememberUpdatedState(isLoading)
@@ -207,7 +207,7 @@ internal fun MessageList(
             when (interaction) {
                 is DragInteraction.Start -> {
                     cancelMutationAnchoring()
-                    streamingTailUserDragInProgress = true
+                    userDragInProgress = true
                     // A real gesture is authoritative. Clear the externally-observed flag before
                     // changing mode so the scroll-to-bottom button can react in the same frame.
                     streamingTailController.isAutoFollowing = false
@@ -221,7 +221,7 @@ internal fun MessageList(
 
                 is DragInteraction.Stop,
                 is DragInteraction.Cancel -> {
-                    streamingTailUserDragInProgress = false
+                    userDragInProgress = false
                 }
             }
         }
@@ -386,9 +386,6 @@ internal fun MessageList(
         streamingAutoFollowPaused,
         lastUserMessage?.id,
     ) {
-        if (!isLoading) {
-            streamingTailUserDragInProgress = false
-        }
         if (!isLoading || streamingAutoFollowPaused || !streamingAutoFollowEnabled) {
             setStreamingTailFollowMode(
                 reduceStreamingTailGenerationAvailability(
@@ -494,7 +491,7 @@ internal fun MessageList(
                                 !latestIsLoading
                         )
                 ) &&
-                !streamingTailUserDragInProgress
+                !userDragInProgress
             ) {
                 val frameNanos = withFrameNanos { frameTimeNanos -> frameTimeNanos }
                 val elapsedSeconds =
@@ -525,7 +522,7 @@ internal fun MessageList(
                         val modeStillOwnsAttachment =
                             streamingTailFollowMode == StreamingTailFollowMode.ATTACHED ||
                                 streamingTailFollowMode == StreamingTailFollowMode.SETTLING
-                        if (!streamingTailUserDragInProgress && modeStillOwnsAttachment) {
+                        if (!userDragInProgress && modeStillOwnsAttachment) {
                             state.dispatchRawDelta(step)
                         }
                     }
@@ -678,8 +675,8 @@ internal fun MessageList(
         val hydrationPending = !isStreamingOverlay && observedMessage == null && cachedMessage == null
         val hydrationMutationKey = "hydrate:${messageStub.id}"
 
-        LaunchedEffect(messageStub.id, observedMessage, cachedMessage, isStreamingOverlay) {
-            val hydrated = observedMessage ?: cachedMessage
+        val hydrated = if (isStreamingOverlay) streamingMessage else observedMessage ?: cachedMessage
+        LaunchedEffect(messageStub.id, hydrated, isStreamingOverlay) {
             if (isStreamingOverlay || hydrated != null) {
                 hydrated?.let(::cacheHydratedPayload)
                 onMessageHydrated(conversationId, messageStub.id)
@@ -694,11 +691,12 @@ internal fun MessageList(
                 messageListLayoutMode(
                     isSwitching = isSwitching,
                     isScrollInProgress = state.isScrollInProgress || programmaticScrollActive,
+                    isUserDragging = userDragInProgress,
                 ) == MessageListLayoutMode.STABLE
             ) {
                 val anchor = mutationAnchorLock.begin(
                     key = hydrationMutationKey,
-                    candidate = state.captureMessageListViewportAnchor(turns),
+                    candidate = state.captureMessageListViewportAnchor(turns, ::stableVisualKey),
                 )
                 if (anchor != null) state.restoreMessageListViewportAnchor(turns, anchor)
             }
@@ -896,6 +894,7 @@ internal fun MessageList(
                         isSwitching = isSwitching,
                         isScrollInProgress =
                             state.isScrollInProgress || programmaticScrollActive,
+                        isUserDragging = userDragInProgress,
                     )
                     // Measurement remains available to explicit scrolling calculations, but
                     // bottom geometry no longer reads it. The tail's minimum height absorbs
@@ -920,11 +919,12 @@ internal fun MessageList(
                         isSwitching = isSwitching,
                         isScrollInProgress =
                             state.isScrollInProgress || programmaticScrollActive,
+                        isUserDragging = userDragInProgress,
                     ) == MessageListLayoutMode.STABLE
                 ) {
                     val anchor = mutationAnchorLock.begin(
                         key = mutationKey,
-                        candidate = state.captureMessageListViewportAnchor(turns),
+                        candidate = state.captureMessageListViewportAnchor(turns, ::stableVisualKey),
                     )
                     // Pre-arm the very first remeasure. Waiting for onSizeChanged is one frame
                     // too late when an AnimatedVisibility reverses under rapid taps.

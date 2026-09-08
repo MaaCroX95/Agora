@@ -47,6 +47,7 @@ cannot take over the newer page. Duplicate storage actions are fenced. Edit atom
 replaces the selected address/token without colliding with another device; Delete confirms
 and removes only that local connection. Failure retains it. The row menu is Edit/Delete.
 Fields reuse MCP labeled inputs and gray URL/token examples, with no submitted defaults.
+Placeholder text inherits the original field defaults without an extra opacity reduction.
 Helper copy explains installing Filo on the target and entering its IP or URL, not Tailscale.
 Visible entry/save starts coalesced connection checks; no periodic device-health loop.
 
@@ -89,9 +90,19 @@ an incoming older fragment. ChatMessage.displayPageId expresses this boundary to
 canonical MessageList turn builder; ordinary null-boundary grouping remains unchanged.
 LazyColumn stable keys preserve the current drag/fling position without a second scroll
 actor, scrollToItem restoration, delayed correction or structural window trimming.
+While an older page loads, the original 20dp/2dp circular indicator appears in the existing
+top boundary inset with 300ms opacity enter/exit. Its fixed slot never adds a list item or
+changes content padding, message geometry, keys or scroll position.
+Viewport mutation anchors use the actually measured visual key, never an old-layout index
+into newly prepended rows. Drag ownership lasts until gesture Stop/Cancel even while held
+stationary or generation has ended; hydration/card mutations cannot claim that viewport.
 Original MessageList, body observation, Search highlights and scroll owners remain shared.
 Explicit Search may read older pages with cancellation, without changing admitted positions.
 Reconnecting updates the native tail without replacing the historical reading position.
+Active-body observation is keyed to its owner/message and begins with the admitted cached
+body. Suspending observation is not deletion. The original bounded MessageList payload
+cache retains rendered streaming bodies for the transition back to ordinary observation;
+returning must not replace the last answer with an empty stub or replay offline text.
 A real user or different turn ends an assistant group. Remote DTOs remain separate from
 ChatMessage/MessageSegment presentation; only public summaries and tool records are mapped.
 Native imageView records hydrate real image bytes by authenticated message identity. Reuse
@@ -112,8 +123,10 @@ ChatScrollCoordinator, ChatLaunchInteractionEffects and bottom-scroll button dir
 No invented Remote renderer, scroll algorithm, keyboard behavior or animation.
 Unsupported message mutations are hidden; Copy, Select text and Info remain available.
 Top More contains Search only, with original highlights and navigation. Absent/ID titles
-display New Chat. Context capsule appears only for available native telemetry; unknown
-context shows an empty circular indicator without a dash or fabricated numeric usage.
+display New Chat. Remote title subtitle shows a bullet plus Online, Offline or Connecting
+from its real connection/read state, replacing context usage there. The composer context
+indicator retains native telemetry; unknown context shows an empty circular indicator
+without a dash or fabricated numeric usage.
 
 The chat loading cover is the original content-area ChatApp block before the composer:
 48dp/5dp circle, 200ms opacity. Its lifetime is initial history opening/scroll settling,
@@ -140,6 +153,8 @@ scroll. Navigation and repeated reconciliation cannot duplicate it.
 ## New Chat, models and settings
 
 New Chat is local until Send: immediate original keyboard, no background creation/request.
+Within chat, New Chat replaces the current conversation in place using the original title,
+composer and scroll owners; the enclosing settings navigation must not create another page.
 The top plus is NOP on an existing draft. The original attachment plus/menu is present with
 Camera/Photos/Videos/Files callbacks NOP. Model catalog reads admitted by prior navigation
 may finish; draft entry/refresh does not start them. Actual model loading says Loading…,

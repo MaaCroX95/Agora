@@ -77,6 +77,7 @@ internal fun ChatTopBar(
     totalTokens: Int,
     contextTokenBudget: Int,
     contextAvailable: Boolean = totalTokens > 0,
+    subtitle: String? = null,
     searchActive: Boolean = false,
     searchQuery: String = "",
     searchMatchIndex: Int = -1,
@@ -275,9 +276,8 @@ internal fun ChatTopBar(
                 }
                 val textMeasurer = rememberTextMeasurer()
                 val density = LocalDensity.current
-                val conversationTitleStyle =
-                    if (contextAvailable) ChatType.conversationTitle else ChatType.conversationTitleSolo
-                val tokenSubtitle = if (!showBrandTitle && contextAvailable) {
+                val tokenSubtitle = if (!showBrandTitle && subtitle != null) subtitle
+                else if (!showBrandTitle && contextAvailable) {
                     stringResource(
                         R.string.context_usage_messages,
                         ContextBudget.compactLabel(totalTokens),
@@ -286,6 +286,8 @@ internal fun ChatTopBar(
                 } else {
                     null
                 }
+                val conversationTitleStyle =
+                    if (tokenSubtitle != null) ChatType.conversationTitle else ChatType.conversationTitleSolo
                 val targetTitleContentWidth = with(density) {
                     val primaryWidth = textMeasurer.measure(
                         text = AnnotatedString(if (showBrandTitle) appName else resolvedTitle.orEmpty()),

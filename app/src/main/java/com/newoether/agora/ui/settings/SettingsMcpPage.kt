@@ -802,7 +802,7 @@ internal fun McpLabeledField(
                 isError = isError,
                 supportingText = supportingText?.let { text -> { Text(text) } },
                 placeholder = placeholder?.let { text -> {
-                    Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                    Text(text)
                 } },
                 keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
                 visualTransformation = if (password) {
