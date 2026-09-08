@@ -13,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.ui.draw.scale
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,12 +34,8 @@ import com.newoether.agora.remote.*
 import com.newoether.agora.ui.chat.*
 import com.newoether.agora.ui.chat.bottombar.*
 import com.newoether.agora.ui.common.LocalAgoraHaptics
-import com.newoether.agora.ui.common.ThinkingControlPanel
-import com.newoether.agora.ui.common.OpenAiServiceTierControlPanel
 import com.newoether.agora.ui.common.thinkingControlShortLabel
 import com.newoether.agora.ui.common.openAiServiceTierShortLabel
-import com.newoether.agora.ui.components.DialogWindowEdgeToEdge
-import com.newoether.agora.ui.motion.MotionAwareModalBottomSheet
 import com.newoether.agora.ui.components.AnimatedBlobBackground
 import com.newoether.agora.ui.components.clearFocusOnTap
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
@@ -91,23 +86,17 @@ internal fun RemoteConversation(
     var lastModelDismissTime by remember(owner) { mutableLongStateOf(0L) }
     var lastContextDismissTime by remember(owner) { mutableLongStateOf(0L) }
     var lastToolsDismissTime by remember(owner) { mutableLongStateOf(0L) }
-    var showThinkingSheet by remember(owner) { mutableStateOf(false) }
-    var showOpenAiServiceTierSheet by remember(owner) { mutableStateOf(false) }
     val effortChoices = state.settingsModel?.reasoningEfforts.orEmpty()
     val tierChoices = state.settingsModel?.serviceTiers.orEmpty()
     val settingsEnabled = active && state.canEditSettings
     val thinkingEnabled = state.selectedEffort != null && state.selectedEffort != "none"
     val thinkingLevel = state.selectedEffort.orEmpty()
-    val thinkingBudgetEnabled = false
-    val thinkingBudgetTokens = 4096
     val openAiServiceTierEnabled = state.selectedServiceTier != null
     val openAiServiceTier = state.selectedServiceTier.orEmpty()
     val serviceTierKnown = state.isDraft || state.runtime?.serviceTierKnown == true || state.runtime?.serviceTier != null
     LaunchedEffect(active) {
         if (!active) {
             activeMenu = null
-            showThinkingSheet = false
-            showOpenAiServiceTierSheet = false
         }
     }
     LaunchedEffect(owner, field) { snapshotFlow { field.text.toString() }.collect { vm.editDraft(owner, it) } }
@@ -386,13 +375,13 @@ internal fun RemoteConversation(
                             },
                         )
                         ExposedDropdownMenuBox(
-                            expanded = activeMenu == "tools",
+                            expanded = activeMenu in setOf("tools", "effort", "tier"),
                             onExpandedChange = { }
                         ) {
                             IconButton(
                                 onClick = {
                                     val now = System.currentTimeMillis()
-                                    if (activeMenu == "tools") {
+                                    if (activeMenu in setOf("tools", "effort", "tier")) {
                                         activeMenu = null
                                     } else if (now - lastToolsDismissTime > 200) {
                                         activeMenu = "tools"
@@ -406,9 +395,9 @@ internal fun RemoteConversation(
 
                             ExposedDropdownMenu(
                                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                expanded = activeMenu == "tools",
+                                expanded = activeMenu in setOf("tools", "effort", "tier"),
                                 onDismissRequest = {
-                                    if (activeMenu == "tools") {
+                                    if (activeMenu in setOf("tools", "effort", "tier")) {
                                         activeMenu = null
                                         lastToolsDismissTime = System.currentTimeMillis()
                                     }
@@ -416,79 +405,95 @@ internal fun RemoteConversation(
                                 matchTextFieldWidth = false,
                                 shape = CHAT_DROPDOWN_MENU_SHAPE,
                             ) {
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(androidx.compose.ui.res.painterResource(id = com.newoether.agora.R.drawable.neurology_24), null, modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp))
-                                            Spacer(modifier = Modifier.width(12.dp))
-                                            Column {
-                                                Text(stringResource(R.string.thinking))
-                                                Text(
-                                                    text = if (state.selectedEffort == null) "" else thinkingControlShortLabel(
-                                                        thinkingEnabled,
-                                                        thinkingLevel,
-                                                        thinkingBudgetEnabled,
-                                                        thinkingBudgetTokens,
-                                                        normalizeLevel = false,
-                                                    ),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                    },
-                                    trailingIcon = {
-                                        Switch(
-                                            checked = thinkingEnabled,
-                                            onCheckedChange = vm::setThinkingEnabled,
-                                            enabled = settingsEnabled && "none" in effortChoices,
-                                            modifier = Modifier.scale(0.7f)
+                                if (activeMenu == "effort") {
+                                    effortChoices.forEach { effort ->
+                                        ComposerModelMenuItem(
+                                            displayText = thinkingControlShortLabel(
+                                                effort != "none", effort, normalizeLevel = false,
+                                            ),
+                                            selected = effort == state.selectedEffort,
+                                            enabled = settingsEnabled,
+                                            onClick = {
+                                                haptics.selection()
+                                                vm.setThinkingLevel(effort)
+                                                activeMenu = null
+                                            },
                                         )
-                                    },
-                                    onClick = {
-                                        activeMenu = null
-                                        showThinkingSheet = true
-                                    },
-                                    enabled = effortChoices.isNotEmpty(),
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                Icons.Default.Speed,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp),
-                                            )
-                                            Spacer(modifier = Modifier.width(12.dp))
-                                            Column {
-                                                Text(stringResource(R.string.openai_service_tier_title))
-                                                Text(
-                                                    text = if (!serviceTierKnown) "" else openAiServiceTierShortLabel(
-                                                        openAiServiceTierEnabled,
-                                                        openAiServiceTier,
-                                                        nativeLabel = tierChoices.firstOrNull { it.id == openAiServiceTier }?.name
-                                                            ?: openAiServiceTier,
-                                                    ),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                            }
-                                        }
-                                    },
-                                    trailingIcon = {
-                                        Switch(
-                                            checked = openAiServiceTierEnabled,
-                                            onCheckedChange = vm::setServiceTierEnabled,
-                                            enabled = settingsEnabled && serviceTierKnown && (openAiServiceTierEnabled || tierChoices.isNotEmpty()),
-                                            modifier = Modifier.scale(0.7f),
+                                    }
+                                } else if (activeMenu == "tier") {
+                                    ComposerModelMenuItem(
+                                        displayText = stringResource(R.string.openai_service_tier_default),
+                                        selected = serviceTierKnown && state.selectedServiceTier == null,
+                                        enabled = settingsEnabled,
+                                        onClick = {
+                                            haptics.selection()
+                                            vm.setServiceTier(null)
+                                            activeMenu = null
+                                        },
+                                    )
+                                    tierChoices.filterNot { it.id == "default" }.forEach { tier ->
+                                        ComposerModelMenuItem(
+                                            displayText = tier.name,
+                                            selected = tier.id == state.selectedServiceTier,
+                                            enabled = settingsEnabled,
+                                            onClick = {
+                                                haptics.selection()
+                                                vm.setServiceTier(tier.id)
+                                                activeMenu = null
+                                            },
                                         )
-                                    },
-                                    enabled = openAiServiceTierEnabled || tierChoices.isNotEmpty(),
-                                    onClick = {
-                                        activeMenu = null
-                                        showOpenAiServiceTierSheet = true
-                                    },
-                                )
+                                    }
+                                } else {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(androidx.compose.ui.res.painterResource(id = com.newoether.agora.R.drawable.neurology_24), null, modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp))
+                                                Spacer(modifier = Modifier.width(12.dp))
+                                                Column {
+                                                    Text(stringResource(R.string.thinking))
+                                                    Text(
+                                                        text = if (state.selectedEffort == null) "" else thinkingControlShortLabel(
+                                                            thinkingEnabled,
+                                                            thinkingLevel,
+                                                            normalizeLevel = false,
+                                                        ),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        onClick = { activeMenu = "effort" },
+                                        enabled = effortChoices.isNotEmpty(),
+                                    )
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    Icons.Default.Speed,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp),
+                                                )
+                                                Spacer(modifier = Modifier.width(12.dp))
+                                                Column {
+                                                    Text(stringResource(R.string.openai_service_tier_title))
+                                                    Text(
+                                                        text = if (!serviceTierKnown) "" else openAiServiceTierShortLabel(
+                                                            openAiServiceTierEnabled,
+                                                            openAiServiceTier,
+                                                            nativeLabel = tierChoices.firstOrNull { it.id == openAiServiceTier }?.name
+                                                                ?: openAiServiceTier,
+                                                        ),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        enabled = state.settingsModel?.serviceTiers != null,
+                                        onClick = { activeMenu = "tier" },
+                                    )
+                                }
                             }
                         }
                     }
@@ -503,67 +508,6 @@ internal fun RemoteConversation(
                 })
         }
     }
-    if (showThinkingSheet) {
-        MotionAwareModalBottomSheet(
-            onDismissRequest = { showThinkingSheet = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        ) {
-            DialogWindowEdgeToEdge()
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
-            ) {
-                ThinkingControlPanel(
-                    enabled = thinkingEnabled,
-                    level = thinkingLevel,
-                    budgetEnabled = thinkingBudgetEnabled,
-                    budgetTokens = thinkingBudgetTokens,
-                    onEnabledChange = vm::setThinkingEnabled,
-                    onLevelChange = vm::setThinkingLevel,
-                    onBudgetEnabledChange = {},
-                    onBudgetTokensChange = {},
-                    providerName = "OpenAI",
-                    animateSections = true,
-                    availableEfforts = effortChoices.filterNot { it == "none" },
-                    controlsEnabled = settingsEnabled,
-                    allowDisable = "none" in effortChoices,
-                    showBudgetControls = false,
-                    settingsRevision = state.settingsRevision,
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-        }
-    }
-
-    if (showOpenAiServiceTierSheet) {
-        MotionAwareModalBottomSheet(
-            onDismissRequest = { showOpenAiServiceTierSheet = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        ) {
-            DialogWindowEdgeToEdge()
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
-            ) {
-                OpenAiServiceTierControlPanel(
-                    enabled = openAiServiceTierEnabled,
-                    tier = openAiServiceTier,
-                    onEnabledChange = vm::setServiceTierEnabled,
-                    onTierChange = vm::setServiceTier,
-                    availableTiers = tierChoices.map { it.id },
-                    tierLabels = tierChoices.associate { it.id to it.name },
-                    controlsEnabled = settingsEnabled,
-                    settingsRevision = state.settingsRevision,
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-        }
-    }
-
     if (confirmUnknown) AlertDialog(onDismissRequest = { confirmUnknown = false },
         title = { Text(stringResource(R.string.remote_confirm), fontWeight = FontWeight.Bold) },
         text = { Text(stringResource(R.string.remote_unknown)) },

@@ -161,8 +161,10 @@ may finish; draft entry/refresh does not start them. Actual model loading says L
 not Model Unavailable. Display cached native defaults or local choices without fabrication.
 
 Both original and Remote model dropdowns share the leading check for the selected model.
-Thinking and Service Tier use the original shared details menu/panels and native per-model
-capabilities, with ordinary ChatApp defaults unchanged. Ultra remains Ultra. Unsupported
+Remote Thinking and Service Tier use the original details dropdown with plain choice menus,
+leading checks and native per-model capabilities. Neither the menu nor a bottom panel exposes
+a toggle; Remote no longer opens the slider panels. Native default tier remains selectable.
+Ordinary ChatApp defaults and panels remain unchanged. Ultra remains Ultra. Unsupported
 none/budget/tier options are absent/disabled; unknown current values stay unknown.
 Each explicit setting change issues one request and reads native truth; failure preserves
 the prior value and settles the panel feedback gate. Settings apply to subsequent turns.

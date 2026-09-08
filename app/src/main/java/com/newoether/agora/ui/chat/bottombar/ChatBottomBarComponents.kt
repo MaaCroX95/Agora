@@ -101,9 +101,10 @@ internal fun ComposerModelSelector(
 }
 
 @Composable
-internal fun ComposerModelMenuItem(displayText: String, selected: Boolean, onClick: () -> Unit) {
+internal fun ComposerModelMenuItem(displayText: String, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     DropdownMenuItem(
         text = { Text(displayText) },
+        enabled = enabled,
         leadingIcon = {
             if (selected) Icon(Icons.Default.Check, null, Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp))
             else Spacer(Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp))
