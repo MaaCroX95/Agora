@@ -44,7 +44,7 @@ internal data class RemoteState(
         sessionOwners[nativeOwner] ?: nativeOwner
     }
     fun hasUnreadGeneration(sessionId: String): Boolean {
-        val status = sessionStatuses[sessionId] ?: return false
+        val status = sessionStatuses["$deviceId/$sessionId"] ?: return false
         val completed = status.completedTurnId ?: return false
         return status.hasUnreadTurn && viewedTurns["$deviceId/$sessionId"] != completed
     }

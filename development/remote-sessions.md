@@ -68,6 +68,10 @@ request bounded native statuses. The original 18dp/2dp generating circle has pri
 the 8dp unread dot; retain 200ms fades. Real completed-turn identity owns unread state.
 Successful visible history read marks that completion viewed in the encrypted local store;
 loading/failed reads do not. Never change native Codex read state.
+Cache the last confirmed row status by device and session for the Remote owner lifetime.
+Navigation and failed/unknown status reads retain it; visible-row reads and real chat snapshots
+update it. Removing a device/session or replacing a connection clears its cached entries.
+This is presentation state only; native runtime still authorizes Send and Stop.
 
 Sessions automatically loads the next cursor at the laid-out list bottom. Preserve rows
 and scroll position, reject repeated cursors, fence late pages and retain explicit error

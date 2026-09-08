@@ -181,6 +181,7 @@ internal class RemoteViewModel(
                     drafts = state.value.drafts.filterKeys { replaced == id || !it.startsWith("$replaced/") },
                     attempts = state.value.attempts.filterKeys { replaced == id || !it.startsWith("$replaced/") },
                     sessionOwners = state.value.sessionOwners.filterKeys { replaced == id || !it.startsWith("$replaced/") },
+                    sessionStatuses = state.value.sessionStatuses.filterKeys { !it.startsWith("$replaced/") },
                 )
                 // Saving an explicitly submitted connection must not undo a later Back/navigation.
                 if (generation == selectionEpoch) selectDevice(null)
@@ -214,6 +215,7 @@ internal class RemoteViewModel(
                     drafts = state.value.drafts.filterKeys { !it.startsWith("$id/") },
                     attempts = state.value.attempts.filterKeys { !it.startsWith("$id/") },
                     sessionOwners = state.value.sessionOwners.filterKeys { !it.startsWith("$id/") },
+                    sessionStatuses = state.value.sessionStatuses.filterKeys { !it.startsWith("$id/") },
                 )
                 if (state.value.deviceId == id) selectDevice(null)
                 trace("device_removed")
@@ -259,7 +261,7 @@ internal class RemoteViewModel(
         modelEpoch++
         modelLoading?.cancel()
         mutableState.value = state.value.copy(deviceId = id, addingDevice = false, editedDeviceId = null,
-            sessions = emptyList(), sessionCursor = null, sessionStatuses = emptyMap(),
+            sessions = emptyList(), sessionCursor = null,
             session = null, nodes = emptyList(), messageGroups = emptyList(), historyCursor = null, queued = emptyList(), failure = null,
             runtime = null, models = emptyList(), modelsLoading = false, composerFocusOwner = null,
             draftSessionId = null, draftSettings = RemoteSettings(), draftNativeSession = null)
@@ -408,6 +410,11 @@ internal class RemoteViewModel(
         state.value.deviceId?.let { id -> updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTED, failure = null) } }
         state.value.attempts[owner]?.let { attempt -> confirmDelivery(owner, attempt, state.value.nodes) }
         settleStop()
+        page.runtime?.takeIf { it.status in setOf("idle", "active", "ready") }?.let { runtime ->
+            val key = "${state.value.deviceId}/$sessionId"
+            mutableState.value = state.value.copy(sessionStatuses = state.value.sessionStatuses +
+                (key to RemoteSessionStatus(sessionId, runtime.status, runtime.activeTurnId, runtime.completedTurnId)))
+        }
         page.runtime?.completedTurnId?.let { turn ->
             val address = state.value.deviceId ?: return@let
             val key = "$address/$sessionId"
@@ -449,10 +456,11 @@ internal class RemoteViewModel(
                     val statuses = client.sessionStatuses(ids)
                     if (selected != selectionEpoch || clients[address] !== client || !visible) return@launch
                     val previous = state.value.sessionStatuses
-                    val merged = statuses.associate { item ->
-                        val old = previous[item.id]
-                        val resolved = if (item.status == null && old != null) old.copy(status = null) else item
-                        item.id to resolved.copy(hasUnreadTurn = resolved.hasUnreadTurn ||
+                    val merged = statuses.filter { it.id in ids }.associate { item ->
+                        val key = "$address/${item.id}"
+                        val old = previous[key]
+                        val resolved = if (item.status == null && old != null) old else item
+                        key to resolved.copy(hasUnreadTurn = resolved.hasUnreadTurn ||
                             item.completedTurnId != null && (old?.status == "active" &&
                                 old.activeTurnId == item.completedTurnId ||
                                 old?.hasUnreadTurn == true && old.completedTurnId == item.completedTurnId))
@@ -462,9 +470,7 @@ internal class RemoteViewModel(
                 catch (error: Exception) {
                     if (selected != selectionEpoch) return@launch
                     trace("session_status_failed", error)
-                    mutableState.value = state.value.copy(sessionStatuses = state.value.sessionStatuses.mapValues { (id, value) ->
-                        if (id in ids) value.copy(status = null) else value
-                    })
+                    // A failed read does not erase the last confirmed presentation.
                     if (error is FiloHttpException && error.status in setOf(401, 403, 404, 501)) return@launch
                 }
                 delay(3000)
@@ -639,7 +645,7 @@ internal class RemoteViewModel(
                     sessions = state.value.sessions.mapNotNull { session ->
                         if (session.id != id) session else updated?.let { session.copy(title = it.title, updatedAt = it.updatedAt) }
                     },
-                    sessionStatuses = if (updated == null) state.value.sessionStatuses - id else state.value.sessionStatuses,
+                    sessionStatuses = if (updated == null) state.value.sessionStatuses - "${snapshot.deviceId}/$id" else state.value.sessionStatuses,
                     drafts = if (updated == null) state.value.drafts - owner else state.value.drafts,
                     attempts = if (updated == null) state.value.attempts - owner else state.value.attempts,
                     failure = null,

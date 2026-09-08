@@ -181,7 +181,7 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                                         trailingContent = {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 RemoteSessionIndicator(resolveDrawerConversationIndicator(
-                                                    isGenerating = displayed.sessionStatuses[session.id]?.status == "active",
+                                                    isGenerating = displayed.sessionStatuses["${displayed.deviceId}/${session.id}"]?.status == "active",
                                                     isSelected = false,
                                                     hasUnreadGeneration = displayed.hasUnreadGeneration(session.id),
                                                 ))
@@ -203,7 +203,7 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                                                         DropdownMenuItem(
                                                             text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
                                                             leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                                                            enabled = actionsEnabled && displayed.sessionStatuses[session.id]?.status != "active",
+                                                            enabled = actionsEnabled && displayed.sessionStatuses["${displayed.deviceId}/${session.id}"]?.status != "active",
                                                             onClick = { showMenu = false; action = "delete" },
                                                         )
                                                     }

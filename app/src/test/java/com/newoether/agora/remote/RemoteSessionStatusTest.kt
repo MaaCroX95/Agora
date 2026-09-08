@@ -58,7 +58,7 @@ class RemoteSessionStatusTest {
         val vm = RemoteViewModel(store) { _, _ -> client }; runCurrent()
         vm.setVisible(true); vm.selectDevice(address); runCurrent()
         vm.observeSessions(address, listOf("session")); runCurrent()
-        assertEquals("active", vm.state.value.sessionStatuses["session"]?.status)
+        assertEquals("active", vm.state.value.sessionStatuses["$address/session"]?.status)
         assertFalse(vm.state.value.hasUnreadGeneration("session"))
         status = RemoteSessionStatus("session", "idle", completedTurnId = "turn")
         advanceTimeBy(3000); runCurrent()
@@ -74,9 +74,12 @@ class RemoteSessionStatusTest {
         }
         vm.refresh(); runCurrent()
         assertFalse(vm.state.value.hasUnreadGeneration("session"))
+        assertEquals("idle", vm.state.value.sessionStatuses["$address/session"]?.status)
         coVerify(exactly = 1) { store.markViewed(address, "session", "turn") }
         vm.refresh(); runCurrent()
         coVerify(exactly = 1) { store.markViewed(address, "session", "turn") }
+        vm.selectSession(null)
+        assertEquals("idle", vm.state.value.sessionStatuses["$address/session"]?.status)
         vm.setVisible(false)
     }
 
@@ -135,14 +138,46 @@ class RemoteSessionStatusTest {
         vm.setVisible(false)
     }
 
-    @Test fun failedStatusReadClearsStaleActivityWithoutBreakingHistoryList() = runTest(dispatcher) {
+
+    @Test fun cachedStatusesSurviveNavigationAndStayIsolatedBetweenDevices() = runTest(dispatcher) {
+        val otherAddress = "http://other/"
+        val other = mockk<FiloClient>()
+        coEvery { store.load() } returns listOf(
+            RemoteConnection("Computer", address, "token"), RemoteConnection("Other", otherAddress, "token"))
+        every { other.address } returns otherAddress
+        coEvery { other.connect() } returns "Other"
+        coEvery { other.sessions(any()) } returns RemoteSessionPage(listOf(session), null)
+        coEvery { other.models() } returns emptyList()
+        coEvery { other.sessionStatuses(any()) } returns listOf(RemoteSessionStatus("session", "idle"))
+        coEvery { client.sessionStatuses(any()) } returns listOf(RemoteSessionStatus("session", "active", activeTurnId = "turn"))
+        val vm = RemoteViewModel(store) { url, _ -> if (url == otherAddress) other else client }; runCurrent()
+        vm.setVisible(true); vm.selectDevice(address); runCurrent()
+        vm.observeSessions(address, listOf("session")); runCurrent()
+        vm.selectDevice(otherAddress); runCurrent()
+        vm.observeSessions(otherAddress, listOf("session")); runCurrent()
+        assertEquals("active", vm.state.value.sessionStatuses["$address/session"]?.status)
+        assertEquals("idle", vm.state.value.sessionStatuses["$otherAddress/session"]?.status)
+        val waiting = CompletableDeferred<List<RemoteSessionStatus>>()
+        coEvery { client.sessionStatuses(any()) } coAnswers { waiting.await() }
+        vm.selectDevice(address); runCurrent()
+        vm.observeSessions(address, listOf("session")); runCurrent()
+        assertEquals("active", vm.state.value.sessionStatuses["$address/session"]?.status)
+        waiting.complete(listOf(RemoteSessionStatus("session", null))); runCurrent()
+        assertEquals("active", vm.state.value.sessionStatuses["$address/session"]?.status)
+        vm.removeDevice(address); runCurrent()
+        assertNull(vm.state.value.sessionStatuses["$address/session"])
+        assertEquals("idle", vm.state.value.sessionStatuses["$otherAddress/session"]?.status)
+        vm.setVisible(false)
+    }
+
+    @Test fun failedStatusReadRetainsCachedActivityWithoutBreakingHistoryList() = runTest(dispatcher) {
         coEvery { client.sessionStatuses(any()) } returns listOf(RemoteSessionStatus("session", "active"))
         val vm = RemoteViewModel(store) { _, _ -> client }; runCurrent()
         vm.setVisible(true); vm.selectDevice(address); runCurrent()
         vm.observeSessions(address, listOf("session")); runCurrent()
         coEvery { client.sessionStatuses(any()) } throws IOException("offline")
         advanceTimeBy(3000); runCurrent()
-        assertNull(vm.state.value.sessionStatuses["session"]?.status)
+        assertEquals("active", vm.state.value.sessionStatuses["$address/session"]?.status)
         assertFalse(vm.state.value.error)
         assertEquals(listOf(session), vm.state.value.sessions)
         vm.setVisible(false)
