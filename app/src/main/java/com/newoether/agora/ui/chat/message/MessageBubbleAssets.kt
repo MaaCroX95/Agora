@@ -171,6 +171,8 @@ private fun ASTNode.findDescendantOfType(type: org.intellij.markdown.IElementTyp
 internal fun rememberChatMarkdownAssets(
     textColor: Color,
     parseInlineDollarMath: Boolean = false,
+    inlineImages: Map<String, com.newoether.agora.model.ToolImageAttachment> = emptyMap(),
+    onMediaClick: (List<String>, Int) -> Unit = { _, _ -> },
 ): ChatMarkdownAssets {
     val linkColor = MaterialTheme.colorScheme.primary
     val linkTextStyles = remember(linkColor) { chatLinkTextStyles(linkColor) }
@@ -404,10 +406,12 @@ internal fun rememberChatMarkdownAssets(
     // identical instead of sending thought/code tails through an unfaded fallback renderer.
     val thoughtMarkdownComponents = customMarkdownComponents
 
-    val latexImageTransformer = remember(textColor) {
+    val latexImageTransformer = remember(textColor, inlineImages, onMediaClick) {
         LatexImageTransformer(
             textSize = 56f,
             color = textColor.toArgb(),
+            inlineImages = inlineImages,
+            onMediaClick = onMediaClick,
         )
     }
     val markdownFlavour = remember { GFMFlavourDescriptor() }

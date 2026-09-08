@@ -12,6 +12,7 @@ internal data class RemoteMessageNode(
     val groupId: String? = null, val nativeId: String? = null,
     val textOffset: Int = 0, val textContinues: Boolean = false,
     val activity: RemoteNodeActivity? = null, val hasContent: Boolean? = null,
+    val imageCount: Int = 0,
     @kotlinx.serialization.Transient val displayPageId: String? = null,
     @kotlinx.serialization.Transient val displayGroupId: String? = null,
     @kotlinx.serialization.Transient val pageCursor: String? = null,
@@ -20,7 +21,7 @@ internal data class RemoteMessageNode(
 internal data class RemoteNodeActivity(val type: String, val state: String? = null, val durationMs: Long? = null,
     val hasImage: Boolean = false)
 @Serializable
-internal data class RemotePayloadRequest(val id: String, val revision: String)
+internal data class RemotePayloadRequest(val id: String, val revision: String, val imageIndex: Int? = null)
 
 internal data class RemoteMessageGroup(val stub: ChatMessage, val nodes: List<RemoteMessageNode>) {
     val revision: List<String> get() = nodes.map { it.revision }

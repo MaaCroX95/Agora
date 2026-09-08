@@ -42,7 +42,7 @@ internal class RemoteViewModel(
         val client = clients[snapshot.deviceId] ?: throw CancellationException()
         val store = imageStore ?: throw java.io.IOException("Image storage is unavailable")
         val cache = imageCache ?: throw java.io.IOException("Image cache is unavailable")
-        cache.load(owner + "/" + request.id + "/" + request.revision) {
+        cache.load(owner + "/" + request.id + "/" + request.revision + "/" + request.imageIndex) {
             client.image(snapshot.session!!.id, request, store::persistStream)
         }
     }, projectionDispatcher = projectionDispatcher)

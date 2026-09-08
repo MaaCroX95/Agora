@@ -15,6 +15,7 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
         val first = messages[index++]
         require(first.role == "user" || first.role == "assistant")
         val answerText = StringBuilder()
+        val inlineImages = mutableMapOf<String, com.newoether.agora.model.ToolImageAttachment>()
         var previousAnswerId: String? = null
         var userText = first.displayText()
         if (first.role == "user") {
@@ -27,6 +28,7 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
             var current = first
             var previousNativeId: String? = null
             while (true) {
+                inlineImages.putAll(current.inlineImages)
                 val activity = current.activity
                 val segment = when (activity?.type) {
                     null -> MessageSegment(type = "answer", content = current.displayText(),
@@ -72,7 +74,7 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
             text = if (segments == null) userText else answerText.toString(),
             participant = if (first.role == "user") Participant.USER else Participant.MODEL,
             timestamp = first.timestamp, modelName = "Codex", runId = first.turnId,
-            segments = segments,
+            segments = segments, markdownImages = inlineImages,
         ))
     }
     val turn = runtime?.activeTurnId?.takeIf { active ->

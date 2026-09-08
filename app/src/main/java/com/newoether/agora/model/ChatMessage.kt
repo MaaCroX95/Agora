@@ -181,6 +181,8 @@ data class ChatMessage(
     val consumedAtPass: Int? = null,
     /** Optional in-memory page boundary; older pages cannot reparent a rendered list item. */
     val displayPageId: String? = null,
+    /** Authenticated private files for inline Markdown images; never part of native history. */
+    val markdownImages: Map<String, ToolImageAttachment> = emptyMap(),
 )
 
 @Immutable

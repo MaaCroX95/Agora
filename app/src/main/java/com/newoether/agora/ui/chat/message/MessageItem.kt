@@ -285,6 +285,8 @@ internal fun MessageItem(
     val markdownAssets = rememberChatMarkdownAssets(
         textColor,
         parseInlineDollarMath,
+        message.markdownImages,
+        onMediaClick,
     )
     val markdownRenderContext = markdownAssets.renderContext
     val thoughtMarkdownRenderContext = markdownAssets.thoughtRenderContext

@@ -63,6 +63,7 @@ internal fun ChatMessage.estimatedHydratedPayloadBytes(): Long {
     bytes += parentId.estimatedHeapBytes()
     bytes += text.estimatedHeapBytes()
     bytes += images.estimatedStringListHeapBytes()
+    bytes += markdownImages.entries.sumOf { (link, image) -> 32L + link.estimatedHeapBytes() + image.estimatedHeapBytes() }
     bytes += thoughts.estimatedHeapBytes()
     bytes += thoughtTitle.estimatedHeapBytes()
     bytes += modelName.estimatedHeapBytes()

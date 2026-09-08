@@ -52,6 +52,36 @@ class RemoteImageHydrationTest {
         } finally { file.delete() }
     }
 
+    @Test fun inlinePicturesPreserveMarkdownAndUseSeparateIndexedImagesWithoutSearchDownloads() = runTest {
+        val file = File.createTempFile("filo-inline-", ".png")
+        try {
+            val link = "C:/native/picture.png"
+            val text = "Picture:\n![caption]($link)"
+            val node = RemoteMessageNode("answer", "turn", null, "assistant", 1, "a".repeat(64),
+                text.length, groupId = "group", imageCount = 1)
+            val message = RemoteMessage("answer", "turn", null, "assistant", text, 1,
+                groupId = "group", imageLinks = listOf(link))
+            val state = MutableStateFlow(snapshot().copy(messageGroups = projectRemoteTopology(listOf(node), null)))
+            val attachment = ToolImageAttachment(file.path, "image/png", 128, 128, 64, "hash")
+            var reads = 0
+            val hydration = RemoteMessageHydration(state,
+                { _, _ -> RemoteConversationPage(listOf(message), null, emptyList(), nodes = listOf(node)) },
+                { throw it }, { _, request -> assertEquals(0, request.imageIndex); reads++; attachment })
+            val owner = state.value.owner!!
+            assertEquals(text, hydration.loadMessages(owner, listOf("group")).single().text)
+            assertEquals(0, reads)
+            val shown = hydration.observeMessage(owner, "group").filterNotNull().first { it.markdownImages.isNotEmpty() }
+            assertEquals(text, shown.text)
+            assertEquals(mapOf(link to attachment), shown.markdownImages)
+            assertEquals(1, reads)
+            assertEquals(shown, hydration.observeMessage(owner, "group").filterNotNull().first())
+            assertEquals(1, reads)
+            hydration.accept(owner, RemoteConversationPage(listOf(message), null, emptyList(), nodes = listOf(node)),
+                state.value.messageGroups)
+            assertEquals(shown.markdownImages, hydration.cachedMessage(owner, state.value.messageGroups.single())!!.markdownImages)
+        } finally { file.delete() }
+    }
+
     @Test fun missingImageDoesNotDiscardToolCardOrConversationTopology() = runTest {
         val state = MutableStateFlow(snapshot())
         var failures = 0

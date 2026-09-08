@@ -108,7 +108,10 @@ ChatMessage/MessageSegment presentation; only public summaries and tool records 
 Native imageView records hydrate real image bytes by authenticated message identity. Reuse
 ToolImageStore streaming validation/atomic files, original ToolImageAttachment thumbnails
 and the existing root media preview. Image files live only in the private disposable Remote
-cache (128MiB/64files, two concurrent image reads); native and ordinary durable tool images
+cache (128MiB/64files, two concurrent image reads). Inline answer images use server-parsed
+message/revision/index references and the original Markdown transformer with authenticated
+private files; retain original Markdown text for copy/search and reuse root image preview.
+Metadata exposes only the image count. Native and ordinary durable tool images
 remain untouched. Each image retains the original 20MiB media-store bound. Search reads text
 without fetching images; missing/unsupported images preserve the card and conversation and
 report a Snackbar. No base64 image data enters topology/SSE and no arbitrary path read is

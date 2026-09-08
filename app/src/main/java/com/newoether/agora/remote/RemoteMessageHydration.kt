@@ -50,7 +50,8 @@ internal class RemoteMessageHydration(
     }
     private fun weight(message: RemoteMessage) = 256L + 2L * (message.text.length.toLong() +
         (message.activity?.arguments?.length ?: 0) + (message.activity?.result?.length ?: 0)) +
-        32L * message.streamingTextDeltas.size
+        32L * message.streamingTextDeltas.size + message.imageLinks.sumOf { 32L + 2L * it.length } +
+        message.inlineImages.entries.sumOf { (link, image) -> 256L + 2L * (link.length + image.path.length) }
     internal val retainedRecordBytes: Long get() = synchronized(cacheLock) { recordBytes }
     fun resetStreaming() = synchronized(cacheLock) {
         previousRuntime = null
@@ -68,8 +69,9 @@ internal class RemoteMessageHydration(
             val node = nodes[message.id] ?: error("Filo page metadata is missing")
             val old = records.remove(message.id)
             old?.let { recordBytes -= weight(it.second) }
-            val retained = if (preserveImages && old?.first == node.revision && message.activity != null)
-                message.copy(activity = message.activity.copy(images = old.second.activity?.images.orEmpty()))
+            val retained = if (preserveImages && old?.first == node.revision)
+                message.copy(activity = message.activity?.copy(images = old.second.activity?.images.orEmpty()),
+                    inlineImages = old.second.inlineImages)
                 else message
             records[message.id] = node.revision to retained
             recordBytes += weight(retained)
@@ -156,20 +158,30 @@ internal class RemoteMessageHydration(
             val cached = cachedMessage(owner, group)
             if (cached != null) send(cached)
             try {
-                val needsImages = group.nodes.any { it.activity?.hasImage == true } &&
+                val needsImages = group.nodes.any { it.activity?.hasImage == true || it.imageCount > 0 } &&
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         group.nodes.any { node -> node.activity?.hasImage == true &&
                             cached?.segments.orEmpty().firstOrNull { it.toolCallId == node.id }?.toolImages.orEmpty()
-                                .none { java.io.File(it.path).isFile } }
+                                .none { java.io.File(it.path).isFile } } ||
+                            (group.nodes.sumOf { it.imageCount } > cached?.markdownImages.orEmpty().size) ||
+                            cached?.markdownImages.orEmpty().values.any { !java.io.File(it.path).isFile }
                     }
                 if (cached != null && !needsImages) return@collectLatest
                 val fresh = loadRecords(owner, group).map { message ->
-                    if (message.activity?.imagePath == null || image == null) message
-                    else try {
-                        val attachment = image.invoke(owner, group.requests.first { it.id == message.id })
-                        message.copy(activity = message.activity.copy(images = listOf(attachment)))
-                    } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (error: Exception) { failed(error); message }
+                    var hydrated = message
+                    if (image != null) {
+                        val request = group.requests.first { it.id == message.id }
+                        suspend fun load(index: Int? = null) = try {
+                            image.invoke(owner, request.copy(imageIndex = index))
+                        } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (error: Exception) { failed(error); null }
+                        if (message.activity?.imagePath != null) load()?.let {
+                            hydrated = hydrated.copy(activity = message.activity.copy(images = listOf(it)))
+                        }
+                        val inline = message.imageLinks.mapIndexedNotNull { index, link -> load(index)?.let { link to it } }.toMap()
+                        hydrated = hydrated.copy(inlineImages = inline)
+                    }
+                    hydrated
                 }
                 rememberRecords(owner, RemoteConversationPage(fresh, null, emptyList(), nodes = group.nodes),
                     live = false, preserveImages = false)
