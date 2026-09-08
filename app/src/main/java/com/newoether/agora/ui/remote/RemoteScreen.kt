@@ -167,9 +167,13 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
             else -> RemoteDevices(displayed, vm, back) { forward = true }
         }
     }
+    val progressVisible = remember { androidx.compose.animation.core.MutableTransitionState(false) }
+    SideEffect {
+        progressVisible.targetState = state.deviceId != null && state.session == null && !state.addingDevice &&
+            (state.loading || state.loadingMore || state.controlling)
+    }
     AnimatedVisibility(
-        visible = state.deviceId != null && state.session == null && !state.addingDevice &&
-            (state.loading || state.loadingMore || state.controlling),
+        visibleState = progressVisible,
         modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
         enter = fadeIn(tween(300)),
         exit = fadeOut(tween(300)),

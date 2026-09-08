@@ -1250,4 +1250,5 @@
     <string name="remote_history_read_only">Historique en lecture seule</string>
     <string name="remote_resume_history">Continuer cette conversation</string>
     <string name="remote_session_busy">Un autre processus Codex utilise cette conversation. Réessayez après sa libération.</string>
+    <string name="thought_for_a_while">A réfléchi un moment</string>
 </resources>

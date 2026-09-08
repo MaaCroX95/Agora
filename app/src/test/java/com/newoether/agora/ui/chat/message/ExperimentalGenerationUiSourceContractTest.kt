@@ -106,7 +106,6 @@ class ExperimentalGenerationUiSourceContractTest {
         val mutedText = source(root, "message/StreamingMutedText.kt")
 
         assertTrue(timeline.contains("CompactSegmentIcon.LOADING"))
-        assertTrue(timeline.contains("compactSegmentHasActiveContent("))
         assertTrue(timeline.contains("compactSegmentShowsLoading("))
         assertTrue(timeline.contains("generationActive: Boolean"))
         assertTrue(timeline.contains("isCurrentCard: Boolean"))

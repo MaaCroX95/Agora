@@ -45,8 +45,8 @@ class Phase27UiSourceContractTest {
         val timeline = source("MessageItemTimeline.kt")
         val presentation = source("ToolPresentation.kt")
 
-        assertTrue(timeline.contains("generationActive: Boolean ="))
-        assertTrue(timeline.contains("if (!generationActive) return false"))
+        assertTrue(timeline.contains("): Boolean = generationActive && isCurrentCard"))
+        assertTrue(timeline.contains("cardUsesLiveStatus = generationActive && isCurrentCard && useLiveStatus"))
         assertTrue(timeline.contains("generationActive = generationActive"))
         // isActive drives the loading indicator and must exclude detached background jobs.
         assertFalse(presentation.contains(

@@ -1251,4 +1251,5 @@
     <string name="remote_history_read_only">Read-only history</string>
     <string name="remote_resume_history">Continue this conversation</string>
     <string name="remote_session_busy">This conversation is in use by another Codex process. Try again after it releases the conversation.</string>
+    <string name="thought_for_a_while">Thought for a while</string>
 </resources>

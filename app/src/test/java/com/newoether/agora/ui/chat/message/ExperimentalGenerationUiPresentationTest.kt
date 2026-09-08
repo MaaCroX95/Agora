@@ -1,10 +1,8 @@
 package com.newoether.agora.ui.chat.message
 
 import com.newoether.agora.model.ChatMessage
-import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
-import com.newoether.agora.model.ToolExecutionStates
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -119,94 +117,13 @@ class ExperimentalGenerationUiPresentationTest {
     }
 
     @Test
-    fun `current tail card stays loading throughout active generation`() {
-        assertTrue(
-            compactSegmentShowsLoading(
-                hasActiveContent = false,
-                generationActive = true,
-                isCurrentCard = true,
-            ),
-        )
-        assertTrue(
-            compactSegmentShowsLoading(
-                hasActiveContent = true,
-                generationActive = false,
-                isCurrentCard = false,
-            ),
-        )
-        assertFalse(
-            compactSegmentShowsLoading(
-                hasActiveContent = false,
-                generationActive = true,
-                isCurrentCard = false,
-            ),
-        )
-        assertFalse(
-            compactSegmentShowsLoading(
-                hasActiveContent = false,
-                generationActive = false,
-                isCurrentCard = true,
-            ),
-        )
-    }
-
-    @Test
-    fun `only active generation lets active segments drive card loading`() {
-        val activeTool = MessageSegment(
-            type = "tool",
-            toolState = ToolExecutionStates.RUNNING,
-        )
-        val backgroundTool = activeTool.copy(
-            toolState = ToolExecutionStates.BACKGROUND_RUNNING,
-        )
-        val finishedTool = activeTool.copy(toolState = ToolExecutionStates.SUCCEEDED)
-        val thought = MessageSegment(type = "thought", content = "reasoning")
-        val transcription = MessageSegment(type = "transcription", content = "image text")
-
-        assertFalse(
-            compactSegmentHasActiveContent(
-                segs = listOf(activeTool, backgroundTool),
-                message = message(MessageStatus.SUCCESS),
-                useLiveStatus = true,
-            ),
-        )
-        assertTrue(
-            compactSegmentHasActiveContent(
-                segs = listOf(activeTool),
-                message = message(MessageStatus.TOOL_CALLING),
-                useLiveStatus = true,
-            ),
-        )
-        // A detached background job is not active content — it must not occupy the loading
-        // indicator once its tool round ends.
-        assertFalse(
-            compactSegmentHasActiveContent(
-                segs = listOf(backgroundTool),
-                message = message(MessageStatus.TOOL_CALLING),
-                useLiveStatus = false,
-            ),
-        )
-        assertTrue(
-            compactSegmentHasActiveContent(
-                segs = listOf(thought),
-                message = message(MessageStatus.THINKING),
-                useLiveStatus = true,
-            ),
-        )
-        assertTrue(
-            compactSegmentHasActiveContent(
-                segs = listOf(transcription),
-                message = message(MessageStatus.TRANSCRIBING),
-                useLiveStatus = true,
-            ),
-        )
-        assertFalse(
-            compactSegmentHasActiveContent(
-                segs = listOf(finishedTool, thought, transcription),
-                message = message(MessageStatus.SUCCESS),
-                useLiveStatus = true,
-            ),
-        )
+    fun `only the current card loads and stale active content never overrides its position`() {
+        for (generating in listOf(false, true)) {
+            // Reproduces a running tool/thought followed by a newly published answer block.
+            assertFalse(compactSegmentShowsLoading(generating, isCurrentCard = false))
+        }
+        assertTrue(compactSegmentShowsLoading(generationActive = true, isCurrentCard = true))
+        assertFalse(compactSegmentShowsLoading(generationActive = false, isCurrentCard = true))
     }
 
     private fun message(status: MessageStatus): ChatMessage = ChatMessage(

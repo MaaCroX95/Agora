@@ -23,6 +23,7 @@ internal class RemoteViewModel(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(RemoteState())
     val state = mutableState.asStateFlow()
+    private val streamDeltas = RemoteStreamDeltas()
     private val scrollRequests = ScrollRequestCoordinator()
     val animatedScrollRequest = scrollRequests.request
     fun completeAnimatedScroll(id: Long) = scrollRequests.complete(id)
@@ -341,7 +342,8 @@ internal class RemoteViewModel(
         if (generation != epoch) return
         val owner = state.value.owner ?: return
         mutableState.value = state.value.copy(
-            messages = mergeRemoteHistory(state.value.messages, fresh), queued = page.queued,
+            messages = streamDeltas.apply(state.value.messages, mergeRemoteHistory(state.value.messages, fresh),
+                state.value.runtime, page.runtime), queued = page.queued,
             historyCursor = if (old.isEmpty()) page.nextCursor else state.value.historyCursor,
             loading = false, failure = null, runtime = page.runtime,
         )

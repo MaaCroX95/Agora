@@ -51,7 +51,7 @@ class Phase24UiSourceContractTest {
             .substringBefore("internal fun compactSegmentDisplayTitle(")
         assertTrue(terminalTitle.contains("val hasThought = segs.any { it.type == \"thought\" }"))
         assertTrue(terminalTitle.contains(
-            "hasThought -> thoughtDurationTitle(thoughtMs?.coerceAtLeast(0L) ?: 0L, toolCount)"
+            "hasThought -> if (thoughtMs != null) thoughtDurationTitle(thoughtMs, toolCount) else stringResource(R.string.thought_for_a_while)"
         ))
         assertTrue(terminalTitle.contains(
             "toolCount > 0 -> stringResource(R.string.called_n_tools, toolCount)"

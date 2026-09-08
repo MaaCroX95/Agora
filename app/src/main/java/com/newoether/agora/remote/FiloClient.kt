@@ -46,6 +46,8 @@ internal data class RemoteMessage(
     val id: String, val turnId: String, val clientId: String?, val role: String,
     val text: String, val timestamp: Long,
     val activity: RemoteActivity? = null,
+    @kotlinx.serialization.Transient
+    val streamingTextDeltas: List<com.newoether.agora.model.StreamingTextDelta> = emptyList(),
 )
 @Serializable
 internal data class RemoteActivity(
@@ -274,7 +276,8 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
             while (true) {
                 val activity = current.activity
                 val segment = when (activity?.type) {
-                    null -> MessageSegment(type = "answer", content = current.text.trimEnd('\r', '\n'))
+                    null -> MessageSegment(type = "answer", content = current.text.trimEnd('\r', '\n'),
+                        streamingTextDeltas = current.streamingTextDeltas)
                     "thought" -> MessageSegment(type = "thought", content = current.text.trimEnd('\r', '\n'))
                     "tool" -> MessageSegment(
                         type = "tool", toolName = activity.toolName, toolArgs = activity.arguments,

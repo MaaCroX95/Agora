@@ -53,4 +53,3 @@ internal data class RemoteState(
         selectedEffort?.takeIf { it in model.reasoningEfforts.orEmpty() } ?: model.defaultReasoningEffort,
         selectedServiceTier?.takeIf { tier -> model.serviceTiers.orEmpty().any { it.id == tier } }, true)
 }
-

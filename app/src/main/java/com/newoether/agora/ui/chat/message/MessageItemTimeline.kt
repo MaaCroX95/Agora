@@ -68,33 +68,10 @@ private enum class CompactSegmentIcon {
     IMAGE,
 }
 
-internal fun compactSegmentHasActiveContent(
-    segs: List<MessageSegment>,
-    message: ChatMessage,
-    useLiveStatus: Boolean,
-    generationActive: Boolean = message.status == MessageStatus.SENDING ||
-        message.status == MessageStatus.THINKING ||
-        message.status == MessageStatus.TOOL_CALLING ||
-        message.status == MessageStatus.TRANSCRIBING,
-): Boolean {
-    if (!generationActive) return false
-    return segs.any { segment ->
-        when (segment.type) {
-            "tool" -> ToolPresentationResolver.resolve(segment).isActive
-            "thought" -> useLiveStatus && message.status == MessageStatus.THINKING
-            "transcription" -> useLiveStatus &&
-                (message.status == MessageStatus.TRANSCRIBING ||
-                    message.status == MessageStatus.TOOL_CALLING)
-            else -> false
-        }
-    }
-}
-
 internal fun compactSegmentShowsLoading(
-    hasActiveContent: Boolean,
     generationActive: Boolean,
     isCurrentCard: Boolean,
-): Boolean = hasActiveContent || (generationActive && isCurrentCard)
+): Boolean = generationActive && isCurrentCard
 
 @Composable
 internal fun CompactSegmentBlock(
@@ -196,24 +173,19 @@ internal fun CompactSegmentBlock(
             expandedStates[expansionKey] = targetExpanded
         }
     }
-    val isThinking = useLiveStatus &&
+    val cardUsesLiveStatus = generationActive && isCurrentCard && useLiveStatus
+    val isThinking = cardUsesLiveStatus &&
         message.status == MessageStatus.THINKING &&
         segs.any { it.type == "thought" }
-    val isTranscribing = useLiveStatus && message.status == MessageStatus.TRANSCRIBING
+    val isTranscribing = cardUsesLiveStatus && message.status == MessageStatus.TRANSCRIBING
     val toolCount = segs.count { it.type == "tool" }
     val thoughtMs = thoughtDurationMs(segs, fallbackMs = message.thoughtTimeMs)
     val hasThought = thoughtMs != null && thoughtMs > 0
-    val cardHasActiveContent = compactSegmentHasActiveContent(
-        segs = segs,
-        message = message,
-        useLiveStatus = useLiveStatus,
-        generationActive = generationActive,
-    )
-    val showLoading = compactSegmentShowsLoading(cardHasActiveContent, generationActive, isCurrentCard)
+    val showLoading = compactSegmentShowsLoading(generationActive, isCurrentCard)
     val collapsedTitle = compactSegmentDisplayTitle(
         segs = segs,
         message = message,
-        useLiveStatus = useLiveStatus,
+        useLiveStatus = cardUsesLiveStatus,
     )
     val collapsedIcon = when {
         showLoading -> CompactSegmentIcon.LOADING
@@ -743,7 +715,7 @@ internal fun TimelineSegmentsContent(
                             isStreaming = isStreaming,
                             useLiveStatus =
                                 isStreaming &&
-                                    blockDetailIndices.lastOrNull() == detailSegments.lastIndex,
+                                    blockEnd > lastVisibleSegmentIndex,
                             generationActive = generationActive,
                             isCurrentCard = blockEnd > lastVisibleSegmentIndex,
                             expandedStates = expandedStates,

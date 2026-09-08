@@ -1258,4 +1258,5 @@
     <string name="remote_history_read_only">唯讀歷史</string>
     <string name="remote_resume_history">繼續此會話</string>
     <string name="remote_session_busy">此會話仍由其他 Codex 程序使用，請在釋放後重試。</string>
+    <string name="thought_for_a_while">思考了一會兒</string>
 </resources>

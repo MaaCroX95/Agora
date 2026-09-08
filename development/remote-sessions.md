@@ -330,5 +330,17 @@ Owner removes the Sessions Load More action. Observe the existing lazy list at i
 ## Native Sessions indicators and viewed completions | 2026-09-08
 Use the original drawer's18dp/2dp generating circle and8dp unread dot,200ms fades and generating priority. Only visible rows request bounded native status; background/navigation cancels and fences reads. Independent-host notLoaded is unknown, never idle. A real completed-turn identifier owns unread state: native unread or observed generation completion creates a dot, successful visible history read clears that completion, and encrypted connection storage persists viewed IDs. Opening a failed/loading history does not mark it viewed. Never write native Codex read state or transcripts. Sessions pagination runs at list bottom, removes Load More and rejects non-advancing cursors. Original bottom4dp bar remains opacity-only300ms.
 
+## Generation presentation corrections | 2026-09-08
+The owner requires card loading exactly when generation is active AND no newer message block is
+below the card. A stale internal tool status cannot keep a middle card loading. Titles use the same
+position gate. Remote snapshot appends supply in-memory StreamingTextDelta boundaries to the
+original StreamingMarkdownMessage/StreamingTailFadeTracker, including its original fade timing,
+terminalization and Reduced Motion. Do not create custom animation, delays, or a renderer fork.
+Initial history and non-appending rewrites do not fabricate provider deltas.
+
 ## Native Thinking and Service Tier settings | 2026-09-08
 Owner explicitly requests real settings, superseding the NOP-only details controls. Use the original shared panel/menu presentation and Filo's verified per-model reasoningEfforts/serviceTiers catalog. Preserve ordinary ChatApp defaults. Unsupported thinking-off and token-budget controls are disabled/absent according to native capability, not simulated. Existing-session controls update subsequent native turns and read authoritative values; active execution/Stop remain native. Native default tier may read back as default after null clearing. New Chat remains local with immediate keyboard; cached catalog/defaults and local choices apply once on first Send before message submission. A known created draft whose settings failed retries against that same native ID on explicit user Send; it never creates duplicates or sends with silently discarded choices. Ownership fences reject late responses after navigation/client replacement. No automatic POST retry; unknown message outcomes remain explicit. Physical UI acceptance remains owner-tested.
+
+Unknown native thought duration uses the existing generic Thinking label. Only real native timing permits a duration; no synthesized zero or local elapsed-time ticker. Owner-reported OOM makes bounded transport and oversized-history verification release-blocking.
+
+The Sessions progress indicator starts with an explicit hidden transition state, including when Remote first composes already loading. Keep the same4dpstroke and300ms fadeIn/fadeOut; retain exit composition until animation settles. No artificial network delay or thickness animation.

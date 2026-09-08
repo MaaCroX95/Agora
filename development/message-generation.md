@@ -591,11 +591,10 @@ No second disclosure exists. That single vector rotates to -90 degrees for detai
 0 degrees while inline-collapsed, and 180 degrees while inline-expanded; spatial motion animates the
 rotation and Reduced Motion snaps it. The header icon uses the shared motion-aware 18 dp slot; only
 the loading ring is 16 dp while brain, tool, image, and disclosure icons remain 18 dp. The loading
-ring appears when any Thought, Tool, or Transcription segment in that card is active during the
-ordinary message generation. Independently, while that generation is active, the current tail
-Thinking card also remains loading when no visible answer exists below it, even after its own
-segments have settled. A historical card or a card followed by visible answer content does not gain
-loading from message-level generation. Once the owning message/Run is terminal, no persisted segment
+ring appears exactly when the owning message generation is active AND no newer visible message
+block exists below that card. Persisted Thought/Tool/Transcription activity never overrides the
+card's position. The current tail card stays loading even after its internal segments settle;
+a card followed by an answer or another visible block is terminal for header loading and live titles. Once the owning message/Run is terminal, no persisted segment
 state may keep the card header loading: in particular, a detached `BACKGROUND_RUNNING` tool keeps
 its own tool-row background status but is terminal for card-level generation presentation.
 The indicator uses an exact 2 dp stroke. Loading, brain, tool, and image icon changes all remain
