@@ -37,12 +37,19 @@ internal data class RemoteState(
     val draftSessionId: String? = null, val draftModel: String? = null,
     val modelsLoading: Boolean = false,
     val sessionOwners: Map<String, String> = emptyMap(),
+    val sessionStatuses: Map<String, RemoteSessionStatus> = emptyMap(),
+    val viewedTurns: Map<String, String> = emptyMap(),
     val stoppingOwner: String? = null, val stoppingTurnId: String? = null,
 ) {
     val error: Boolean get() = failure != null
     val owner: String? get() = session?.let {
         val nativeOwner = "$deviceId/${it.id}"
         sessionOwners[nativeOwner] ?: nativeOwner
+    }
+    fun hasUnreadGeneration(sessionId: String): Boolean {
+        val status = sessionStatuses[sessionId] ?: return false
+        val completed = status.completedTurnId ?: return false
+        return status.hasUnreadTurn && viewedTurns["$deviceId/$sessionId"] != completed
     }
     val isStopping: Boolean get() = stoppingOwner != null && stoppingOwner == owner
     val isDraft: Boolean get() = session != null && session.id == draftSessionId
@@ -71,6 +78,8 @@ internal class RemoteViewModel(
     private var visible = false
     private var polling: Job? = null
     private var paging: Job? = null
+    private var statusPolling: Job? = null
+    private var visibleSessions: List<String> = emptyList()
     private var modelLoading: Job? = null
     private var modelEpoch = 0L
     private var storing: Job? = null
@@ -111,7 +120,9 @@ internal class RemoteViewModel(
                 configurations.clear()
                 restored.forEach { (client, _) -> clients[client.address] = client }
                 restored.forEach { (client, connection) -> configurations[client.address] = connection }
-                mutableState.value = state.value.copy(devices = restored.map { (client, connection) ->
+                mutableState.value = state.value.copy(viewedTurns = restored.flatMap { (client, connection) ->
+                    connection.viewedTurns.map { (session, turn) -> "${client.address}/$session" to turn }
+                }.toMap(), devices = restored.map { (client, connection) ->
                     RemoteDevice(client.address, connection.name, client.address)
                 })
                 trace("restore_completed")
@@ -243,7 +254,7 @@ internal class RemoteViewModel(
         modelEpoch++
         modelLoading?.cancel()
         mutableState.value = state.value.copy(deviceId = id, addingDevice = false, editedDeviceId = null,
-            sessions = emptyList(), sessionCursor = null,
+            sessions = emptyList(), sessionCursor = null, sessionStatuses = emptyMap(),
             session = null, messages = emptyList(), historyCursor = null, queued = emptyList(), failure = null,
             runtime = null, models = emptyList(), modelsLoading = false, composerFocusOwner = null,
             draftSessionId = null, draftModel = null)
@@ -277,6 +288,7 @@ internal class RemoteViewModel(
         epoch++
         polling?.cancel()
         paging?.cancel()
+        statusPolling?.cancel()
         mutableState.value = state.value.copy(loading = false, loadingMore = false, runtime = null)
     }
 
@@ -321,6 +333,7 @@ internal class RemoteViewModel(
                         if (generation != epoch) return@launch
                         mutableState.value = state.value.copy(sessions = page.sessions, sessionCursor = page.nextCursor,
                             loading = false, failure = null)
+                        startSessionStatusReads()
                     } else if (session.readOnly) {
                         applyPage(client, session.id, generation, client.conversation(session.id))
                         if (generation != epoch) return@launch
@@ -374,6 +387,68 @@ internal class RemoteViewModel(
         state.value.deviceId?.let { id -> updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTED, failure = null) } }
         state.value.attempts[owner]?.let { attempt -> confirmDelivery(owner, attempt) }
         settleStop()
+        page.runtime?.completedTurnId?.let { turn ->
+            val address = state.value.deviceId ?: return@let
+            val key = "$address/$sessionId"
+            if (visible && state.value.viewedTurns[key] != turn) {
+                mutableState.value = state.value.copy(viewedTurns = state.value.viewedTurns + (key to turn))
+                viewModelScope.launch {
+                    try { connections.markViewed(address, sessionId, turn) }
+                    catch (error: Exception) {
+                        if (error is CancellationException) throw error
+                        trace("mark_viewed_failed", error)
+                        mutableState.value = state.value.copy(storageError = true)
+                    }
+                }
+            }
+        }
+    }
+
+    fun observeSessions(deviceId: String, ids: List<String>) {
+        if (state.value.deviceId != deviceId || state.value.session != null) return
+        val allowed = state.value.sessions.map { it.id }.toSet()
+        val next = ids.distinct().filter { it in allowed }.take(12)
+        if (next == visibleSessions && statusPolling?.isActive == true) return
+        visibleSessions = next
+        startSessionStatusReads()
+    }
+
+    private fun startSessionStatusReads() {
+        statusPolling?.cancel()
+        val snapshot = state.value
+        if (!visible || snapshot.session != null || snapshot.addingDevice) return
+        val address = snapshot.deviceId ?: return
+        val client = clients[address] ?: return
+        val ids = visibleSessions.filter { id -> snapshot.sessions.any { it.id == id } }
+        if (ids.isEmpty()) return
+        val selected = selectionEpoch
+        statusPolling = viewModelScope.launch {
+            while (isActive && visible && selected == selectionEpoch) {
+                try {
+                    val statuses = client.sessionStatuses(ids)
+                    if (selected != selectionEpoch || clients[address] !== client || !visible) return@launch
+                    val previous = state.value.sessionStatuses
+                    val merged = statuses.associate { item ->
+                        val old = previous[item.id]
+                        val resolved = if (item.status == null && old != null) old.copy(status = null) else item
+                        item.id to resolved.copy(hasUnreadTurn = resolved.hasUnreadTurn ||
+                            item.completedTurnId != null && (old?.status == "active" &&
+                                old.activeTurnId == item.completedTurnId ||
+                                old?.hasUnreadTurn == true && old.completedTurnId == item.completedTurnId))
+                    }
+                    mutableState.value = state.value.copy(sessionStatuses = previous + merged)
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) {
+                    if (selected != selectionEpoch) return@launch
+                    trace("session_status_failed", error)
+                    mutableState.value = state.value.copy(sessionStatuses = state.value.sessionStatuses.mapValues { (id, value) ->
+                        if (id in ids) value.copy(status = null) else value
+                    })
+                    if (error is FiloHttpException && error.status in setOf(401, 403, 404, 501)) return@launch
+                }
+                delay(3000)
+            }
+        }
     }
 
     private fun settleStop() {
@@ -485,6 +560,7 @@ internal class RemoteViewModel(
             try {
                 if (snapshot.session == null) {
                     val page = client.sessions(cursor)
+                    require(page.nextCursor != cursor) { "Filo session cursor did not advance" }
                     if (generation == epoch) mutableState.value = state.value.copy(
                         sessions = (state.value.sessions + page.sessions).distinctBy { it.id }, sessionCursor = page.nextCursor)
                 } else {

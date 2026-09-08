@@ -5,9 +5,12 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -15,6 +18,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -37,6 +44,9 @@ import com.newoether.agora.remote.RemoteViewModel
 import com.newoether.agora.remote.RemoteDeviceStatus
 import com.newoether.agora.mcp.McpConnectionStatus
 import com.newoether.agora.ui.settings.*
+import com.newoether.agora.ui.chat.DrawerConversationIndicator
+import com.newoether.agora.ui.chat.resolveDrawerConversationIndicator
+import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator
 import com.newoether.agora.ui.motion.MotionAwareLinearProgressIndicator
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.ui.common.rememberAgoraHaptics
@@ -94,32 +104,64 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
         when {
             page.third != null -> RemoteAddDevice(displayed, vm, back) { forward = false; focus.clearFocus() }
             page.second != null -> RemoteConversation(displayed, vm, settings, active && current, back)
-            page.first != null -> CollapsingSettingsLazyScaffold(
-                title = stringResource(R.string.remote_sessions), onBack = back,
-                actions = { IconButton(onClick = { forward = true; vm.newSession() }, enabled = current && active && !displayed.controlling) {
-                    Icon(Icons.Default.Add, stringResource(R.string.new_chat))
-                } },
-            ) {
-                item { RemoteReadStatus(displayed, vm::refresh) }
-                if (!displayed.loading && displayed.sessions.isEmpty() && !displayed.error) {
-                    item { Text(stringResource(R.string.remote_empty), Modifier.padding(16.dp)) }
+            page.first != null -> {
+                val listState = rememberLazyListState()
+                val visibleRows = remember { mutableStateMapOf<String, Boolean>() }
+                LaunchedEffect(current, active, displayed.deviceId, displayed.sessions) {
+                    if (!current || !active) return@LaunchedEffect
+                    snapshotFlow { displayed.sessions.map { it.id }.filter { visibleRows[it] == true } }
+                        .collect { vm.observeSessions(page.first!!, it) }
                 }
-                if (displayed.sessions.isNotEmpty()) item {
-                    SettingsGroup(title = displayed.devices.firstOrNull { it.id == displayed.deviceId }?.name.orEmpty(),
-                        items = displayed.sessions.map { session -> {
-                        SettingsItem(
-                            modifier = Modifier.clickable(enabled = current) {
-                                forward = true; focus.clearFocus(); vm.selectSession(session)
-                            },
-                            headlineContent = { Text(session.displayTitle(stringResource(R.string.new_chat)), maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                            supportingContent = { Text(if (session.readOnly && !session.canResume) stringResource(R.string.remote_history_read_only) + " · " + session.cwd else session.cwd,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            leadingContent = { Icon(Icons.Default.ChatBubbleOutline, null) },
+                LaunchedEffect(current, active, displayed.sessionCursor, displayed.loading, displayed.loadingMore, displayed.error) {
+                    if (!current || !active || displayed.sessionCursor == null ||
+                        displayed.loading || displayed.loadingMore || displayed.error) return@LaunchedEffect
+                    snapshotFlow {
+                        listState.layoutInfo.visibleItemsInfo.any { it.key == "sessions" } && !listState.canScrollForward
+                    }.collect { atBottom -> if (atBottom) vm.loadMore() }
+                }
+                CollapsingSettingsLazyScaffold(
+                    listState = listState,
+                    title = stringResource(R.string.remote_sessions), onBack = back,
+                    actions = {
+                        IconButton(onClick = { forward = true; vm.newSession() }, enabled = current && active && !displayed.controlling) {
+                            Icon(Icons.Default.Add, stringResource(R.string.new_chat))
+                        }
+                    },
+                ) {
+                    item { RemoteReadStatus(displayed, vm::refresh) }
+                    if (!displayed.loading && displayed.sessions.isEmpty() && !displayed.error) {
+                        item { Text(stringResource(R.string.remote_empty), Modifier.padding(16.dp)) }
+                    }
+                    if (displayed.sessions.isNotEmpty()) item(key = "sessions") {
+                        SettingsGroup(
+                            title = displayed.devices.firstOrNull { it.id == displayed.deviceId }?.name.orEmpty(),
+                            items = displayed.sessions.map { session -> {
+                                key(session.id) {
+                                    DisposableEffect(session.id) { onDispose { visibleRows.remove(session.id) } }
+                                    SettingsItem(
+                                        modifier = Modifier.onGloballyPositioned { coordinates ->
+                                            val bounds = coordinates.boundsInWindow()
+                                            val shown = bounds.width > 0 && bounds.height > 0
+                                            if (shown) visibleRows[session.id] = true else visibleRows.remove(session.id)
+                                        }.clickable(enabled = current) {
+                                            forward = true; focus.clearFocus(); vm.selectSession(session)
+                                        },
+                                        headlineContent = { Text(session.displayTitle(stringResource(R.string.new_chat)), maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                                        supportingContent = { Text(if (session.readOnly && !session.canResume) stringResource(R.string.remote_history_read_only) + " · " + session.cwd else session.cwd,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                        leadingContent = { Icon(Icons.Default.ChatBubbleOutline, null) },
+                                        trailingContent = {
+                                            RemoteSessionIndicator(resolveDrawerConversationIndicator(
+                                                isGenerating = displayed.sessionStatuses[session.id]?.status == "active",
+                                                isSelected = false,
+                                                hasUnreadGeneration = displayed.hasUnreadGeneration(session.id),
+                                            ))
+                                        },
+                                    )
+                                }
+                            } },
                         )
-                    } })
-                }
-                if (displayed.sessionCursor != null) item {
-                    TextButton(onClick = vm::loadMore, enabled = current && !displayed.loading && !displayed.loadingMore) { Text(stringResource(R.string.remote_load_more)) }
+                    }
                 }
             }
             else -> RemoteDevices(displayed, vm, back) { forward = true }
@@ -134,6 +176,29 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
     ) {
         MotionAwareLinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp))
     }
+    }
+}
+
+/** Exact original drawer indicator sizes, priority, color and fade timing. */
+@Composable
+private fun RemoteSessionIndicator(indicator: DrawerConversationIndicator) {
+    val unreadDescription = stringResource(R.string.conversation_unread_generation)
+    Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
+        AnimatedVisibility(
+            visible = indicator == DrawerConversationIndicator.GENERATING,
+            enter = fadeIn(tween(200)), exit = fadeOut(tween(200)),
+        ) {
+            MotionAwareCircularProgressIndicator(
+                modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        AnimatedVisibility(
+            visible = indicator == DrawerConversationIndicator.UNREAD,
+            enter = fadeIn(tween(200)), exit = fadeOut(tween(200)),
+        ) {
+            Box(Modifier.size(8.dp).background(MaterialTheme.colorScheme.primary, CircleShape)
+                .semantics { contentDescription = unreadDescription })
+        }
     }
 }
 

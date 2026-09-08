@@ -96,4 +96,19 @@ class RemoteConnectionStoreTest {
         } catch (_: RemoteStorageException) { }
         assertEquals(before, file.readText())
     }
+
+    @Test fun viewedCompletionsSurviveRestartAndCredentialEditWithoutRestoringDeletedDevices() = runBlocking {
+        val file = File(temporary.root, "connections.json")
+        store(file).save(RemoteConnection("Computer", "http://computer/", token))
+        store(file).markViewed("http://computer/", "session", "first")
+        assertEquals("first", store(file).load().single().viewedTurns["session"])
+        store(file).save(RemoteConnection("Renamed", "http://computer/", token), "http://computer/")
+        assertEquals("first", store(file).load().single().viewedTurns["session"])
+        store(file).markViewed("http://computer/", "session", "second")
+        assertEquals("second", store(file).load().single().viewedTurns["session"])
+        assertFalse(file.readText().contains(token))
+        store(file).remove("http://computer/")
+        store(file).markViewed("http://computer/", "session", "late")
+        assertTrue(store(file).load().isEmpty())
+    }
 }

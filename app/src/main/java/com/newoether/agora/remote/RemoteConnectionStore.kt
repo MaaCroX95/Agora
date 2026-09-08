@@ -15,7 +15,10 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 @Serializable
-internal class RemoteConnection(val name: String, val address: String, val token: String)
+internal class RemoteConnection(
+    val name: String, val address: String, val token: String,
+    val viewedTurns: Map<String, String> = emptyMap(),
+)
 
 internal class RemoteStorageException : IOException("Remote connection storage unavailable")
 
@@ -39,8 +42,20 @@ internal class RemoteConnectionStore(
                 saved.any { it.address == connection.address }) throw FiloConfigurationException()
             val replaced = previousAddress ?: connection.address
             write(if (saved.any { it.address == replaced }) {
-                saved.map { if (it.address == replaced) connection else it }
+                saved.map { if (it.address == replaced) RemoteConnection(
+                    connection.name, connection.address, connection.token, it.viewedTurns + connection.viewedTurns,
+                ) else it }
             } else saved + connection)
+        }
+    }
+
+    suspend fun markViewed(address: String, sessionId: String, turnId: String): Unit = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val saved = read()
+            if (saved.none { it.address == address }) return@withLock
+            write(saved.map { if (it.address == address) RemoteConnection(
+                it.name, it.address, it.token, it.viewedTurns + (sessionId to turnId),
+            ) else it })
         }
     }
 
@@ -54,7 +69,7 @@ internal class RemoteConnectionStore(
             if (!SecretCrypto.isEncrypted(it.token)) throw RemoteStorageException()
             val token = decrypt(it.token)
             if (!token.matches(Regex("[a-fA-F0-9]{64}"))) throw RemoteStorageException()
-            RemoteConnection(it.name, it.address, token)
+            RemoteConnection(it.name, it.address, token, it.viewedTurns)
         }.also { entries ->
             if (entries.map { it.address }.distinct().size != entries.size) throw RemoteStorageException()
         }
@@ -64,7 +79,7 @@ internal class RemoteConnectionStore(
         val encoded = json.encodeToString(connections.map {
             val ciphertext = encrypt(it.token)
             if (!SecretCrypto.isEncrypted(ciphertext)) throw RemoteStorageException()
-            RemoteConnection(it.name, it.address, ciphertext)
+            RemoteConnection(it.name, it.address, ciphertext, it.viewedTurns)
         }).toByteArray(Charsets.UTF_8)
         val parent = file.parentFile ?: throw RemoteStorageException()
         Files.createDirectories(parent.toPath())
