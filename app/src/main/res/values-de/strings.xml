@@ -1251,4 +1251,5 @@
     <string name="remote_resume_history">Diese Unterhaltung fortsetzen</string>
     <string name="remote_session_busy">Diese Unterhaltung wird von einem anderen Codex-Prozess verwendet. Nach der Freigabe erneut versuchen.</string>
     <string name="thought_for_a_while">Eine Weile nachgedacht</string>
+    <string name="remote_history_too_large">Dieser Verlauf ist zu groß für dieses Gerät. Den restlichen Verlauf kannst du in Codex lesen.</string>
 </resources>

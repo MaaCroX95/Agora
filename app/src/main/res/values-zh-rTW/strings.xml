@@ -1259,4 +1259,5 @@
     <string name="remote_resume_history">繼續此會話</string>
     <string name="remote_session_busy">此會話仍由其他 Codex 程序使用，請在釋放後重試。</string>
     <string name="thought_for_a_while">思考了一會兒</string>
+    <string name="remote_history_too_large">此裝置無法繼續載入這麼多歷史訊息。請在 Codex 中查看剩餘歷史。</string>
 </resources>

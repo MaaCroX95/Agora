@@ -329,22 +329,25 @@ internal class RemoteViewModel(
     }
 
     private suspend fun applyPage(client: FiloClient, sessionId: String, generation: Long, page: RemoteConversationPage) {
-        var fresh = page.messages
+        if (generation != epoch) return
+        var fresh = checkedRemoteHistory(page.messages)
         var cursor = page.nextCursor
         val old = state.value.messages
+        val oldIds = old.mapTo(HashSet()) { it.id }
         val cursors = mutableSetOf<String>()
-        while (old.isNotEmpty() && fresh.none { item -> old.any { it.id == item.id } } &&
-            cursor != null && cursors.add(cursor)) {
+        while (old.isNotEmpty() && fresh.none { it.id in oldIds } && cursor != null) {
+            require(cursors.add(cursor)) { "Filo history cursor did not advance" }
             val older = client.conversation(sessionId, cursor)
-            fresh = older.messages + fresh
+            if (generation != epoch) return
+            fresh = checkedRemoteHistory(older.messages + fresh)
             cursor = older.nextCursor
         }
         if (generation != epoch) return
         val owner = state.value.owner ?: return
         mutableState.value = state.value.copy(
-            messages = streamDeltas.apply(state.value.messages, mergeRemoteHistory(state.value.messages, fresh),
+            messages = streamDeltas.apply(state.value.messages, checkedRemoteHistory(mergeRemoteHistory(state.value.messages, fresh)),
                 state.value.runtime, page.runtime), queued = page.queued,
-            historyCursor = if (old.isEmpty()) page.nextCursor else state.value.historyCursor,
+            historyCursor = if (old.isEmpty() || fresh.none { it.id in oldIds }) cursor else state.value.historyCursor,
             loading = false, failure = null, runtime = page.runtime,
         )
         state.value.deviceId?.let { id -> updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTED, failure = null) } }
@@ -577,9 +580,12 @@ internal class RemoteViewModel(
                         sessions = (state.value.sessions + page.sessions).distinctBy { it.id }, sessionCursor = page.nextCursor)
                 } else {
                     val page = client.conversation(snapshot.session.id, cursor)
-                    if (generation == epoch) mutableState.value = state.value.copy(
-                        messages = page.messages.filterNot { item -> state.value.messages.any { it.id == item.id } } +
-                            state.value.messages, historyCursor = page.nextCursor)
+                    require(page.nextCursor != cursor) { "Filo history cursor did not advance" }
+                    if (generation == epoch) {
+                        val oldIds = state.value.messages.mapTo(HashSet()) { it.id }
+                        mutableState.value = state.value.copy(messages = checkedRemoteHistory(
+                            page.messages.filterNot { it.id in oldIds } + state.value.messages), historyCursor = page.nextCursor)
+                    }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {

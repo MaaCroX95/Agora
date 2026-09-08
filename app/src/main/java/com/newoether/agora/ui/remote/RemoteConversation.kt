@@ -79,9 +79,7 @@ internal fun RemoteConversation(
         onShowLaunchContent = {},
         onInitialFocusRequested = { vm.completeComposerFocus(owner) },
     )
-    val generationVisible = running && state.messages.any {
-        it.role == "user" && it.turnId == state.runtime?.activeTurnId
-    }
+    val generationVisible = state.runtime.hasVisibleGeneration(state.messages)
     var activeMenu by remember(owner) { mutableStateOf<String?>(null) }
     var lastModelDismissTime by remember(owner) { mutableLongStateOf(0L) }
     var lastContextDismissTime by remember(owner) { mutableLongStateOf(0L) }
@@ -97,6 +95,7 @@ internal fun RemoteConversation(
     val thinkingBudgetTokens = 4096
     val openAiServiceTierEnabled = state.selectedServiceTier != null
     val openAiServiceTier = state.selectedServiceTier.orEmpty()
+    val serviceTierKnown = state.isDraft || state.runtime?.serviceTierKnown == true || state.runtime?.serviceTier != null
     LaunchedEffect(active) {
         if (!active) {
             activeMenu = null
@@ -381,7 +380,7 @@ internal fun RemoteConversation(
                                             Column {
                                                 Text(stringResource(R.string.thinking))
                                                 Text(
-                                                    text = thinkingControlShortLabel(
+                                                    text = if (state.selectedEffort == null) "" else thinkingControlShortLabel(
                                                         thinkingEnabled,
                                                         thinkingLevel,
                                                         thinkingBudgetEnabled,
@@ -420,7 +419,7 @@ internal fun RemoteConversation(
                                             Column {
                                                 Text(stringResource(R.string.openai_service_tier_title))
                                                 Text(
-                                                    text = openAiServiceTierShortLabel(
+                                                    text = if (!serviceTierKnown) "" else openAiServiceTierShortLabel(
                                                         openAiServiceTierEnabled,
                                                         openAiServiceTier,
                                                         nativeLabel = tierChoices.firstOrNull { it.id == openAiServiceTier }?.name
@@ -436,7 +435,7 @@ internal fun RemoteConversation(
                                         Switch(
                                             checked = openAiServiceTierEnabled,
                                             onCheckedChange = vm::setServiceTierEnabled,
-                                            enabled = settingsEnabled && (openAiServiceTierEnabled || tierChoices.isNotEmpty()),
+                                            enabled = settingsEnabled && serviceTierKnown && (openAiServiceTierEnabled || tierChoices.isNotEmpty()),
                                             modifier = Modifier.scale(0.7f),
                                         )
                                     },

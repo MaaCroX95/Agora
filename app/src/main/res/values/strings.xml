@@ -1252,4 +1252,5 @@
     <string name="remote_resume_history">Continue this conversation</string>
     <string name="remote_session_busy">This conversation is in use by another Codex process. Try again after it releases the conversation.</string>
     <string name="thought_for_a_while">Thought for a while</string>
+    <string name="remote_history_too_large">This history is too large to load on this device. Read the remaining history in Codex.</string>
 </resources>

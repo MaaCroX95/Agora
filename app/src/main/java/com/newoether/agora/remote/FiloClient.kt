@@ -70,6 +70,7 @@ internal data class RemoteRuntime(
     val contextTokens: Int? = null, val contextWindow: Int? = null,
     val completedTurnId: String? = null,
     val effort: String? = null, val serviceTier: String? = null,
+    val serviceTierKnown: Boolean = false, val activeTurnHasUserMessage: Boolean = false,
 ) { val isRunning: Boolean get() = status == "active" }
 @Serializable
 internal data class RemoteModel(
@@ -108,9 +109,10 @@ private data class FiloError(val code: String? = null)
 internal class FiloHttpException(val status: Int, val code: String? = null) : IOException("Filo HTTP $status")
 internal class FiloInputException : IllegalArgumentException("Invalid Filo message")
 internal class FiloConfigurationException : IllegalArgumentException("Invalid Filo connection")
-internal enum class RemoteFailure { NETWORK, AUTHENTICATION, CONFIGURATION, PROTOCOL, SERVICE, STORAGE, SESSION_BUSY, UNKNOWN }
+internal enum class RemoteFailure { NETWORK, AUTHENTICATION, CONFIGURATION, PROTOCOL, SERVICE, STORAGE, SESSION_BUSY, CONTENT_TOO_LARGE, UNKNOWN }
 
 internal fun classifyRemoteFailure(error: Exception): RemoteFailure = when (error) {
+    is RemoteContentLimitException -> RemoteFailure.CONTENT_TOO_LARGE
     is RemoteStorageException -> RemoteFailure.STORAGE
     is FiloConfigurationException, is FiloInputException -> RemoteFailure.CONFIGURATION
     is FiloHttpException -> when {
@@ -311,7 +313,7 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
         ))
     }
     val turn = runtime?.activeTurnId?.takeIf { active ->
-        runtime.isRunning && messages.any { it.role == "user" && it.turnId == active }
+        runtime.hasVisibleGeneration(messages)
     }
     if (turn != null) {
         val tail = lastOrNull()
