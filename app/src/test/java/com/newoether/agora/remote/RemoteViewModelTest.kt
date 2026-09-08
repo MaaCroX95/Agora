@@ -420,6 +420,147 @@ class RemoteViewModelTest {
         coVerify(exactly = 1) { client.send(any(), any(), any()) }
     }
 
+    @Test fun nativeGenerationChangesAreVisibleBeforeAnyMessageOrLocalSubmission() = runTest(dispatcher) {
+        val events = MutableSharedFlow<RemoteConversationPage>()
+        every { client.events(any()) } returns events
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
+        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "native-turn")))
+        runCurrent()
+        assertTrue(vm.state.value.runtime!!.isRunning)
+        assertEquals("native-turn", vm.state.value.runtime?.activeTurnId)
+        assertTrue(vm.state.value.messages.isEmpty())
+        assertTrue(vm.state.value.attempts.isEmpty())
+        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("idle")))
+        runCurrent()
+        assertFalse(vm.state.value.runtime!!.isRunning)
+        coVerify(exactly = 0) { client.send(any(), any(), any()) }
+        coVerify(exactly = 0) { client.stop(any(), any()) }
+        vm.setVisible(false)
+    }
+
+    @Test fun stopReceiptFirstKeepsBusyUntilNativeTurnEndsAndBlocksDuplicateActions() = runTest(dispatcher) {
+        val events = MutableSharedFlow<RemoteConversationPage>()
+        val receipt = CompletableDeferred<Unit>()
+        every { client.events(any()) } returns events
+        coEvery { client.stop(any(), any()) } coAnswers { receipt.await() }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
+        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
+        runCurrent()
+        vm.stop(); vm.stop(); runCurrent()
+        assertTrue(vm.state.value.isStopping)
+        assertTrue(vm.state.value.controlling)
+        receipt.complete(Unit); runCurrent()
+        assertTrue(vm.state.value.isStopping)
+        assertFalse(vm.state.value.controlling)
+        vm.editDraft(vm.state.value.owner!!, "cannot send while stopping")
+        vm.send(); vm.stop(); vm.setModel("model"); runCurrent()
+        coVerify(exactly = 1) { client.stop("session", "turn") }
+        coVerify(exactly = 0) { client.send(any(), any(), any()) }
+        coVerify(exactly = 0) { client.setModel(any(), any()) }
+        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("idle")))
+        runCurrent()
+        assertFalse(vm.state.value.isStopping)
+        assertNull(vm.state.value.stoppingTurnId)
+        vm.setVisible(false)
+    }
+
+    @Test fun nativeTurnEndFirstKeepsBusyUntilStopReceiptArrives() = runTest(dispatcher) {
+        val events = MutableSharedFlow<RemoteConversationPage>()
+        val receipt = CompletableDeferred<Unit>()
+        every { client.events(any()) } returns events
+        coEvery { client.stop(any(), any()) } coAnswers { receipt.await() }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
+        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
+        runCurrent(); vm.stop(); runCurrent()
+        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("idle")))
+        runCurrent()
+        assertTrue(vm.state.value.isStopping)
+        receipt.complete(Unit); runCurrent()
+        assertFalse(vm.state.value.isStopping)
+        assertFalse(vm.state.value.controlling)
+        vm.setVisible(false)
+    }
+
+    @Test fun failedStopEndsBusyWithoutInventingIdleOrAutomaticallyRetrying() = runTest(dispatcher) {
+        coEvery { client.conversation(any(), any()) } returns RemoteConversationPage(
+            emptyList(), null, emptyList(), RemoteRuntime("active", "turn"))
+        coEvery { client.stop(any(), any()) } throws IOException("Lost Stop receipt")
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
+        vm.stop(); runCurrent()
+        assertFalse(vm.state.value.isStopping)
+        assertFalse(vm.state.value.controlling)
+        assertEquals(RemoteFailure.NETWORK, vm.state.value.failure)
+        assertTrue(vm.state.value.runtime!!.isRunning)
+        coVerify(exactly = 1) { client.stop("session", "turn") }
+        vm.setVisible(false)
+    }
+
+    @Test fun disconnectWhileAwaitingNativeStopClearsBusyAndInvalidatesControls() = runTest(dispatcher) {
+        val disconnect = CompletableDeferred<Unit>()
+        every { client.events(any()) } returns flow {
+            emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
+            disconnect.await()
+            throw IOException("Stream disconnected")
+        }
+        coEvery { client.stop(any(), any()) } returns Unit
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
+        vm.stop(); runCurrent()
+        assertTrue(vm.state.value.isStopping)
+        disconnect.complete(Unit); runCurrent()
+        assertFalse(vm.state.value.isStopping)
+        assertNull(vm.state.value.runtime)
+        vm.stop(); vm.send(); runCurrent()
+        coVerify(exactly = 1) { client.stop("session", "turn") }
+        coVerify(exactly = 0) { client.send(any(), any(), any()) }
+        vm.setVisible(false)
+    }
+
+    @Test fun lateStopReceiptCannotChangeAnotherSessionsGeneration() = runTest(dispatcher) {
+        val events = MutableSharedFlow<RemoteConversationPage>()
+        val receipt = CompletableDeferred<Unit>()
+        every { client.events(any()) } returns events
+        coEvery { client.stop(any(), any()) } coAnswers { receipt.await() }
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
+        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "old-turn")))
+        runCurrent(); vm.stop(); runCurrent()
+        vm.selectSession(session.copy(id = "other")); runCurrent()
+        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "other-turn")))
+        runCurrent()
+        assertFalse(vm.state.value.isStopping)
+        receipt.complete(Unit); runCurrent()
+        assertFalse(vm.state.value.isStopping)
+        assertEquals("other-turn", vm.state.value.runtime?.activeTurnId)
+        assertTrue(vm.state.value.runtime!!.isRunning)
+        coVerify(exactly = 1) { client.stop("session", "old-turn") }
+        coVerify(exactly = 0) { client.stop("other", any()) }
+        vm.setVisible(false)
+    }
+
+    @Test fun replacementTurnEndsOnlyTheOriginalPendingStop() = runTest(dispatcher) {
+        val events = MutableSharedFlow<RemoteConversationPage>()
+        every { client.events(any()) } returns events
+        coEvery { client.stop(any(), any()) } returns Unit
+        val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
+        saveAndSelect(vm); vm.selectSession(session); vm.setVisible(true); runCurrent()
+        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "old-turn")))
+        runCurrent(); vm.stop(); runCurrent()
+        assertTrue(vm.state.value.isStopping)
+        events.emit(RemoteConversationPage(emptyList(), null, emptyList(), RemoteRuntime("active", "new-turn")))
+        runCurrent()
+        assertFalse(vm.state.value.isStopping)
+        assertEquals("new-turn", vm.state.value.runtime?.activeTurnId)
+        assertTrue(vm.state.value.runtime!!.isRunning)
+        coVerify(exactly = 1) { client.stop("session", "old-turn") }
+        coVerify(exactly = 0) { client.stop("session", "new-turn") }
+        vm.setVisible(false)
+    }
+
     @Test fun newChatEntryAndRepeatedPlusStayLocalAndFocusWithoutRuntime() = runTest(dispatcher) {
         val vm = RemoteViewModel(connections) { _, _ -> client }; runCurrent()
         saveAndSelect(vm); vm.setVisible(true); runCurrent()

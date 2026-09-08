@@ -70,6 +70,7 @@ internal fun RemoteConversation(
     val focus = remember { FocusRequester() }
     val attempt = state.attempts[owner]
     val running = state.runtime?.isRunning == true
+    val stopping = state.isStopping
     val ready = state.isDraft || !session.readOnly && state.runtime?.status in setOf("idle", "active", "ready")
     val newChatEntry = remember(owner) { state.composerFocusOwner == owner }
     ChatLaunchInteractionEffects(
@@ -296,7 +297,7 @@ internal fun RemoteConversation(
                                 ?: state.selectedModel ?: stringResource(
                                     if (state.modelsLoading || state.loading) R.string.loading_label else R.string.remote_model_unavailable),
                             isModelValid = state.selectedModel != null, expanded = activeMenu == "model",
-                            enabled = active && ready && !submitting && !state.controlling && state.models.isNotEmpty(),
+                            enabled = active && ready && !submitting && !stopping && !state.controlling && state.models.isNotEmpty(),
                             onClick = {
                                 val now = System.currentTimeMillis()
                                 if (activeMenu == "model") activeMenu = null
@@ -441,10 +442,11 @@ internal fun RemoteConversation(
                             }
                         }
                     }
-                    val showStop = running && field.text.isBlank()
-                    ComposerSendButton(isActionable = active && ready && !state.controlling && !submitting && (showStop || field.text.isNotBlank()) &&
+                    val showStop = running && !stopping && field.text.isBlank()
+                    ComposerSendButton(isActionable = active && ready && !stopping && !state.controlling && !submitting &&
+                        (if (showStop) state.runtime?.activeTurnId != null else field.text.isNotBlank()) &&
                         attempt?.delivery != RemoteDelivery.UNKNOWN,
-                        isBusy = submitting, showStop = showStop,
+                        isBusy = submitting || stopping, showStop = showStop,
                         onBusyShown = { shownBusyAttempt = attempt?.clientId }) {
                         if (showStop) vm.stop() else { vm.editDraft(owner, field.text.toString()); vm.send() }
                     }

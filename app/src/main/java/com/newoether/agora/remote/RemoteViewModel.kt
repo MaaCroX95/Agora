@@ -37,12 +37,14 @@ internal data class RemoteState(
     val draftSessionId: String? = null, val draftModel: String? = null,
     val modelsLoading: Boolean = false,
     val sessionOwners: Map<String, String> = emptyMap(),
+    val stoppingOwner: String? = null, val stoppingTurnId: String? = null,
 ) {
     val error: Boolean get() = failure != null
     val owner: String? get() = session?.let {
         val nativeOwner = "$deviceId/${it.id}"
         sessionOwners[nativeOwner] ?: nativeOwner
     }
+    val isStopping: Boolean get() = stoppingOwner != null && stoppingOwner == owner
     val isDraft: Boolean get() = session != null && session.id == draftSessionId
     val selectedModel: String? get() = if (isDraft) {
         draftModel ?: models.firstOrNull { it.isDefault }?.id
@@ -341,7 +343,8 @@ internal class RemoteViewModel(
                     if (generation == epoch) {
                         val failure = trace("read_failed", error)
                         updateDevice(id) { it.copy(status = RemoteDeviceStatus.ERROR, failure = failure) }
-                        mutableState.value = state.value.copy(loading = false, failure = failure, runtime = null)
+                        mutableState.value = state.value.copy(loading = false, failure = failure, runtime = null,
+                            stoppingOwner = null, stoppingTurnId = null)
                     }
                 }
                 if (session == null || session.readOnly) break
@@ -370,6 +373,16 @@ internal class RemoteViewModel(
         )
         state.value.deviceId?.let { id -> updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTED, failure = null) } }
         state.value.attempts[owner]?.let { attempt -> confirmDelivery(owner, attempt) }
+        settleStop()
+    }
+
+    private fun settleStop() {
+        val snapshot = state.value
+        val runtime = snapshot.runtime ?: return
+        if (!snapshot.isStopping || snapshot.controlling) return
+        if (!runtime.isRunning || runtime.activeTurnId != null && runtime.activeTurnId != snapshot.stoppingTurnId) {
+            mutableState.value = snapshot.copy(stoppingOwner = null, stoppingTurnId = null)
+        }
     }
 
     fun newSession() {
@@ -429,23 +442,35 @@ internal class RemoteViewModel(
     fun stop() {
         val snapshot = state.value
         val session = snapshot.session ?: return
-        if (session.readOnly) return
-        val turn = snapshot.runtime?.activeTurnId ?: return
-        control { client -> client.stop(session.id, turn) }
+        if (session.readOnly || snapshot.runtime?.isRunning != true) return
+        val turn = snapshot.runtime.activeTurnId ?: return
+        control(stoppingTurnId = turn) { client -> client.stop(session.id, turn) }
     }
 
-    private fun control(operation: suspend (FiloClient) -> Unit) {
-        if (state.value.controlling) return
+    private fun control(stoppingTurnId: String? = null, operation: suspend (FiloClient) -> Unit) {
+        if (state.value.controlling || state.value.isStopping) return
         val client = clients[state.value.deviceId] ?: return
         val selected = selectionEpoch
-        mutableState.value = state.value.copy(controlling = true)
+        val owner = state.value.owner
+        mutableState.value = state.value.copy(controlling = true,
+            stoppingOwner = if (stoppingTurnId != null) owner else state.value.stoppingOwner,
+            stoppingTurnId = stoppingTurnId ?: state.value.stoppingTurnId)
         viewModelScope.launch {
-            try { operation(client) }
+            var succeeded = false
+            try { operation(client); succeeded = true }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
                 val failure = trace("control_failed", error)
                 if (selected == selectionEpoch) mutableState.value = state.value.copy(failure = failure)
-            } finally { mutableState.value = state.value.copy(controlling = false) }
+            } finally {
+                mutableState.value = state.value.copy(controlling = false)
+                if (stoppingTurnId != null && state.value.stoppingOwner == owner &&
+                    state.value.stoppingTurnId == stoppingTurnId && (!succeeded || selected != selectionEpoch)) {
+                    mutableState.value = state.value.copy(stoppingOwner = null, stoppingTurnId = null)
+                }
+                // A Stop receipt and the native end-of-turn snapshot may arrive in either order.
+                settleStop()
+            }
         }
     }
 
@@ -489,7 +514,7 @@ internal class RemoteViewModel(
 
     fun send() {
         val snapshot = state.value
-        if (snapshot.session?.readOnly == true || snapshot.controlling ||
+        if (snapshot.session?.readOnly == true || snapshot.controlling || snapshot.isStopping ||
             !snapshot.isDraft && snapshot.runtime?.status !in setOf("idle", "active", "ready")) return
         val owner = snapshot.owner ?: return
         val client = clients[snapshot.deviceId] ?: return

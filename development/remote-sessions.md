@@ -317,3 +317,8 @@ The existing Remote state retains a native-session to composer-owner mapping aft
 
 ## Add Device guidance and empty-field examples | 2026-09-08 | Codex via Conch
 Explain installing Filo on the target device and entering its IP address or URL; do not require or mention Tailscale in this helper. Both fields use the existing labeled input with optional gray placeholders: a sample HTTP IP/port and a visibly abbreviated hexadecimal token. Examples are presentation only, never initial values, credentials or submitted defaults. Synchronize all supported locales; existing MCP input defaults are unchanged.
+
+
+## Send follows live generation and Stop settlement | 2026-09-08 | Codex via Conch
+Owner requires Send to follow native generation like ordinary ChatApp. Existing SSE runtime is authoritative even when no user/assistant bubble has arrived; historic last-message status must not invent live generation. Reuse ComposerSendButton unchanged: active native generation plus empty draft shows Stop; entering text shows Send for existing steer; submitting or stopping shows the original circular Busy state and blocks duplicate actions. Stop is actionable only with a native active turn ID.
+RemoteViewModel binds each pending Stop to its composer owner and exact native turn. Keep Busy until both the Stop HTTP request has settled successfully and native runtime ends/replaces that exact turn, in either arrival order. Failure or disconnection ends pending presentation without inventing idle or automatically retrying. Late responses after navigation cannot affect another owner. Normal completion received without a local Stop updates the button directly through runtime. New Chat remains entirely local until Send.
