@@ -940,31 +940,31 @@ class RemoteViewModelTest {
         coEvery { client.rename(session.id, "Requested") } returns session.copy(title = "Native name")
         vm.renameSession(session.id, "Requested"); runCurrent()
         assertEquals("Native name", vm.state.value.sessions.single().title)
-        coEvery { client.deleteSession(session.id) } throws FiloHttpException(409, "session_busy")
-        vm.deleteSession(session.id); runCurrent()
+        coEvery { client.archiveSession(session.id) } throws FiloHttpException(502)
+        vm.archiveSession(session.id); runCurrent()
         assertEquals(session.id, vm.state.value.sessions.single().id)
-        assertEquals(RemoteFailure.SESSION_BUSY, vm.state.value.failure)
-        coVerify(exactly = 1) { client.deleteSession(session.id) }
-        coEvery { client.deleteSession(session.id) } returns Unit
-        vm.deleteSession(session.id); runCurrent()
+        assertEquals(RemoteFailure.SERVICE, vm.state.value.failure)
+        coVerify(exactly = 1) { client.archiveSession(session.id) }
+        coEvery { client.archiveSession(session.id) } returns Unit
+        vm.archiveSession(session.id); runCurrent()
         assertTrue(vm.state.value.sessions.isEmpty())
-        coVerify(exactly = 2) { client.deleteSession(session.id) }
+        coVerify(exactly = 2) { client.archiveSession(session.id) }
         coVerify(exactly = 0) { client.resume(any()) }
         vm.setVisible(false)
     }
 
-    @Test fun lateSessionDeletionCannotAlterAnotherDeviceOrSubmitTwice() = runTest(dispatcher) {
+    @Test fun lateSessionArchiveCannotAlterAnotherDeviceOrSubmitTwice() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
-        coEvery { client.deleteSession(session.id) } coAnswers { withContext(NonCancellable) { gate.await() } }
+        coEvery { client.archiveSession(session.id) } coAnswers { withContext(NonCancellable) { gate.await() } }
         val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
-        vm.deleteSession(session.id); vm.deleteSession(session.id); runCurrent()
+        vm.archiveSession(session.id); vm.archiveSession(session.id); runCurrent()
         assertEquals(listOf(session), vm.state.value.sessions)
         vm.selectDevice(null); runCurrent()
         gate.complete(Unit); runCurrent()
         assertNull(vm.state.value.deviceId)
         assertTrue(vm.state.value.sessions.isEmpty())
-        coVerify(exactly = 1) { client.deleteSession(session.id) }
+        coVerify(exactly = 1) { client.archiveSession(session.id) }
         vm.setVisible(false)
     }
 

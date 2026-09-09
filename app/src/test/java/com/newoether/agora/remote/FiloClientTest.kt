@@ -22,6 +22,29 @@ class FiloClientTest {
     private val token = "a".repeat(64)
     private val id = "00000000-0000-0000-0000-000000000001"
 
+    @Test fun archiveUsesAuthenticatedNativeReceiptAndRejectsLegacyDeleteSuccess() = runBlocking {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val requests = mutableListOf<String>()
+        var reply = """{"archived":true,"cwd":"C:/project"}"""
+        server.createContext("/") { exchange ->
+            requests += "${exchange.requestMethod} ${exchange.requestURI.path}"
+            assertEquals("Bearer $token", exchange.requestHeaders.getFirst("Authorization"))
+            assertEquals("{}", exchange.requestBody.reader().readText())
+            val bytes = reply.toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        try {
+            val client = FiloClient("http://127.0.0.1:${server.address.port}/", token)
+            client.archiveSession(id)
+            reply = """{"deleted":true}"""
+            try { client.archiveSession(id); fail("Legacy deletion is not an archive receipt") }
+            catch (_: IllegalArgumentException) { }
+            assertEquals(List(2) { "POST /v1/sessions/$id/archive" }, requests)
+        } finally { server.stop(0) }
+    }
+
     @Test fun nativeProjectionKeepsIdentityAndReplacesEditedTail() {
         val user = RemoteMessage("u", "turn", "client", "user", "hello", 10)
         val answer = RemoteMessage("a", "turn", null, "assistant", "old", 10)

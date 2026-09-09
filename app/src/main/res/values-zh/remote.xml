@@ -38,4 +38,7 @@
     <string name="remote_online">在线</string>
     <string name="remote_offline">离线</string>
     <string name="remote_connecting">连接中</string>
+    <string name="remote_archive">归档</string>
+    <string name="remote_archive_title">归档任务？</string>
+    <string name="remote_archive_message">将此任务从 Codex 和 Remote 的未归档列表中移除？历史记录会保留。</string>
 </resources>

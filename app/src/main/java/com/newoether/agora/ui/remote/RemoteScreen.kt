@@ -201,10 +201,10 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                                                             onClick = { showMenu = false; action = "rename" },
                                                         )
                                                         DropdownMenuItem(
-                                                            text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
+                                                            text = { Text(stringResource(R.string.remote_archive), color = MaterialTheme.colorScheme.error) },
                                                             leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                                                            enabled = actionsEnabled && displayed.sessionStatuses["${displayed.deviceId}/${session.id}"]?.status != "active",
-                                                            onClick = { showMenu = false; action = "delete" },
+                                                            enabled = actionsEnabled,
+                                                            onClick = { showMenu = false; action = "archive" },
                                                         )
                                                     }
                                                 }
@@ -217,9 +217,12 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                                         onSave = { vm.renameSession(session.id, it); action = null },
                                         onDismiss = { action = null },
                                     )
-                                    if (action == "delete") ChatDeleteConfirmDialog(
+                                    if (action == "archive") ChatDeleteConfirmDialog(
                                         phase = ChatDeleteDialogPhase.CONFIRM,
-                                        onConfirm = { vm.deleteSession(session.id); action = null },
+                                        title = stringResource(R.string.remote_archive_title),
+                                        message = stringResource(R.string.remote_archive_message),
+                                        confirmLabel = stringResource(R.string.remote_archive),
+                                        onConfirm = { vm.archiveSession(session.id); action = null },
                                         onDismiss = { action = null },
                                     )
                                 }

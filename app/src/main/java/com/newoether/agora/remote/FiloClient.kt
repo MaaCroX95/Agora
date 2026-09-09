@@ -11,6 +11,9 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -176,9 +179,9 @@ internal class FiloClient(
     suspend fun rename(id: String, name: String): RemoteSession =
         json.decodeFromString<RemoteSession>(request("v1/sessions/${sessionId(id)}/rename",
             body = json.encodeToString(mapOf("name" to name)))).also { require(it.id == id) }
-    suspend fun deleteSession(id: String) {
-        val result = json.decodeFromString<Map<String, Boolean>>(request("v1/sessions/${sessionId(id)}/delete", body = "{}"))
-        require(result["deleted"] == true)
+    suspend fun archiveSession(id: String) {
+        val result = json.parseToJsonElement(request("v1/sessions/${sessionId(id)}/archive", body = "{}")).jsonObject
+        require(result["archived"]?.jsonPrimitive?.booleanOrNull == true) { "Native archive is unconfirmed" }
     }
 
     suspend fun resume(id: String) { request("v1/sessions/${sessionId(id)}/resume", body = "{}") }

@@ -629,7 +629,7 @@ internal class RemoteViewModel(
         if (name.isBlank() || name.length > 4096) return
         manageSession(id) { it.rename(id, name) }
     }
-    fun deleteSession(id: String) = manageSession(id) { it.deleteSession(id); null }
+    fun archiveSession(id: String) = manageSession(id) { it.archiveSession(id); null }
 
     private fun manageSession(id: String, operation: suspend (FiloClient) -> RemoteSession?) {
         val snapshot = state.value

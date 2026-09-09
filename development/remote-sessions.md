@@ -216,8 +216,10 @@ races. Use focused tests while iterating, then the full build and matching deplo
 Service startup, unit tests, APK hash/install and actual UI acceptance are distinct evidence.
 Physical phone UI acceptance belongs to the owner; no taps/screenshots/UI dumps are implied.
 
-Sessions rows expose the original three-dot dropdown with Rename and Delete and reuse
-ChatRenameDialog/ChatDeleteConfirmDialog. Update/remove a row only after native success;
-failures use Snackbar and never hide the task. Delete is permanent native deletion, not
-archive, and cannot stop another desktop writer. Cancel stale list reads before a mutation;
+Sessions rows expose the original three-dot dropdown with Rename and Archive and reuse
+ChatRenameDialog/ChatDeleteConfirmDialog with archive-specific copy. The owner requires
+only Codex thread/archive, preserving history and synchronizing the desktop archive
+notification. Neither desktop ownership nor generation disables Archive. Update/remove
+a row only after confirmed native success; failures use Snackbar and never hide the task.
+Permanent deletion, local record deletion and stopping a writer are prohibited. Cancel stale list reads before a mutation;
 late results cannot alter another selected device and repeated pending clicks do not resend.
