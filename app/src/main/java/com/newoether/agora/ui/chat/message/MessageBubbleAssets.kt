@@ -66,7 +66,6 @@ import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.compose.elements.MarkdownCodeBackground
 import com.mikepenz.markdown.compose.elements.MarkdownCodeBlock
 import com.mikepenz.markdown.compose.elements.MarkdownCodeFence
-import com.mikepenz.markdown.compose.elements.MarkdownImage
 import com.mikepenz.markdown.compose.elements.MarkdownText
 import com.mikepenz.markdown.compose.elements.MarkdownTable
 import com.mikepenz.markdown.compose.elements.MarkdownTableHeader
@@ -171,7 +170,7 @@ private fun ASTNode.findDescendantOfType(type: org.intellij.markdown.IElementTyp
 internal fun rememberChatMarkdownAssets(
     textColor: Color,
     parseInlineDollarMath: Boolean = false,
-    inlineImages: Map<String, com.newoether.agora.model.ToolImageAttachment> = emptyMap(),
+    inlineImages: Map<String, com.newoether.agora.model.MarkdownImage> = emptyMap(),
     onMediaClick: (List<String>, Int) -> Unit = { _, _ -> },
 ): ChatMarkdownAssets {
     val linkColor = MaterialTheme.colorScheme.primary
@@ -254,6 +253,7 @@ internal fun rememberChatMarkdownAssets(
             image = { model ->
                 ScrollableDisplayLatexImage(model)
             },
+            inlineImage = { model -> ChatMarkdownInlineImage(model) },
             paragraph = { model ->
                 SearchHighlightedMarkdownText(
                     model = model,
@@ -766,25 +766,7 @@ internal fun SearchHighlightedMarkdownHeading(
 }
 
 @Composable
-private fun ScrollableDisplayLatexImage(model: MarkdownComponentModel) {
-    if (!isScrollableDisplayLatexImage(model.content, model.node)) {
-        MarkdownImage(model.content, model.node)
-        return
-    }
-
-    val horizontalScrollState = rememberScrollState()
-    TrackStreamingHorizontalScroll(horizontalScrollState)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(horizontalScrollState),
-    ) {
-        MarkdownImage(model.content, model.node)
-    }
-}
-
-@Composable
-private fun TrackStreamingHorizontalScroll(horizontalScrollState: ScrollState) {
+internal fun TrackStreamingHorizontalScroll(horizontalScrollState: ScrollState) {
     val interactionController = LocalStreamingMarkdownInteractionController.current
     val interactionOwner = remember { Any() }
     if (interactionController != null) {

@@ -38,6 +38,13 @@ data class ToolImageAttachment(
     val sha256: String,
 )
 
+/** Disposable image presentation; an absent attachment is pending unless the read failed. */
+@Immutable
+data class MarkdownImage(
+    val attachment: ToolImageAttachment? = null,
+    val failed: Boolean = false,
+)
+
 @Immutable
 data class StreamingTextDelta(
     val sequence: Long,
@@ -182,7 +189,7 @@ data class ChatMessage(
     /** Optional in-memory page boundary; older pages cannot reparent a rendered list item. */
     val displayPageId: String? = null,
     /** Authenticated private files for inline Markdown images; never part of native history. */
-    val markdownImages: Map<String, ToolImageAttachment> = emptyMap(),
+    val markdownImages: Map<String, MarkdownImage> = emptyMap(),
 )
 
 @Immutable

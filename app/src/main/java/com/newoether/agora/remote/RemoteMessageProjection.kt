@@ -15,7 +15,7 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
         val first = messages[index++]
         require(first.role == "user" || first.role == "assistant")
         val answerText = StringBuilder()
-        val inlineImages = mutableMapOf<String, com.newoether.agora.model.ToolImageAttachment>()
+        val inlineImages = mutableMapOf<String, com.newoether.agora.model.MarkdownImage>()
         var previousAnswerId: String? = null
         var userText = first.displayText()
         if (first.role == "user") {
@@ -28,7 +28,9 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
             var current = first
             var previousNativeId: String? = null
             while (true) {
-                inlineImages.putAll(current.inlineImages)
+                current.imageLinks.forEach { link ->
+                    inlineImages[link] = current.inlineImages[link] ?: com.newoether.agora.model.MarkdownImage()
+                }
                 val activity = current.activity
                 val segment = when (activity?.type) {
                     null -> MessageSegment(type = "answer", content = current.displayText(),

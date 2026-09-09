@@ -23,7 +23,7 @@ internal data class RemoteMessage(
     val streamingTextDeltas: List<com.newoether.agora.model.StreamingTextDelta> = emptyList(),
     val imageLinks: List<String> = emptyList(),
     @kotlinx.serialization.Transient
-    val inlineImages: Map<String, com.newoether.agora.model.ToolImageAttachment> = emptyMap(),
+    val inlineImages: Map<String, com.newoether.agora.model.MarkdownImage> = emptyMap(),
 )
 @Serializable
 internal data class RemoteActivity(

@@ -1,6 +1,7 @@
 package com.newoether.agora.remote
 
 import com.newoether.agora.model.ChatMessage
+import com.newoether.agora.model.MarkdownImage
 import com.newoether.agora.ui.chat.HydratedMessagePayloadLru
 import com.newoether.agora.viewmodel.MessagePayloadProjector
 import kotlinx.coroutines.CancellationException
@@ -51,7 +52,7 @@ internal class RemoteMessageHydration(
     private fun weight(message: RemoteMessage) = 256L + 2L * (message.text.length.toLong() +
         (message.activity?.arguments?.length ?: 0) + (message.activity?.result?.length ?: 0)) +
         32L * message.streamingTextDeltas.size + message.imageLinks.sumOf { 32L + 2L * it.length } +
-        message.inlineImages.entries.sumOf { (link, image) -> 256L + 2L * (link.length + image.path.length) }
+        message.inlineImages.entries.sumOf { (link, image) -> 256L + 2L * (link.length + (image.attachment?.path?.length ?: 0)) }
     internal val retainedRecordBytes: Long get() = synchronized(cacheLock) { recordBytes }
     fun resetStreaming() = synchronized(cacheLock) {
         previousRuntime = null
@@ -164,10 +165,30 @@ internal class RemoteMessageHydration(
                             cached?.segments.orEmpty().firstOrNull { it.toolCallId == node.id }?.toolImages.orEmpty()
                                 .none { java.io.File(it.path).isFile } } ||
                             (group.nodes.sumOf { it.imageCount } > cached?.markdownImages.orEmpty().size) ||
-                            cached?.markdownImages.orEmpty().values.any { !java.io.File(it.path).isFile }
+                            cached?.markdownImages.orEmpty().values.any { it.attachment?.path?.let { path -> java.io.File(path).isFile } != true }
                     }
                 if (cached != null && !needsImages) return@collectLatest
-                val fresh = loadRecords(owner, group).map { message ->
+                val records = loadRecords(owner, group)
+                val fresh = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    records.map { message -> message.copy(inlineImages = message.inlineImages.mapValues { (_, value) ->
+                        value.takeIf { it.attachment?.path?.let { path -> java.io.File(path).isFile } == true }
+                            ?: MarkdownImage()
+                    }) }.toMutableList()
+                }
+                suspend fun publish() {
+                    currentCoroutineContext().ensureActive()
+                    if (target(owner, id)?.group?.revision != group.revision) throw CancellationException()
+                    val projected = project(group, fresh)
+                    currentCoroutineContext().ensureActive()
+                    if (target(owner, id)?.group?.revision != group.revision) throw CancellationException()
+                    rememberRecords(owner, RemoteConversationPage(fresh.toList(), null, emptyList(), nodes = group.nodes),
+                        live = false, preserveImages = false)
+                    remember(owner, group, projected)
+                    send(projected)
+                }
+                // Publish fixed pending slots before waiting for any authenticated image bytes.
+                if (fresh.any { it.imageLinks.isNotEmpty() }) publish()
+                for ((position, message) in fresh.toList().withIndex()) {
                     var hydrated = message
                     if (image != null) {
                         val request = group.requests.first { it.id == message.id }
@@ -178,17 +199,18 @@ internal class RemoteMessageHydration(
                         if (message.activity?.imagePath != null) load()?.let {
                             hydrated = hydrated.copy(activity = message.activity.copy(images = listOf(it)))
                         }
-                        val inline = message.imageLinks.mapIndexedNotNull { index, link -> load(index)?.let { link to it } }.toMap()
-                        hydrated = hydrated.copy(inlineImages = inline)
+                        val inline = message.inlineImages.toMutableMap()
+                        for ((index, link) in message.imageLinks.withIndex()) {
+                            val attachment = inline[link]?.attachment ?: load(index)
+                            inline[link] = MarkdownImage(attachment, failed = attachment == null)
+                            hydrated = hydrated.copy(inlineImages = inline.toMap())
+                            fresh[position] = hydrated
+                            publish()
+                        }
                     }
-                    hydrated
+                    fresh[position] = hydrated
                 }
-                rememberRecords(owner, RemoteConversationPage(fresh, null, emptyList(), nodes = group.nodes),
-                    live = false, preserveImages = false)
-                val projected = project(group, fresh)
-                currentCoroutineContext().ensureActive()
-                remember(owner, group, projected)
-                send(projected)
+                publish()
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { failed(error); if (cached == null) send(null) }
         }

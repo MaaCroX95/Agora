@@ -127,6 +127,12 @@ and the existing root media preview. Image files live only in the private dispos
 cache (128MiB/64files, two concurrent image reads). Inline answer images use server-parsed
 message/revision/index references and the original Markdown transformer with authenticated
 private files; retain original Markdown text for copy/search and reuse root image preview.
+Inline images reserve the original generated-image300dp square viewport before download,
+with8dp corners and centered Crop. Publish each completed image independently. The overlay
+uses the original motion-aware28dp/3dp circular indicator and200ms opacity crossfade on
+entry and exit; cached images do not wait for another image. Failed reads settle into the
+original broken-image presentation plus Snackbar, never an endless loading state. Geometry
+and text remain unchanged through download, decode, failure and retry.
 Metadata exposes only the image count. Native and ordinary durable tool images
 remain untouched. Each image retains the original 20MiB media-store bound. Search reads text
 without fetching images; missing/unsupported images preserve the card and conversation and

@@ -6,12 +6,9 @@ import android.graphics.Canvas
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.clickable
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import coil.compose.rememberAsyncImagePainter
-import coil.request.ImageRequest
-import com.newoether.agora.model.ToolImageAttachment
+import com.newoether.agora.model.MarkdownImage
+import com.newoether.agora.ui.chat.message.MarkdownImageThumbnail
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -563,30 +560,30 @@ private fun estimateLatexPlaceholderSize(latex: String, textSize: Float, display
 class LatexImageTransformer(
     private val textSize: Float = 40f,
     private val color: Int = 0xFF000000.toInt(),
-    private val inlineImages: Map<String, ToolImageAttachment> = emptyMap(),
+    private val inlineImages: Map<String, MarkdownImage> = emptyMap(),
     private val onMediaClick: (List<String>, Int) -> Unit = { _, _ -> },
 ) : ImageTransformer {
-    private fun inlineImage(link: String): ToolImageAttachment? {
+    private fun inlineImage(link: String): MarkdownImage? {
         fun decoded(value: String) = android.net.Uri.decode(value.removeSurrounding("<", ">"))
         return inlineImages[link] ?: inlineImages.entries.firstOrNull { decoded(it.key) == decoded(link) }?.value
     }
     @Composable
-    override fun transform(link: String): ImageData? {
-        inlineImage(link)?.let { image ->
-            val context = LocalContext.current
-            val pixels = with(LocalDensity.current) { 300.dp.roundToPx() }
-            val request = remember(context, image.path, pixels) {
-                ImageRequest.Builder(context).data(image.path).size(pixels, pixels).build()
-            }
-            val paths = remember(inlineImages) { inlineImages.values.map { it.path }.distinct() }
-            return ImageData(
-                painter = rememberAsyncImagePainter(request),
-                contentDescription = null,
-                modifier = Modifier.clickable { onMediaClick(paths, paths.indexOf(image.path).coerceAtLeast(0)) },
-                alignment = Alignment.CenterStart,
-                contentScale = ContentScale.Fit,
-            )
+    fun renderInlineImage(link: String): Boolean {
+        val image = inlineImage(link) ?: return false
+        val paths = remember(inlineImages) {
+            inlineImages.values.mapNotNull { it.attachment?.path }.distinct()
         }
+        MarkdownImageThumbnail(link, image) {
+            val index = paths.indexOf(image.attachment?.path)
+            if (index >= 0) onMediaClick(paths, index)
+        }
+        return true
+    }
+
+    @Composable
+    override fun transform(link: String): ImageData? {
+        // Markdown measures the slot here; both image components render the shared viewport.
+        if (inlineImage(link) != null) return ImageData(painter = ColorPainter(Color.Transparent))
         val request = decodeLatexLink(link) ?: return null
         val key = LatexRenderKey(request.latex, textSize, color)
         var bitmap by remember(key) { mutableStateOf(LatexBitmapCache.get(key)) }
@@ -642,10 +639,11 @@ class LatexImageTransformer(
         imageSize: Size,
         imageSizeChanged: ((link: String, Size) -> Unit)?,
     ): PlaceholderConfig {
-        val image = inlineImage(link)
-        if (image != null && image.width != null && image.height != null) {
-            return super.placeholderConfig(link, density, containerSize, imageWidth,
-                Size(image.width.toFloat(), image.height.toFloat()), imageSizeChanged)
+        if (inlineImage(link) != null) {
+            val side = with(density) {
+                if (containerSize.isUnspecified) 300f else containerSize.width.toDp().value.coerceIn(1f, 300f)
+            }
+            return PlaceholderConfig(Size(side, side))
         }
         val request = decodeLatexLink(link) ?: return super.placeholderConfig(
             link, density, containerSize, imageWidth, imageSize, imageSizeChanged
