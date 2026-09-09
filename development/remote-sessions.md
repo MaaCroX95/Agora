@@ -87,7 +87,7 @@ loading/failed reads do not. Never change native Codex read state.
 Cache the last confirmed row status by device and session for the Remote owner lifetime.
 Navigation and failed/unknown status reads retain it; visible-row reads and real chat snapshots
 update it. Removing a device/session or replacing a connection clears its cached entries.
-This is presentation state only; native runtime still authorizes Send and Stop.
+This is presentation state only; Filo verifies native ownership/state at dispatch, and Stop requires its exact native turn.
 
 Sessions automatically loads the next cursor at the laid-out list bottom. Preserve rows
 and scroll position, reject repeated cursors, fence late pages and retain explicit error
@@ -97,13 +97,14 @@ initially hidden transition state, retained composition until exit finishes. No 
 
 Selecting eligible history is the explicit one-time admission after its readable page loads.
 Preserve ID/history. Compose the original input bar immediately, allowing a local draft while
-history and native admission are pending; only Send/settings/SSE wait for native acceptance.
+history and native admission are pending; settings/SSE wait for native acceptance.
 Unsupported history retains its read-only notice inside the composer. Failure remains
 readable. No Continue this conversation button, background admission or automatic POST
 retry. Unavailable read-only history cannot subscribe or mutate; occupied writers fail safely.
 
 Opening publishes the latest bounded body page without completing a Thinking/Tool Call
 group. Groups may span pages; one older-page request publishes one bounded packet.
+Display fragments also retain their128record limit, including continuous thought/tool groups.
 Legacy continuation hints never trigger group completion or scan-ahead. Existing live-tail
 updates still bridge genuine gaps before merging. Bodies stay in the original bounded LRU.
 Each node retains its physical packet bookmark. Page boundaries add no Spacer or gap.
@@ -198,6 +199,11 @@ exact English fallback Thought for a while; when the card contains tools it rema
 Thought for a while, called X tools. The fallback only replaces the duration, never the
 native tool count. Genuine timing retains original duration text.
 
+Errors and unknown runtime never disable an explicit Send with nonblank input. Filo decides
+whether the original owner can accept that request; failures show the bounded actual HTTP/SSE
+error text in the existing Snackbar, with the localized category as fallback. Never log this
+text or credentials. An unconfirmed previous delivery keeps Send clickable and opens the
+existing outcome confirmation before any new attempt; no automatic retry or duplicate send.
 Reuse original ComposerSendButton: active + empty draft means Stop, text means Send/steer,
 submission/Stop settlement means Busy. Keep pending Stop through both HTTP success and
 native end/replacement of that exact turn, regardless of arrival order. Failure clears

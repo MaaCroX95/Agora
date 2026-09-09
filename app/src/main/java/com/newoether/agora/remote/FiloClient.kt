@@ -43,10 +43,15 @@ private data class SendInput(val text: String, val clientId: String)
 private data class SendResult(val turnId: String, val clientId: String)
 
 @Serializable
-private data class FiloError(val code: String? = null)
+private data class FiloError(val code: String? = null, val error: String? = null)
 
-internal class FiloHttpException(val status: Int, val code: String? = null) : IOException("Filo HTTP $status")
-internal class FiloStreamException : IOException("Filo could not read the native session")
+internal class FiloHttpException(val status: Int, val code: String? = null, val detail: String? = null) : IOException("Filo HTTP $status")
+internal class FiloStreamException(val detail: String? = null) : IOException("Filo could not read the native session")
+internal fun remoteErrorDetail(error: Exception): String? = when (error) {
+    is FiloHttpException -> error.detail
+    is FiloStreamException -> error.detail
+    else -> null
+}
 internal class FiloInputException : IllegalArgumentException("Invalid Filo message")
 internal class FiloConfigurationException : IllegalArgumentException("Invalid Filo connection")
 internal enum class RemoteFailure { NETWORK, AUTHENTICATION, CONFIGURATION, PROTOCOL, SERVICE, STORAGE, SESSION_BUSY, CONTENT_TOO_LARGE, UNKNOWN }
@@ -81,6 +86,15 @@ internal class FiloClient(
     } } catch (_: IllegalArgumentException) { throw FiloConfigurationException() }
     val address: String get() = endpoint.toString()
     private val json = Json { ignoreUnknownKeys = true }
+    private fun decodeError(text: String): FiloError {
+        val error = runCatching { json.decodeFromString<FiloError>(text) }.getOrNull() ?: return FiloError()
+        return error.copy(error = error.error?.replace(token, "[redacted]")
+            ?.filter { !it.isISOControl() || it == '\n' }?.trim()?.take(2048)?.takeIf { it.isNotBlank() })
+    }
+    private fun httpError(response: Response, text: String = response.body.source().readRemoteResponse()): FiloHttpException {
+        val error = decodeError(text)
+        return FiloHttpException(response.code, error.code, error.error)
+    }
     // A server can close an idle pooled connection just before its next use. GETs can
     // recover on a fresh connection; native mutations keep the non-retrying transport.
     private val readCalls: Call.Factory = (calls as? OkHttpClient)?.newBuilder()
@@ -128,7 +142,7 @@ internal class FiloClient(
             override fun onResponse(call: Call, response: Response) {
                 response.use {
                     try {
-                        if (!it.isSuccessful) throw FiloHttpException(it.code)
+                        if (!it.isSuccessful) throw httpError(it)
                         if (it.body.contentLength() > com.newoether.agora.tool.ToolImageStore.MAX_IMAGE_BYTES)
                             throw RemoteContentLimitException()
                         val image = persist(it.body.byteStream(), it.header("Content-Type").orEmpty())
@@ -167,13 +181,20 @@ internal class FiloClient(
             override fun onResponse(call: Call, response: Response) {
                 response.use {
                     try {
-                        if (!it.isSuccessful) throw FiloHttpException(it.code)
+                        if (!it.isSuccessful) throw httpError(it)
                         val source = it.body.source()
+                        var errorEvent = false
                         while (!call.isCanceled()) {
                             val line = source.readRemoteEventLine() ?: break
-                            if (line == "event: error") throw FiloStreamException()
-                            if (line.startsWith("data: ")) trySend(decode(line.removePrefix("data: ")))
+                            if (line.startsWith("event:")) errorEvent = line.removePrefix("event:").trim() == "error"
+                            if (line.isEmpty() && errorEvent) throw FiloStreamException()
+                            if (line.startsWith("data: ")) {
+                                val data = line.removePrefix("data: ")
+                                if (errorEvent) throw FiloStreamException(decodeError(data).error)
+                                trySend(decode(data))
+                            }
                         }
+                        if (errorEvent) throw FiloStreamException()
                         close(IOException("Filo stream closed"))
                     } catch (error: Exception) { close(error) }
                 }
@@ -239,8 +260,7 @@ internal class FiloClient(
                     response.use {
                         try {
                             val text = it.body.source().readRemoteResponse()
-                            if (!it.isSuccessful) throw FiloHttpException(it.code,
-                                runCatching { json.decodeFromString<FiloError>(text).code }.getOrNull())
+                            if (!it.isSuccessful) throw httpError(it, text)
                             if (!continuation.isCancelled) continuation.resume(text)
                         } catch (error: Exception) {
                             if (!continuation.isCancelled) continuation.resumeWithException(error)

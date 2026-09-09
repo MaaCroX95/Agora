@@ -81,7 +81,7 @@ internal class RemoteViewModel(
 
     private fun trace(stage: String, error: Exception? = null, notify: Boolean = true): RemoteFailure? {
         val failure = error?.let(::classifyRemoteFailure)
-        if (failure != null && notify) noticeChannel.trySend(RemoteNotice(stage, failure, selectionEpoch))
+        if (failure != null && notify) noticeChannel.trySend(RemoteNotice(stage, failure, selectionEpoch, error?.let(::remoteErrorDetail)))
         val suffix = if (failure == null) "" else ".${failure.name}.${error.javaClass.simpleName}"
         // Preserve the existing privacy wrapper and diagnostic logging preferences.
         if (failure != null) runCatching {
@@ -426,7 +426,8 @@ internal class RemoteViewModel(
                             reachable && consecutiveFailures == 1
                         mutableState.value = state.value.copy(failure = failure.takeUnless { recovering })
                         if (!recovering && notifiedFailure != failure) {
-                            noticeChannel.trySend(RemoteNotice("read_failed", failure, selectionEpoch))
+                            noticeChannel.trySend(RemoteNotice("read_failed", failure, selectionEpoch,
+                                remoteErrorDetail(error).takeIf { failure == readFailure }))
                             notifiedFailure = failure
                         }
                     }
@@ -799,8 +800,7 @@ internal class RemoteViewModel(
 
     fun send() {
         val snapshot = state.value
-        if (snapshot.session?.readOnly == true || snapshot.controlling || snapshot.isStopping ||
-            !snapshot.isDraft && snapshot.runtime?.status !in setOf("idle", "active", "ready")) return
+        if (!visible || snapshot.session?.readOnly == true || snapshot.controlling || snapshot.isStopping) return
         val owner = snapshot.owner ?: return
         val client = clients[snapshot.deviceId] ?: return
         val text = snapshot.drafts[owner].orEmpty()

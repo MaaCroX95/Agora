@@ -348,6 +348,32 @@ class RemoteViewModelTest {
         vm.setVisible(false)
     }
 
+    @Test fun unavailableRuntimeAllowsExplicitSendAndShowsNativeRejectionWithoutReplay() = runTest(dispatcher) {
+        val detail = "Original desktop owner is unavailable; refresh before continuing"
+        coEvery { client.send(any(), any(), any()) } throws FiloHttpException(409, detail = detail)
+        for (status in listOf("notLoaded", "systemError")) {
+            coEvery { client.conversation(any(), any()) } returns bodyPage(emptyList(), null, emptyList())
+                .copy(runtime = RemoteRuntime(status, model = "model"))
+            val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
+            saveAndSelect(vm)
+            vm.selectSession(session); vm.setVisible(true); runCurrent()
+            val owner = vm.state.value.owner!!
+            assertEquals(status, vm.state.value.runtime?.status)
+            vm.editDraft(owner, "hello")
+            repeat(2) {
+                vm.send(); runCurrent()
+                val notice = vm.notices.first()
+                assertEquals("send_failed", notice.stage)
+                assertEquals(detail, notice.detail)
+                assertFalse(notice.canRetryRead)
+                assertEquals(RemoteDelivery.REJECTED, vm.state.value.attempts[owner]?.delivery)
+                assertEquals("hello", vm.state.value.drafts[owner])
+            }
+            vm.setVisible(false)
+        }
+        coVerify(exactly = 4) { client.send(any(), "hello", any()) }
+    }
+
     @Test fun acceptedSendRequestsOneOwnedScrollAndNavigationClearsIt() = runTest(dispatcher) {
         val gate = CompletableDeferred<String>()
         coEvery { client.send(any(), any(), any()) } coAnswers { gate.await() }

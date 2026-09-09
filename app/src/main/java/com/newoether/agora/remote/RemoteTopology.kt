@@ -89,11 +89,7 @@ internal fun admitRemoteNodes(
         val admitted = if (old != null) node.copy(
             displayPageId = old.displayPageId, displayGroupId = old.displayGroupId, pageCursor = node.pageCursor,
         ) else {
-            val continuingFold = preceding?.let {
-                it.role == "assistant" && node.role == "assistant" && it.turnId == node.turnId &&
-                    it.groupId == node.groupId && it.activity != null && node.activity != null
-            } == true
-            if (pageId == null || pageCount >= 128 && !continuingFold) {
+            if (pageId == null || pageCount >= 128) {
                 pageId = node.id; pageCount = 0; preceding = null
             }
             val sameGroup = preceding?.let {

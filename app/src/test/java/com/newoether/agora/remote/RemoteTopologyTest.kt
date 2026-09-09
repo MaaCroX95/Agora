@@ -42,24 +42,24 @@ class RemoteTopologyTest {
         assertEquals(snapshot, nodes)
     }
 
-    @Test fun continuousThoughtAndToolGroupSurvivesTheDisplayPageLimitAndPrepending() {
+    @Test fun continuousThoughtAndToolGroupsRespectDisplayPageLimitAndPreserveSealedFragments() {
         fun tool(index: Int) = RemoteMessage("tool-$index", "turn", null, "assistant", "", 1,
             activity = RemoteActivity(if (index % 2 == 0) "thought" else "tool", state = "succeeded"))
         val packet = bodyPage((0..349).map(::tool), "older", emptyList())
         val nodes = admitRemotePage(emptyList(), packet)
-        val group = projectRemoteTopology(nodes, null).single()
-        assertEquals(350, group.nodes.size)
+        val groups = projectRemoteTopology(nodes, null)
+        assertEquals(listOf(128, 128, 94), groups.map { it.nodes.size })
         val cache = com.newoether.agora.ui.chat.MessageListTurnCache()
-        val before = cache.update(listOf(group.stub)).single()
+        val before = cache.update(groups.map { it.stub })
         val answer = RemoteMessage("earlier-answer", "turn", null, "assistant", "Earlier", 1)
         val prepended = admitRemotePage(nodes, bodyPage(listOf(answer), null, emptyList()), older = true)
         val turns = cache.update(projectRemoteTopology(prepended, null).map { it.stub })
-        assertSame(before, turns.last())
+        before.forEach { original -> assertSame(original, turns.first { it.key == original.key }) }
         assertEquals(nodes, prepended.drop(1))
         val extended = admitRemotePage(nodes, bodyPage(listOf(tool(349), tool(350)), "older", emptyList()))
-        assertEquals(351, projectRemoteTopology(extended, null).single().nodes.size)
+        assertEquals(listOf(128, 128, 95), projectRemoteTopology(extended, null).map { it.nodes.size })
         val complete = admitRemotePage(extended, bodyPage(listOf(tool(350), answer.copy(id = "final")), null, emptyList()))
-        assertEquals(2, projectRemoteTopology(complete, null).size)
+        assertEquals(listOf(128, 128, 96), projectRemoteTopology(complete, null).map { it.nodes.size })
     }
 
     private val revision = "a".repeat(64)

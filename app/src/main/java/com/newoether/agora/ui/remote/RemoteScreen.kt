@@ -77,7 +77,7 @@ internal fun RemoteOverlay(
         if (!visible) return@LaunchedEffect
         remote.notices.collect { notice ->
             if (remote.isNoticeCurrent(notice)) messageHandler(
-                context.getString(remoteFailureResource(notice.failure)),
+                notice.detail ?: context.getString(remoteFailureResource(notice.failure)),
                 if (notice.canRetryRead) context.getString(R.string.retry) else null,
                 if (notice.canRetryRead) ({ remote.retryNotice(notice) }) else null,
             )

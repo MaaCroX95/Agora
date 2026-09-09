@@ -10,7 +10,7 @@ internal data class RemoteDevice(
     val id: String, val name: String, val address: String,
     val status: RemoteDeviceStatus = RemoteDeviceStatus.IDLE, val failure: RemoteFailure? = null,
 )
-internal data class RemoteNotice(val stage: String, val failure: RemoteFailure, val selection: Long) {
+internal data class RemoteNotice(val stage: String, val failure: RemoteFailure, val selection: Long, val detail: String? = null) {
     val canRetryRead: Boolean get() = stage in setOf("restore_failed", "check_failed", "read_failed", "page_failed", "payload_failed")
 }
 internal enum class RemoteDelivery { SUBMITTING, ACCEPTED, DELIVERED, REJECTED, UNKNOWN }

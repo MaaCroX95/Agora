@@ -478,12 +478,13 @@ internal fun RemoteConversation(
                         }
                     }
                     val showStop = running && !stopping && field.text.isBlank()
-                    ComposerSendButton(isActionable = active && ready && !stopping && !state.controlling && !submitting &&
-                        (if (showStop) state.runtime?.activeTurnId != null else field.text.isNotBlank()) &&
-                        attempt?.delivery != RemoteDelivery.UNKNOWN,
+                    ComposerSendButton(isActionable = active && !session.readOnly && !stopping && !state.controlling && !submitting &&
+                        (if (showStop) state.runtime?.activeTurnId != null else field.text.isNotBlank()),
                         isBusy = submitting || stopping, showStop = showStop,
                         onBusyShown = { shownBusyAttempt = attempt?.clientId }) {
-                        if (showStop) vm.stop() else { vm.editDraft(owner, field.text.toString()); vm.send() }
+                        if (showStop) vm.stop()
+                        else if (attempt?.delivery == RemoteDelivery.UNKNOWN) confirmUnknown = true
+                        else { vm.editDraft(owner, field.text.toString()); vm.send() }
                     }
                 })
         }
