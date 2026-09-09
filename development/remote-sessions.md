@@ -102,10 +102,10 @@ Unsupported history retains its read-only notice inside the composer. Failure re
 readable. No Continue this conversation button, background admission or automatic POST
 retry. Unavailable read-only history cannot subscribe or mutate; occupied writers fail safely.
 
-Opening reads the latest bounded body page and only the continuation packets needed to
-complete its leading contiguous Thinking/Tool Call group. No visible page divides that
-group, including beyond 128 records; ordinary answers can still form a page boundary.
-Continuation collection retains topology only; bodies stay in the original bounded LRU.
+Opening publishes the latest bounded body page without completing a Thinking/Tool Call
+group. Groups may span pages; one older-page request publishes one bounded packet.
+Legacy continuation hints never trigger group completion or scan-ahead. Existing live-tail
+updates still bridge genuine gaps before merging. Bodies stay in the original bounded LRU.
 Each node retains its physical packet bookmark. Page boundaries add no Spacer or gap.
 Same-turn assistant fragments omit duplicate message-shell padding and the 6dp/16dp
 assistant spacers at their seam. Ordinary adjacent-message spacing stays identical in

@@ -41,26 +41,32 @@ class RemoteGroupPaginationTest {
         return vm
     }
 
-    @Test fun initialGroupWaitsForItsPrefixAndKeepsEveryPhysicalBookmarkWithoutReadingEarlierHistory() = runTest(dispatcher) {
+    @Test fun initialPacketDisplaysImmediatelyAndIgnoresLegacyGroupContinuationUntilPaging() = runTest(dispatcher) {
         val prefix = CompletableDeferred<RemoteConversationPage>()
         coEvery { client.conversation("history", null) } returns packet(128..255, "prefix", "prefix", "tail-bookmark")
         coEvery { client.conversation("history", "prefix") } coAnswers { prefix.await() }
         val vm = open()
-        assertTrue(vm.state.value.loading)
-        assertTrue(vm.state.value.nodes.isEmpty())
-        prefix.complete(packet(0..127, "earlier-answer", null, "prefix-bookmark")); runCurrent()
         assertFalse(vm.state.value.loading)
+        assertEquals((128..255).map { "tool-$it" }, vm.state.value.nodes.map { it.id })
+        val tail = vm.state.value.messageGroups.single()
+        assertEquals("prefix", vm.state.value.historyCursor)
+        coVerify(exactly = 0) { client.conversation("history", "prefix") }
+        vm.loadMore(); runCurrent()
+        assertTrue(vm.state.value.loadingMore)
+        assertEquals(listOf(tail), vm.state.value.messageGroups)
+        prefix.complete(packet(0..127, "earlier-answer", null, "prefix-bookmark")); runCurrent()
+        assertFalse(vm.state.value.loadingMore)
         assertEquals((0..255).map { "tool-$it" }, vm.state.value.nodes.map { it.id })
         assertEquals("earlier-answer", vm.state.value.historyCursor)
-        val group = vm.state.value.messageGroups.single()
-        assertEquals(256, vm.cachedMessage(vm.state.value.owner!!, group.stub.id)!!.segments!!.size)
-        assertTrue(group.nodes.take(128).all { it.pageCursor == "prefix-bookmark" })
-        assertTrue(group.nodes.drop(128).all { it.pageCursor == "tail-bookmark" })
+        assertEquals(tail, vm.state.value.messageGroups.last())
+        assertEquals(128, vm.cachedMessage(vm.state.value.owner!!, tail.stub.id)!!.segments!!.size)
+        assertTrue(vm.state.value.nodes.take(128).all { it.pageCursor == "prefix-bookmark" })
+        assertTrue(vm.state.value.nodes.drop(128).all { it.pageCursor == "tail-bookmark" })
         coVerify(exactly = 0) { client.conversation("history", "earlier-answer") }
         vm.setVisible(false)
     }
 
-    @Test fun olderGroupIsPublishedOnceAndPreservesTheExistingAnswerDuringADeferredLoad() = runTest(dispatcher) {
+    @Test fun olderPacketsPublishSeparatelyAndPreserveTheExistingAnswerDuringADeferredLoad() = runTest(dispatcher) {
         val answer = RemoteMessage("answer", "turn", null, "assistant", "Answer", 2)
         coEvery { client.conversation("history", null) } returns bodyPage(listOf(answer), "older", emptyList())
         coEvery { client.conversation("history", "older") } returns packet(128..255, "prefix", "prefix", "tail-bookmark")
@@ -69,14 +75,21 @@ class RemoteGroupPaginationTest {
         val vm = open()
         val existing = vm.state.value.messageGroups.single()
         vm.loadMore(); runCurrent()
+        assertFalse(vm.state.value.loadingMore)
+        assertEquals(existing, vm.state.value.messageGroups.last())
+        assertEquals(128, vm.state.value.messageGroups.first().nodes.size)
+        assertEquals("prefix", vm.state.value.historyCursor)
+        coVerify(exactly = 0) { client.conversation("history", "prefix") }
+        val published = vm.state.value.messageGroups
+        vm.loadMore(); runCurrent()
         assertTrue(vm.state.value.loadingMore)
-        assertEquals(listOf(existing), vm.state.value.messageGroups)
+        assertEquals(published, vm.state.value.messageGroups)
         prefix.complete(packet(0..127, null, null, "prefix-bookmark")); runCurrent()
         assertFalse(vm.state.value.loadingMore)
         assertNull(vm.state.value.historyCursor)
         assertEquals(existing, vm.state.value.messageGroups.last())
-        assertEquals(256, vm.state.value.messageGroups.first().nodes.size)
-        assertEquals(2, vm.state.value.messageGroups.size)
+        assertEquals(128, vm.state.value.messageGroups.first().nodes.size)
+        assertEquals(3, vm.state.value.messageGroups.size)
         vm.setVisible(false)
     }
 }
