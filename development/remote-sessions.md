@@ -68,8 +68,9 @@ POST, and selection/visibility changes cancel recovery and reject late health re
 Failed live subscriptions may read one bounded snapshot from the same selected native owner
 per retry so available history still renders. That snapshot never restores live control
 readiness; only a successful live subscription snapshot does. No alternate host is admitted.
-Safe failure stages, categories, exception/cause types and HTTP status remain in Android
-logs even when optional diagnostic content capture is paused; never include error messages.
+Safe failure stages, categories, exception/cause types and HTTP status use the existing
+privacy-aware log wrapper and logging preferences; never include error messages or enable
+diagnostic capture implicitly.
 
 Diagnostics contain only
 random owner identity, operation, elapsed time, counts, exception type and HTTP status.
