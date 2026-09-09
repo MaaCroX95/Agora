@@ -46,6 +46,7 @@ private data class SendResult(val turnId: String, val clientId: String)
 private data class FiloError(val code: String? = null)
 
 internal class FiloHttpException(val status: Int, val code: String? = null) : IOException("Filo HTTP $status")
+internal class FiloStreamException : IOException("Filo could not read the native session")
 internal class FiloInputException : IllegalArgumentException("Invalid Filo message")
 internal class FiloConfigurationException : IllegalArgumentException("Invalid Filo connection")
 internal enum class RemoteFailure { NETWORK, AUTHENTICATION, CONFIGURATION, PROTOCOL, SERVICE, STORAGE, SESSION_BUSY, CONTENT_TOO_LARGE, UNKNOWN }
@@ -54,6 +55,7 @@ internal fun classifyRemoteFailure(error: Exception): RemoteFailure = when (erro
     is RemoteContentLimitException -> RemoteFailure.CONTENT_TOO_LARGE
     is RemoteStorageException -> RemoteFailure.STORAGE
     is FiloConfigurationException, is FiloInputException -> RemoteFailure.CONFIGURATION
+    is FiloStreamException -> RemoteFailure.SERVICE
     is FiloHttpException -> when {
         error.status == 409 && error.code == "session_busy" -> RemoteFailure.SESSION_BUSY
         error.status == 401 || error.status == 403 -> RemoteFailure.AUTHENTICATION
@@ -169,7 +171,7 @@ internal class FiloClient(
                         val source = it.body.source()
                         while (!call.isCanceled()) {
                             val line = source.readRemoteEventLine() ?: break
-                            if (line == "event: error") throw IOException("Filo stream failed")
+                            if (line == "event: error") throw FiloStreamException()
                             if (line.startsWith("data: ")) trySend(decode(line.removePrefix("data: ")))
                         }
                         close(IOException("Filo stream closed"))

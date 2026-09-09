@@ -79,10 +79,16 @@ internal class RemoteViewModel(
 
     init { trace("owner_created"); restoreConnections() }
 
-    private fun trace(stage: String, error: Exception? = null): RemoteFailure? {
+    private fun trace(stage: String, error: Exception? = null, notify: Boolean = true): RemoteFailure? {
         val failure = error?.let(::classifyRemoteFailure)
-        if (failure != null) noticeChannel.trySend(RemoteNotice(stage, failure, selectionEpoch))
+        if (failure != null && notify) noticeChannel.trySend(RemoteNotice(stage, failure, selectionEpoch))
         val suffix = if (failure == null) "" else ".${failure.name}.${error.javaClass.simpleName}"
+        // Keep safe failure evidence even when optional content capture is paused.
+        if (failure != null) runCatching {
+            android.util.Log.w("AgoraRemote", "remote.$stage$suffix" +
+                (if (error is FiloHttpException) " code=${error.status}" else "") +
+                " cause=${error.cause?.javaClass?.simpleName.orEmpty()}")
+        }
         DeveloperDiagnostics.recordHttpStage(diagnosticContext, "remote.$stage$suffix",
             (System.nanoTime() - createdAt) / 1_000_000,
             "addresses=${state.value.devices.size}" + if (error is FiloHttpException) " code=${error.status}" else "")
@@ -335,7 +341,12 @@ internal class RemoteViewModel(
         }
         polling = viewModelScope.launch {
             mutableState.value = state.value.copy(loading = true)
+            var consecutiveFailures = 0
+            var notifiedFailure: RemoteFailure? = null
             do {
+                if (state.value.devices.firstOrNull { it.id == id }?.status == RemoteDeviceStatus.ERROR) {
+                    updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTING, failure = null) }
+                }
                 try {
                     if (session == null) {
                         val page = client.sessions()
@@ -356,17 +367,68 @@ internal class RemoteViewModel(
                         }
                     } else {
                         client.events(session.id).collect { page ->
-                            if (generation == epoch) applyPage(client, session.id, generation, page)
+                            if (generation == epoch) {
+                                applyPage(client, session.id, generation, page)
+                                consecutiveFailures = 0
+                                notifiedFailure = null
+                            }
                         }
                     }
                     updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTED, failure = null) }
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) {
                     if (generation == epoch) {
-                        val failure = trace("read_failed", error)
-                        updateDevice(id) { it.copy(status = RemoteDeviceStatus.ERROR, failure = failure) }
-                        mutableState.value = state.value.copy(loading = false, failure = failure, runtime = null,
+                        val readFailure = requireNotNull(trace("read_failed", error, notify = false))
+                        mutableState.value = state.value.copy(loading = false, runtime = null,
                             stoppingOwner = null, stoppingTurnId = null)
+                        // A failed native read is not proof that the device is offline.
+                        var reachable = false
+                        if (session?.readOnly == false && readFailure in setOf(RemoteFailure.NETWORK, RemoteFailure.SERVICE)) {
+                            try {
+                                // Read the same original owner when subscription fails; never admit another host.
+                                applyPage(client, session.id, generation, client.conversation(session.id), liveControl = false)
+                                if (generation != epoch) return@launch
+                                reachable = true
+                            } catch (cancelled: CancellationException) { throw cancelled }
+                            catch (snapshotError: Exception) {
+                                if (generation != epoch) return@launch
+                                trace("read_snapshot_failed", snapshotError, notify = false)
+                            }
+                        }
+                        val failure = if (readFailure == RemoteFailure.NETWORK && !reachable) {
+                            updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTING, failure = null) }
+                            try {
+                                checkSlots.withPermit { client.connect() }
+                                if (generation != epoch) return@launch
+                                updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTED, failure = null) }
+                                reachable = true
+                                RemoteFailure.SERVICE
+                            } catch (cancelled: CancellationException) { throw cancelled }
+                            catch (healthError: Exception) {
+                                if (generation != epoch) return@launch
+                                val healthFailure = requireNotNull(trace("read_health_failed", healthError, notify = false))
+                                updateDevice(id) { it.copy(status = RemoteDeviceStatus.ERROR, failure = healthFailure) }
+                                healthFailure
+                            }
+                        } else {
+                            if (readFailure == RemoteFailure.AUTHENTICATION) {
+                                updateDevice(id) { it.copy(status = RemoteDeviceStatus.ERROR, failure = readFailure) }
+                            } else if (readFailure in setOf(RemoteFailure.SERVICE, RemoteFailure.PROTOCOL,
+                                    RemoteFailure.SESSION_BUSY, RemoteFailure.CONTENT_TOO_LARGE)) {
+                                updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTED, failure = null) }
+                            }
+                            if (readFailure == RemoteFailure.NETWORK) RemoteFailure.SERVICE else readFailure
+                        }
+                        consecutiveFailures++
+                        // One interrupted GET may recover on the existing three-second loop.
+                        // Health failure and non-network errors remain immediately visible.
+                        val recovering = session?.readOnly == false && readFailure == RemoteFailure.NETWORK &&
+                            reachable && consecutiveFailures == 1
+                        mutableState.value = state.value.copy(failure = failure.takeUnless { recovering })
+                        if (!recovering && notifiedFailure != failure) {
+                            noticeChannel.trySend(RemoteNotice("read_failed", failure, selectionEpoch))
+                            notifiedFailure = failure
+                        }
                     }
                 }
                 if (session == null || session.readOnly) break
@@ -375,7 +437,9 @@ internal class RemoteViewModel(
         }
     }
 
-    private suspend fun applyPage(client: FiloClient, sessionId: String, generation: Long, page: RemoteConversationPage) {
+    private suspend fun applyPage(
+        client: FiloClient, sessionId: String, generation: Long, page: RemoteConversationPage, liveControl: Boolean = true,
+    ) {
         if (generation != epoch) return
         val old = state.value.nodes
         val oldIds = old.mapTo(HashSet()) { it.id }
@@ -404,7 +468,7 @@ internal class RemoteViewModel(
             mutableState.value = state.value.copy(
                 nodes = nodes, messageGroups = groups, hydrationEnabled = visible,
                 historyCursor = if (old.isEmpty()) incoming.last().nextCursor else state.value.historyCursor,
-                queued = page.queued, loading = false, failure = null, runtime = page.runtime,
+                queued = page.queued, loading = false, failure = null, runtime = page.runtime.takeIf { liveControl },
             )
         }
         state.value.deviceId?.let { id -> updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTED, failure = null) } }

@@ -802,7 +802,9 @@ class RemoteViewModelTest {
             coEvery { client.sessions(any()) } throws IOException("PRIVATE_PAYLOAD http://private-host/")
             val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
             vm.setVisible(true); vm.selectDevice("http://computer/"); runCurrent()
-            assertEquals(RemoteFailure.NETWORK, vm.state.value.failure)
+            // Authenticated health succeeds: keep the raw network cause in diagnostics,
+            // but report a failed session request instead of an unreachable device.
+            assertEquals(RemoteFailure.SERVICE, vm.state.value.failure)
             coEvery { client.sessions(any()) } throws FiloHttpException(401)
             vm.refresh(); runCurrent()
             assertEquals(RemoteFailure.AUTHENTICATION, vm.state.value.failure)

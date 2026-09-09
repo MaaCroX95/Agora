@@ -56,7 +56,22 @@ inset owner in chat and the system inset on Devices/Sessions. Preserve the curre
 loaded content; no permanent inline error rows. Read retry is bound to the current selection
 and cannot replay sends, settings, admission or other writes.
 
-Storage and protocol errors stay distinct from connection errors. Diagnostics contain only
+Storage and protocol errors stay distinct from connection errors.
+Device health is independent of a native session read: an HTTP/service/protocol error must
+not mark a reachable device offline. A network read failure checks authenticated info before
+changing device health; retries show Connecting, and fresh snapshots restore native readiness.
+One interrupted live GET with successful health may recover on the existing three-second
+retry before showing a Snackbar. Persistent failures show one notice per failure category
+until a fresh snapshot succeeds; true health/authentication failures remain immediate.
+Server SSE error events are service failures, not network outages. Recovery never retries
+POST, and selection/visibility changes cancel recovery and reject late health results.
+Failed live subscriptions may read one bounded snapshot from the same selected native owner
+per retry so available history still renders. That snapshot never restores live control
+readiness; only a successful live subscription snapshot does. No alternate host is admitted.
+Safe failure stages, categories, exception/cause types and HTTP status remain in Android
+logs even when optional diagnostic content capture is paused; never include error messages.
+
+Diagnostics contain only
 random owner identity, operation, elapsed time, counts, exception type and HTTP status.
 Never log addresses, credentials, session IDs, bodies or message content. Unsaved secrets,
 selected sessions, drafts and submission attempts remain transient and are never replayed.
