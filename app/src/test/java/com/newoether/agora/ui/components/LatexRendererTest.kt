@@ -1,6 +1,13 @@
 package com.newoether.agora.ui.components
 
 import com.newoether.agora.ui.chat.message.isScrollableDisplayLatexImage
+import com.newoether.agora.ui.chat.message.markdownImageLink
+import com.newoether.agora.model.MarkdownImage
+import com.newoether.agora.model.ToolImageAttachment
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.unit.Density
+import com.mikepenz.markdown.model.ImageWidth
+import com.mikepenz.markdown.model.ReferenceLinkHandlerImpl
 import java.io.File
 import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.IElementType
@@ -220,11 +227,15 @@ class LatexRendererTest {
             locateMainSourceRoot(),
             "com/newoether/agora/ui/chat/message/MessageBubbleAssets.kt",
         ).readText()
-        val component = source
-            .substringAfter("private fun ScrollableDisplayLatexImage(")
-            .substringBefore("private fun TrackStreamingHorizontalScroll(")
+        val images = File(
+            locateMainSourceRoot(),
+            "com/newoether/agora/ui/chat/message/MarkdownImageContent.kt",
+        ).readText()
+        val component = images
+            .substringAfter("internal fun ScrollableDisplayLatexImage(")
+            .substringBefore("internal fun ChatMarkdownInlineImage(")
         val tracker = source
-            .substringAfter("private fun TrackStreamingHorizontalScroll(")
+            .substringAfter("internal fun TrackStreamingHorizontalScroll(")
             .substringBefore("private fun SearchHighlightedMarkdownCode(")
 
         assertTrue(
@@ -237,7 +248,36 @@ class LatexRendererTest {
         assertEquals(2, Regex("MarkdownImage\\(model.content, model.node\\)").findAll(component).count())
         assertTrue(component.contains("TrackStreamingHorizontalScroll(horizontalScrollState)"))
         assertTrue(tracker.contains("horizontalScrollState.isScrollInProgress"))
-        assertTrue(source.contains("inlineImage =").not())
+        assertTrue(source.contains("inlineImage = { model -> ChatMarkdownInlineImage(model) }"))
+        val inline = images.substringAfter("internal fun ChatMarkdownInlineImage(")
+            .substringBefore("internal fun markdownImageLink(")
+        assertTrue(inline.contains("?.renderInlineImage(model.content) != true"))
+        assertTrue(inline.contains("MarkdownInlineImage(model.content, model.node)"))
+    }
+
+    @Test
+    fun authenticatedInlineImageViewportStaysSquareAcrossLoadStates() {
+        val link = "C:/picture.png"
+        val attachment = ToolImageAttachment("/private/picture.png", "image/png", 128, 1024, 200, "hash")
+        val states = listOf(MarkdownImage(), MarkdownImage(attachment), MarkdownImage(failed = true))
+        for (state in states) {
+            val transformer = LatexImageTransformer(inlineImages = mapOf(link to state))
+            fun size(width: Float) = transformer.placeholderConfig(
+                link, Density(2f), Size(width, 1200f), ImageWidth.MAX_WIDTH, Size.Unspecified, null,
+            ).size
+            assertEquals(Size(300f, 300f), size(800f))
+            assertEquals(Size(200f, 200f), size(400f))
+        }
+    }
+
+    @Test
+    fun markdownImageDestinationsRetainEscapesAndReferenceResolution() {
+        val escaped = "![image](C:/picture\\(1\\).png)"
+        assertEquals("C:/picture(1).png", markdownImageLink(escaped, imageNode(escaped), null))
+        val reference = "![image][asset]"
+        val references = ReferenceLinkHandlerImpl().apply { store("[ASSET]", "C:/referenced.png") }
+        assertEquals("C:/referenced.png", markdownImageLink(reference, imageNode(reference), references))
+        assertEquals(null, markdownImageLink(reference, imageNode(reference), ReferenceLinkHandlerImpl()))
     }
 
     @Test
