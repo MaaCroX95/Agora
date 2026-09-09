@@ -323,9 +323,13 @@ internal fun ChatNavigationEffects(
 internal fun SendAcceptedHapticBindingEffect(
     viewModel: ChatViewModel,
     haptics: AgoraHaptics,
+    chatHapticActive: Boolean,
 ) {
-    DisposableEffect(haptics) {
-        viewModel.onSendAccepted = { _, _ -> haptics.confirm() }
+    val latestChatHapticActive by rememberUpdatedState(chatHapticActive)
+    DisposableEffect(viewModel, haptics) {
+        viewModel.onSendAccepted = { _, _ ->
+            if (latestChatHapticActive) haptics.confirm()
+        }
         onDispose { viewModel.onSendAccepted = null }
     }
 }

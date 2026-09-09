@@ -20,6 +20,9 @@ internal class TopLevelPresentationState(
     initialOwner: TopLevelPresentation = TopLevelPresentation.CHAT,
     private val onOwnerChanged: (TopLevelPresentation) -> Unit = {},
 ) {
+    private val presentations = mutableListOf(initialOwner).apply {
+        remove(TopLevelPresentation.CHAT)
+    }
     var owner by mutableStateOf(initialOwner)
         private set
 
@@ -29,14 +32,18 @@ internal class TopLevelPresentationState(
 
     fun present(presentation: TopLevelPresentation) {
         require(presentation != TopLevelPresentation.CHAT)
+        presentations.remove(presentation)
+        presentations.add(presentation)
         owner = presentation
         onOwnerChanged(owner)
     }
 
     /** A stale exiting surface cannot return ownership after a newer surface was presented. */
     fun release(presentation: TopLevelPresentation): Boolean {
+        // An underlying surface may finish exiting while a preview still covers it.
+        presentations.remove(presentation)
         if (owner != presentation) return false
-        owner = TopLevelPresentation.CHAT
+        owner = presentations.lastOrNull() ?: TopLevelPresentation.CHAT
         onOwnerChanged(owner)
         return true
     }

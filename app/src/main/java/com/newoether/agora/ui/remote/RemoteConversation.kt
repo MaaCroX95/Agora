@@ -61,6 +61,7 @@ internal fun RemoteConversation(
     val density = LocalDensity.current
     val motion = LocalAgoraMotionPolicy.current
     val haptics = LocalAgoraHaptics.current
+    val chatWindow = androidx.compose.ui.platform.LocalWindowInfo.current
     val blur by settings.blurEffectsEnabled.collectAsState(initial = false)
     val amoled by settings.amoledEnabled.collectAsState(initial = false)
     val inlineMath by settings.parseInlineDollarMath.collectAsState(initial = false)
@@ -124,7 +125,8 @@ internal fun RemoteConversation(
                 field.edit { replace(0, length, "") }
             }
             expanded = false
-            haptics.confirm()
+            if (chatWindow.isWindowFocused && activeMenu == null &&
+                !showThinkingSheet && !showOpenAiServiceTierSheet) haptics.confirm()
         }
     }
     val observe = remember(owner) { { id: String -> vm.observeMessage(owner, id) } }

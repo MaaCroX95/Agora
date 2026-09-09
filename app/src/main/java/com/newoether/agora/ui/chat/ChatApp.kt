@@ -185,12 +185,15 @@ fun ChatApp(
     val stickToBottom by viewModel.settings.stickToBottom.collectAsState()
     val reduceMotion = motionPolicy.reduceMotion
     val hapticsEnabled by viewModel.settings.hapticsEnabled.collectAsState()
-    val haptics = rememberAgoraHaptics(hapticsEnabled)
+    val haptics = rememberAgoraHaptics(hapticsEnabled && topLevelPresentation == TopLevelPresentation.CHAT)
+    val chatWindow = LocalWindowInfo.current
+    val chatHapticActive = topLevelPresentation == TopLevelPresentation.CHAT &&
+        chatWindow.isWindowFocused && !drawerState.shouldHandleBack
     // The three send paths (manual Send, queue drain, loop cycle) converge in the Controller at
     // notifySendAccepted, the single choke point for Direct + Queued send acceptances. Wiring the
-    // haptics there gives every accepted send exactly one confirm(), independent of which path
-    // triggered it or which scroll policy applies.
-    SendAcceptedHapticBindingEffect(viewModel, haptics)
+    // haptics there gives each visible accepted send one confirm(), independent of its send path.
+    // Covered acceptances are consumed silently instead of replaying feedback after an overlay exits.
+    SendAcceptedHapticBindingEffect(viewModel, haptics, chatHapticActive)
 
     var isExpanded by remember { mutableStateOf(false) }
     // Composer-expand spacer collapse (44dp → 0). An Animatable driven from an effect replaces the
@@ -341,7 +344,7 @@ fun ChatApp(
     AnsweringHapticEffect(
         generationSnapshot = selectedConversationGenerationSnapshot,
         topLevelPresentation = topLevelPresentation,
-        hapticsEnabled = hapticsEnabled,
+        hapticsEnabled = hapticsEnabled && chatHapticActive,
         haptics = haptics,
     )
 

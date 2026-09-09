@@ -39,7 +39,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.platform.AccessibilityManager
 import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -809,6 +808,7 @@ fun MainNavigation(
 
             com.newoether.agora.ui.remote.RemoteOverlay(
                 visible = showRemote, settings = viewModel.settings,
+                hapticsActive = topLevelPresentation.owner == TopLevelPresentation.REMOTE,
                 onDismiss = { showRemote = false },
                 onExitFinished = { topLevelPresentation.release(TopLevelPresentation.REMOTE) },
                 onMessage = viewModel::emitSnackbar,

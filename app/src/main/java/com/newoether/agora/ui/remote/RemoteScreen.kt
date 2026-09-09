@@ -58,6 +58,7 @@ import com.newoether.agora.ui.common.rememberAgoraHaptics
 @Composable
 internal fun RemoteOverlay(
     visible: Boolean,
+    hapticsActive: Boolean,
     settings: SettingsRepository,
     onDismiss: () -> Unit,
     onExitFinished: () -> Unit,
@@ -93,7 +94,7 @@ internal fun RemoteOverlay(
     }
     SettingsOverlayHost(visible, onDismiss, onExitFinished = onExitFinished) {
         val hapticsEnabled by settings.hapticsEnabled.collectAsState(initial = false)
-        CompositionLocalProvider(LocalAgoraHaptics provides rememberAgoraHaptics(hapticsEnabled)) {
+        CompositionLocalProvider(LocalAgoraHaptics provides rememberAgoraHaptics(hapticsEnabled && hapticsActive)) {
             RemoteScreen(remote, settings, visible, onDismiss, onSnackbarOffsetChanged, onMediaClick, onMessage)
         }
     }
