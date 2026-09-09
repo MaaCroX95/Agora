@@ -927,7 +927,7 @@ class RemoteViewModelTest {
             bodyPage(listOf(older), null, emptyList(), RemoteRuntime("readOnly"))
         val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
-        vm.selectSession(historical); runCurrent()
+        vm.selectSession(historical); vm.state.first { it.nodes.isNotEmpty() }
         assertEquals(listOf(recent.id), vm.state.value.nodes.map { it.id })
         assertFalse(vm.state.value.loading)
         coVerify(exactly = 0) { client.conversation("historical", "older") }

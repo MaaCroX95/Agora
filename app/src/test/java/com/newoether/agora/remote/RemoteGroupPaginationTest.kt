@@ -3,6 +3,7 @@ package com.newoether.agora.remote
 import io.mockk.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.*
 import org.junit.After
 import org.junit.Assert.*
@@ -73,6 +74,7 @@ class RemoteGroupPaginationTest {
         val prefix = CompletableDeferred<RemoteConversationPage>()
         coEvery { client.conversation("history", "prefix") } coAnswers { prefix.await() }
         val vm = open()
+        vm.state.first { it.messageGroups.isNotEmpty() }
         val existing = vm.state.value.messageGroups.single()
         vm.loadMore(); runCurrent()
         assertFalse(vm.state.value.loadingMore)

@@ -289,6 +289,7 @@ internal fun MessageItem(
         parseInlineDollarMath,
         message.markdownImages,
         onMediaClick,
+        message.preparedMarkdown,
     )
     val markdownRenderContext = markdownAssets.renderContext
     val thoughtMarkdownRenderContext = markdownAssets.thoughtRenderContext

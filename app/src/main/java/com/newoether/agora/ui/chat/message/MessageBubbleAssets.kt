@@ -172,6 +172,7 @@ internal fun rememberChatMarkdownAssets(
     parseInlineDollarMath: Boolean = false,
     inlineImages: Map<String, com.newoether.agora.model.MarkdownImage> = emptyMap(),
     onMediaClick: (List<String>, Int) -> Unit = { _, _ -> },
+    preparedMarkdown: Map<String, com.mikepenz.markdown.model.State.Success> = emptyMap(),
 ): ChatMarkdownAssets {
     val linkColor = MaterialTheme.colorScheme.primary
     val linkTextStyles = remember(linkColor) { chatLinkTextStyles(linkColor) }
@@ -423,6 +424,7 @@ internal fun rememberChatMarkdownAssets(
         latexImageTransformer,
         markdownFlavour,
         parseInlineDollarMath,
+        preparedMarkdown,
     ) {
         ChatMarkdownRenderContext(
             colors = customMarkdownColors,
@@ -434,6 +436,7 @@ internal fun rememberChatMarkdownAssets(
             flavour = markdownFlavour,
             plainTextStyle = markdownBodyStyle,
             parseInlineDollarMath = parseInlineDollarMath,
+            preparedMarkdown = preparedMarkdown,
         )
     }
     val thoughtMarkdownRenderContext = remember(
@@ -444,6 +447,7 @@ internal fun rememberChatMarkdownAssets(
         latexImageTransformer,
         markdownFlavour,
         parseInlineDollarMath,
+        preparedMarkdown,
     ) {
         ChatMarkdownRenderContext(
             colors = customMarkdownColors,
@@ -455,6 +459,7 @@ internal fun rememberChatMarkdownAssets(
             flavour = markdownFlavour,
             plainTextStyle = thoughtMarkdownBodyStyle,
             parseInlineDollarMath = parseInlineDollarMath,
+            preparedMarkdown = preparedMarkdown,
         )
     }
 

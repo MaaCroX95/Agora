@@ -2,8 +2,14 @@ package com.newoether.agora.remote
 
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MarkdownImage
+import com.newoether.agora.model.MessageStatus
+import com.newoether.agora.model.Participant
 import com.newoether.agora.ui.chat.HydratedMessagePayloadLru
+import com.newoether.agora.ui.chat.message.mergeAdjacentSegments
+import com.newoether.agora.ui.chat.message.toRenderableMarkdownText
 import com.newoether.agora.viewmodel.MessagePayloadProjector
+import com.mikepenz.markdown.model.State
+import com.mikepenz.markdown.model.parseMarkdownFlow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -13,8 +19,10 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import org.intellij.markdown.ast.ASTNode
 
 /** Page bodies prime the original payload cache before their stable list positions are published. */
 internal class RemoteMessageHydration(
@@ -27,7 +35,8 @@ internal class RemoteMessageHydration(
 ) {
     private val cacheLock = Any()
     private var cacheOwner: String? = null
-    private var cache = HydratedMessagePayloadLru()
+    // Packet admission must not evict its own small rows through the ordinary 16-row viewport cap.
+    private var cache = HydratedMessagePayloadLru(maxEntries = Int.MAX_VALUE, maxWeightBytes = maxRecordBytes)
     private val revisions = mutableMapOf<String, List<String>>()
     private val records = linkedMapOf<String, Pair<String, RemoteMessage>>()
     private var recordBytes = 0L
@@ -41,7 +50,7 @@ internal class RemoteMessageHydration(
         if (state.value.owner != owner) throw CancellationException()
         if (cacheOwner != owner) {
             cacheOwner = owner
-            cache = HydratedMessagePayloadLru()
+            cache = HydratedMessagePayloadLru(maxEntries = Int.MAX_VALUE, maxWeightBytes = maxRecordBytes)
             revisions.clear()
             records.clear()
             recordBytes = 0
@@ -54,6 +63,7 @@ internal class RemoteMessageHydration(
         32L * message.streamingTextDeltas.size + message.imageLinks.sumOf { 32L + 2L * it.length } +
         message.inlineImages.entries.sumOf { (link, image) -> 256L + 2L * (link.length + (image.attachment?.path?.length ?: 0)) }
     internal val retainedRecordBytes: Long get() = synchronized(cacheLock) { recordBytes }
+    internal val retainedPayloadBytes: Long get() = synchronized(cacheLock) { cache.totalWeightBytes }
     fun resetStreaming() = synchronized(cacheLock) {
         previousRuntime = null
         deltas = RemoteStreamDeltas()
@@ -110,10 +120,45 @@ internal class RemoteMessageHydration(
         }
     }
 
-    private suspend fun project(group: RemoteMessageGroup, messages: List<RemoteMessage>): ChatMessage = projector.project {
-        projectRemoteMessages(messages.map { it.copy(groupId = group.stub.id) }).firstOrNull()
-            ?.copy(id = group.stub.id, parentId = group.stub.parentId, status = group.stub.status,
-                displayPageId = group.stub.displayPageId) ?: group.stub
+    private suspend fun project(group: RemoteMessageGroup, messages: List<RemoteMessage>): ChatMessage {
+        val message = projector.project {
+            projectRemoteMessages(messages.map { it.copy(groupId = group.stub.id) }).firstOrNull()
+                ?.copy(id = group.stub.id, parentId = group.stub.parentId, status = group.stub.status,
+                    displayPageId = group.stub.displayPageId) ?: group.stub
+        }
+        if (message.participant != Participant.MODEL ||
+            message.status !in setOf(MessageStatus.SUCCESS, MessageStatus.ERROR, MessageStatus.STOPPED)) return message
+        val texts = buildSet {
+            add(message.text)
+            message.thoughts?.let(::add)
+            mergeAdjacentSegments(message.segments.orEmpty())
+                .filter { it.type == "answer" || it.type == "thought" }.forEach { add(it.content) }
+        }.filter { it.isNotBlank() }
+        val prepared = linkedMapOf<String, State.Success>()
+        var bytes = 0L
+        for (text in texts) for (inlineMath in listOf(false, true)) {
+            currentCoroutineContext().ensureActive()
+            val markdown = projector.project { text.toRenderableMarkdownText(inlineMath) }
+            if (markdown in prepared) continue
+            // The public parser retains its own dispatcher inside the existing bounded permit.
+            val parsed = projector.project {
+                parseMarkdownFlow(markdown).first { it !is State.Loading }
+            }
+            if (parsed !is State.Success) continue
+            bytes += projector.project {
+                val nodes = java.util.ArrayDeque<ASTNode>()
+                nodes.add(parsed.node)
+                var weight = 256L + markdown.length * 2L
+                while (nodes.isNotEmpty()) {
+                    val node = nodes.removeLast()
+                    weight += 256L
+                    nodes.addAll(node.children)
+                }
+                weight
+            }
+            prepared[markdown] = parsed
+        }
+        return message.copy(preparedMarkdown = prepared, preparedMarkdownBytes = bytes)
     }
 
     suspend fun accept(owner: String, page: RemoteConversationPage, groups: List<RemoteMessageGroup>, live: Boolean = true) {

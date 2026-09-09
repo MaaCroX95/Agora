@@ -58,7 +58,7 @@ internal class HydratedMessagePayloadLru(
 }
 
 internal fun ChatMessage.estimatedHydratedPayloadBytes(): Long {
-    var bytes = 512L
+    var bytes = 512L + preparedMarkdownBytes
     bytes += id.estimatedHeapBytes()
     bytes += parentId.estimatedHeapBytes()
     bytes += text.estimatedHeapBytes()

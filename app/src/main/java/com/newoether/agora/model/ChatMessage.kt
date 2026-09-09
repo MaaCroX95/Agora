@@ -190,6 +190,10 @@ data class ChatMessage(
     val displayPageId: String? = null,
     /** Authenticated private files for inline Markdown images; never part of native history. */
     val markdownImages: Map<String, MarkdownImage> = emptyMap(),
+    /** Disposable off-main Markdown preparation; never persisted in Room or native history. */
+    val preparedMarkdown: Map<String, com.mikepenz.markdown.model.State.Success> = emptyMap(),
+    val preparedMarkdownBytes: Long = 0,
+
 )
 
 @Immutable

@@ -10,6 +10,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -205,6 +206,7 @@ class RemoteConnectionRecoveryTest {
         val message = RemoteMessage("answer", "turn", null, "assistant", "Retained native history", 1)
         coEvery { client.conversation("session", null) } returns bodyPage(listOf(message), null, emptyList(), page.runtime)
         val vm = open()
+        vm.state.first { it.nodes.isNotEmpty() }
         val notices = notices(vm)
         assertEquals(listOf("answer"), vm.state.value.nodes.map { it.id })
         assertEquals(RemoteDeviceStatus.CONNECTED, vm.state.value.devices.single().status)

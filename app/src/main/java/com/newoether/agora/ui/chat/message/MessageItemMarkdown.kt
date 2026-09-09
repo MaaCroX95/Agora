@@ -172,6 +172,7 @@ internal class ChatMarkdownRenderContext(
     val flavour: MarkdownFlavourDescriptor,
     val plainTextStyle: TextStyle,
     val parseInlineDollarMath: Boolean,
+    val preparedMarkdown: Map<String, State.Success> = emptyMap(),
 )
 
 internal const val MarkdownLinkPressAnimationMillis = 180
@@ -305,14 +306,13 @@ private fun MarkdownPreparedTextContent(
         MarkdownParser(renderContext.flavour)
     }
     val referenceLinkHandler = remember(markdownText) { ReferenceLinkHandlerImpl() }
-    val markdownState = rememberMarkdownState(
+    val state = renderContext.preparedMarkdown[markdownText] ?: rememberMarkdownState(
         content = markdownText,
         flavour = renderContext.flavour,
         parser = markdownParser,
         referenceLinkHandler = referenceLinkHandler,
         immediate = immediate
-    )
-    val state by markdownState.state.collectAsState()
+    ).state.collectAsState().value
     val currentOnReady by rememberUpdatedState(onReady)
 
     LaunchedEffect(state) {

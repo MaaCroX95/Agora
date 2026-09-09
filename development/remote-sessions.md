@@ -114,7 +114,11 @@ total and belongs to the preceding item; the initial inset owns only the first l
 space. Prepending therefore never changes an existing fragment's internal content origin.
 Older pages load on demand at the actual list edge; no
 initial complete-history scan or per-message network waterfall. Page bodies prime the
-original payload LRU before publication. Eviction re-reads bounded native page bookmarks.
+original payload LRU before publication. Remote uses its existing byte budget rather than the
+ordinary 16-row viewport entry cap, so a packet cannot evict its own small rows during admission.
+Completed Markdown is parsed off the UI thread with the original parser, preprocessing and reference
+links, then passed to the original renderer on its first frame. Parsed trees count toward the same
+8 MiB payload budget; active streaming keeps its existing incremental path. Eviction re-reads bounded native page bookmarks.
 Already admitted IDs and presentation-page membership remain resident and immutable when
 older pages arrive or body caches are evicted. Existing rendered fragments never merge with
 an incoming older fragment. ChatMessage.displayPageId expresses this boundary to the
