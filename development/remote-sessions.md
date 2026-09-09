@@ -91,6 +91,10 @@ complete its leading contiguous Thinking/Tool Call group. No visible page divide
 group, including beyond 128 records; ordinary answers can still form a page boundary.
 Continuation collection retains topology only; bodies stay in the original bounded LRU.
 Each node retains its physical packet bookmark. Page boundaries add no Spacer or gap.
+Same-turn assistant fragments omit duplicate message-shell padding and the 6dp/16dp
+assistant spacers at their seam. Ordinary adjacent-message spacing stays identical in
+total and belongs to the preceding item; the initial inset owns only the first leading
+space. Prepending therefore never changes an existing fragment's internal content origin.
 Older pages load on demand at the actual list edge; no
 initial complete-history scan or per-message network waterfall. Page bodies prime the
 original payload LRU before publication. Eviction re-reads bounded native page bookmarks.
@@ -98,6 +102,10 @@ Already admitted IDs and presentation-page membership remain resident and immuta
 older pages arrive or body caches are evicted. Existing rendered fragments never merge with
 an incoming older fragment. ChatMessage.displayPageId expresses this boundary to the
 canonical MessageList turn builder; ordinary null-boundary grouping remains unchanged.
+During a held pull at the history edge, page publication remains immediate. The original
+OverscrollEffect retains its stretch: the same positive pull cannot start consuming newly
+prepended rows and implicitly release it. Reversing the gesture or releasing uses the exact
+original effect and physics. No delayed publication or requestScrollToItem correction.
 LazyColumn stable keys preserve the current drag/fling position without a second scroll
 actor, scrollToItem restoration, delayed correction or structural window trimming.
 While an older page loads, the original 20dp/2dp circular indicator appears in the existing

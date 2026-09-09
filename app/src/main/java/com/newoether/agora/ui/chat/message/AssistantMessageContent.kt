@@ -232,6 +232,7 @@ internal fun AssistantMessageContent(
     isRegenerationExiting: Boolean,
     isEditingAllowed: Boolean,
     showActions: Boolean,
+    includeOuterSpacing: Boolean = true,
     actionCopyText: String?,
     showBranchSelector: Boolean,
     toolCallDisplayMode: String,
@@ -398,7 +399,7 @@ internal fun AssistantMessageContent(
             .then(if (isStreaming) Modifier.nestedScroll(horizontalScrollEater) else Modifier)
     ) {
         Column {
-            Spacer(modifier = Modifier.height(FormerAssistantStatusSpacerHeight))
+            if (includeOuterSpacing) Spacer(modifier = Modifier.height(FormerAssistantStatusSpacerHeight))
 
             // GenerationManager already publishes a bounded stream cadence. A second UI debounce
             // delayed every chunk, retained a stale text job through Stop, and then replaced the
@@ -965,7 +966,7 @@ internal fun AssistantMessageContent(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                if (includeOuterSpacing) Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }

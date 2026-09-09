@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.OverscrollEffect
+import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -84,6 +86,7 @@ internal fun MessageList(
     contentPadding: PaddingValues = PaddingValues(8.dp),
     state: LazyListState = rememberLazyListState(),
     userScrollEnabled: Boolean = true,
+    overscrollEffect: OverscrollEffect? = rememberOverscrollEffect(),
     messageActionsEnabled: Boolean = true,
     readOnlyActions: Boolean = false,
     isLoading: Boolean = false,
@@ -249,6 +252,7 @@ internal fun MessageList(
     }
     val turnCache = remember { MessageListTurnCache() }
     val turns = remember(presentationMessages) { turnCache.update(presentationMessages) }
+    val pageSpacing = remember(presentationMessages) { messageListPageTrailingSpacing(presentationMessages) }
     val tailAnchorKey = messageListTailAnchorKey(turns)
     val tailHolderKey = messageListTailHolderKey(turns)
     LaunchedEffect(conversationId, turns, searchQuery) { onSearchTurnsChanged(turns) }
@@ -306,7 +310,6 @@ internal fun MessageList(
             minimumStepPx = with(density) { 2.dp.toPx() },
         )
     }
-
     val lastUserMessage =
         messages.list.lastOrNull(MessageGenerationBoundaryResolver::isRealUser)
 
@@ -555,7 +558,6 @@ internal fun MessageList(
     val runPresentation = remember(visibleProjectionKey, allProjectionKey) {
         RunUiProjection.project(messages.list, allMessages.list)
     }
-
     val tailMinHeightPx = if (tailAnchorKey == null || viewportHeight == 0) {
         0
     } else {
@@ -573,7 +575,6 @@ internal fun MessageList(
         )
     }
     val tailMinHeight = with(density) { tailMinHeightPx.toDp() }
-
     // One progressive actor owns the complete search movement. Far-away turns are approached in
     // bounded per-frame steps; once composed, the same actor retargets against exact glyph
     // geometry. There is no animateScrollToItem teleport and no second correction animation.
@@ -657,7 +658,6 @@ internal fun MessageList(
             minimumStepPx = with(density) { 2.dp.toPx() },
         )
     }
-
     val renderMessage: @Composable (
         ChatMessage,
         (String, List<Int>, Boolean) -> Unit,
@@ -749,10 +749,11 @@ internal fun MessageList(
         val hydrationHeightModifier = reservedHydrationHeight
             ?.let { height -> Modifier.heightIn(min = height) }
             ?: Modifier
-
         val deleteTargetMessageId = presentation?.deleteTargetMessageId ?: message.id
         MessageItem(
             message = message,
+            outerPadding = pageSpacing[messageStub.id]?.let { PaddingValues(bottom = it.dp) } ?: PaddingValues(vertical = 8.dp),
+            includeAssistantOuterSpacing = messageStub.displayPageId == null,
             segmentAppearanceRegistry = segmentAppearanceRegistry,
             modifier = (if (message.id in branchReplacementExitIds) {
                 Modifier.graphicsLayer {
@@ -949,7 +950,6 @@ internal fun MessageList(
             thoughtExpandedStates = thoughtExpandedStates,
         )
     }
-
     MessageSegmentDetailHost(
         conversationId = conversationId,
         authoritativeMessages = authoritativeMessages.list,
@@ -968,7 +968,7 @@ internal fun MessageList(
             contentPadding = contentPadding,
             reverseLayout = false,
             state = state,
-            userScrollEnabled = userScrollEnabled
+            userScrollEnabled = userScrollEnabled, overscrollEffect = overscrollEffect
         ) {
             items(turns, key = { turn -> stableVisualKey(turn.key) }) { turn ->
                 val holdsTailMinimum = turn.key == tailHolderKey

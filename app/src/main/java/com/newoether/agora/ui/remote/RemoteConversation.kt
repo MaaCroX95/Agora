@@ -138,6 +138,7 @@ internal fun RemoteConversation(
     val messageState = rememberUpdatedState(messages)
     val ime = WindowInsets.ime.getBottom(density)
     val scroll = rememberChatScrollCoordinator(owner, ime)
+    val historyOverscroll = rememberRemoteHistoryOverscroll(scroll.listState)
     val focusManager = LocalFocusManager.current
     val searchMessages: suspend (String, List<String>) -> List<com.newoether.agora.model.ChatMessage> =
         remember(owner, state.hydrationRevision) { { _, ids -> vm.searchMessages(owner, ids) } }
@@ -165,6 +166,9 @@ internal fun RemoteConversation(
         messageState, density, motion, barHeight, 0.dp, onAnimatedScrollFinished = vm::completeAnimatedScroll)
     val renderMessages = rememberScrollIsolatedMessages(owner, messageState, scroll.listState,
         bypassScrollIsolation = scroll.absoluteBottomScrollPhase.isActive || scroll.streamingTailController.isAutoFollowing)
+    var initialLeadingSpace by remember(owner) { mutableStateOf<Int?>(null) }
+    val leadingSpace = initialLeadingSpace ?: messageListPageLeadingSpacing(renderMessages.value.firstOrNull())
+    SideEffect { if (initialLeadingSpace == null && renderMessages.value.isNotEmpty()) initialLeadingSpace = leadingSpace }
     LaunchedEffect(owner, state.hydrationEnabled) {
         if (state.hydrationEnabled && !initiallyPositioned) {
             scroll.settleOpenedConversation(messageState)
@@ -231,7 +235,7 @@ internal fun RemoteConversation(
             Box(Modifier.fillMaxSize()) {
                 MessageList(messages = StableMessageList(renderMessages.value), allMessages = StableMessageList(messages),
                     authoritativeMessages = StableMessageList(messages), conversationId = owner,
-                    state = scroll.listState, onMediaClick = onMediaClick, messageActionsEnabled = false, readOnlyActions = true, parseInlineDollarMath = inlineMath,
+                    state = scroll.listState, overscrollEffect = historyOverscroll, onMediaClick = onMediaClick, messageActionsEnabled = false, readOnlyActions = true, parseInlineDollarMath = inlineMath,
                     isLoading = generationVisible, isSwitching = switching, streamingMessage = streaming,
                     searchQuery = if (interaction.searchActive) interaction.searchQuery else "",
                     activeSearchMatch = searchMatch,
@@ -251,7 +255,7 @@ internal fun RemoteConversation(
                     onMessageHydrated = scroll::recordMessageHydrated,
                     lifecycleAppearanceRegistry = scroll.messageLifecycleAppearanceRegistry,
                     lifecycleEntranceTargetMessageId = animatedScrollRequest?.takeIf { it.conversationId == owner }?.targetMessageId,
-                    contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 140.dp, bottom = barHeight + 8.dp))
+                    contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 140.dp + leadingSpace.dp, bottom = barHeight + 8.dp))
                 // Use the existing top content inset; loading never adds or removes a list row.
                 Box(
                     modifier = Modifier.align(Alignment.TopCenter).padding(top = 100.dp).size(40.dp),

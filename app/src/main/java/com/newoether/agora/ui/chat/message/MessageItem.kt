@@ -99,6 +99,8 @@ internal fun MessageItem(
     segmentAppearanceRegistry: SegmentAppearanceRegistry,
     modifier: Modifier = Modifier,
     animateEntrance: Boolean = false,
+    outerPadding: PaddingValues = PaddingValues(vertical = 8.dp),
+    includeAssistantOuterSpacing: Boolean = true,
     isStreaming: Boolean = false,
     liveCompactPreview: StateFlow<String>? = null,
     isLoading: Boolean = false,
@@ -304,7 +306,7 @@ internal fun MessageItem(
             .onSizeChanged {
                 onHeightChanged(it.height)
             }
-            .padding(vertical = 8.dp)
+            .padding(outerPadding)
             .then(entranceModifier),
         verticalAlignment = Alignment.Top,
     ) {
@@ -385,6 +387,7 @@ internal fun MessageItem(
                 } else {
                     AssistantMessageContent(
                         message = displayMessage,
+                        includeOuterSpacing = includeAssistantOuterSpacing,
                         segmentAppearanceRegistry = segmentAppearanceRegistry,
                         contextAlpha = contextAlpha,
                         isStreaming = isStreaming,

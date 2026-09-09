@@ -8,6 +8,28 @@ import com.newoether.agora.model.isContextCompact
 import com.newoether.agora.util.Constants
 import kotlin.math.roundToInt
 
+/** Page fragments keep their content origin fixed when an older page is prepended.
+ * Put the original adjacent-message spacing after its predecessor, with no gap inside
+ * a native assistant turn split only for paging. Ordinary ChatApp messages opt out.
+ */
+internal fun messageListPageLeadingSpacing(message: ChatMessage?): Int = when (message?.participant) {
+    null -> 0
+    Participant.USER -> 8
+    else -> 14
+}
+
+internal fun messageListPageTrailingSpacing(messages: List<ChatMessage>): Map<String, Int> = buildMap {
+    messages.forEachIndexed { index, message ->
+        if (message.displayPageId == null) return@forEachIndexed
+        val next = messages.getOrNull(index + 1)
+        val continues = next?.displayPageId != null && next.displayPageId != message.displayPageId &&
+            message.participant == Participant.MODEL && next.participant == Participant.MODEL &&
+            !message.runId.isNullOrBlank() && message.runId == next.runId
+        put(message.id, if (continues) 0 else
+            (if (message.participant == Participant.USER) 8 else 24) + messageListPageLeadingSpacing(next))
+    }
+}
+
 internal enum class MessageListLayoutMode {
     STABLE,
     ACTIVE_SCROLL,
