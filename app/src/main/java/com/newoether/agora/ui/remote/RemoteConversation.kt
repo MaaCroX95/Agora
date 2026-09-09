@@ -128,6 +128,9 @@ internal fun RemoteConversation(
         }
     }
     val observe = remember(owner) { { id: String -> vm.observeMessage(owner, id) } }
+    val initialMessage = remember(owner) { { id: String ->
+        if (vm.state.value.owner == owner) vm.cachedMessage(owner, id) else null
+    } }
     val streaming = tail?.let { message ->
         key(owner, message.id) {
             // A suspended observer does not delete the body already shown during navigation.
@@ -260,7 +263,7 @@ internal fun RemoteConversation(
                     modifier = Modifier.fillMaxSize().gradientBlur(blurAtTopDp = if (blur) 8f else 0f,
                         blurAtBottomDp = 0f, fadeHeightDp = 40f, bottomOverlayHeight = barHeight + with(density) { spacer.outerHeightPx.toDp() } + 12.dp),
                     bottomBarHeight = barHeight, viewportHeight = scroll.viewportHeightPx,
-                    messageHeights = scroll.messageHeights, observeMessage = observe,
+                    messageHeights = scroll.messageHeights, observeMessage = observe, initialMessage = initialMessage,
                     programmaticScrollActive = animatedScrollRequest?.conversationId == owner,
                     onMessageHydrated = scroll::recordMessageHydrated,
                     lifecycleAppearanceRegistry = scroll.messageLifecycleAppearanceRegistry,

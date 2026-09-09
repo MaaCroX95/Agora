@@ -113,6 +113,7 @@ internal fun MessageList(
     viewportHeight: Int = 0,
     messageHeights: SnapshotStateMap<String, Int> = remember { mutableStateMapOf() },
     observeMessage: (String) -> Flow<ChatMessage?> = { flowOf(null) },
+    initialMessage: (String) -> ChatMessage? = { null },
     onMessageHydrated: (String?, String) -> Unit = { _, _ -> },
     onEditMessage: suspend (String, String) -> Boolean = { _, _ -> false },
     onSwitchBranch: (String?, String, Int) -> Unit = { _, _, _ -> },
@@ -663,7 +664,7 @@ internal fun MessageList(
         (String, List<Int>, Boolean) -> Unit,
     ) -> Unit = { messageStub, requestSegmentDetail ->
         val isStreamingOverlay = messageStub.id == streamingMessageId
-        val cachedMessage = hydratedPayloads[messageStub.id]
+        val cachedMessage = initialMessage(messageStub.id) ?: hydratedPayloads[messageStub.id]
         val observedMessage = if (isStreamingOverlay) {
             null
         } else {
@@ -674,7 +675,6 @@ internal fun MessageList(
         val message = resolveMessagePayloadForRender(messageStub, streamingMessage, observedMessage, cachedMessage)
         val hydrationPending = !isStreamingOverlay && observedMessage == null && cachedMessage == null
         val hydrationMutationKey = "hydrate:${messageStub.id}"
-
         val hydrated = if (isStreamingOverlay) streamingMessage else observedMessage ?: cachedMessage
         LaunchedEffect(messageStub.id, hydrated, isStreamingOverlay) {
             if (isStreamingOverlay || hydrated != null) {

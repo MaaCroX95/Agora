@@ -261,6 +261,10 @@ OutOfMemoryError recovery. Native records remain intact. Layered pages must not 
 desktop live turns; off-page native user acknowledgement still supports valid streaming.
 Older history does not acquire active-tail presentation or get replaced by incoming SSE.
 Paging starts only at the actual list edge, never merely because a huge first bubble is visible.
+Prepending primes the bounded Remote body cache before publishing topology. MessageList must
+read that prepared body synchronously for its first composition; an asynchronous Flow emission
+must not insert an empty, short-lived row into an active drag. The original local caller keeps
+its existing hydration path. Verify repeated 300ms pulls with no pause across page arrivals.
 
 Verify auth, exact native capability/owner/turn routing, bounded transport/history,
 cancellation, stale results, original renderer bindings, local-first Devices and persistence
