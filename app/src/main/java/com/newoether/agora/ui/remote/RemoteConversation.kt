@@ -181,15 +181,23 @@ internal fun RemoteConversation(
         programmaticHandoff = scroll.imeBottomAnchorState.active ||
             scroll.absoluteBottomScrollPhase.isActive || animatedScrollRequest?.conversationId == owner,
     )
-    LaunchedEffect(owner, active, switching, interaction.searchActive, state.historyCursor, state.loadingMore, state.error) {
+    val historyStartId = messages.firstOrNull()?.id
+    val atHistoryBoundary by remember(scroll.listState, historyStartId) {
+        derivedStateOf {
+            historyStartId != null && !scroll.listState.canScrollBackward &&
+                scroll.listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == 0 }?.key == historyStartId
+        }
+    }
+    LaunchedEffect(owner, active, switching, interaction.searchActive, state.historyCursor, state.loadingMore, state.error, historyStartId) {
         if (!active || switching || interaction.searchActive || state.historyCursor == null ||
             state.loadingMore || state.error) return@LaunchedEffect
-        snapshotFlow { !scroll.listState.canScrollBackward }.collect { atTop ->
+        // Topology passes through scroll isolation before the list measures it. An old
+        // layout is not the boundary of the newly admitted page, even while still at index 0.
+        snapshotFlow { atHistoryBoundary }.collect { atTop ->
             if (atTop) vm.loadMore()
         }
     }
     val historyProgress = remember(owner) { androidx.compose.animation.core.MutableTransitionState(false) }
-    val atHistoryBoundary = !scroll.listState.canScrollBackward
     SideEffect {
         historyProgress.targetState = active && !switching && !interaction.searchActive &&
             state.loadingMore && atHistoryBoundary

@@ -79,6 +79,10 @@ internal class FiloClient(
     } } catch (_: IllegalArgumentException) { throw FiloConfigurationException() }
     val address: String get() = endpoint.toString()
     private val json = Json { ignoreUnknownKeys = true }
+    // A server can close an idle pooled connection just before its next use. GETs can
+    // recover on a fresh connection; native mutations keep the non-retrying transport.
+    private val readCalls: Call.Factory = (calls as? OkHttpClient)?.newBuilder()
+        ?.retryOnConnectionFailure(true)?.build() ?: calls
 
     suspend fun connect(): String {
         val info = json.decodeFromString<FiloInfo>(request("v1/info"))
@@ -113,7 +117,7 @@ internal class FiloClient(
     ): com.newoether.agora.model.ToolImageAttachment = suspendCancellableCoroutine { continuation ->
         val url = endpoint.newBuilder().addPathSegments("v1/sessions/${sessionId(id)}/image")
             .addQueryParameter("messages", json.encodeToString(listOf(requested))).build()
-        val call = calls.newCall(Request.Builder().url(url).header("Authorization", "Bearer $token").build())
+        val call = readCalls.newCall(Request.Builder().url(url).header("Authorization", "Bearer $token").build())
         continuation.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
@@ -154,7 +158,7 @@ internal class FiloClient(
             .addPathSegments("v1/sessions/${sessionId(id)}/events")
             .apply { view?.let { addQueryParameter("view", it) } }.build())
             .header("Authorization", "Bearer $token").build()
-        val call = calls.newCall(request)
+        val call = readCalls.newCall(request)
         call.timeout().clearTimeout()
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) { close(e) }
@@ -223,7 +227,7 @@ internal class FiloClient(
             }.build()
             val request = Request.Builder().url(url).header("Authorization", "Bearer $token")
                 .apply { body?.let { post(it.toRequestBody("application/json".toMediaType())) } }.build()
-            val call = calls.newCall(request)
+            val call = (if (body == null) readCalls else calls).newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {

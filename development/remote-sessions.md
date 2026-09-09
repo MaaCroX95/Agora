@@ -102,6 +102,12 @@ Already admitted IDs and presentation-page membership remain resident and immuta
 older pages arrive or body caches are evicted. Existing rendered fragments never merge with
 an incoming older fragment. ChatMessage.displayPageId expresses this boundary to the
 canonical MessageList turn builder; ordinary null-boundary grouping remains unchanged.
+Automatic history paging must compare the authoritative first message ID with the measured
+index-zero LazyColumn key. Topology publication, scroll-isolated render publication and
+measurement are separate steps; an old layout must not trigger another cursor request.
+Regression verification must keep the pointer down across both publication steps, confirm
+a real page arrived, and assert the original visible message and coordinates remain stable.
+Include fast consecutive responses that otherwise push the anchor outside the lazy key map.
 During a held pull at the history edge, page publication remains immediate. The original
 OverscrollEffect retains its stretch: the same positive pull cannot start consuming newly
 prepended rows and implicitly release it. Reversing the gesture or releasing uses the exact
@@ -205,6 +211,13 @@ Each explicit setting change issues one request and reads native truth; failure 
 the prior value and settles the panel feedback gate. Settings apply to subsequent turns.
 Draft choices apply after one native creation and before first Send. If settings fail after
 known creation, explicit retry uses the same native ID. Unknown creation/send stays guarded.
+
+Read-only HTTP requests may recover from a closed pooled connection on a fresh connection.
+This includes catalog, history, model, image and event-stream reads. Native mutations
+(creation, Send/steer, Stop, settings, rename and archive) must never be automatically
+replayed after an ambiguous transport failure. Authentication failures and redirects
+retain their existing boundaries. Verify both read recovery and exactly-once write attempts
+against a server that closes a warmed connection before response headers.
 
 ## Memory limits and verification
 
