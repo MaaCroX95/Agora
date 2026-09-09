@@ -29,6 +29,7 @@ internal fun toolDisplayName(segment: MessageSegment): String {
 private val MCP_PUBLIC_TOOL_NAME =
     Regex("""^mcp_[A-Za-z0-9]+_(.+)_[0-9a-fA-F]{6}$""")
 private val TOOL_NAME_SEPARATOR = Regex("""[\s._-]+""")
+private val TOOL_PATH_INITIAL = Regex("""(?<=/)\p{Ll}""")
 
 /**
  * New calls use [resolvedName]. The public-name decoder is intentionally fallback-only for
@@ -53,8 +54,14 @@ internal fun mcpToolDisplayName(
                 if (char.isLowerCase()) char.uppercaseChar() else char
             }
         }
+        ?.replace(TOOL_PATH_INITIAL) { it.value.uppercase() }
         ?.takeIf(String::isNotBlank)
 }
+
+internal fun fallbackToolDisplayName(toolName: String): String =
+    toolName.split("_").joinToString(" ") { word ->
+        word.replaceFirstChar { it.uppercaseChar() }
+    }.replace(TOOL_PATH_INITIAL) { it.value.uppercase() }
 
 @Composable
 private fun toolBaseDisplayName(
@@ -103,12 +110,7 @@ private fun toolBaseDisplayName(
     ToolKind.UNKNOWN -> if (toolName == "code_execution") {
         stringResource(R.string.code_execution)
     } else {
-        toolName
-            .ifBlank { stringResource(R.string.tool_context) }
-            .split("_")
-            .joinToString(" ") { word ->
-                word.replaceFirstChar { char -> char.uppercaseChar() }
-            }
+        fallbackToolDisplayName(toolName.ifBlank { stringResource(R.string.tool_context) })
     }
 }
 

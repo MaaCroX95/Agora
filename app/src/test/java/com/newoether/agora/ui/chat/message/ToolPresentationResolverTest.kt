@@ -454,6 +454,21 @@ class ToolPresentationResolverTest {
     }
 
     @Test
+    fun slashQualifiedMcpTitlePreservesPathAndInnerCasing() {
+        assertEquals("Blender Mcp/Execute Code",
+            mcpToolDisplayName(null, "Blender Mcp/execute Code"))
+        assertEquals("Blender Mcp/Execute Code",
+            mcpToolDisplayName(null, "blender_mcp/execute_code"))
+        assertEquals("MCP/ReadURL", mcpToolDisplayName(null, "MCP/readURL"))
+        assertEquals("Blender Mcp/", mcpToolDisplayName(null, "blender_mcp/"))
+        assertEquals("Blender Mcp/Execute Code", fallbackToolDisplayName("blender_mcp/execute_code"))
+        assertEquals("Blender Mcp/Execute Code", fallbackToolDisplayName("Blender Mcp/execute Code"))
+        assertEquals("MCP/ReadURL", fallbackToolDisplayName("MCP/readURL"))
+        assertEquals("Blender Mcp/", fallbackToolDisplayName("blender_mcp/"))
+        assertEquals("Read  File", fallbackToolDisplayName("read__file"))
+    }
+
+    @Test
     fun mcpStructuredResultIsParsedIndependentlyFromProtocolText() {
         val presentation = ToolPresentationResolver.resolve(
             MessageSegment(

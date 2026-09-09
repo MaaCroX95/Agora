@@ -694,6 +694,11 @@ ordinary Timeline card or grouped Timeline row always opens the selected segment
 Only a Grouped/Compact card that is actually presented in Bottom Sheet mode opens the segment-list
 page first; click intent is passed explicitly and is never recomputed from the raw stored preference.
 
+Slash-qualified MCP/tool display titles preserve `/` and capitalize the following initial,
+including Remote names such as `Blender Mcp/execute Code` -> `Blender Mcp/Execute Code`.
+Use the shared title formatter for resolved MCP names and generic Remote tool labels; preserve
+existing interior casing, routing identity, arguments, and other separator formatting.
+
 Failed and stopped tool-detail content inside the shared Thinking/Tool bottom-sheet path reuses the
 same neutral gray body-text terminal presentation as ordinary message content. Failed text remains
 selectable and full-width, but neither state may introduce a `Surface`, rounded background, card, or
