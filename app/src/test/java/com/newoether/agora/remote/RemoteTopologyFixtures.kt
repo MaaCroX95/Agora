@@ -9,6 +9,6 @@ internal fun bodyPage(
         java.security.MessageDigest.getInstance("SHA-256").digest(message.toString().toByteArray())
             .joinToString("") { "%02x".format(it) }, message.text.length,
         groupId = message.groupId, nativeId = message.nativeId,
-        textOffset = message.textOffset, textContinues = message.textContinues,
+        textOffset = message.textOffset, textContinues = message.textContinues, error = message.error,
         activity = message.activity?.let { RemoteNodeActivity(it.type, it.state, it.durationMs) })
 })

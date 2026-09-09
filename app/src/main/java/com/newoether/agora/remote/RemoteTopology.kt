@@ -13,6 +13,7 @@ internal data class RemoteMessageNode(
     val textOffset: Int = 0, val textContinues: Boolean = false,
     val activity: RemoteNodeActivity? = null, val hasContent: Boolean? = null,
     val imageCount: Int = 0,
+    val error: Boolean = false,
     @kotlinx.serialization.Transient val displayPageId: String? = null,
     @kotlinx.serialization.Transient val displayGroupId: String? = null,
     @kotlinx.serialization.Transient val pageCursor: String? = null,
@@ -49,11 +50,14 @@ internal fun projectRemoteTopology(nodes: List<RemoteMessageNode>, runtime: Remo
             }?.id, text = "",
             participant = if (first.role == "user") Participant.USER else Participant.MODEL,
             timestamp = first.timestamp, modelName = "Codex", runId = first.turnId,
-            displayPageId = first.displayPageId), group))
+            displayPageId = first.displayPageId,
+            status = if (group.any { it.error }) MessageStatus.ERROR else MessageStatus.SUCCESS), group))
     }
     if (runtime?.isRunning == true && runtime.activeTurnId != null &&
         (runtime.activeTurnHasUserMessage || nodes.any { it.role == "user" && it.turnId == runtime.activeTurnId })) {
         val tail = lastOrNull()
+        // Preserve the native failure through hydration and stale active snapshots.
+        if (tail?.stub?.runId == runtime.activeTurnId && tail.stub.status == MessageStatus.ERROR) return@buildList
         if (tail?.stub?.participant == Participant.MODEL && tail.stub.runId == runtime.activeTurnId) {
             val status = when (tail.nodes.lastOrNull()?.activity?.type) {
                 "thought" -> MessageStatus.THINKING

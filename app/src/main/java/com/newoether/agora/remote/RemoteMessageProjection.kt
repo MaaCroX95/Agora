@@ -32,7 +32,7 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
                     inlineImages[link] = current.inlineImages[link] ?: com.newoether.agora.model.MarkdownImage()
                 }
                 val activity = current.activity
-                val segment = when (activity?.type) {
+                val segment = if (current.error) MessageSegment(type = "error", content = current.displayText()) else when (activity?.type) {
                     null -> MessageSegment(type = "answer", content = current.displayText(),
                         streamingTextDeltas = current.streamingTextDeltas)
                     "thought" -> MessageSegment(type = "thought", content = current.displayText(), durationMs = activity.durationMs)
@@ -80,6 +80,7 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
             participant = if (first.role == "user") Participant.USER else Participant.MODEL,
             timestamp = first.timestamp, modelName = "Codex", runId = first.turnId,
             segments = segments, markdownImages = inlineImages,
+            status = if (segments?.any { it.type == "error" } == true) MessageStatus.ERROR else MessageStatus.SUCCESS,
         ))
     }
     val turn = runtime?.activeTurnId?.takeIf { active ->
@@ -87,6 +88,8 @@ internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: Remot
     }
     if (turn != null) {
         val tail = lastOrNull()
+        // A persisted terminal failure must not become a generating card from stale runtime.
+        if (tail?.runId == turn && tail.status == MessageStatus.ERROR) return@buildList
         if (tail?.participant == Participant.MODEL && tail.runId == turn) {
             val status = when (tail.segments?.lastOrNull()?.type) {
                 "thought" -> MessageStatus.THINKING

@@ -202,8 +202,8 @@ native tool count. Genuine timing retains original duration text.
 Errors and unknown runtime never disable an explicit Send with nonblank input. Filo decides
 whether the original owner can accept that request; failures show the bounded actual HTTP/SSE
 error text in the existing Snackbar, with the localized category as fallback. Never log this
-text or credentials. An unconfirmed previous delivery keeps Send clickable and opens the
-existing outcome confirmation before any new attempt; no automatic retry or duplicate send.
+text or credentials. An unconfirmed previous delivery keeps Send clickable and presents the
+existing check action in Snackbar before any new attempt; no automatic retry or duplicate send.
 Reuse original ComposerSendButton: active + empty draft means Stop, text means Send/steer,
 submission/Stop settlement means Busy. Keep pending Stop through both HTTP success and
 native end/replacement of that exact turn, regardless of arrival order. Failure clears
@@ -242,6 +242,15 @@ retain their existing boundaries. Verify both read recovery and exactly-once wri
 against a server that closes a warmed connection before response headers.
 
 ## Memory limits and verification
+
+Native failed-turn messages use the original assistant error segment and MessageStatus.ERROR,
+which render through the original neutral grey GenerationErrorBar/GenerationTerminalText.
+Preserve preceding answers and tools, and keep one stable error identity per native turn.
+Transport errors remain Snackbar notices. Missing live state must never invent a native error
+or mark a failed turn as generating. Error messages do not disable an explicit Send retry.
+No delivery-status text/card belongs above the composer. Rejected/unknown delivery details
+use the original Snackbar. Clicking Send with unknown prior delivery shows the existing
+check action in that Snackbar; acknowledging it clears the guard without sending any input.
 
 Filo bounds conversation pages to 256KiB/128 records with explicit tool previews. Android
 limits SSE lines/HTTP bodies to 1MiB before UTF-8 allocation, including missing delimiters.

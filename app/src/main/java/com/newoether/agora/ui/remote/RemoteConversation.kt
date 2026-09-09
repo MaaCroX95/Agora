@@ -48,6 +48,7 @@ internal fun RemoteConversation(
     state: RemoteState, vm: RemoteViewModel, settings: SettingsRepository, active: Boolean, onBack: () -> Unit,
     onSnackbarOffsetChanged: (androidx.compose.ui.unit.Dp) -> Unit,
     onMediaClick: (List<String>, Int) -> Unit,
+    onMessage: (String, String?, (() -> Unit)?) -> Unit,
 ) {
     val owner = state.owner ?: return
     val session = state.session ?: return
@@ -202,7 +203,8 @@ internal fun RemoteConversation(
         historyProgress.targetState = active && !switching && !interaction.searchActive &&
             state.loadingMore && atHistoryBoundary
     }
-    var confirmUnknown by remember { mutableStateOf(false) }
+    val unknownDeliveryText = stringResource(R.string.remote_unknown)
+    val checkedDeliveryText = stringResource(R.string.remote_check)
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).clearFocusOnTap()
         .onSizeChanged { scroll.recordViewportHeight(it.height) }) {
         val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -323,22 +325,7 @@ internal fun RemoteConversation(
             ChatComposerLayout(field, focus, scroll::setComposerInputFocused, expanded, spacer.isRunning,
                 onExpand = { expanded = true }, onCollapse = { expanded = false },
                 statusContent = {
-                    if (session.readOnly && !session.canResume) {
-                        Text(stringResource(R.string.remote_history_read_only),
-                            Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            style = MaterialTheme.typography.labelMedium)
-                    }
                     ComposerStatusColumn(state.queued, { it.id }) { QueuedMessageRow(text = it.text) }
-                    val status = when (attempt?.delivery) {
-                        RemoteDelivery.UNKNOWN -> R.string.remote_unknown
-                        RemoteDelivery.REJECTED -> R.string.remote_rejected
-                        else -> null
-                    }
-                    if (status != null) Text(stringResource(status), Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (attempt?.delivery == RemoteDelivery.UNKNOWN) TextButton(onClick = { confirmUnknown = true }) {
-                        Text(stringResource(R.string.remote_check))
-                    }
                 },
                 controls = {
                     ComposerControlGroup {
@@ -483,7 +470,9 @@ internal fun RemoteConversation(
                         isBusy = submitting || stopping, showStop = showStop,
                         onBusyShown = { shownBusyAttempt = attempt?.clientId }) {
                         if (showStop) vm.stop()
-                        else if (attempt?.delivery == RemoteDelivery.UNKNOWN) confirmUnknown = true
+                        else if (attempt?.delivery == RemoteDelivery.UNKNOWN) onMessage(unknownDeliveryText, checkedDeliveryText) {
+                            vm.acknowledgeUnknown(owner)
+                        }
                         else { vm.editDraft(owner, field.text.toString()); vm.send() }
                     }
                 })
@@ -530,9 +519,4 @@ internal fun RemoteConversation(
             }
         }
     }
-    if (confirmUnknown) AlertDialog(onDismissRequest = { confirmUnknown = false },
-        title = { Text(stringResource(R.string.remote_confirm), fontWeight = FontWeight.Bold) },
-        text = { Text(stringResource(R.string.remote_unknown)) },
-        confirmButton = { TextButton(onClick = { vm.acknowledgeUnknown(owner); confirmUnknown = false }) { Text(stringResource(R.string.ok)) } },
-        dismissButton = { TextButton(onClick = { confirmUnknown = false }) { Text(stringResource(R.string.cancel)) } })
 }

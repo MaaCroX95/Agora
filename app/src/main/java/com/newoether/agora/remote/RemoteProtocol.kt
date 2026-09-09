@@ -24,6 +24,7 @@ internal data class RemoteMessage(
     val imageLinks: List<String> = emptyList(),
     @kotlinx.serialization.Transient
     val inlineImages: Map<String, com.newoether.agora.model.MarkdownImage> = emptyMap(),
+    val error: Boolean = false,
 )
 @Serializable
 internal data class RemoteActivity(
