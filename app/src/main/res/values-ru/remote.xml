@@ -38,4 +38,7 @@
     <string name="remote_online">В сети</string>
     <string name="remote_offline">Не в сети</string>
     <string name="remote_connecting">Подключение</string>
+    <string name="remote_archive">Архивировать</string>
+    <string name="remote_archive_title">Архивировать задачу?</string>
+    <string name="remote_archive_message">Убрать эту задачу из активных списков Codex и Remote? История будет сохранена.</string>
 </resources>

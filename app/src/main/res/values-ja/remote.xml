@@ -38,4 +38,7 @@
     <string name="remote_online">オンライン</string>
     <string name="remote_offline">オフライン</string>
     <string name="remote_connecting">接続中</string>
+    <string name="remote_archive">アーカイブ</string>
+    <string name="remote_archive_title">タスクをアーカイブしますか？</string>
+    <string name="remote_archive_message">このタスクを Codex と Remote のアクティブな一覧から削除しますか？履歴は保持されます。</string>
 </resources>

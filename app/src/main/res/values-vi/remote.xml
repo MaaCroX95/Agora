@@ -38,4 +38,7 @@
     <string name="remote_online">Trực tuyến</string>
     <string name="remote_offline">Ngoại tuyến</string>
     <string name="remote_connecting">Đang kết nối</string>
+    <string name="remote_archive">Lưu trữ</string>
+    <string name="remote_archive_title">Lưu trữ tác vụ?</string>
+    <string name="remote_archive_message">Xóa tác vụ này khỏi danh sách đang hoạt động trong Codex và Remote? Lịch sử sẽ được giữ lại.</string>
 </resources>

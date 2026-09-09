@@ -38,4 +38,7 @@
     <string name="remote_online">線上</string>
     <string name="remote_offline">離線</string>
     <string name="remote_connecting">連線中</string>
+    <string name="remote_archive">封存</string>
+    <string name="remote_archive_title">封存任務？</string>
+    <string name="remote_archive_message">將此任務從 Codex 和 Remote 的未封存清單中移除？歷史記錄會保留。</string>
 </resources>

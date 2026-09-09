@@ -38,4 +38,7 @@
     <string name="remote_online">Online</string>
     <string name="remote_offline">Offline</string>
     <string name="remote_connecting">Verbindung wird hergestellt</string>
+    <string name="remote_archive">Archivieren</string>
+    <string name="remote_archive_title">Aufgabe archivieren?</string>
+    <string name="remote_archive_message">Diese Aufgabe aus den aktiven Listen in Codex und Remote entfernen? Der Verlauf bleibt erhalten.</string>
 </resources>

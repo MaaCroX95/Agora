@@ -38,4 +38,7 @@
     <string name="remote_online">متصل</string>
     <string name="remote_offline">غير متصل</string>
     <string name="remote_connecting">جارٍ الاتصال</string>
+    <string name="remote_archive">أرشفة</string>
+    <string name="remote_archive_title">أرشفة المهمة؟</string>
+    <string name="remote_archive_message">هل تريد إزالة هذه المهمة من القوائم النشطة في Codex وRemote؟ سيتم الاحتفاظ بسجلها.</string>
 </resources>

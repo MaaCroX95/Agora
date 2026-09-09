@@ -38,4 +38,7 @@
     <string name="remote_online">Online</string>
     <string name="remote_offline">Offline</string>
     <string name="remote_connecting">Conectando</string>
+    <string name="remote_archive">Arquivar</string>
+    <string name="remote_archive_title">Arquivar tarefa?</string>
+    <string name="remote_archive_message">Remover esta tarefa das listas ativas do Codex e do Remote? O histórico será mantido.</string>
 </resources>
