@@ -1,5 +1,6 @@
 package com.newoether.agora.viewmodel
 
+import com.newoether.agora.readLocaleStringResourceSources
 import com.newoether.agora.R
 import com.newoether.agora.api.GenerationError
 import android.content.Context
@@ -339,7 +340,11 @@ class GenerationErrorPresentationTest {
         var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
         repeat(8) {
             val candidate = File(directory, relativePath)
-            if (candidate.isFile) return candidate.readText()
+            if (candidate.isFile) {
+                return if (candidate.name == "strings.xml") {
+                    candidate.readLocaleStringResourceSources()
+                } else candidate.readText()
+            }
             directory = directory.parentFile ?: error("Reached filesystem root")
         }
         error("Unable to locate $relativePath")

@@ -1,5 +1,6 @@
 package com.newoether.agora.ui
 
+import com.newoether.agora.readLocaleStringResourceSources
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -199,7 +200,11 @@ class CurrentApprovedFeatureSourceContractTest {
         var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
         repeat(8) {
             val candidate = File(directory, relativePath)
-            if (candidate.isFile) return candidate.readText()
+            if (candidate.isFile) {
+                return if (candidate.name == "strings.xml") {
+                    candidate.readLocaleStringResourceSources()
+                } else candidate.readText()
+            }
             directory = directory.parentFile ?: error("Reached filesystem root")
         }
         error("Unable to locate $relativePath")

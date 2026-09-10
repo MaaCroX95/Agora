@@ -1,5 +1,6 @@
 package com.newoether.agora.ui.chat.message
 
+import com.newoether.agora.readLocaleStringResourceSources
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -153,7 +154,7 @@ class Phase24UiSourceContractTest {
             .orEmpty()
 
     private fun resourceFile(directory: String): String =
-        File(resourceRoot(), "$directory/strings.xml").readText()
+        File(resourceRoot(), "$directory/strings.xml").readLocaleStringResourceSources()
 
     private fun mainSourceRoot(): File = locate("app/src/main/java")
     private fun resourceRoot(): File = locate("app/src/main/res")

@@ -1,5 +1,6 @@
 package com.newoether.agora.data
 
+import com.newoether.agora.readLocaleStringResourceSources
 import java.io.File
 import com.newoether.agora.util.SecretCrypto
 import io.mockk.coEvery
@@ -175,7 +176,7 @@ class PortableSettingsArchiveTest {
         assertTrue(page.contains("role = Role.Switch"))
         val resources = locateDirectory("app/src/main/res", "src/main/res")
         resources.listFiles().orEmpty().map { File(it, "strings.xml") }.filter(File::isFile).forEach {
-            val strings = it.readText()
+            val strings = it.readLocaleStringResourceSources()
             assertTrue("AMOLED title missing in $it", strings.contains("name=\"amoled_mode\""))
             assertTrue("AMOLED description missing in $it", strings.contains("name=\"amoled_mode_desc\""))
         }
@@ -294,7 +295,7 @@ class PortableSettingsArchiveTest {
             "values-zh",
             "values-zh-rTW",
         ).forEach { directory ->
-            val strings = File(resourceRoot, "$directory/strings.xml").readText()
+            val strings = File(resourceRoot, "$directory/strings.xml").readLocaleStringResourceSources()
             assertTrue("Missing title in $directory", strings.contains("name=\"show_uncached_notification\""))
             assertTrue("Missing description in $directory", strings.contains("name=\"show_uncached_notification_desc\""))
         }

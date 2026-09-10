@@ -1,5 +1,6 @@
 package com.newoether.agora.ui
 
+import com.newoether.agora.readLocaleStringResourceSources
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -462,7 +463,7 @@ internal class ApprovedFeatureSourceContractTest : UiSourceContractFixture() {
             }
             ?.map { directory -> File(directory, "strings.xml") }
             ?.filter(File::isFile)
-            ?.sortedBy { file -> file.parentFile.name }
+            ?.sortedBy { file -> checkNotNull(file.parentFile).name }
             .orEmpty()
         val expectedKeys = setOf(
             "developer_options_already_enabled_message",
@@ -510,16 +511,16 @@ internal class ApprovedFeatureSourceContractTest : UiSourceContractFixture() {
 
         assertEquals(12, localeFiles.size)
         localeFiles.forEach { file ->
-            val keys = developerKey.findAll(file.readText())
+            val keys = developerKey.findAll(file.readLocaleStringResourceSources())
                 .map { match -> match.groupValues[1] }
                 .toList()
             assertEquals(
-                "${file.parentFile.name} contains duplicate Developer keys",
+                "${checkNotNull(file.parentFile).name} contains duplicate Developer keys",
                 keys.size,
                 keys.toSet().size,
             )
             assertEquals(
-                "${file.parentFile.name} has an unexpected Developer key set",
+                "${checkNotNull(file.parentFile).name} has an unexpected Developer key set",
                 expectedKeys,
                 keys.toSet(),
             )
