@@ -8,67 +8,35 @@ import androidx.compose.foundation.content.TransferableContent
 import androidx.compose.foundation.content.consume
 import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.content.hasMediaType
-import androidx.compose.foundation.background
 import com.newoether.agora.model.apiModelName
 import com.newoether.agora.model.ContextBudget
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.*
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.material3.Icon
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.input.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.Compress
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.newoether.agora.R
 import com.newoether.agora.model.AttachmentImportState
-import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.ui.common.LocalAgoraHaptics
-import com.newoether.agora.ui.common.openAiServiceTierShortLabel
-import com.newoether.agora.ui.common.thinkingControlShortLabel
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
-import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
-import com.newoether.agora.ui.theme.ChatType
-import com.newoether.agora.util.noOpBringIntoView
 import com.newoether.agora.viewmodel.ConversationComposerController
 import com.newoether.agora.viewmodel.ConversationComposerSnapshot
 import com.newoether.agora.viewmodel.ConversationComposerSubmissionController
 import com.newoether.agora.viewmodel.QueuedSend
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
@@ -231,8 +199,10 @@ internal fun ChatBottomBar(
             }
         }
     }
-    var showThinkingSheet by rememberSaveable { mutableStateOf(false) }
-    var showOpenAiServiceTierSheet by rememberSaveable { mutableStateOf(false) }
+    val showThinkingSheetState = rememberSaveable { mutableStateOf(false) }
+    var showThinkingSheet by showThinkingSheetState
+    val showOpenAiServiceTierSheetState = rememberSaveable { mutableStateOf(false) }
+    var showOpenAiServiceTierSheet by showOpenAiServiceTierSheetState
     LaunchedEffect(fullScreenViewerUrls) {
         if (
             fullScreenViewerUrls == null &&
@@ -436,7 +406,8 @@ internal fun ChatBottomBar(
                     },
                     onFiles = { pendingFileOwnerId = composerOwnerId; fileLauncher.launch("*/*") },
                 )
-                var activeMenu by remember { mutableStateOf<String?>(null) }
+                val activeMenuState = remember { mutableStateOf<String?>(null) }
+                var activeMenu by activeMenuState
                 var lastModelDismissTime by remember { mutableLongStateOf(0L) }
                 var lastContextDismissTime by remember { mutableLongStateOf(0L) }
                 var lastToolsDismissTime by remember { mutableLongStateOf(0L) }
@@ -557,220 +528,42 @@ internal fun ChatBottomBar(
                         matchTextFieldWidth = false,
                         shape = CHAT_DROPDOWN_MENU_SHAPE,
                     ) {
-                        if (showLowContextMode) {
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            Icons.Default.Memory,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp),
-                                        )
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(stringResource(R.string.low_context_mode))
-                                    }
-                                },
-                                trailingIcon = {
-                                    Switch(
-                                        checked = lowContextModeEnabled,
-                                        onCheckedChange = onLowContextModeToggle,
-                                        modifier = Modifier.scale(0.7f),
-                                    )
-                                },
-                                onClick = { onLowContextModeToggle(!lowContextModeEnabled) },
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(androidx.compose.ui.res.painterResource(id = com.newoether.agora.R.drawable.neurology_24), null, modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp))
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column {
-                                        Text(stringResource(R.string.thinking))
-                                        Text(
-                                            text = thinkingControlShortLabel(
-                                                thinkingEnabled,
-                                                thinkingLevel,
-                                                thinkingBudgetEnabled,
-                                                thinkingBudgetTokens
-                                            ),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            },
-                            trailingIcon = {
-                                Switch(
-                                    checked = thinkingEnabled,
-                                    onCheckedChange = { onThinkingToggle(it) },
-                                    modifier = Modifier.scale(0.7f)
-                                )
-                            },
-                            onClick = {
-                                activeMenu = null
-                                showThinkingSheet = true
-                            }
-                        )
-                        val isGemini = selectedProvider.equals("google", ignoreCase = true) && isModelValid
-                        if (isGemini) {
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Terminal, null, modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp))
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(stringResource(R.string.code_execution))
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        ProviderBadge("Gemini")
-                                    }
-                                },
-                                trailingIcon = {
-                                    Switch(
-                                        checked = codeExecutionEnabled,
-                                        onCheckedChange = { onCodeExecutionToggle(it) },
-                                        enabled = capabilityControlsEnabled,
-                                        modifier = Modifier.scale(0.7f)
-                                    )
-                                },
-                                enabled = capabilityControlsEnabled,
-                                onClick = { onCodeExecutionToggle(!codeExecutionEnabled) }
-                            )
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Image(
-                                            painter = androidx.compose.ui.res.painterResource(R.drawable.provider_google),
-                                            contentDescription = null,
-                                            colorFilter = ColorFilter.tint(LocalContentColor.current),
-                                            modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp),
-                                        )
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(stringResource(R.string.google_search))
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        ProviderBadge("Gemini")
-                                    }
-                                },
-                                trailingIcon = {
-                                    Switch(
-                                        checked = googleSearchEnabled,
-                                        onCheckedChange = { onGoogleSearchToggle(it) },
-                                        enabled = capabilityControlsEnabled,
-                                        modifier = Modifier.scale(0.7f)
-                                    )
-                                },
-                                enabled = capabilityControlsEnabled,
-                                onClick = { onGoogleSearchToggle(!googleSearchEnabled) }
-                            )
-                        }
-                        if (openAiServiceTierAvailable && isModelValid) {
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            Icons.Default.Speed,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp),
-                                        )
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Column {
-                                            Text(stringResource(R.string.openai_service_tier_title))
-                                            Text(
-                                                text = openAiServiceTierShortLabel(
-                                                    openAiServiceTierEnabled,
-                                                    openAiServiceTier,
-                                                ),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                    }
-                                },
-                                trailingIcon = {
-                                    Switch(
-                                        checked = openAiServiceTierEnabled,
-                                        onCheckedChange = onOpenAiServiceTierToggle,
-                                        enabled = capabilityControlsEnabled,
-                                        modifier = Modifier.scale(0.7f),
-                                    )
-                                },
-                                enabled = capabilityControlsEnabled,
-                                onClick = {
-                                    activeMenu = null
-                                    showOpenAiServiceTierSheet = true
-                                },
-                            )
-                        }
-                        if (openAiWebSearchAvailable && isModelValid) {
-                            NativeSearchMenuItem(
-                                checked = openAiWebSearchEnabled,
-                                provider = "OpenAI",
-                                enabled = capabilityControlsEnabled,
-                                onCheckedChange = onOpenAiWebSearchToggle,
-                            )
-                        }
-                        if (showWebSearch) {
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Language, null, modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp))
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(stringResource(R.string.web_search))
-                                    }
-                                },
-                                trailingIcon = {
-                                    Switch(
-                                        checked = webSearchEnabled,
-                                        onCheckedChange = { onWebSearchToggle(it) },
-                                        enabled = capabilityControlsEnabled,
-                                        modifier = Modifier.scale(0.7f)
-                                    )
-                                },
-                                enabled = capabilityControlsEnabled,
-                                onClick = { onWebSearchToggle(!webSearchEnabled) }
-                            )
-                        }
-                        if (showShell) {
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Terminal, null, modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp))
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(stringResource(R.string.shell_title))
-                                    }
-                                },
-                                trailingIcon = {
-                                    Switch(
-                                        checked = shellEnabled,
-                                        onCheckedChange = { onShellToggle(it) },
-                                        enabled = capabilityControlsEnabled,
-                                        modifier = Modifier.scale(0.7f)
-                                    )
-                                },
-                                enabled = capabilityControlsEnabled,
-                                onClick = { onShellToggle(!shellEnabled) }
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Compress, null, modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp))
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text(stringResource(R.string.context_compact))
-                                }
-                            },
-                            enabled = canCompact && !isCompacting,
-                            onClick = { activeMenu = null; onCompactClick() },
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Tune, null, modifier = Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp))
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text(stringResource(R.string.advanced_settings))
-                                }
-                            },
-                            // Unlike the toggle rows, this opens a dialog — collapse the menu first.
-                            onClick = { activeMenu = null; onAdvancedClick() }
+                        ComposerToolsMenuContent(
+                            activeMenuState = activeMenuState,
+                            showThinkingSheetState = showThinkingSheetState,
+                            showOpenAiServiceTierSheetState = showOpenAiServiceTierSheetState,
+                            showLowContextMode = showLowContextMode,
+                            lowContextModeEnabled = lowContextModeEnabled,
+                            onLowContextModeToggle = onLowContextModeToggle,
+                            thinkingEnabled = thinkingEnabled,
+                            thinkingLevel = thinkingLevel,
+                            thinkingBudgetEnabled = thinkingBudgetEnabled,
+                            thinkingBudgetTokens = thinkingBudgetTokens,
+                            onThinkingToggle = onThinkingToggle,
+                            selectedProvider = selectedProvider,
+                            isModelValid = isModelValid,
+                            codeExecutionEnabled = codeExecutionEnabled,
+                            onCodeExecutionToggle = onCodeExecutionToggle,
+                            googleSearchEnabled = googleSearchEnabled,
+                            onGoogleSearchToggle = onGoogleSearchToggle,
+                            capabilityControlsEnabled = capabilityControlsEnabled,
+                            openAiServiceTierAvailable = openAiServiceTierAvailable,
+                            openAiServiceTierEnabled = openAiServiceTierEnabled,
+                            openAiServiceTier = openAiServiceTier,
+                            onOpenAiServiceTierToggle = onOpenAiServiceTierToggle,
+                            openAiWebSearchAvailable = openAiWebSearchAvailable,
+                            openAiWebSearchEnabled = openAiWebSearchEnabled,
+                            onOpenAiWebSearchToggle = onOpenAiWebSearchToggle,
+                            showWebSearch = showWebSearch,
+                            webSearchEnabled = webSearchEnabled,
+                            onWebSearchToggle = onWebSearchToggle,
+                            showShell = showShell,
+                            shellEnabled = shellEnabled,
+                            onShellToggle = onShellToggle,
+                            canCompact = canCompact,
+                            isCompacting = isCompacting,
+                            onCompactClick = onCompactClick,
+                            onAdvancedClick = onAdvancedClick,
                         )
                     }
                 }

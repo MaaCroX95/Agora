@@ -35,7 +35,7 @@ class ChatBottomBarControlOrderTest {
     fun `OpenAI Search appears directly below Service Tier`() {
         val source = File(
             locateMainSourceRoot(),
-            "com/newoether/agora/ui/chat/bottombar/ChatBottomBar.kt",
+            "com/newoether/agora/ui/chat/bottombar/ComposerToolsMenuContent.kt",
         ).readText()
         val serviceTierCondition = "if (openAiServiceTierAvailable && isModelValid)"
         val nativeSearchCondition = "if (openAiWebSearchAvailable && isModelValid)"
@@ -59,7 +59,8 @@ class ChatBottomBarControlOrderTest {
 
     @Test
     fun `Low Context Mode disables only capability controls`() {
-        val source = mainSource("com/newoether/agora/ui/chat/bottombar/ChatBottomBar.kt")
+        val source = mainSource("com/newoether/agora/ui/chat/bottombar/ChatBottomBar.kt") +
+            mainSource("com/newoether/agora/ui/chat/bottombar/ComposerToolsMenuContent.kt")
         val lowContextCondition = "if (showLowContextMode)"
         val lowContextStart = source.indexOf(lowContextCondition)
         val lowContextBodyStart = source.indexOf('{', startIndex = lowContextStart)

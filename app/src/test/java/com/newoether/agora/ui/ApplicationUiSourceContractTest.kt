@@ -197,6 +197,9 @@ class ApplicationUiSourceContractTest {
         val bottomBar = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/chat/bottombar/ChatBottomBar.kt",
         )
+        val menuItems = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/chat/bottombar/ComposerToolsMenuContent.kt",
+        )
         val components = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/chat/bottombar/ChatBottomBarComponents.kt",
         )
@@ -206,10 +209,11 @@ class ApplicationUiSourceContractTest {
 
         assertTrue(components.contains("CHAT_DROPDOWN_MENU_ICON_SIZE_DP = 24"))
         assertTrue(attachment.contains("CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp"))
-        assertTrue(bottomBar.contains("CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp"))
+        assertTrue(bottomBar.contains("ComposerToolsMenuContent("))
+        assertTrue(menuItems.contains("CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp"))
         assertTrue(components.contains("Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp)"))
-        assertTrue(bottomBar.contains("ColorFilter.tint(LocalContentColor.current)"))
-        assertFalse(bottomBar.contains("ColorFilter.tint(Color.White)"))
+        assertTrue(menuItems.contains("ColorFilter.tint(LocalContentColor.current)"))
+        assertFalse(menuItems.contains("ColorFilter.tint(Color.White)"))
         assertTrue(components.contains("tint = LocalContentColor.current"))
         assertFalse(components.contains("tint = Color.White"))
         assertTrue(attachment.contains("Icons.Default.Add"))
