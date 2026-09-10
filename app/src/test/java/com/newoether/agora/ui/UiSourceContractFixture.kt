@@ -17,4 +17,14 @@ internal abstract class UiSourceContractFixture {
         }
         error("Unable to locate source root")
     }
+
+    protected fun sourceFile(relativePath: String): String {
+        var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
+        repeat(8) {
+            val candidate = File(directory, relativePath)
+            if (candidate.isFile) return candidate.readText()
+            directory = directory.parentFile ?: error("Reached filesystem root")
+        }
+        error("Unable to locate $relativePath")
+    }
 }
