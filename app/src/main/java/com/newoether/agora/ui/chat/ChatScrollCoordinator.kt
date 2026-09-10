@@ -1,12 +1,8 @@
 package com.newoether.agora.ui.chat
 
-import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
@@ -17,11 +13,6 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -32,7 +23,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.model.ChatConversation
 import com.newoether.agora.model.ChatMessage
-import com.newoether.agora.model.MessageGenerationBoundaryResolver
 import com.newoether.agora.ui.common.AgoraHaptics
 import com.newoether.agora.ui.motion.AgoraMotionPolicy
 import com.newoether.agora.util.DebugLog
@@ -590,110 +580,6 @@ internal class ChatScrollCoordinator internal constructor(
         }
     }
 
-    private suspend fun animateToUserMessage(
-        messages: List<ChatMessage>,
-        targetMessageId: String? = null,
-        easing: Easing = FastOutSlowInEasing,
-        density: Density,
-        motionPolicy: AgoraMotionPolicy,
-    ): Boolean {
-        if (messages.isEmpty() || viewportHeightPx == 0) return false
-        val layoutTurns = buildMessageListTurns(messages)
-        val targetIndex = resolveScrollTargetIndex(messages, targetMessageId)
-        if (targetIndex == -1) return false
-        if (!motionPolicy.allowProgrammaticScrollMotion) {
-            listState.scrollToItem(targetIndex, 0)
-            return true
-        }
-
-        val firstVisibleIndex = listState.firstVisibleItemIndex
-        val visibleSizes = listState.layoutInfo.visibleItemsInfo.associate {
-            it.index to it.size
-        }
-        val fallbackHeight = visibleSizes.values
-            .takeIf { it.isNotEmpty() }
-            ?.average()
-            ?.toFloat()
-            ?: with(density) { 72.dp.toPx() }
-        fun heightAt(index: Int): Float {
-            visibleSizes[index]?.let { return it.toFloat() }
-            val turn = layoutTurns.getOrNull(index) ?: return fallbackHeight
-            return estimateMessageListTurnHeightPx(turn, messageHeights, fallbackHeight)
-        }
-
-        val distance = if (targetIndex >= firstVisibleIndex) {
-            var value = -listState.firstVisibleItemScrollOffset.toFloat()
-            for (index in firstVisibleIndex until targetIndex) value += heightAt(index)
-            value
-        } else {
-            var value = -listState.firstVisibleItemScrollOffset.toFloat()
-            for (index in targetIndex until firstVisibleIndex) value -= heightAt(index)
-            value
-        }
-        if (kotlin.math.abs(distance) > 2f) {
-            listState.animateScrollBy(distance, tween(600, easing = easing))
-        }
-        return true
-    }
-
-    private fun estimateRemainingAbsoluteBottomDistance(
-        messages: List<ChatMessage>,
-        density: Density,
-        bottomBarHeight: Dp,
-        shareSelectionBarSpace: Dp,
-    ): Float? {
-        val layout = listState.layoutInfo
-        val lastVisible = layout.visibleItemsInfo.maxByOrNull { item -> item.index }
-            ?: return null
-        val layoutTurns = buildMessageListTurns(messages)
-        val visibleSizes = layout.visibleItemsInfo.associate { item -> item.index to item.size }
-        val fallbackHeight = visibleSizes.values
-            .filter { size -> size > 1 }
-            .takeIf { sizes -> sizes.isNotEmpty() }
-            ?.average()
-            ?.toFloat()
-            ?: with(density) { 72.dp.toPx() }
-        val lastUserMessageId = messages
-            .lastOrNull(MessageGenerationBoundaryResolver::isRealUser)
-            ?.id
-        val tailMinimumHeightPx = if (lastUserMessageId == null || viewportHeightPx == 0) {
-            0f
-        } else {
-            calculateTailMinHeightPx(
-                viewportHeightPx = viewportHeightPx,
-                targetTopPx = with(density) { 140.dp.roundToPx() },
-                bottomObstructionPx = with(density) {
-                    (bottomBarHeight + shareSelectionBarSpace + 8.dp).roundToPx()
-                },
-            ).toFloat()
-        }
-        val sentinelHeightPx = with(density) { 1.dp.toPx() }
-
-        fun estimatedItemSize(index: Int): Float {
-            visibleSizes[index]?.let { size -> return size.toFloat() }
-            val turn = layoutTurns.getOrNull(index) ?: return sentinelHeightPx
-            val estimated = estimateMessageListTurnHeightPx(
-                turn = turn,
-                messageHeights = messageHeights,
-                fallbackHeightPx = fallbackHeight,
-            )
-            return if (turn.key == lastUserMessageId) {
-                maxOf(estimated, tailMinimumHeightPx)
-            } else {
-                estimated
-            }
-        }
-
-        return estimateAbsoluteBottomDistancePx(
-            lastVisibleIndex = lastVisible.index,
-            lastVisibleEndOffsetPx = lastVisible.offset + lastVisible.size,
-            viewportEndOffsetPx = layout.viewportEndOffset,
-            afterContentPaddingPx = layout.afterContentPadding,
-            totalItemsCount = layout.totalItemsCount,
-            estimatedItemSizePx = ::estimatedItemSize,
-        )
-    }
-
     private suspend fun awaitScrollTargetCommitted(
         messages: State<List<ChatMessage>>,
         targetMessageId: String?,
@@ -855,75 +741,4 @@ internal class ChatScrollCoordinator internal constructor(
         }
         true
     } == true
-}
-
-@Composable
-internal fun rememberChatScrollCoordinator(
-    currentConversationId: String?,
-    imeBottomPx: Int,
-): ChatScrollCoordinator {
-    val listState = rememberLazyListState()
-    val absoluteBottomScrollPhaseState = remember(currentConversationId) {
-        mutableStateOf(AbsoluteBottomScrollPhase.IDLE)
-    }
-    val absoluteBottomRequestTokenState = remember(currentConversationId) {
-        mutableLongStateOf(0L)
-    }
-    val absoluteBottomRequestFeedbackSpecState = remember(currentConversationId) {
-        mutableStateOf(DefaultFeedbackScrollSpec)
-    }
-    val isNearAbsoluteBottomState = remember(currentConversationId) { mutableStateOf(true) }
-    val isWithinAbsoluteBottomAttachThresholdState = remember(currentConversationId) {
-        mutableStateOf(false)
-    }
-    val composerInputFocusedState = remember { mutableStateOf(false) }
-    val imeBottomAnchorStateHolder = remember(currentConversationId) {
-        mutableStateOf(
-            ImeBottomAnchorState(
-                observedInsetPx = imeBottomPx,
-                bottomEligibleBeforeInsetChange = false,
-            )
-        )
-    }
-    val viewportHeightState = remember { mutableIntStateOf(0) }
-    val messageHeights = remember(currentConversationId) { mutableStateMapOf<String, Int>() }
-    val hydratedMessageIds = remember(currentConversationId) { mutableStateMapOf<String, Unit>() }
-    val messageLifecycleAppearanceRegistry = remember { MessageLifecycleAppearanceRegistry() }
-    val streamingTailController = rememberStreamingTailController(currentConversationId)
-
-    return remember(
-        listState,
-        absoluteBottomScrollPhaseState,
-        absoluteBottomRequestTokenState,
-        absoluteBottomRequestFeedbackSpecState,
-        isNearAbsoluteBottomState,
-        isWithinAbsoluteBottomAttachThresholdState,
-        composerInputFocusedState,
-        imeBottomAnchorStateHolder,
-        viewportHeightState,
-        messageHeights,
-        hydratedMessageIds,
-        messageLifecycleAppearanceRegistry,
-        streamingTailController,
-    ) {
-        ChatScrollCoordinator(
-            listState = listState,
-            absoluteBottomScrollPhaseState = absoluteBottomScrollPhaseState,
-            absoluteBottomRequestTokenState = absoluteBottomRequestTokenState,
-            absoluteBottomRequestFeedbackSpecState = absoluteBottomRequestFeedbackSpecState,
-            isNearAbsoluteBottomState = isNearAbsoluteBottomState,
-            isWithinAbsoluteBottomAttachThresholdState =
-                isWithinAbsoluteBottomAttachThresholdState,
-            composerInputFocusedState = composerInputFocusedState,
-            imeBottomAnchorStateHolder = imeBottomAnchorStateHolder,
-            viewportHeightState = viewportHeightState,
-            messageHeights = messageHeights,
-            hydrationRegistry = ConversationHydrationRegistry(
-                conversationId = currentConversationId,
-                hydratedMessageIds = hydratedMessageIds,
-            ),
-            messageLifecycleAppearanceRegistry = messageLifecycleAppearanceRegistry,
-            streamingTailController = streamingTailController,
-        )
-    }
 }
