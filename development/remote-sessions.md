@@ -156,8 +156,10 @@ cache retains rendered streaming bodies for the transition back to ordinary obse
 returning must not replace the last answer with an empty stub or replay offline text.
 A real user or different turn ends an assistant group. Remote DTOs remain separate from
 ChatMessage/MessageSegment presentation; only public summaries and tool records are mapped.
-Native imageView records hydrate real image bytes by authenticated message identity. Reuse
-ToolImageStore streaming validation/atomic files, original ToolImageAttachment thumbnails
+Native imageView records expose only an opaque revision until their Tool preview is actually
+expanded. That preview first reserves its fixed square geometry, then reads real image bytes by
+authenticated message identity and Crossfades from its centered circular loading state to the
+decoded image without resizing. Reuse ToolImageStore streaming validation/atomic files, original ToolImageAttachment thumbnails
 and the existing root media preview. Image files live only in the private disposable Remote
 cache (128MiB/64files, two concurrent image reads). Inline answer images use server-parsed
 message/revision/index references and the original Markdown transformer with authenticated
@@ -172,7 +174,9 @@ Metadata exposes only the image count. Native and ordinary durable tool images
 remain untouched. Each image retains the original 20MiB media-store bound. Search reads text
 without fetching images; missing/unsupported images preserve the card and conversation and
 report a Snackbar. No base64 image data enters topology/SSE and no arbitrary path read is
-exposed. Opening another session cancels old hydration and rejects stale results.
+exposed. Opening another session or changing the exact message revision cancels old hydration and
+rejects stale results. Collapsed cards, body observation, paging and Search never download Tool
+images; reopening an expanded preview reuses the private image cache.
 Tool progress/results and genuine timing retain native semantics. Trim only terminal CR/LF
 in presentation text, not interior whitespace, tool payloads or original cached records.
 

@@ -27,7 +27,7 @@ class RemoteImageHydrationTest {
         messageGroups = projectRemoteTopology(listOf(RemoteMessageNode("image", "turn", null, "assistant",
             1, "a".repeat(64), 0, groupId = "group", activity = RemoteNodeActivity("tool", hasImage = true))), null))
 
-    @Test fun searchReadsTextOnlyAndVisibleHydrationUsesOriginalToolImageAttachment() = runTest {
+    @Test fun toolImageLoadsOnlyOnExplicitPreviewRequest() = runTest {
         val file = File.createTempFile("filo-image-", ".png")
         try {
             val state = MutableStateFlow(snapshot())
@@ -40,12 +40,14 @@ class RemoteImageHydrationTest {
                 })
             val before = state.value.messageGroups
             val owner = state.value.owner!!
-            assertTrue(hydration.loadMessages(owner, listOf("group")).single().segments!!.single().toolImages.isEmpty())
+            val searched = hydration.loadMessages(owner, listOf("group")).single().segments!!.single()
+            assertTrue(searched.toolImages.isEmpty())
+            assertEquals("a".repeat(64), searched.toolImageRequestKey)
             assertEquals(0, imageReads)
-            val shown = hydration.observeMessage(owner, "group").filterNotNull().first { it.segments!!.single().toolImages.isNotEmpty() }
-            assertEquals(listOf(attachment), shown.segments!!.single().toolImages)
-            assertEquals(1, imageReads)
-            assertEquals(shown, hydration.observeMessage(owner, "group").filterNotNull().first())
+            val shown = hydration.observeMessage(owner, "group").filterNotNull().first()
+            assertTrue(shown.segments!!.single().toolImages.isEmpty())
+            assertEquals(0, imageReads)
+            assertEquals(attachment, hydration.loadToolImage(owner, "image", "a".repeat(64)))
             assertEquals(1, imageReads)
             assertEquals(before, state.value.messageGroups)
             val answer = RemoteMessage("answer", "turn", null, "assistant", "next", 2, groupId = "group")
@@ -54,9 +56,26 @@ class RemoteImageHydrationTest {
             val groups = projectRemoteTopology(nodes, null)
             hydration.accept(owner, RemoteConversationPage(listOf(record, answer), null, emptyList(), nodes = nodes), groups)
             state.value = state.value.copy(messageGroups = groups)
-            assertEquals(listOf(attachment), hydration.cachedMessage(owner, groups.single())!!.segments!!.first().toolImages)
+            val cached = hydration.cachedMessage(owner, groups.single())!!.segments!!.first()
+            assertTrue(cached.toolImages.isEmpty())
+            assertEquals("a".repeat(64), cached.toolImageRequestKey)
             assertEquals(1, imageReads)
         } finally { file.delete() }
+    }
+
+    @Test fun collapsedToolObservationDoesNotDownloadItsImage() = runTest {
+        val state = MutableStateFlow(snapshot())
+        var imageReads = 0
+        val hydration = RemoteMessageHydration(state,
+            { _, _ -> RemoteConversationPage(listOf(record), null, emptyList(), nodes = state.value.messageGroups.single().nodes) },
+            { throw it }, { _, _ ->
+                imageReads++
+                ToolImageAttachment("/private/tool.png", "image/png", 128, sha256 = "hash")
+            })
+        val message = hydration.observeMessage(state.value.owner!!, "group").filterNotNull().first()
+        assertEquals("view_image", message.segments!!.single().toolName)
+        assertEquals(0, imageReads)
+        assertTrue(message.segments.single().toolImages.isEmpty())
     }
 
     @Test fun inlinePicturesPreserveMarkdownAndUseSeparateIndexedImagesWithoutSearchDownloads() = runTest {
@@ -163,8 +182,33 @@ class RemoteImageHydrationTest {
             { _, _ -> throw java.io.IOException("Missing image") })
         val message = hydration.observeMessage(state.value.owner!!, "group").filterNotNull().first()
         assertEquals("view_image", message.segments!!.single().toolName)
+        assertEquals(0, failures)
+        try {
+            hydration.loadToolImage(state.value.owner!!, "image", "a".repeat(64))
+            fail("Missing image should fail")
+        } catch (_: java.io.IOException) { }
         assertEquals(1, failures)
         assertEquals(listOf("group"), state.value.messageGroups.map { it.stub.id })
+    }
+
+    @Test fun lateToolImageCannotCrossOwnerRevisionBoundary() = runTest {
+        val state = MutableStateFlow(snapshot())
+        val entered = CompletableDeferred<Unit>()
+        val gate = CompletableDeferred<ToolImageAttachment>()
+        val hydration = RemoteMessageHydration(state,
+            { _, _ -> RemoteConversationPage(listOf(record), null, emptyList(), nodes = state.value.messageGroups.single().nodes) },
+            { throw it }, { _, _ -> entered.complete(Unit); withContext(NonCancellable) { gate.await() } })
+        val owner = state.value.owner!!
+        val load = backgroundScope.launch {
+            try {
+                hydration.loadToolImage(owner, "image", "a".repeat(64))
+                fail("Stale image should not publish")
+            } catch (_: kotlinx.coroutines.CancellationException) { }
+        }
+        entered.await()
+        state.value = state.value.copy(session = RemoteSession("new", "Other", "", 2), messageGroups = emptyList())
+        gate.complete(ToolImageAttachment("/private/late-tool.png", "image/png", 128, sha256 = "hash"))
+        load.join()
     }
 
     @Test fun disposableCacheIsBoundedAndEvictedImageCanBeFetchedAgain() = runTest {

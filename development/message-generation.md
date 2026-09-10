@@ -868,6 +868,9 @@ For a completed attachment, the Coil request receives the explicit pixel size de
 decode succeeds, then Crossfades to a `ContentScale.Crop` image that reuses the ordinary media-open
 callback. Tool-detail image previews follow the same full-viewport loading/success/failure Crossfade
 and use the shared 4 dp indeterminate loading stroke.
+Remote `view_image` previews retain this exact presentation but admit their image request only when
+the Tool preview is expanded. The square viewport exists before the request starts and remains fixed
+through download and decode; the decoded image fades in without changing surrounding geometry.
 
 In the Tool detail Bottom Sheet, a `generate_image` result keeps the same `24 dp` outer horizontal
 content padding as ordinary Tool text. Its rounded preview is centered and fills that padded content

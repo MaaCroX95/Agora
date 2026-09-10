@@ -122,9 +122,13 @@ internal class RemoteMessageHydration(
 
     private suspend fun project(group: RemoteMessageGroup, messages: List<RemoteMessage>): ChatMessage {
         val message = projector.project {
-            projectRemoteMessages(messages.map { it.copy(groupId = group.stub.id) }).firstOrNull()
+            val imageKeys = group.nodes.filter { it.activity?.hasImage == true }.associate { it.id to it.revision }
+            val projected = projectRemoteMessages(messages.map { it.copy(groupId = group.stub.id) }).firstOrNull()
                 ?.copy(id = group.stub.id, parentId = group.stub.parentId, status = group.stub.status,
                     displayPageId = group.stub.displayPageId) ?: group.stub
+            projected.copy(segments = projected.segments?.map { segment ->
+                segment.copy(toolImageRequestKey = imageKeys[segment.toolCallId])
+            })
         }
         if (message.participant != Participant.MODEL ||
             message.status !in setOf(MessageStatus.SUCCESS, MessageStatus.ERROR, MessageStatus.STOPPED)) return message
@@ -204,12 +208,9 @@ internal class RemoteMessageHydration(
             val cached = cachedMessage(owner, group)
             if (cached != null) send(cached)
             try {
-                val needsImages = group.nodes.any { it.activity?.hasImage == true || it.imageCount > 0 } &&
+                val needsImages = group.nodes.any { it.imageCount > 0 } &&
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        group.nodes.any { node -> node.activity?.hasImage == true &&
-                            cached?.segments.orEmpty().firstOrNull { it.toolCallId == node.id }?.toolImages.orEmpty()
-                                .none { java.io.File(it.path).isFile } } ||
-                            (group.nodes.sumOf { it.imageCount } > cached?.markdownImages.orEmpty().size) ||
+                        (group.nodes.sumOf { it.imageCount } > cached?.markdownImages.orEmpty().size) ||
                             cached?.markdownImages.orEmpty().values.any { it.attachment?.path?.let { path -> java.io.File(path).isFile } != true }
                     }
                 if (cached != null && !needsImages) return@collectLatest
@@ -241,9 +242,6 @@ internal class RemoteMessageHydration(
                             image.invoke(owner, request.copy(imageIndex = index))
                         } catch (cancelled: CancellationException) { throw cancelled }
                         catch (error: Exception) { failed(error); null }
-                        if (message.activity?.imagePath != null) load()?.let {
-                            hydrated = hydrated.copy(activity = message.activity.copy(images = listOf(it)))
-                        }
                         val inline = message.inlineImages.toMutableMap()
                         for ((index, link) in message.imageLinks.withIndex()) {
                             val attachment = inline[link]?.attachment ?: load(index)
@@ -259,6 +257,31 @@ internal class RemoteMessageHydration(
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { failed(error); if (cached == null) send(null) }
         }
+    }
+
+    /** Only an expanded preview admits image bytes; topology and text observation never do. */
+    suspend fun loadToolImage(owner: String, id: String, revision: String): com.newoether.agora.model.ToolImageAttachment {
+        fun validate() {
+            val snapshot = state.value
+            if (snapshot.owner != owner || !snapshot.hydrationEnabled || snapshot.messageGroups.none { group ->
+                group.nodes.any { it.id == id && it.revision == revision && it.activity?.hasImage == true }
+            }) throw CancellationException()
+        }
+        currentCoroutineContext().ensureActive()
+        validate()
+        val attachment = try {
+            image?.invoke(owner, RemotePayloadRequest(id, revision))
+                ?: throw java.io.IOException("Image storage is unavailable")
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            currentCoroutineContext().ensureActive()
+            validate()
+            failed(error)
+            throw error
+        }
+        currentCoroutineContext().ensureActive()
+        validate()
+        return attachment
     }
 
     /** Original Search requests bounded batches without downloading image bytes. */

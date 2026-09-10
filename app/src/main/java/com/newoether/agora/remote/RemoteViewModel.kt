@@ -50,6 +50,8 @@ internal class RemoteViewModel(
     fun cachedMessage(owner: String, id: String) = state.value.messageGroups.firstOrNull { it.stub.id == id }
         ?.let { hydration.cachedMessage(owner, it) }
     fun observeMessage(owner: String, id: String) = hydration.observeMessage(owner, id)
+    suspend fun loadToolImage(owner: String, id: String, revision: String) =
+        hydration.loadToolImage(owner, id, revision)
     suspend fun searchMessages(owner: String, ids: List<String>) = try {
         hydration.loadMessages(owner, ids)
     } catch (cancelled: CancellationException) { throw cancelled }

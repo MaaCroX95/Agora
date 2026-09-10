@@ -38,6 +38,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,6 +72,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+
+internal val LocalToolImageLoader =
+    staticCompositionLocalOf<(suspend (String, String) -> ToolImageAttachment)?> { null }
 
 @Composable
 internal fun ToolDetailContent(
@@ -110,12 +114,14 @@ internal fun ToolDetailContent(
             ToolSectionLabel(stringResource(R.string.result_label))
             Spacer(Modifier.height(6.dp))
         }
-        if (segment.toolImages.isNotEmpty()) {
+        if (segment.toolImages.isNotEmpty() || segment.toolImageRequestKey != null) {
             Column(modifier = contentAlignmentModifier.fillMaxWidth()) {
                 ToolImageResults(
                     images = segment.toolImages,
                     squareCrop = segment.isImageGenerationSegment(),
                     onMediaClick = onMediaClick,
+                    toolCallId = segment.toolCallId,
+                    requestKey = segment.toolImageRequestKey,
                 )
             }
             Spacer(Modifier.height(12.dp))
@@ -398,6 +404,8 @@ private fun ToolImageResults(
     images: List<ToolImageAttachment>,
     squareCrop: Boolean,
     onMediaClick: (List<String>, Int) -> Unit,
+    toolCallId: String?,
+    requestKey: String?,
 ) {
     val displayImages = remember(images) {
         images.filter { it.path.isNotBlank() }
@@ -405,7 +413,15 @@ private fun ToolImageResults(
     val paths = remember(displayImages) {
         displayImages.map(ToolImageAttachment::path)
     }
+    val loader = LocalToolImageLoader.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (requestKey != null && toolCallId != null && displayImages.isEmpty()) {
+            key(toolCallId, requestKey) {
+                ToolImagePreview(image = null, squareCrop = false,
+                    loadImage = { checkNotNull(loader).invoke(toolCallId, requestKey) },
+                    onClick = { onMediaClick(listOf(it.path), 0) })
+            }
+        }
         displayImages.forEachIndexed { index, image ->
             key(image.path, image.sha256) {
                 ToolImagePreview(
@@ -420,31 +436,40 @@ private fun ToolImageResults(
 
 @Composable
 private fun ToolImagePreview(
-    image: ToolImageAttachment,
+    image: ToolImageAttachment?,
     squareCrop: Boolean,
-    onClick: () -> Unit,
+    loadImage: (suspend () -> ToolImageAttachment)? = null,
+    onClick: (ToolImageAttachment) -> Unit,
 ) {
-    val aspectRatio = remember(image.width, image.height) {
-        val width = image.width?.takeIf { it > 0 }
-        val height = image.height?.takeIf { it > 0 }
+    var attachment by remember(image) { mutableStateOf(image) }
+    val aspectRatio = remember(image?.width, image?.height) {
+        val width = image?.width?.takeIf { it > 0 }
+        val height = image?.height?.takeIf { it > 0 }
         if (width == null || height == null) {
             1f
         } else {
             (width.toFloat() / height.toFloat()).coerceIn(0.55f, 2.2f)
         }
     }
-    var loadState by remember(image.path) {
+    var loadState by remember(image) {
         mutableStateOf(MediaLoadPresentation.LOADING)
     }
-    var presentedState by remember(image.path) {
+    var presentedState by remember(image) {
         mutableStateOf(MediaLoadPresentation.LOADING)
     }
     LaunchedEffect(loadState) {
         presentedState = loadState
     }
+    LaunchedEffect(image) {
+        if (loadImage != null) {
+            try { attachment = loadImage() }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { loadState = MediaLoadPresentation.FAILED }
+        }
+    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val previewHeight = if (squareCrop) {
+        val previewHeight = if (squareCrop || loadImage != null) {
             maxWidth
         } else {
             (maxWidth / aspectRatio).coerceIn(140.dp, 420.dp)
@@ -458,12 +483,13 @@ private fun ToolImagePreview(
                 )
                 .clickable(
                     enabled = presentedState == MediaLoadPresentation.LOADED,
-                    onClick = onClick,
+                    onClick = { attachment?.let(onClick) },
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            coil.compose.AsyncImage(
-                model = image.path,
+            val displayedImage = attachment
+            if (displayedImage != null) coil.compose.AsyncImage(
+                model = displayedImage.path,
                 contentDescription = stringResource(R.string.tool_view_image),
                 contentScale = if (squareCrop) ContentScale.Crop else ContentScale.Fit,
                 alignment = Alignment.Center,

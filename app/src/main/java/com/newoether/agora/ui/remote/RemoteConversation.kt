@@ -130,6 +130,9 @@ internal fun RemoteConversation(
         }
     }
     val observe = remember(owner) { { id: String -> vm.observeMessage(owner, id) } }
+    val loadToolImage: suspend (String, String) -> com.newoether.agora.model.ToolImageAttachment = remember(owner, vm) {
+        { id, revision -> vm.loadToolImage(owner, id, revision) }
+    }
     val initialMessage = remember(owner) { { id: String ->
         if (vm.state.value.owner == owner) vm.cachedMessage(owner, id) else null
     } }
@@ -248,6 +251,7 @@ internal fun RemoteConversation(
             )
         }) { _ ->
             Box(Modifier.fillMaxSize()) {
+                CompositionLocalProvider(com.newoether.agora.ui.chat.message.LocalToolImageLoader provides loadToolImage) {
                 MessageList(messages = StableMessageList(renderMessages.value), allMessages = StableMessageList(messages),
                     authoritativeMessages = StableMessageList(messages), conversationId = owner,
                     state = scroll.listState, overscrollEffect = historyOverscroll, onMediaClick = onMediaClick, messageActionsEnabled = false, readOnlyActions = true, parseInlineDollarMath = inlineMath,
@@ -271,6 +275,7 @@ internal fun RemoteConversation(
                     lifecycleAppearanceRegistry = scroll.messageLifecycleAppearanceRegistry,
                     lifecycleEntranceTargetMessageId = animatedScrollRequest?.takeIf { it.conversationId == owner }?.targetMessageId,
                     contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 140.dp + leadingSpace.dp, bottom = barHeight + 8.dp))
+                }
                 // Use the existing top content inset; loading never adds or removes a list row.
                 Box(
                     modifier = Modifier.align(Alignment.TopCenter).padding(top = 100.dp).size(40.dp),

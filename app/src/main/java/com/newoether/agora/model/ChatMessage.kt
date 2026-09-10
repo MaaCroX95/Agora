@@ -81,6 +81,9 @@ data class MessageSegment(
     val toolStructuredResult: String? = null,
     /** Private-file metadata for image content returned by a tool. */
     val toolImages: List<ToolImageAttachment> = emptyList(),
+    /** Opaque revision for a demand-loaded preview; never persisted or sent to a Provider. */
+    @Transient
+    val toolImageRequestKey: String? = null,
     /**
      * Transcription description of a tool-result image (view_image). Persisted WITH the result
      * row so the API projection can inject it into the model context — the round-boundary path
