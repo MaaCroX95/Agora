@@ -56,8 +56,13 @@ class SandboxSnackbarSourceContractTest {
         assertFalse(fdroid.contains("override fun close()"))
         assertEquals(3, Regex("override fun (installPackage|removePackage|upgradePackages)\\([^)]*\\) \\{\\n        if \\(_isBusy.value\\) return\\n        sandboxScope.launch \\{").findAll(fdroid).count())
         assertFalse(fdroid.substringBefore("override suspend fun reset(): Boolean").contains("sandboxScope.cancel()"))
-        assertTrue(reset.contains("sandboxScope.cancel(); sandboxScope = CoroutineScope("))
-        assertEquals(1, Regex("sandboxScope\\.cancel\\(\\)").findAll(reset).count())
+        assertTrue(reset.contains("previousScope.cancel()"))
+        assertTrue(reset.contains("previousScope.coroutineContext[Job]?.join()"))
+        assertTrue(reset.contains("sandboxScope = CoroutineScope("))
+        assertEquals(1, Regex("previousScope\\.cancel\\(\\)").findAll(reset).count())
+        assertTrue(reset.indexOf("previousScope.cancel()") < reset.indexOf("previousScope.coroutineContext[Job]?.join()"))
+        assertTrue(reset.indexOf("previousScope.coroutineContext[Job]?.join()") < reset.indexOf("mutationMutex.withLock"))
+        assertTrue(reset.indexOf("mutationMutex.withLock") < reset.indexOf("rootfsDir.deleteRecursively()"))
         assertEquals(9, Regex("emitSnackbar\\(").findAll(fdroid).count())
         listOf(
             "sandbox_snackbar_installed",
