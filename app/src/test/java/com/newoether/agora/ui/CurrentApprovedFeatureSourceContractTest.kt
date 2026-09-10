@@ -173,7 +173,7 @@ class CurrentApprovedFeatureSourceContractTest {
             "automation_battery_optimization_active_desc",
         )
         localeDirectories().forEach { directory ->
-            val fileName = if (directory == "values-zh") "strings.xml" else "automation_strings.xml"
+            val fileName = "automation_strings.xml"
             val strings = sourceFile("app/src/main/res/$directory/$fileName")
             keys.forEach { key ->
                 assertTrue("$directory $key", strings.contains("name=\"$key\""))
