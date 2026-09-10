@@ -1247,4 +1247,8 @@
     <string name="composer_clear_failed">Сообщение отправлено, но не удалось очистить черновик.</string>
     <string name="models_show_provider_name">Показывать имя провайдера</string>
     <string name="models_show_provider_name_desc">Добавлять имя провайдера после имени модели.</string>
+    <string name="provider_cache">Кэш</string>
+    <string name="provider_cache_desc">Запрашивать кэширование промптов; кэш ретранслятора независим</string>
+    <string name="provider_cache_duration">Срок хранения кэша</string>
+    <string name="provider_cache_duration_desc">Как долго можно повторно использовать кэшированные промпты</string>
 </resources>

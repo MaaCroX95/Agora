@@ -1247,4 +1247,8 @@
     <string name="composer_clear_failed">Le message a été envoyé, mais le brouillon n’a pas pu être effacé.</string>
     <string name="models_show_provider_name">Afficher le nom du fournisseur</string>
     <string name="models_show_provider_name_desc">Ajouter le nom du fournisseur après le nom du modèle.</string>
+    <string name="provider_cache">Cache</string>
+    <string name="provider_cache_desc">Demander la mise en cache des prompts ; le cache du relais est indépendant</string>
+    <string name="provider_cache_duration">Durée du cache</string>
+    <string name="provider_cache_duration_desc">Durée pendant laquelle les prompts en cache restent réutilisables</string>
 </resources>

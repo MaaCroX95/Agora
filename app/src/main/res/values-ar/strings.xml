@@ -1247,4 +1247,8 @@
     <string name="composer_clear_failed">تم إرسال الرسالة، ولكن تعذر مسح المسودة.</string>
     <string name="models_show_provider_name">إظهار اسم المزوّد</string>
     <string name="models_show_provider_name_desc">إضافة اسم المزوّد بعد اسم النموذج.</string>
+    <string name="provider_cache">التخزين المؤقت</string>
+    <string name="provider_cache_desc">طلب تخزين المطالبات مؤقتًا؛ تخزين خادم الترحيل مستقل</string>
+    <string name="provider_cache_duration">مدة التخزين المؤقت</string>
+    <string name="provider_cache_duration_desc">مدة إمكانية إعادة استخدام المطالبات المخزنة مؤقتًا</string>
 </resources>

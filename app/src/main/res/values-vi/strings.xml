@@ -1253,4 +1253,8 @@
     <string name="composer_clear_failed">Đã gửi tin nhắn nhưng không thể xóa bản nháp.</string>
     <string name="models_show_provider_name">Hiện tên nhà cung cấp</string>
     <string name="models_show_provider_name_desc">Thêm tên nhà cung cấp sau tên mô hình.</string>
+    <string name="provider_cache">Bộ nhớ đệm</string>
+    <string name="provider_cache_desc">Yêu cầu lưu đệm lời nhắc; bộ nhớ đệm của máy chủ chuyển tiếp hoạt động độc lập</string>
+    <string name="provider_cache_duration">Thời hạn lưu đệm</string>
+    <string name="provider_cache_duration_desc">Khoảng thời gian có thể tái sử dụng lời nhắc đã lưu đệm</string>
 </resources>

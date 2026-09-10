@@ -1247,4 +1247,8 @@
     <string name="composer_clear_failed">A mensagem foi enviada, mas não foi possível limpar o rascunho.</string>
     <string name="models_show_provider_name">Mostrar nome do provedor</string>
     <string name="models_show_provider_name_desc">Adicionar o nome do provedor após o nome do modelo.</string>
+    <string name="provider_cache">Cache</string>
+    <string name="provider_cache_desc">Solicitar cache de prompts; o cache do relay é independente</string>
+    <string name="provider_cache_duration">Duração do cache</string>
+    <string name="provider_cache_duration_desc">Por quanto tempo os prompts em cache podem ser reutilizados</string>
 </resources>

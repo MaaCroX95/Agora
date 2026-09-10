@@ -1255,4 +1255,8 @@
     <string name="composer_clear_failed">訊息已傳送，但無法清除草稿。</string>
     <string name="models_show_provider_name">顯示 Provider 名稱</string>
     <string name="models_show_provider_name_desc">在模型名稱後附加服務供應商名稱。</string>
+    <string name="provider_cache">快取</string>
+    <string name="provider_cache_desc">請求快取提示詞；中繼服務的快取獨立控制</string>
+    <string name="provider_cache_duration">快取時長</string>
+    <string name="provider_cache_duration_desc">已快取提示詞可重複使用的時間</string>
 </resources>

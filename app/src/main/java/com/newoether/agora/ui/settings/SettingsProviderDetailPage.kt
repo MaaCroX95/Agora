@@ -16,6 +16,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Cached
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -33,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -42,6 +46,9 @@ import com.newoether.agora.R
 import com.newoether.agora.data.ApiKeyEntry
 import com.newoether.agora.data.CustomEndpointProtocol
 import com.newoether.agora.data.CustomProviderNamePolicy
+import com.newoether.agora.data.isAnthropicProtocolProvider
+import com.newoether.agora.data.isAnthropicCacheEnabledForProvider
+import com.newoether.agora.data.anthropicCacheTtlForProvider
 import com.newoether.agora.data.LocalChatModelConfig
 import com.newoether.agora.data.LOCAL_MODEL_IDLE_RETENTION_PRESETS
 import com.newoether.agora.ui.common.PersistedSliderFeedbackGate
@@ -69,6 +76,8 @@ fun SettingsProviderDetailPage(
     val providerBaseUrls by viewModel.settings.providerBaseUrls.collectAsState()
     val customProviders by viewModel.settings.customProviders.collectAsState()
     val openAiResponsesApiEnabled by viewModel.settings.openAiResponsesApiEnabled.collectAsState()
+    val anthropicCacheEnabled by viewModel.settings.anthropicCacheEnabled.collectAsState()
+    val anthropicCacheTtl by viewModel.settings.anthropicCacheTtl.collectAsState()
     val localChatModels by viewModel.settings.localChatModels.collectAsState()
     val localModelIdleRetentionMinutes by
         viewModel.settings.localModelIdleRetentionMinutes.collectAsState()
@@ -543,6 +552,96 @@ fun SettingsProviderDetailPage(
                                 )
                             }
                         }
+                    )
+                }
+                if (isAnthropicProtocolProvider(currentName, customProviders)) {
+                    val providerId = customConfig?.providerId ?: currentName
+                    val cacheEnabled = isAnthropicCacheEnabledForProvider(
+                        providerId, anthropicCacheEnabled, customProviders,
+                    )
+                    val cacheTtl = anthropicCacheTtlForProvider(
+                        providerId, anthropicCacheTtl, customProviders,
+                    )
+                    SettingsGroup(
+                        title = stringResource(R.string.advanced_title),
+                        items = buildList {
+                            add {
+                                SettingsItem(
+                                    headlineContent = { Text(stringResource(R.string.provider_cache)) },
+                                    supportingContent = { Text(stringResource(R.string.provider_cache_desc)) },
+                                    leadingContent = {
+                                        Icon(
+                                            Icons.Default.Cached,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(24.dp),
+                                        )
+                                    },
+                                    trailingContent = {
+                                        Switch(checked = cacheEnabled, onCheckedChange = null)
+                                    },
+                                    modifier = Modifier.toggleable(
+                                        value = cacheEnabled,
+                                        role = Role.Switch,
+                                        onValueChange = { viewModel.settings.setAnthropicCacheEnabled(providerId, it) },
+                                    ),
+                                )
+                            }
+                            if (cacheEnabled) {
+                                add {
+                                    var expanded by remember(providerId) { mutableStateOf(false) }
+                                    SettingsItem(
+                                        headlineContent = { Text(stringResource(R.string.provider_cache_duration)) },
+                                        supportingContent = { Text(stringResource(R.string.provider_cache_duration_desc)) },
+                                        leadingContent = {
+                                            Icon(
+                                                Icons.Default.Schedule,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(24.dp),
+                                            )
+                                        },
+                                        trailingContent = {
+                                            Box {
+                                                Text(
+                                                    cacheTtl,
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.padding(end = 4.dp),
+                                                )
+                                                DropdownMenu(
+                                                    expanded = expanded,
+                                                    onDismissRequest = { expanded = false },
+                                                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                                    tonalElevation = 16.dp,
+                                                    shape = RoundedCornerShape(12.dp),
+                                                ) {
+                                                    listOf("5m", "1h").forEach { ttl ->
+                                                        DropdownMenuItem(
+                                                            text = { Text(ttl) },
+                                                            leadingIcon = {
+                                                                if (cacheTtl == ttl) {
+                                                                    Icon(
+                                                                        Icons.Default.Check,
+                                                                        contentDescription = null,
+                                                                        tint = MaterialTheme.colorScheme.primary,
+                                                                    )
+                                                                }
+                                                            },
+                                                            onClick = {
+                                                                viewModel.settings.setAnthropicCacheTtl(providerId, ttl)
+                                                                expanded = false
+                                                            },
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.clickable { expanded = true },
+                                    )
+                                }
+                            }
+                        },
                     )
                 }
             }

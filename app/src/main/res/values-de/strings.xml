@@ -1247,4 +1247,8 @@
     <string name="composer_clear_failed">Nachricht gesendet, aber der Entwurf konnte nicht gelöscht werden.</string>
     <string name="models_show_provider_name">Anbieternamen anzeigen</string>
     <string name="models_show_provider_name_desc">Den Anbieternamen an den Modellnamen anhängen.</string>
+    <string name="provider_cache">Cache</string>
+    <string name="provider_cache_desc">Prompt-Caching anfordern; der Relay-Cache ist unabhängig</string>
+    <string name="provider_cache_duration">Cache-Dauer</string>
+    <string name="provider_cache_duration_desc">Wie lange zwischengespeicherte Prompts wiederverwendbar bleiben</string>
 </resources>

@@ -1352,4 +1352,8 @@
     <string name="composer_clear_failed">消息已发送，但无法清除草稿。</string>
     <string name="models_show_provider_name">显示 Provider 名称</string>
     <string name="models_show_provider_name_desc">在模型名称后附加服务商名称。</string>
+    <string name="provider_cache">缓存</string>
+    <string name="provider_cache_desc">请求缓存提示词；中转服务的缓存独立控制</string>
+    <string name="provider_cache_duration">缓存时长</string>
+    <string name="provider_cache_duration_desc">已缓存提示词可复用的时间</string>
 </resources>

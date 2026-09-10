@@ -1247,4 +1247,8 @@
     <string name="composer_clear_failed">メッセージは送信されましたが、下書きを消去できませんでした。</string>
     <string name="models_show_provider_name">プロバイダー名を表示</string>
     <string name="models_show_provider_name_desc">モデル名の後にプロバイダー名を追加します。</string>
+    <string name="provider_cache">キャッシュ</string>
+    <string name="provider_cache_desc">プロンプトのキャッシュを要求します。中継サーバーのキャッシュは独立しています</string>
+    <string name="provider_cache_duration">キャッシュ保持期間</string>
+    <string name="provider_cache_duration_desc">キャッシュされたプロンプトを再利用できる期間</string>
 </resources>
