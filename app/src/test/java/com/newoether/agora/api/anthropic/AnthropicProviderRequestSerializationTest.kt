@@ -128,10 +128,6 @@ class AnthropicProviderRequestSerializationTest {
         assertFalse(body.containsKey("temperature"))
         assertFalse(body.containsKey("top_p"))
     }
-
-    private fun assertRequestFormat(events: List<StreamEvent>, detail: String) {
-        val error = events.filterIsInstance<StreamEvent.Error>().single().error
-        assertTrue(error is GenerationError.RequestFormat)
     @Test
     fun cacheSelectionControlsFinalHttpRequestWithoutChangingTheSavedConfig() = withServer { server ->
         for (ttl in listOf("5m", "1h")) {
@@ -154,6 +150,10 @@ class AnthropicProviderRequestSerializationTest {
         assertRequestFormat(events, "Invalid Anthropic cache duration")
         assertTrue(server.bodies.isEmpty())
     }
+
+    private fun assertRequestFormat(events: List<StreamEvent>, detail: String) {
+        val error = events.filterIsInstance<StreamEvent.Error>().single().error
+        assertTrue(error is GenerationError.RequestFormat)
         assertTrue((error as GenerationError.RequestFormat).details.contains(detail))
     }
 
