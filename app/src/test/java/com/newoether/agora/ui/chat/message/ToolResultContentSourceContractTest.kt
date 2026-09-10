@@ -76,7 +76,8 @@ class ToolResultContentSourceContractTest {
     fun `Generated image thumbnail keeps ordered fixed lifecycle presentation`() {
         val root = locateMainSourceRoot()
         val source = source(root, "ToolResultContent.kt")
-        val timeline = source(root, "MessageItemTimeline.kt")
+        val timeline = source(root, "MessageItemTimeline.kt") +
+            source(root, "TimelineSegmentsContent.kt")
         val assistant = source(root, "AssistantMessageContent.kt")
         val detailSheet = source(root, "SegmentDetailSheet.kt")
         val generatedSource = source(root, "GeneratedImageThumbnail.kt")
