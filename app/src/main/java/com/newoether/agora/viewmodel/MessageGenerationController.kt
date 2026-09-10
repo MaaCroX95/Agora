@@ -786,22 +786,9 @@ internal class MessageGenerationController(
 
     fun generateTitle(conversationId: String) {
         viewModelScope.launch {
-            settings.awaitInitialLoad()
-            if (settings.titleGenerationNotificationsEnabled.value) {
-                onSnackbarSuspend(appContext.getString(R.string.snackbar_generating_title))
-            }
-            when (titleGenerator.generateAndPersist(conversationId)) {
-                is ConversationTitleGenerator.Result.Success -> {
-                    if (settings.titleGenerationNotificationsEnabled.value) {
-                        onSnackbarSuspend(appContext.getString(R.string.snackbar_title_generated))
-                    }
-                }
-                is ConversationTitleGenerator.Result.Failure -> {
-                    if (settings.titleGenerationNotificationsEnabled.value) {
-                        onSnackbarSuspend(appContext.getString(R.string.snackbar_title_error))
-                    }
-                }
-            }
+            titleGenerator.generateWithNotifications(
+                conversationId, settings, appContext, onSnackbarSuspend,
+            )
         }
     }
 }
