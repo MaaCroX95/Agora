@@ -453,13 +453,23 @@ internal class RemoteViewModel(
         val incoming = mutableListOf(cachePage(owner, page, live = true))
         var cursor = page.nextCursor
         val cursors = mutableSetOf<String>()
-        // Existing tail updates bridge a genuine gap; initial display never waits for a fold group.
-        while (cursor != null && old.isNotEmpty() &&
-            incoming.last().nodes.none { it.id in oldIds }) {
+        val initial = old.isEmpty()
+        var initialRecords = incoming.sumOf { it.nodes.size }
+        fun hasConversationAnchor() = incoming.any { packet -> packet.nodes.any { node ->
+            node.error || node.role == "user" ||
+                node.role == "assistant" && node.activity == null && node.textLength > 0
+        } }
+        fun needsOlder() = if (initial) initialRecords < 128 && !hasConversationAnchor()
+            else incoming.last().nodes.none { it.id in oldIds }
+        // Initial topology is published once, after a bounded recent conversational anchor.
+        while (cursor != null && needsOlder()) {
             require(cursors.add(cursor)) { "Filo history cursor did not advance" }
-            val older = client.conversation(sessionId, cursor)
+            val raw = client.conversation(sessionId, cursor)
             if (generation != epoch) return
-            incoming += cachePage(owner, older, live = false)
+            if (initial && initialRecords + raw.nodes.size > 128) break
+            val older = cachePage(owner, raw, live = false)
+            incoming += older
+            initialRecords += older.nodes.size
             cursor = older.nextCursor
         }
         if (generation != epoch) return

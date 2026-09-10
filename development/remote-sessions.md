@@ -109,12 +109,15 @@ Unsupported history retains its read-only notice inside the composer. Failure re
 readable. No Continue this conversation button, background admission or automatic POST
 retry. Unavailable read-only history cannot subscribe or mutate; occupied writers fail safely.
 
-Opening publishes the latest bounded body page without completing a Thinking/Tool Call
-group. Groups may span pages; one older-page request publishes one bounded packet.
-Display fragments also retain their128record limit, including continuous thought/tool groups.
-Legacy continuation hints never trigger group completion or scan-ahead. Existing live-tail
-updates still bridge genuine gaps before merging. Bodies stay in the original bounded LRU.
-Each node retains its physical packet bookmark. Page boundaries add no Spacer or gap.
+Before the first topology publication, opening may read older bounded packets until the
+newest at most 128 records contain an ordinary user/assistant/error message, the bound is full,
+or history ends. It never scans complete history. These initial records are admitted once in
+chronological order, so transport packets do not create artificial folded fragments. After
+publication, one older-page request publishes one bounded packet and never merges into an
+existing rendered fragment. Thinking/Tool Call groups may span those later pages.
+Legacy continuation hints never trigger group completion. Existing live-tail updates still
+bridge genuine gaps before merging. Bodies stay in the original bounded LRU. Each node
+retains its physical packet bookmark. Page boundaries add no Spacer or gap.
 Same-turn assistant fragments omit duplicate message-shell padding and the 6dp/16dp
 assistant spacers at their seam. Ordinary adjacent-message spacing stays identical in
 total and belongs to the preceding item; the initial inset owns only the first leading

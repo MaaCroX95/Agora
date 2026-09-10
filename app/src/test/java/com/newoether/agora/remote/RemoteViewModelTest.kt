@@ -397,7 +397,7 @@ class RemoteViewModelTest {
         val clientId = vm.state.value.attempts[owner]!!.clientId
         coEvery { client.conversation(any(), any()) } returns bodyPage(
             listOf(RemoteMessage("sent", "new-turn", clientId, "user", "hello", 2)), null, emptyList())
-        vm.refresh(); runCurrent()
+        vm.refresh(); vm.state.first { it.attempts[owner]?.delivery == RemoteDelivery.DELIVERED }
         assertEquals(RemoteDelivery.DELIVERED, vm.state.value.attempts[owner]?.delivery)
         assertNull(vm.state.value.drafts[owner])
         val request = vm.animatedScrollRequest.value!!
@@ -899,17 +899,17 @@ class RemoteViewModelTest {
 
     @Test fun olderPageLoadingEndsOnFailureAndDoesNotSurviveNavigation() = runTest(dispatcher) {
         val page = CompletableDeferred<RemoteConversationPage>()
-        coEvery { client.conversation("history", null) } returns
-            bodyPage(emptyList(), "older", emptyList(), RemoteRuntime("readOnly"))
+        coEvery { client.conversation("history", null) } returns bodyPage(listOf(
+            RemoteMessage("recent", "turn", null, "assistant", "Recent history", 2)), "older", emptyList(), RemoteRuntime("readOnly"))
         coEvery { client.conversation("history", "older") } coAnswers { page.await() }
         val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
-        vm.selectSession(session.copy(id = "history", readOnly = true)); runCurrent()
+        vm.selectSession(session.copy(id = "history", readOnly = true)); vm.state.first { it.historyCursor == "older" && it.nodes.isNotEmpty() }
         assertFalse(vm.state.value.loading)
         coVerify(exactly = 0) { client.conversation("history", "older") }
-        vm.loadMore(); runCurrent()
+        vm.loadMore(); vm.state.first { it.loadingMore }
         assertTrue(vm.state.value.loadingMore)
-        page.completeExceptionally(IOException("offline")); runCurrent()
+        page.completeExceptionally(IOException("offline")); vm.state.first { it.failure == RemoteFailure.NETWORK }
         assertFalse(vm.state.value.loadingMore)
         assertEquals(RemoteFailure.NETWORK, vm.state.value.failure)
         vm.selectSession(null); runCurrent()

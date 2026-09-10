@@ -67,6 +67,34 @@ class RemoteGroupPaginationTest {
         vm.setVisible(false)
     }
 
+    @Test fun initialToolTailWaitsForTheNewestConversationAnchorAndPublishesOneOrderedWindow() = runTest(dispatcher) {
+        val anchor = CompletableDeferred<RemoteConversationPage>()
+        coEvery { client.conversation("history", null) } returns packet(80..95, "page-4", null, "tail-bookmark")
+        coEvery { client.conversation("history", "page-4") } returns packet(64..79, "page-3", null, "page-4-bookmark")
+        coEvery { client.conversation("history", "page-3") } returns packet(48..63, "page-2", null, "page-3-bookmark")
+        coEvery { client.conversation("history", "page-2") } returns packet(32..47, "page-1", null, "page-2-bookmark")
+        coEvery { client.conversation("history", "page-1") } coAnswers { anchor.await() }
+        val vm = open()
+        assertTrue(vm.state.value.loading)
+        assertTrue(vm.state.value.nodes.isEmpty())
+        val answer = RemoteMessage("latest-answer", "turn", null, "assistant", "Latest message", 1)
+        anchor.complete(bodyPage(listOf(answer) + (16..31).map(::tool), "older", emptyList())
+            .copy(pageCursor = "anchor-bookmark"))
+        vm.state.first { !it.loading }
+        assertEquals(listOf("latest-answer") + (16..95).map { "tool-$it" }, vm.state.value.nodes.map { it.id })
+        assertEquals("older", vm.state.value.historyCursor)
+        assertEquals(1, vm.state.value.messageGroups.size)
+        assertNotNull(vm.cachedMessage(vm.state.value.owner!!, vm.state.value.messageGroups.single().stub.id))
+        coVerify(exactly = 1) {
+            client.conversation("history", "page-4")
+            client.conversation("history", "page-3")
+            client.conversation("history", "page-2")
+            client.conversation("history", "page-1")
+        }
+        coVerify(exactly = 0) { client.conversation("history", "older") }
+        vm.setVisible(false)
+    }
+
     @Test fun olderPacketsPublishSeparatelyAndPreserveTheExistingAnswerDuringADeferredLoad() = runTest(dispatcher) {
         val answer = RemoteMessage("answer", "turn", null, "assistant", "Answer", 2)
         coEvery { client.conversation("history", null) } returns bodyPage(listOf(answer), "older", emptyList())
