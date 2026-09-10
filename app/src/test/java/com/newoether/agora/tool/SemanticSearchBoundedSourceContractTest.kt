@@ -9,9 +9,11 @@ class SemanticSearchBoundedSourceContractTest {
     @Test
     fun semanticSearchHotPathUsesKeysetPagesInsteadOfAFullEmbeddingList() {
         val root = locateMainSourceRoot()
-        val dao = File(root, "com/newoether/agora/data/local/ChatDao.kt")
+        val dao = File(root, "com/newoether/agora/data/local/ChatSearchDao.kt")
             .readText()
             .replace("\r\n", "\n")
+        val daoOwners = dao + File(root, "com/newoether/agora/data/local/ChatDao.kt").readText() +
+            File(root, "com/newoether/agora/data/local/ChatMediaReferencesDao.kt").readText()
         val repository = File(
             root,
             "com/newoether/agora/data/repository/ConversationRepository.kt",
@@ -24,7 +26,7 @@ class SemanticSearchBoundedSourceContractTest {
 
         assertFalse(provider.contains("getEmbeddingsByModel("))
         assertFalse(repository.contains("fun getEmbeddingsByModel("))
-        assertFalse(dao.contains("fun getEmbeddingsByModel("))
+        assertFalse(daoOwners.contains("fun getEmbeddingsByModel("))
         assertTrue(dao.contains("fun getEmbeddingSearchPage("))
         assertTrue(dao.contains("ORDER BY e.id"))
         assertTrue(dao.contains("LIMIT :limit"))

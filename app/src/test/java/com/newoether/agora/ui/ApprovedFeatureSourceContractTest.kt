@@ -12,7 +12,7 @@ internal class ApprovedFeatureSourceContractTest : UiSourceContractFixture() {
         val root = sourceRoot()
         val rag = source(root, "com/newoether/agora/viewmodel/RagManager.kt")
         val settings = source(root, "com/newoether/agora/ui/settings/SettingsSearchPage.kt")
-        val dao = source(root, "com/newoether/agora/data/local/ChatDao.kt")
+        val dao = source(root, "com/newoether/agora/data/local/ChatSearchDao.kt")
         val entities = source(root, "com/newoether/agora/data/local/ChatEntities.kt")
         val database = source(root, "com/newoether/agora/data/local/ChatDatabase.kt")
 

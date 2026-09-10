@@ -9,7 +9,7 @@ import org.junit.Test
 class DrawerSearchLoadingSourceContractTest {
     @Test
     fun `keyword search uses a single SQLite LIKE escape character`() {
-        val dao = source("data/local/ChatDao.kt")
+        val dao = source("data/local/ChatSearchDao.kt")
         val repository = source("data/repository/ConversationRepository.kt")
         val globalSearchQuery = dao
             .substringBefore("suspend fun searchMessages")
