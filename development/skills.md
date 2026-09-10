@@ -145,6 +145,7 @@ not corrupt Memory, Room, settings, or unrelated archive categories.
 | SkillToolProvider | Definitions, validation, and manager calls. | Independent tool loop, persistence, or admission. |
 | GenerationToolExecutor | Register/execute/present Skill tools through the shared tool path. | Skill-specific Run or settlement. |
 | Import/export/backup owners | Additive archive transport with Memory-equivalent conflict rules. | Silent destructive fallback. |
+| SkillMarkdownImport | Bounded SAF Markdown reads, extension normalization, and strict UTF-8 validation. | Persistent writes, overwrite policy, UI state, or generation lifecycle. |
 | Settings Skills UI | User CRUD and access presentation. | File safety, prompt authority, or generation state. |
 
 ## 8. Required verification

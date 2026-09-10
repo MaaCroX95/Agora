@@ -42,8 +42,12 @@ class CurrentApprovedFeatureSourceContractTest {
         assertTrue(skillSheet.contains("R.string.skills_add_from_markdown_desc"))
         assertTrue(skillSheet.contains("R.string.skills_add_manually_desc"))
         assertTrue(skillSheet.contains("Icons.Default.Description"))
-        assertTrue(skills.contains("MAX_SKILL_IMPORT_BYTES"))
-        assertTrue(skills.contains("CodingErrorAction.REPORT"))
+        val markdownImport = sourceFile(
+            "app/src/main/java/com/newoether/agora/data/SkillMarkdownImport.kt",
+        )
+        assertTrue(skills.contains("readSkillMarkdown(context, uri)"))
+        assertTrue(markdownImport.contains("MAX_SKILL_IMPORT_BYTES"))
+        assertTrue(markdownImport.contains("CodingErrorAction.REPORT"))
         assertTrue(skills.contains("description = \"\""))
         assertTrue(skills.contains("markdownPicker.launch("))
         assertTrue(skills.contains("showNewFileDialog = true"))
