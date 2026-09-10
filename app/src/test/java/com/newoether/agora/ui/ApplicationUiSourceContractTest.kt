@@ -291,7 +291,7 @@ internal class ApplicationUiSourceContractTest : UiSourceContractFixture() {
             "app/src/main/java/com/newoether/agora/viewmodel/TranscriptionManager.kt",
         )
         val generation = sourceFile(
-            "app/src/main/java/com/newoether/agora/viewmodel/GenerationManager.kt",
+            "app/src/main/java/com/newoether/agora/viewmodel/GenerationOutputAccumulator.kt",
         )
         val assistant = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/chat/message/AssistantInlineActivity.kt",

@@ -191,6 +191,8 @@ class GenerationErrorPresentationTest {
     fun `chat generation consumers use typed localized presentation`() {
         val generation = sourceFile(
             "app/src/main/java/com/newoether/agora/viewmodel/GenerationManager.kt",
+        ) + sourceFile(
+            "app/src/main/java/com/newoether/agora/viewmodel/GenerationOutputAccumulator.kt",
         )
         val transcription = sourceFile(
             "app/src/main/java/com/newoether/agora/viewmodel/TranscriptionManager.kt",
@@ -210,13 +212,15 @@ class GenerationErrorPresentationTest {
     fun `Local semantic error code reaches live and final persisted segments`() {
         val generation = sourceFile(
             "app/src/main/java/com/newoether/agora/viewmodel/GenerationManager.kt",
+        ) + sourceFile(
+            "app/src/main/java/com/newoether/agora/viewmodel/GenerationOutputAccumulator.kt",
         )
         val streaming = sourceFile(
             "app/src/main/java/com/newoether/agora/viewmodel/GenerationStreamingSegments.kt",
         )
         val liveProjection = generation
             .substringAfter("segments = buildLiveSegments(")
-            .substringBefore("retryText = retryText")
+            .substringBefore("retryText = output.retryText")
         val finalProjection = generation
             .substringAfter("val generatedMessage = GenerationFinalSnapshot(")
             .substringBefore(").toMessage()")
@@ -231,8 +235,8 @@ class GenerationErrorPresentationTest {
         ))
         assertTrue(liveProjection.contains("generationErrorMessage"))
         assertTrue(liveProjection.contains("generationErrorCode"))
-        assertTrue(finalProjection.contains("errorMessage = generationErrorMessage"))
-        assertTrue(finalProjection.contains("errorCode = generationErrorCode"))
+        assertTrue(finalProjection.contains("errorMessage = output.generationErrorMessage"))
+        assertTrue(finalProjection.contains("errorCode = output.generationErrorCode"))
         assertTrue(streaming.contains("errorCode: String? = null"))
         assertTrue(errorSegmentProjection.contains("errorCode = errorCode"))
         assertTrue(streaming.contains("val errorCode: String? = null"))
@@ -267,6 +271,8 @@ class GenerationErrorPresentationTest {
     fun `terminal finalization failures escape to the bound Run recovery owner`() {
         val generation = sourceFile(
             "app/src/main/java/com/newoether/agora/viewmodel/GenerationManager.kt",
+        ) + sourceFile(
+            "app/src/main/java/com/newoether/agora/viewmodel/GenerationOutputAccumulator.kt",
         )
         val failureLog =
             "DebugLog.e(\"AgoraVM\", \"Failed to execute terminal generation effect\", e)"

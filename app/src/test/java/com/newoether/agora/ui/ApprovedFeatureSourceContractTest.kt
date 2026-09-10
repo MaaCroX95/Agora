@@ -221,19 +221,19 @@ internal class ApprovedFeatureSourceContractTest : UiSourceContractFixture() {
     fun toolCallCreationPublishesTheCompleteBatchBeforeExecution() {
         val manager = source(
             sourceRoot(),
-            "com/newoether/agora/viewmodel/GenerationManager.kt",
+            "com/newoether/agora/viewmodel/GenerationOutputAccumulator.kt",
         )
         val updateBranch = manager
             .substringAfter("is StreamEvent.ToolCallUpdate -> {")
             .substringBefore("is StreamEvent.ToolCallRequest -> {")
         val batchBranch = manager
             .substringAfter("is StreamEvent.ToolCallsRequest -> {")
-            .substringBefore("\n                }\n\n                val now")
+            .substringBefore("\n        }\n\n        val now")
 
         assertTrue(updateBranch.contains("val created = upsertStreamingToolSegment("))
-        assertTrue(updateBranch.contains("publishStreamUpdate(forceCheckpoint = created)"))
+        assertTrue(updateBranch.contains("publishStreamUpdate(created)"))
         val upsertIndex = batchBranch.indexOf("event.calls.forEach")
-        val publishIndex = batchBranch.indexOf("publishStreamUpdate(forceCheckpoint = true)")
+        val publishIndex = batchBranch.indexOf("publishStreamUpdate(true)")
         assertTrue(upsertIndex >= 0)
         assertTrue(batchBranch.contains("upsertStreamingToolSegment("))
         assertTrue(publishIndex > upsertIndex)
