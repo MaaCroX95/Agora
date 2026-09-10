@@ -2,29 +2,20 @@ package com.newoether.agora.ui.chat
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -36,13 +27,11 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
 import com.newoether.agora.TopLevelPresentation
@@ -55,8 +44,6 @@ import com.newoether.agora.ui.chat.bottombar.ChatBottomBar
 import com.newoether.agora.ui.chat.bottombar.LoopStatusBackdrop
 import com.newoether.agora.ui.components.AnimatedBlobBackground
 import com.newoether.agora.ui.components.clearFocusOnTap
-import com.newoether.agora.ui.components.TypewriterMode
-import com.newoether.agora.ui.components.TypewriterText
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.ui.common.rememberAgoraHaptics
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
@@ -480,37 +467,7 @@ fun ChatApp(
                     AnimatedContent(
                         targetState = Pair(isNewChatMode, showLaunchContent),
                         transitionSpec = {
-                            val targetNewChat = targetState.first
-                            val targetShowLaunch = targetState.second
-                            val initialNewChat = initialState.first
-                            val initialShowLaunch = initialState.second
-
-                            if (targetNewChat && (targetShowLaunch != initialShowLaunch || targetNewChat != initialNewChat)) {
-                                val fadeInSpec = tween<Float>(500)
-                                val enter = if (motionPolicy.allowSpatialTransitions) {
-                                    val enterSpec = tween<Float>(
-                                        700,
-                                        easing = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1.0f),
-                                    )
-                                    fadeIn(animationSpec = fadeInSpec) +
-                                        scaleIn(
-                                            initialScale = 0.6f,
-                                            transformOrigin = TransformOrigin(0.5f, pivotY),
-                                            animationSpec = enterSpec,
-                                        )
-                                } else {
-                                    fadeIn(animationSpec = fadeInSpec)
-                                }
-                                enter
-                                    .togetherWith(fadeOut(animationSpec = tween(300)))
-                            } else if (!targetNewChat && !initialNewChat) {
-                                // Switching between existing conversations: no animation
-                                EnterTransition.None togetherWith ExitTransition.None
-                            } else {
-                                // Returning from new-chat to an existing conversation
-                                fadeIn(animationSpec = tween(300))
-                                    .togetherWith(fadeOut(animationSpec = tween(300)))
-                            }
+                            chatMainContentTransition(motionPolicy, pivotY)
                         },
                         label = "MainContentTransition",
                         modifier = Modifier.fillMaxSize()
@@ -651,40 +608,9 @@ fun ChatApp(
                             )
                             }
                         } else if (targetShowLaunch) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(bottom = bottomBarHeight),
-                                contentAlignment = Alignment.TopCenter
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .verticalScroll(rememberScrollState()),
-                                    contentAlignment = Alignment.TopCenter
-                                ) {
-                                    val welcomeText = stringResource(R.string.welcome_to_agora)
-                                    val availableWelcomeHeight =
-                                        windowHeightDp +
-                                            topBarH.value / 2f -
-                                            bottomBarHeight.value
-                                    val welcomeTopPadding =
-                                        (availableWelcomeHeight / 2f).coerceAtLeast(0f).dp
-                                    val welcomeModifier =
-                                        Modifier.padding(top = welcomeTopPadding)
-                                    TypewriterText(
-                                        text = welcomeText,
-                                        animationKey = newChatEntryId,
-                                        style = MaterialTheme.typography.headlineMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onBackground,
-                                        typeSpeedMs = 100,
-                                        animate = newChatMotion.animateWelcomeText,
-                                        mode = TypewriterMode.TEXT_GRADIENT,
-                                        modifier = welcomeModifier,
-                                    )
-                                }
-                            }
+                            ChatWelcomeContent(
+                                bottomBarHeight, windowHeightDp, topBarH, newChatEntryId, newChatMotion,
+                            )
                         } else {
                             Box(modifier = Modifier.fillMaxSize())
                         }
@@ -732,66 +658,14 @@ fun ChatApp(
                         scrollCoordinator.requestAbsoluteBottomScroll()
                     }
 
-                    AnimatedVisibility(
-                        visible = shareSelectionActive,
-                        enter = if (motionPolicy.allowSpatialTransitions) {
-                            fadeIn(tween(220)) + scaleIn(
-                                initialScale = 0.86f,
-                                animationSpec = tween(220),
-                            )
-                        } else {
-                            fadeIn(tween(220))
-                        },
-                        exit = if (motionPolicy.allowSpatialTransitions) {
-                            fadeOut(tween(180)) + scaleOut(
-                                targetScale = 0.86f,
-                                animationSpec = tween(180),
-                            )
-                        } else {
-                            fadeOut(tween(180))
-                        },
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = bottomBarHeight + 10.dp),
-                    ) {
-                        ShareSelectionFab(
-                            allSelected = selectableShareMessageIds.isNotEmpty() &&
-                                selectedShareMessageIds.containsAll(selectableShareMessageIds),
-                            hasSelection = selectedShareMessageIds.isNotEmpty(),
-                            onDismiss = {
-                                conversationInteraction.dismissShareSelection()
-                            },
-                            onToggleAll = {
-                                haptics.selection()
-                                conversationInteraction.toggleAllShareMessages()
-                            },
-                            onConfirm = {
-                                val selection = conversationInteraction.takeShareSelection()
-                                if (selection.isNotEmpty()) {
-                                    viewModel.shareMessages(selection)
-                                }
-                            },
-                        )
-                    }
+                    ChatSelectionOverlay(
+                        shareSelectionActive, motionPolicy, bottomBarHeight,
+                        selectableShareMessageIds, selectedShareMessageIds,
+                        conversationInteraction, haptics,
+                        onShareMessages = { viewModel.shareMessages(it) },
+                    )
 
-                    AnimatedVisibility(
-                        visible = isSwitching && !isTransitioningToNewChat,
-                        enter = fadeIn(animationSpec = tween(200)),
-                        exit = fadeOut(animationSpec = tween(200))
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.background),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(48.dp),
-                                strokeWidth = 5.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
+                    ChatSwitchingOverlay(isSwitching, isTransitioningToNewChat)
                 }
             }
 
