@@ -9,13 +9,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -754,49 +751,14 @@ internal fun AssistantMessageContent(
                         }
 
                         if (showBranchSelector && totalBranches > 1) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .padding(start = 8.dp)
-                                    .graphicsLayer { alpha = terminalActionsAlpha }
-                                    .clip(RoundedCornerShape(100))
-                                    .background(
-                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                    )
-                                    .padding(horizontal = 4.dp),
-                            ) {
-                                IconButton(
-                                    onClick = { onSwitchBranch(-1) },
-                                    enabled =
-                                        actionAvailability.terminalEnabled &&
-                                            branchIndex > 0 &&
-                                            isEditingAllowed,
-                                    modifier = Modifier.size(24.dp),
-                                ) {
-                                    Icon(
-                                        Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                }
-                                Text(
-                                    "${branchIndex + 1} / $totalBranches",
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                                IconButton(
-                                    onClick = { onSwitchBranch(1) },
-                                    enabled = actionAvailability.terminalEnabled &&
-                                        branchIndex < totalBranches - 1 &&
-                                        isEditingAllowed,
-                                    modifier = Modifier.size(24.dp),
-                                ) {
-                                    Icon(
-                                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                }
-                            }
+                            AssistantBranchSelector(
+                                branchIndex = branchIndex,
+                                totalBranches = totalBranches,
+                                terminalActionsAlpha = terminalActionsAlpha,
+                                terminalEnabled = actionAvailability.terminalEnabled,
+                                isEditingAllowed = isEditingAllowed,
+                                onSwitchBranch = onSwitchBranch,
+                            )
                         }
                     }
                     Box(
