@@ -45,6 +45,25 @@ class FiloClientTest {
         } finally { server.stop(0) }
     }
 
+    @Test fun sessionListDecodesLightweightStatusAndOldServerFallback() = runBlocking {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/v1/sessions") { exchange ->
+            assertEquals("Bearer $token", exchange.requestHeaders.getFirst("Authorization"))
+            val bytes = """{"sessions":[
+                {"id":"active","title":"Task","cwd":"C:/work","updatedAt":2,"status":"active"},
+                {"id":"unknown","title":"Old","cwd":"C:/work","updatedAt":1}
+            ],"nextCursor":null}""".toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        try {
+            val page = FiloClient("http://127.0.0.1:${server.address.port}/", token).sessions()
+            assertEquals(listOf("active", "unknown"), page.sessions.map { it.id })
+            assertEquals(listOf("active", null), page.sessions.map { it.status })
+        } finally { server.stop(0) }
+    }
+
     @Test fun nativeProjectionKeepsIdentityAndReplacesEditedTail() {
         val user = RemoteMessage("u", "turn", "client", "user", "hello", 10)
         val answer = RemoteMessage("a", "turn", null, "assistant", "old", 10)

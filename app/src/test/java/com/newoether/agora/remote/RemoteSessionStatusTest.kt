@@ -52,6 +52,52 @@ class RemoteSessionStatusTest {
         coVerify(exactly = 1) { client.sessionStatuses(any()) }
     }
 
+    @Test fun listStatusSeedsRowsBeforeVisibleStatusPolling() = runTest(dispatcher) {
+        coEvery { client.sessions(any()) } returns RemoteSessionPage(listOf(session.copy(status = "active")), null)
+        val vm = RemoteViewModel(store) { _, _ -> client }; runCurrent()
+        vm.setVisible(true); vm.selectDevice(address); runCurrent()
+        assertEquals("active", vm.state.value.sessionStatuses["$address/session"]?.status)
+        coVerify(exactly = 0) { client.sessionStatuses(any()) }
+        vm.setVisible(false)
+    }
+
+    @Test fun listStatusPreservesExactIdentityUntilVisibleRefreshCompletes() = runTest(dispatcher) {
+        var page = RemoteSessionPage(listOf(session.copy(status = "active")), null)
+        coEvery { client.sessions(any()) } answers { page }
+        coEvery { client.sessionStatuses(any()) } returns
+            listOf(RemoteSessionStatus("session", "active", activeTurnId = "turn"))
+        val vm = RemoteViewModel(store) { _, _ -> client }; runCurrent()
+        vm.setVisible(true); vm.selectDevice(address); runCurrent()
+        vm.observeSessions(address, listOf("session")); runCurrent()
+        assertEquals("turn", vm.state.value.sessionStatuses["$address/session"]?.activeTurnId)
+
+        page = RemoteSessionPage(listOf(session.copy(status = "idle")), null)
+        val exact = CompletableDeferred<List<RemoteSessionStatus>>()
+        coEvery { client.sessionStatuses(any()) } coAnswers { exact.await() }
+        vm.refresh(); runCurrent()
+        val listed = vm.state.value.sessionStatuses["$address/session"]
+        assertEquals("idle", listed?.status)
+        assertEquals("turn", listed?.activeTurnId)
+        assertFalse(requireNotNull(listed).hasUnreadTurn)
+
+        exact.complete(listOf(RemoteSessionStatus("session", "idle", completedTurnId = "turn"))); runCurrent()
+        assertTrue(vm.state.value.hasUnreadGeneration("session"))
+        vm.setVisible(false)
+    }
+
+    @Test fun pagedListStatusSeedsNewRows() = runTest(dispatcher) {
+        coEvery { client.sessions(null) } returns RemoteSessionPage(listOf(session.copy(status = "idle")), "next")
+        coEvery { client.sessions("next") } returns RemoteSessionPage(
+            listOf(session.copy(id = "other", status = "active")), null)
+        val vm = RemoteViewModel(store) { _, _ -> client }; runCurrent()
+        vm.setVisible(true); vm.selectDevice(address); runCurrent()
+        vm.loadMore(); runCurrent()
+        assertEquals("idle", vm.state.value.sessionStatuses["$address/session"]?.status)
+        assertEquals("active", vm.state.value.sessionStatuses["$address/other"]?.status)
+        coVerify(exactly = 0) { client.sessionStatuses(any()) }
+        vm.setVisible(false)
+    }
+
     @Test fun CompletedUnviewedGenerationRemainsUnreadUntilHistoryIsActuallyRead() = runTest(dispatcher) {
         var status = RemoteSessionStatus("session", "active", activeTurnId = "turn")
         coEvery { client.sessionStatuses(any()) } answers { listOf(status) }

@@ -6,7 +6,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 @Serializable
-internal data class RemoteSession(val id: String, val title: String, val cwd: String, val updatedAt: Long, val readOnly: Boolean = false, val canResume: Boolean = false)
+internal data class RemoteSession(
+    val id: String, val title: String, val cwd: String, val updatedAt: Long,
+    val readOnly: Boolean = false, val canResume: Boolean = false, val status: String? = null,
+)
 @Serializable
 internal data class RemoteSessionStatus(
     val id: String, val status: String? = null, val activeTurnId: String? = null,

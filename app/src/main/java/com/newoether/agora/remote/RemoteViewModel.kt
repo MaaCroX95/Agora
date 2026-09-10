@@ -353,8 +353,11 @@ internal class RemoteViewModel(
                     if (session == null) {
                         val page = client.sessions()
                         if (generation != epoch) return@launch
-                        mutableState.value = state.value.copy(sessions = page.sessions, sessionCursor = page.nextCursor,
-                            loading = false, failure = null)
+                        mutableState.value = state.value.copy(
+                            sessions = page.sessions, sessionCursor = page.nextCursor,
+                            sessionStatuses = mergeListedSessionStatuses(id, page.sessions),
+                            loading = false, failure = null,
+                        )
                         startSessionStatusReads()
                     } else if (session.readOnly) {
                         applyPage(client, session.id, generation, client.conversation(session.id))
@@ -499,6 +502,18 @@ internal class RemoteViewModel(
         }
     }
 
+    private fun mergeListedSessionStatuses(
+        address: String, sessions: List<RemoteSession>,
+    ): Map<String, RemoteSessionStatus> {
+        val previous = state.value.sessionStatuses
+        val listed = sessions.mapNotNull { session ->
+            val status = session.status ?: return@mapNotNull null
+            val key = "$address/${session.id}"
+            key to (previous[key]?.copy(status = status) ?: RemoteSessionStatus(session.id, status))
+        }.toMap()
+        return previous + listed
+    }
+
     fun observeSessions(deviceId: String, ids: List<String>) {
         if (state.value.deviceId != deviceId || state.value.session != null) return
         val allowed = state.value.sessions.map { it.id }.toSet()
@@ -528,8 +543,8 @@ internal class RemoteViewModel(
                         val old = previous[key]
                         val resolved = if (item.status == null && old != null) old else item
                         key to resolved.copy(hasUnreadTurn = resolved.hasUnreadTurn ||
-                            item.completedTurnId != null && (old?.status == "active" &&
-                                old.activeTurnId == item.completedTurnId ||
+                            item.completedTurnId != null && (old?.activeTurnId == item.completedTurnId &&
+                                old.completedTurnId != item.completedTurnId ||
                                 old?.hasUnreadTurn == true && old.completedTurnId == item.completedTurnId))
                     }
                     mutableState.value = state.value.copy(sessionStatuses = previous + merged)
@@ -735,9 +750,14 @@ internal class RemoteViewModel(
                 } else {
                     val page = client.sessions(cursor)
                     require(page.nextCursor != cursor) { "Filo session cursor did not advance" }
-                    if (generation == epoch) mutableState.value = state.value.copy(
-                        sessions = (state.value.sessions + page.sessions).distinctBy { it.id },
-                        sessionCursor = page.nextCursor, failure = null)
+                    if (generation == epoch) {
+                        val sessions = (state.value.sessions + page.sessions).distinctBy { it.id }
+                        mutableState.value = state.value.copy(
+                            sessions = sessions,
+                            sessionStatuses = mergeListedSessionStatuses(requireNotNull(snapshot.deviceId), page.sessions),
+                            sessionCursor = page.nextCursor, failure = null,
+                        )
+                    }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {

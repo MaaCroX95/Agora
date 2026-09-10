@@ -87,6 +87,11 @@ loading/failed reads do not. Never change native Codex read state.
 Cache the last confirmed row status by device and session for the Remote owner lifetime.
 Navigation and failed/unknown status reads retain it; visible-row reads and real chat snapshots
 update it. Removing a device/session or replacing a connection clears its cached entries.
+Each session-list record may seed its lightweight native status from the same `thread/list` reply,
+without another native read or subscription. This makes the first row frame current and applies to
+later list pages. Missing list status preserves an existing confirmed value. A listed status may
+update only the row state while retaining exact turn/completion identity until the visible-row
+status refresh replaces it; that replacement remains the only source of unread completion.
 This is presentation state only; Filo verifies native ownership/state at dispatch, and Stop requires its exact native turn.
 
 Sessions automatically loads the next cursor at the laid-out list bottom. Preserve rows
