@@ -62,6 +62,8 @@ internal class GenerationTranscriptionStage(
                 request.generationJob,
                 request.modelMessageId,
                 request.startTime,
+                context.transcriptionAnthropicCacheEnabled,
+                context.transcriptionAnthropicCacheTtl,
             ) { snapshot ->
                 latestSnapshot = snapshot
                 onSnapshot(snapshot, false)

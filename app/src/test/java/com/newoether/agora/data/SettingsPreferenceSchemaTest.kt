@@ -15,6 +15,8 @@ class SettingsPreferenceSchemaTest {
         assertEquals("context_compact_retain_count", CONTEXT_COMPACT_RETAIN_COUNT.name)
         assertEquals("context_compact_threshold_percent", CONTEXT_COMPACT_THRESHOLD_PERCENT.name)
         assertEquals("openai_responses_api_enabled", OPENAI_RESPONSES_API_ENABLED.name)
+        assertEquals("anthropic_cache_enabled", ANTHROPIC_CACHE_ENABLED.name)
+        assertEquals("anthropic_cache_ttl", ANTHROPIC_CACHE_TTL.name)
         assertEquals("mcp_servers_json", MCP_SERVERS_JSON.name)
         assertEquals("stick_to_bottom", STICK_TO_BOTTOM.name)
         assertEquals(

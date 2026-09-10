@@ -24,6 +24,9 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -85,9 +88,13 @@ class ProviderRetryRequestResolutionTest {
             config = config(
                 server,
                 modelId = "claude-3-5-sonnet-20240620",
-            ),
+            ).copy(anthropicCacheTtl = "5m"),
             server = server,
         )
+        server.bodies.forEach { body ->
+            val cache = Json.parseToJsonElement(body).jsonObject.getValue("cache_control").jsonObject
+            assertEquals("5m", cache.getValue("ttl").jsonPrimitive.content)
+        }
     }
 
     @Test

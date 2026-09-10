@@ -178,6 +178,8 @@ class TranscriptionManager(
             systemPrompt = BuiltInPrompts.IMAGE_TRANSCRIPTION_SYSTEM,
             thinkingEnabled = false,
             baseUrl = ctx.transcriptionBaseUrl,
+            anthropicCacheEnabled = ctx.transcriptionAnthropicCacheEnabled,
+            anthropicCacheTtl = ctx.transcriptionAnthropicCacheTtl,
         )
         val promptMessages = listOf(
             ChatMessage(
@@ -266,6 +268,8 @@ class TranscriptionManager(
         generationJob: Job?,
         modelMessageId: String,
         startTime: Long,
+        anthropicCacheEnabled: Boolean = true,
+        anthropicCacheTtl: String = "1h",
         onProgress: suspend (ChatMessage) -> Unit
     ): Pair<List<MessageSegment>, String?> {
         // Fail closed: a missing provider must never silently reroute the user's images
@@ -277,7 +281,9 @@ class TranscriptionManager(
             modelId = modelId,
             systemPrompt = BuiltInPrompts.IMAGE_TRANSCRIPTION_SYSTEM,
             thinkingEnabled = false,
-            baseUrl = baseUrl
+            baseUrl = baseUrl,
+            anthropicCacheEnabled = anthropicCacheEnabled,
+            anthropicCacheTtl = anthropicCacheTtl,
         )
         val placeholder = conversations.getMessage(modelMessageId)
         val parentId = placeholder?.parentId

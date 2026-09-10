@@ -13,6 +13,8 @@ import com.newoether.agora.data.PredefinedVariables
 import com.newoether.agora.data.SystemPromptEntry
 import com.newoether.agora.data.providerDisplayName
 import com.newoether.agora.data.isResponsesApiEnabledForProvider
+import com.newoether.agora.data.isAnthropicCacheEnabledForProvider
+import com.newoether.agora.data.anthropicCacheTtlForProvider
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.SettingsRepository
@@ -395,6 +397,10 @@ class GenerationRequestBuilder(
                 effectiveSettings.lowContextModeEnabled == true
         val imageGenModel = settings.imageGenModel.value
         val transcriptionModel = settings.imageTranscriptionModel.value
+        val cacheProviders = settings.customProviders.value
+        val cacheEnabled = settings.anthropicCacheEnabled.value
+        val cacheTtl = settings.anthropicCacheTtl.value
+        val transcriptionProviderName = resolveTranscriptionProviderName(transcriptionModel)
         val configuredSkillReadAccess = settings.accessSkills.value
         val skillReadAccess = configuredSkillReadAccess && includeSkillCatalog
         val skillModifyAccess = skillReadAccess && settings.accessSkillsModify.value
@@ -405,6 +411,8 @@ class GenerationRequestBuilder(
             customProviders = settings.customProviders.value,
         )
         val config = GenerationConfig(
+            anthropicCacheEnabled = isAnthropicCacheEnabledForProvider(providerName, cacheEnabled, cacheProviders),
+            anthropicCacheTtl = anthropicCacheTtlForProvider(providerName, cacheTtl, cacheProviders),
             providerName = providerName,
             modelId = ModelId.parse(providerRegistry.canonicalModelId(modelId)).modelName,
             apiKey = activeKey,
@@ -476,7 +484,13 @@ class GenerationRequestBuilder(
             imageTranscriptionModel = transcriptionModel,
             imageTranscriptionBatchSize = settings.imageTranscriptionBatchSize.value,
             imageTranscriptionPrompt = settings.imageTranscriptionPrompt.value,
-            transcriptionProviderName = resolveTranscriptionProviderName(transcriptionModel),
+            transcriptionProviderName = transcriptionProviderName,
+            transcriptionAnthropicCacheEnabled = isAnthropicCacheEnabledForProvider(
+                transcriptionProviderName, cacheEnabled, cacheProviders,
+            ),
+            transcriptionAnthropicCacheTtl = anthropicCacheTtlForProvider(
+                transcriptionProviderName, cacheTtl, cacheProviders,
+            ),
             transcriptionModelId = resolveTranscriptionModelId(transcriptionModel),
             transcriptionApiKey = resolveTranscriptionApiKey(transcriptionModel),
             transcriptionBaseUrl = resolveTranscriptionBaseUrl(transcriptionModel)

@@ -132,6 +132,28 @@ class AnthropicProviderRequestSerializationTest {
     private fun assertRequestFormat(events: List<StreamEvent>, detail: String) {
         val error = events.filterIsInstance<StreamEvent.Error>().single().error
         assertTrue(error is GenerationError.RequestFormat)
+    @Test
+    fun cacheSelectionControlsFinalHttpRequestWithoutChangingTheSavedConfig() = withServer { server ->
+        for (ttl in listOf("5m", "1h")) {
+            val selected = config(server, "claude-3-5-sonnet-20240620").copy(
+                thinkingEnabled = false, anthropicCacheTtl = ttl,
+            )
+            val enabled = server.capture(selected)
+            assertEquals(ttl, enabled["cache_control"]!!.jsonObject["ttl"]!!.jsonPrimitive.content)
+            val disabled = server.capture(selected.copy(anthropicCacheEnabled = false))
+            assertFalse(disabled.containsKey("cache_control"))
+            assertEquals(enabled.filterKeys { it != "cache_control" }, disabled)
+            assertEquals(ttl, server.capture(selected)["cache_control"]!!.jsonObject["ttl"]!!.jsonPrimitive.content)
+        }
+    }
+    @Test
+    fun invalidEnabledCacheDurationFailsBeforeHttp() = withServer { server ->
+        val events = collect(server, config(server, "claude-3-5-sonnet-20240620").copy(
+            thinkingEnabled = false, anthropicCacheTtl = "invalid",
+        ))
+        assertRequestFormat(events, "Invalid Anthropic cache duration")
+        assertTrue(server.bodies.isEmpty())
+    }
         assertTrue((error as GenerationError.RequestFormat).details.contains(detail))
     }
 

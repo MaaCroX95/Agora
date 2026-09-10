@@ -39,7 +39,7 @@ class GenerationApiPathBuilderTest {
             GenerationApiPathRequest(
                 parentId = model.id,
                 conversationId = "conversation",
-                config = generationConfig(),
+                config = generationConfig().copy(anthropicCacheEnabled = false, anthropicCacheTtl = "5m"),
                 context = GenerationContext(),
                 loadedMessages = listOf(message("old", null, 0), compact, user, model),
             ),
@@ -47,6 +47,8 @@ class GenerationApiPathBuilderTest {
 
         assertEquals(listOf(compact.id, user.id, model.id), path.messages.map { it.id })
         assertEquals("model-id", path.providerConfig.modelId)
+        assertFalse(path.providerConfig.anthropicCacheEnabled)
+        assertEquals("5m", path.providerConfig.anthropicCacheTtl)
         assertEquals("system", path.providerConfig.systemPrompt)
         assertEquals(listOf(toolDefinition()), path.providerConfig.tools)
         assertEquals(

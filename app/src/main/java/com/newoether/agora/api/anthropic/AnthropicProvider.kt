@@ -44,7 +44,7 @@ internal data class AnthropicRequest(
     val thinking: AnthropicThinking? = null,
     @SerialName("output_config") val outputConfig: AnthropicOutputConfig? = null,
     val tools: List<AnthropicTool>? = null,
-    @SerialName("cache_control") val cacheControl: AnthropicCacheControl = AnthropicCacheControl(),
+    @SerialName("cache_control") val cacheControl: AnthropicCacheControl? = null,
     val temperature: Float? = null,
     @SerialName("top_p") val topP: Float? = null
 )
@@ -329,6 +329,9 @@ class AnthropicProvider(
 
         fun buildRequestBody(resolvedRequest: ProviderRequestInput): AnthropicRequest {
             val validatedPath = adaptToolRoundsForProvider(
+            if (config.anthropicCacheEnabled && config.anthropicCacheTtl !in setOf("5m", "1h")) {
+                throw RequestFormatException(name, listOf("Invalid Anthropic cache duration"))
+            }
                 messages = resolvedRequest.messages,
                 providerName = name,
             ) { toolMessage ->
@@ -379,6 +382,9 @@ class AnthropicProvider(
             messages = apiMessages,
             system = resolvedRequest.systemPrompt,
             thinking = thinking,
+            cacheControl = if (config.anthropicCacheEnabled) {
+                AnthropicCacheControl(ttl = config.anthropicCacheTtl)
+            } else null,
             outputConfig = outputConfig,
             // On always-on/adaptive-thinking models max_tokens caps thinking + answer TOGETHER,
             // so the legacy 4096 default truncates mid-answer once the model thinks. Streaming is

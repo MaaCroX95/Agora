@@ -51,6 +51,9 @@ data class CustomProviderConfig(
     val legacyNames: Set<String> = emptySet(),
     /** Retained across protocol changes, but consumed only while [protocol] is OpenAI. */
     val responsesApiEnabled: Boolean = false,
+    /** Retained across protocol changes; only Anthropic requests consume these fields. */
+    val anthropicCacheEnabled: Boolean = true,
+    val anthropicCacheTtl: String = "1h",
 ) {
     val providerId: String
         get() = id.takeIf(CustomProviderIdentityPolicy::isStableId) ?: name
@@ -68,6 +71,33 @@ fun isOpenAiProtocolProvider(
             (it.name == providerName || it.ownsIdentity(providerName)) &&
                 it.protocol == CustomEndpointProtocol.OPENAI
         }
+fun isAnthropicProtocolProvider(
+    providerName: String,
+    customProviders: List<CustomProviderConfig>,
+): Boolean = providerName == Constants.PROVIDER_ANTHROPIC || customProviders.any {
+    (it.name == providerName || it.ownsIdentity(providerName)) &&
+        it.protocol == CustomEndpointProtocol.ANTHROPIC
+}
+fun isAnthropicCacheEnabledForProvider(
+    providerName: String,
+    builtInEnabled: Boolean,
+    customProviders: List<CustomProviderConfig>,
+): Boolean = when (providerName) {
+    Constants.PROVIDER_ANTHROPIC -> builtInEnabled
+    else -> customProviders.firstOrNull {
+        it.name == providerName || it.ownsIdentity(providerName)
+    }?.let { it.protocol == CustomEndpointProtocol.ANTHROPIC && it.anthropicCacheEnabled } == true
+}
+fun anthropicCacheTtlForProvider(
+    providerName: String,
+    builtInTtl: String,
+    customProviders: List<CustomProviderConfig>,
+): String = when (providerName) {
+    Constants.PROVIDER_ANTHROPIC -> builtInTtl
+    else -> customProviders.firstOrNull {
+        it.name == providerName || it.ownsIdentity(providerName)
+    }?.anthropicCacheTtl ?: "1h"
+}
 
 fun isResponsesApiEnabledForProvider(
     providerName: String,

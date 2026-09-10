@@ -66,6 +66,12 @@ class SettingsManager(private val context: Context) {
     }
 
     val selectedModel: Flow<String> = modelPreferenceStore.selectedModel
+    val anthropicCacheEnabled: Flow<Boolean> = modelPreferenceStore.anthropicCacheEnabled
+    val anthropicCacheTtl: Flow<String> = modelPreferenceStore.anthropicCacheTtl
+    suspend fun saveAnthropicCacheEnabled(enabled: Boolean) = modelPreferenceStore.saveAnthropicCacheEnabled(enabled)
+    suspend fun saveAnthropicCacheTtl(ttl: String) = modelPreferenceStore.saveAnthropicCacheTtl(ttl)
+    suspend fun updateCustomProviderCache(providerId: String, enabled: Boolean? = null, ttl: String? = null) =
+        modelPreferenceStore.updateCustomProviderCache(providerId, enabled, ttl)
     val providerBaseUrls: Flow<Map<String, String>> = modelPreferenceStore.providerBaseUrls
     val customEndpointResolutions: Flow<Map<String, CustomEndpointResolution>> =
         modelPreferenceStore.customEndpointResolutions
@@ -836,6 +842,8 @@ class SettingsManager(private val context: Context) {
             prefs.remove(OPENAI_SERVICE_TIER_ENABLED)
             prefs.remove(OPENAI_SERVICE_TIER)
             prefs.remove(OPENAI_RESPONSES_API_ENABLED)
+            prefs.remove(ANTHROPIC_CACHE_ENABLED)
+            prefs.remove(ANTHROPIC_CACHE_TTL)
             prefs.remove(PROVIDER_BASE_URLS)
             prefs.remove(TITLE_GENERATION_ENABLED)
             prefs.remove(TITLE_GENERATION_MODEL)

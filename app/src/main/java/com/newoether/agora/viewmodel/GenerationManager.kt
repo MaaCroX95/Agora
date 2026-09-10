@@ -131,6 +131,8 @@ class GenerationManager(
         val providerConfig = ProviderConfig(
             apiKey = config.apiKey,
             modelId = config.modelId,
+            anthropicCacheEnabled = config.anthropicCacheEnabled,
+            anthropicCacheTtl = config.anthropicCacheTtl,
             maxContextWindow = config.maxContextWindow,
             codeExecutionEnabled = config.codeExecutionEnabled,
             googleSearchEnabled = config.googleSearchEnabled,
