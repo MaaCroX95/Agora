@@ -15,158 +15,11 @@ import com.newoether.agora.model.MessageSegment
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.parser.MarkdownParser
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class CitationMessageContentTest {
-    @Test
-    fun validClaimsStayUnprojectedWhileStreamingThenReuseOneTerminalCapsule() {
-        val answer = "Alpha and beta."
-        val source = citation(
-            answer = answer,
-            title = "Example",
-            url = "https://example.com/a",
-            ranges = arrayOf(0 until 5, 10 until 14),
-        )
-
-        val projection = citationMarkdownProjection(
-            answerText = answer,
-            citations = listOf(source),
-            isStreaming = false,
-        )
-
-        assertNotNull(projection)
-        val marker = projection!!.markers.single()
-        assertEquals(1, marker.number)
-        assertEquals("example.com", marker.label)
-        assertFalse(marker.label.contains('('))
-        assertFalse(marker.label.contains(')'))
-        assertEquals(2, projection.markdown.count { it == marker.token })
-        val streamingBeforeCitation = citationMarkdownProjection(
-            answerText = answer,
-            citations = emptyList(),
-            isStreaming = true,
-        )
-        val streamingAfterCitation = citationMarkdownProjection(
-            answerText = answer,
-            citations = listOf(source),
-            isStreaming = true,
-        )
-        assertEquals(answer, streamingBeforeCitation!!.markdown)
-        assertEquals(answer, streamingAfterCitation!!.markdown)
-        assertTrue(streamingBeforeCitation.markers.isEmpty())
-        assertTrue(streamingAfterCitation.markers.isEmpty())
-        assertNotEquals(answer, projection.markdown)
-    }
-
-    @Test
-    fun streamingWithholdsUnresolvedCitationWrapperAndTerminalRestoresOrdinaryMarkdown() {
-        val complete = "Research ([openai.com](https://openai.com/news))"
-        val partial = "Research ([openai.com](https://openai.com/news"
-        val opening = "Research ("
-
-        val streamingOpening = citationMarkdownProjection(
-            answerText = opening,
-            citations = emptyList(),
-            isStreaming = true,
-        )
-        val streamingComplete = citationMarkdownProjection(
-            answerText = complete,
-            citations = emptyList(),
-            isStreaming = true,
-        )
-        val streamingPartial = citationMarkdownProjection(
-            answerText = partial,
-            citations = emptyList(),
-            isStreaming = true,
-        )
-        val terminal = citationMarkdownProjection(
-            answerText = complete,
-            citations = emptyList(),
-            isStreaming = false,
-        )
-
-        assertNotNull(streamingOpening)
-        assertNotNull(streamingComplete)
-        assertNotNull(streamingPartial)
-        assertEquals("Research ", streamingOpening!!.markdown)
-        assertEquals("Research ", streamingComplete!!.markdown)
-        assertEquals("Research ", streamingPartial!!.markdown)
-        assertTrue(streamingComplete.markers.isEmpty())
-        assertEquals(complete, terminal!!.markdown)
-    }
-
-    @Test
-    fun plainProviderArtifactsBecomeOneGroupedNativeCapsule() {
-        val answer = "Claim citeturn3search1turn7search1"
-        val sources = listOf(
-            requireNotNull(
-                CitationPolicy.create(
-                    provider = "openai",
-                    kind = "url",
-                    title = "First",
-                    url = "https://first.example/source",
-                    providerSourceId = "turn3search1",
-                ),
-            ),
-            requireNotNull(
-                CitationPolicy.create(
-                    provider = "openai",
-                    kind = "url",
-                    title = "Second",
-                    url = "https://second.example/source",
-                    providerSourceId = "turn7search1",
-                ),
-            ),
-        )
-
-        val projection = requireNotNull(
-            citationMarkdownProjection(answer, sources, isStreaming = false),
-        )
-        val marker = projection.markers.single()
-        val streaming = requireNotNull(
-            citationMarkdownProjection(answer, sources, isStreaming = true),
-        )
-
-        assertEquals("Claim ${marker.token}", projection.markdown)
-        assertEquals(sources.map(CitationRecord::sourceId), marker.sources.map(CitationRecord::sourceId))
-        assertEquals(1, marker.additionalCount)
-        assertEquals("Claim ", streaming.markdown)
-        assertTrue(streaming.markers.isEmpty())
-    }
-
-    @Test
-    fun plainProviderArtifactsAreWithheldWhilePartialAndStrippedWhenUnmatchedAtTerminal() {
-        val streaming = requireNotNull(
-            citationMarkdownProjection(
-                answerText = "Claim citeturn3sear",
-                citations = emptyList(),
-                isStreaming = true,
-            ),
-        )
-        val terminalPartial = requireNotNull(
-            citationMarkdownProjection(
-                answerText = "Claim citeturn3sear",
-                citations = emptyList(),
-                isStreaming = false,
-            ),
-        )
-        val terminalComplete = requireNotNull(
-            citationMarkdownProjection(
-                answerText = "Claim citeturn9search9",
-                citations = emptyList(),
-                isStreaming = false,
-            ),
-        )
-
-        assertEquals("Claim ", streaming.markdown)
-        assertEquals("Claim ", terminalPartial.markdown)
-        assertEquals("Claim ", terminalComplete.markdown)
-    }
-
+internal class CitationMessageContentTest : CitationContentTestFixture() {
     @Test
     fun realOpenAiItemRelativeLinkIsRelocatedAndReplacedByOneNativeCapsule() {
         val url = "https://openai.com/research/index/?utm_source=openai"
@@ -701,33 +554,6 @@ class CitationMessageContentTest {
     }
 
     @Test
-    fun terminalProjectionHandoffTracksMarkdownAndLateMetadataChanges() {
-        val answer = "Answer."
-        val source = citation(
-            answer = answer,
-            title = "Example",
-            url = "https://example.com/source",
-            ranges = arrayOf(0 until 6),
-        )
-        val streaming = requireNotNull(
-            citationMarkdownProjection(answer, listOf(source), isStreaming = true),
-        )
-        val terminal = requireNotNull(
-            citationMarkdownProjection(answer, listOf(source), isStreaming = false),
-        )
-
-        assertFalse(citationProjectionRequiresTerminalHandoff(streaming, streaming.copy()))
-        assertTrue(citationProjectionRequiresTerminalHandoff(streaming, terminal))
-        assertTrue(
-            citationProjectionRequiresTerminalHandoff(
-                terminal,
-                terminal.copy(markers = emptyList()),
-            ),
-        )
-        assertTrue(citationProjectionRequiresTerminalHandoff(null, streaming))
-    }
-
-    @Test
     fun sourceSummaryVisibilityUsesBottomInformationActionBoundary() {
         assertTrue(citationSummaryVisible(showActions = true, informationVisible = true, sourceCount = 54))
         assertFalse(citationSummaryVisible(showActions = false, informationVisible = true, sourceCount = 54))
@@ -847,26 +673,4 @@ class CitationMessageContentTest {
 
         assertEquals(listOf(MessageSegment(type = "answer", content = "AB")), merged)
     }
-
-    private fun citation(
-        answer: String,
-        title: String,
-        url: String,
-        ranges: Array<IntRange>,
-    ): CitationRecord = requireNotNull(
-        CitationPolicy.create(
-            provider = "test",
-            kind = "web",
-            title = title,
-            url = url,
-            anchors = ranges.map { range ->
-                CitationAnchor(
-                    startIndex = range.first,
-                    endIndex = range.last + 1,
-                    citedText = answer.substring(range.first, range.last + 1),
-                )
-            },
-            answerText = answer,
-        ),
-    )
 }
