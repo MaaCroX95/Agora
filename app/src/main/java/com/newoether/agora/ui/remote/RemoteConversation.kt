@@ -274,24 +274,25 @@ internal fun RemoteConversation(
                     onMessageHydrated = scroll::recordMessageHydrated,
                     lifecycleAppearanceRegistry = scroll.messageLifecycleAppearanceRegistry,
                     lifecycleEntranceTargetMessageId = animatedScrollRequest?.takeIf { it.conversationId == owner }?.targetMessageId,
+                    leadingContentLayer = {
+                        Box(
+                            modifier = Modifier.align(Alignment.TopCenter).offset(y = (-40).dp).size(40.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            AnimatedVisibility(
+                                visibleState = historyProgress,
+                                enter = fadeIn(tween(300)),
+                                exit = fadeOut(tween(300)),
+                            ) {
+                                MotionAwareCircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    },
                     contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 140.dp + leadingSpace.dp, bottom = barHeight + 8.dp))
-                }
-                // Use the existing top content inset; loading never adds or removes a list row.
-                Box(
-                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 100.dp).size(40.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    AnimatedVisibility(
-                        visibleState = historyProgress,
-                        enter = fadeIn(tween(300)),
-                        exit = fadeOut(tween(300)),
-                    ) {
-                        MotionAwareCircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
                 }
                 ChatBottomScrollButton(
                     shouldShowAbsoluteBottomButton(

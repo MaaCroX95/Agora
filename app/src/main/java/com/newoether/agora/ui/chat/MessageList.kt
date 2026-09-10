@@ -139,6 +139,7 @@ internal fun MessageList(
     segmentAppearanceRegistry: SegmentAppearanceRegistry =
         remember { SegmentAppearanceRegistry() },
     lifecycleEntranceTargetMessageId: String? = null,
+    leadingContentLayer: (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? = null,
 ) {
     val motionPolicy = LocalAgoraMotionPolicy.current
     val streamingMessageId = streamingMessage?.id
@@ -242,9 +243,7 @@ internal fun MessageList(
     }
     val inContextIds = contextRetainedMessageIds
 
-    val activeMessageIds = remember(messages) {
-        messages.list.mapTo(hashSetOf()) { message -> message.id }
-    }
+    val activeMessageIds = remember(messages) { messages.list.mapTo(hashSetOf()) { message -> message.id } }
     val presentationMessages = remember(messages, retainedBranchReplacementExitMessages) {
         mergeBranchReplacementPresentationMessages(
             activeMessages = messages.list,
@@ -986,6 +985,7 @@ internal fun MessageList(
                             }
                         }
                     }
+                    if (turn.key == turns.firstOrNull()?.key) leadingContentLayer?.invoke(this)
                 }
             }
             // A stable physical-end target, deliberately separate from the streaming-tail
