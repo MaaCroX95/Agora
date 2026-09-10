@@ -355,7 +355,7 @@ internal class RemoteViewModel(
                         if (generation != epoch) return@launch
                         mutableState.value = state.value.copy(
                             sessions = page.sessions, sessionCursor = page.nextCursor,
-                            sessionStatuses = mergeListedSessionStatuses(id, page.sessions),
+                            sessionStatuses = mergeListedSessionStatuses(id, page),
                             loading = false, failure = null,
                         )
                         startSessionStatusReads()
@@ -453,23 +453,13 @@ internal class RemoteViewModel(
         val incoming = mutableListOf(cachePage(owner, page, live = true))
         var cursor = page.nextCursor
         val cursors = mutableSetOf<String>()
-        val initial = old.isEmpty()
-        var initialRecords = incoming.sumOf { it.nodes.size }
-        fun hasConversationAnchor() = incoming.any { packet -> packet.nodes.any { node ->
-            node.error || node.role == "user" ||
-                node.role == "assistant" && node.activity == null && node.textLength > 0
-        } }
-        fun needsOlder() = if (initial) initialRecords < 128 && !hasConversationAnchor()
-            else incoming.last().nodes.none { it.id in oldIds }
-        // Initial topology is published once, after a bounded recent conversational anchor.
-        while (cursor != null && needsOlder()) {
+        // Opening publishes exactly the latest packet; only live updates bridge existing history.
+        while (old.isNotEmpty() && cursor != null && incoming.last().nodes.none { it.id in oldIds }) {
             require(cursors.add(cursor)) { "Filo history cursor did not advance" }
             val raw = client.conversation(sessionId, cursor)
             if (generation != epoch) return
-            if (initial && initialRecords + raw.nodes.size > 128) break
             val older = cachePage(owner, raw, live = false)
             incoming += older
-            initialRecords += older.nodes.size
             cursor = older.nextCursor
         }
         if (generation != epoch) return
@@ -513,13 +503,21 @@ internal class RemoteViewModel(
     }
 
     private fun mergeListedSessionStatuses(
-        address: String, sessions: List<RemoteSession>,
+        address: String, page: RemoteSessionPage,
     ): Map<String, RemoteSessionStatus> {
         val previous = state.value.sessionStatuses
-        val listed = sessions.mapNotNull { session ->
-            val status = session.status ?: return@mapNotNull null
+        val exact = page.statuses.associateBy { it.id }
+        val listed = page.sessions.mapNotNull { session ->
             val key = "$address/${session.id}"
-            key to (previous[key]?.copy(status = status) ?: RemoteSessionStatus(session.id, status))
+            val old = previous[key]
+            val item = exact[session.id]
+                ?: session.status?.let { old?.copy(status = it) ?: RemoteSessionStatus(session.id, it) }
+                ?: return@mapNotNull null
+            val resolved = if (item.status == null && old != null) old else item
+            key to resolved.copy(hasUnreadTurn = resolved.hasUnreadTurn ||
+                item.completedTurnId != null && (old?.activeTurnId == item.completedTurnId &&
+                    old.completedTurnId != item.completedTurnId ||
+                    old?.hasUnreadTurn == true && old.completedTurnId == item.completedTurnId))
         }.toMap()
         return previous + listed
     }
@@ -544,20 +542,17 @@ internal class RemoteViewModel(
         val selected = selectionEpoch
         statusPolling = viewModelScope.launch {
             while (isActive && visible && selected == selectionEpoch) {
+                // The list already supplied exact status. Refresh that same page only after the interval.
+                delay(3000)
                 try {
-                    val statuses = client.sessionStatuses(ids)
-                    if (selected != selectionEpoch || clients[address] !== client || !visible) return@launch
-                    val previous = state.value.sessionStatuses
-                    val merged = statuses.filter { it.id in ids }.associate { item ->
-                        val key = "$address/${item.id}"
-                        val old = previous[key]
-                        val resolved = if (item.status == null && old != null) old else item
-                        key to resolved.copy(hasUnreadTurn = resolved.hasUnreadTurn ||
-                            item.completedTurnId != null && (old?.activeTurnId == item.completedTurnId &&
-                                old.completedTurnId != item.completedTurnId ||
-                                old?.hasUnreadTurn == true && old.completedTurnId == item.completedTurnId))
+                    val cursors = state.value.sessions.filter { it.id in ids }.map { it.listCursor }.distinct()
+                    for (cursor in cursors) {
+                        val page = client.sessions(cursor)
+                        if (selected != selectionEpoch || clients[address] !== client || !visible) return@launch
+                        mutableState.value = state.value.copy(
+                            sessionStatuses = mergeListedSessionStatuses(address, page),
+                        )
                     }
-                    mutableState.value = state.value.copy(sessionStatuses = previous + merged)
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) {
                     if (selected != selectionEpoch) return@launch
@@ -565,7 +560,6 @@ internal class RemoteViewModel(
                     // A failed read does not erase the last confirmed presentation.
                     if (error is FiloHttpException && error.status in setOf(401, 403, 404, 501)) return@launch
                 }
-                delay(3000)
             }
         }
     }
@@ -764,7 +758,7 @@ internal class RemoteViewModel(
                         val sessions = (state.value.sessions + page.sessions).distinctBy { it.id }
                         mutableState.value = state.value.copy(
                             sessions = sessions,
-                            sessionStatuses = mergeListedSessionStatuses(requireNotNull(snapshot.deviceId), page.sessions),
+                            sessionStatuses = mergeListedSessionStatuses(requireNotNull(snapshot.deviceId), page),
                             sessionCursor = page.nextCursor, failure = null,
                         )
                     }

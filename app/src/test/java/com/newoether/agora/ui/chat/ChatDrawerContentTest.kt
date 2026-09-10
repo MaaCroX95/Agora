@@ -9,7 +9,7 @@ import org.junit.Test
 
 class ChatDrawerContentTest {
     @Test
-    fun tasksAndRemoteKeepOriginalHeightAndJoinedGeometry() {
+    fun tasksAndRemoteUse46DpAndKeepJoinedGeometry() {
         val root = generateSequence(File(requireNotNull(System.getProperty("user.dir"))).absoluteFile) {
             it.parentFile
         }.first { File(it, "app/src/main/java").isDirectory }
@@ -17,7 +17,7 @@ class ChatDrawerContentTest {
             "app/src/main/java/com/newoether/agora/ui/chat/ChatDrawerContent.kt").readText()
         val group = source.substringAfter("Column(modifier = Modifier.fillMaxSize()) {")
             .substringBefore("val newChatDisabled")
-        assertEquals(2, Regex("""\.height\(42\.dp\)""").findAll(group).count())
+        assertEquals(2, Regex("""\.height\(46\.dp\)""").findAll(group).count())
         assertFalse(group.contains("height(52.dp)"))
         assertTrue(group.contains("Spacer(modifier = Modifier.height(2.dp))"))
         assertTrue(group.contains("topStart = 24.dp, topEnd = 24.dp"))

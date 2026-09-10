@@ -28,8 +28,6 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 @Serializable
-private data class RemoteSessionStatuses(val statuses: List<RemoteSessionStatus>)
-@Serializable
 private data class RemoteModels(val models: List<RemoteModel>)
 @Serializable
 private data class FiloInfo(
@@ -109,16 +107,8 @@ internal class FiloClient(
     }
 
     suspend fun sessions(cursor: String? = null): RemoteSessionPage = withContext(Dispatchers.Default) {
-        json.decodeFromString(request("v1/sessions", cursor))
-    }
-
-    suspend fun sessionStatuses(ids: List<String>): List<RemoteSessionStatus> = withContext(Dispatchers.Default) {
-        require(ids.isNotEmpty() && ids.size <= 12 && ids.distinct().size == ids.size)
-        val result = json.decodeFromString<RemoteSessionStatuses>(
-            request("v1/sessions/status", sessionIds = ids.map(::sessionId)),
-        ).statuses
-        require(result.size == ids.size && result.map { it.id }.toSet() == ids.toSet())
-        result
+        val page = json.decodeFromString<RemoteSessionPage>(request("v1/sessions", cursor))
+        page.copy(sessions = page.sessions.map { it.copy(listCursor = cursor) })
     }
 
     suspend fun conversation(id: String, cursor: String? = null): RemoteConversationPage = withContext(Dispatchers.Default) {
@@ -239,12 +229,11 @@ internal class FiloClient(
 
     private suspend fun request(
         path: String, cursor: String? = null, body: String? = null, includeActivity: Boolean = false,
-        sessionIds: List<String>? = null, includeMetadata: Boolean = false,
+        includeMetadata: Boolean = false,
     ): String =
         suspendCancellableCoroutine { continuation ->
             val url = endpoint.newBuilder().addPathSegments(path).apply {
                 cursor?.let { addQueryParameter("cursor", it) }
-                sessionIds?.let { addQueryParameter("ids", it.joinToString(",")) }
                 if (includeActivity) addQueryParameter("includeActivity", "true")
                 if (includeMetadata) addQueryParameter("includeMetadata", "true")
             }.build()

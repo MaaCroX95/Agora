@@ -299,6 +299,28 @@ class FiloClientTest {
             assertEquals(listOf("Bearer $token", "Bearer $token", "Bearer $token"), auth)
         } finally { server.stop(0) }
     }
+    @Test fun oneHttpRequestReturnsCatalogAndExactRowStatus() = runBlocking {
+        val requests = mutableListOf<String>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val page = RemoteSessionPage(
+            listOf(RemoteSession(id, "Task", "/workspace", 1)), null,
+            listOf(RemoteSessionStatus(id, "active", activeTurnId = "native-turn")),
+        )
+        server.createContext("/") { exchange ->
+            requests += exchange.requestURI.toString()
+            val bytes = Json.encodeToString(page).toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        try {
+            val result = FiloClient("http://127.0.0.1:" + server.address.port + "/", token).sessions("page-two")
+            assertEquals("native-turn", result.statuses.single().activeTurnId)
+            assertEquals("page-two", result.sessions.single().listCursor)
+            assertEquals(listOf("/v1/sessions?cursor=page-two"), requests)
+        } finally { server.stop(0) }
+    }
+
     @Test fun activeTurnCannotShowAssistantIndicatorBeforeItsNativeUserMessage() {
         val runtime = RemoteRuntime("active", "new-turn", "model")
         assertTrue(projectRemoteMessages(emptyList(), runtime).isEmpty())

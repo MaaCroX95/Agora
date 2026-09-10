@@ -27,7 +27,7 @@ editing, branching and tool-execution controls are unsupported.
 ## Devices and local persistence
 
 Remote sits below Tasks in their original joined drawer group and opens SettingsOverlayHost.
-Both drawer buttons retain their original 42 dp height, joined 24/5 dp corner shapes and
+Both drawer buttons use the owner-requested 46 dp height, joined 24/5 dp corner shapes and
 2 dp inter-button gap. Their icons, labels, focus clearing and navigation remain unchanged.
 Device selection precedes Sessions; Add Device is a separate shared settings page.
 Devices renders its scaffold and locally saved rows independently of all network checks.
@@ -81,19 +81,20 @@ selected sessions, drafts and submission attempts remain transient and are never
 
 ## Sessions and history
 
-Use the existing settings scaffolds, guarded page transitions and rows. Only visible rows
-request bounded native statuses. The original 18dp/2dp generating circle has priority over
+Use the existing settings scaffolds, guarded page transitions and rows. Each catalog page
+returns its row statuses in the same HTTP response; do not issue a follow-up status request.
+While visible, refresh only catalog pages containing visible rows after the normal interval. The original 18dp/2dp generating circle has priority over
 the 8dp unread dot; retain 200ms fades. Real completed-turn identity owns unread state.
 Successful visible history read marks that completion viewed in the encrypted local store;
 loading/failed reads do not. Never change native Codex read state.
 Cache the last confirmed row status by device and session for the Remote owner lifetime.
 Navigation and failed/unknown status reads retain it; visible-row reads and real chat snapshots
 update it. Removing a device/session or replacing a connection clears its cached entries.
-Each session-list record may seed its lightweight native status from the same `thread/list` reply,
-without another native read or subscription. This makes the first row frame current and applies to
-later list pages. Missing list status preserves an existing confirmed value. A listed status may
-update only the row state while retaining exact turn/completion identity until the visible-row
-status refresh replaces it; that replacement remains the only source of unread completion.
+Each catalog response includes exact available row status, active-turn ID, completed-turn ID and
+native unread state. Initial entry and later list pages merge those fields together. Visibility
+must not immediately trigger another network request. Subsequent polling uses the same catalog
+endpoint and its page cursor, never a separate status endpoint. Unknown/failed native status
+preserves the last confirmed value; it cannot fabricate idle, completion or execution authority.
 This is presentation state only; Filo verifies native ownership/state at dispatch, and Stop requires its exact native turn.
 
 Sessions automatically loads the next cursor at the laid-out list bottom. Preserve rows
@@ -109,12 +110,11 @@ Unsupported history retains its read-only notice inside the composer. Failure re
 readable. No Continue this conversation button, background admission or automatic POST
 retry. Unavailable read-only history cannot subscribe or mutate; occupied writers fail safely.
 
-Before the first topology publication, opening may read older bounded packets until the
-newest at most 128 records contain an ordinary user/assistant/error message, the bound is full,
-or history ends. It never scans complete history. These initial records are admitted once in
-chronological order, so transport packets do not create artificial folded fragments. After
-publication, one older-page request publishes one bounded packet and never merges into an
-existing rendered fragment. Thinking/Tool Call groups may span those later pages.
+Opening publishes only the latest bounded packet and settles at its bottom, including when
+it contains only tool/thinking records. Never scan older packets for ordinary text or a group
+boundary before publication. Older pages load only at the actual upward list edge; each
+request publishes one bounded packet and never merges into an existing rendered fragment.
+Thinking/Tool Call groups may span pages.
 Legacy continuation hints never trigger group completion. Existing live-tail updates still
 bridge genuine gaps before merging. Bodies stay in the original bounded LRU. Each node
 retains its physical packet bookmark. Page boundaries add no Spacer or gap.

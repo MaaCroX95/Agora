@@ -9,6 +9,7 @@ import kotlinx.serialization.json.put
 internal data class RemoteSession(
     val id: String, val title: String, val cwd: String, val updatedAt: Long,
     val readOnly: Boolean = false, val canResume: Boolean = false, val status: String? = null,
+    @kotlinx.serialization.Transient val listCursor: String? = null,
 )
 @Serializable
 internal data class RemoteSessionStatus(
@@ -40,7 +41,10 @@ internal data class RemoteActivity(
 @Serializable
 internal data class RemoteQueuedMessage(val id: String, val clientId: String, val text: String)
 @Serializable
-internal data class RemoteSessionPage(val sessions: List<RemoteSession>, val nextCursor: String?)
+internal data class RemoteSessionPage(
+    val sessions: List<RemoteSession>, val nextCursor: String?,
+    val statuses: List<RemoteSessionStatus> = emptyList(),
+)
 @Serializable
 internal data class RemoteConversationPage(
     val messages: List<RemoteMessage>, val nextCursor: String?, val queued: List<RemoteQueuedMessage>,
