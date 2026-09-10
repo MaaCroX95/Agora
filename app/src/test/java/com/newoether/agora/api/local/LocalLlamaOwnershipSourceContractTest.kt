@@ -15,13 +15,14 @@ class LocalLlamaOwnershipSourceContractTest {
     @Test
     fun nativeTextAndFilesystemInputsUseTheStandardUtf8Boundary() {
         val chat = mainCppSource("llama_chat_jni.cpp")
+        val template = mainCppSource("llama_chat_template.cpp")
         val embedding = mainCppSource("llama_jni.cpp")
-        listOf(chat, embedding).forEach { native ->
+        listOf(chat, template, embedding).forEach { native ->
             assertTrue(native.contains("#include \"jni_utf8.h\""))
             assertFalse(native.contains("GetStringUTFChars("))
             assertFalse(native.contains("ReleaseStringUTFChars("))
         }
-        assertTrue(chat.contains("read_java_string(env, value, result)"))
+        assertTrue(template.contains("read_java_string(env, value, result)"))
         assertTrue(chat.contains("read_java_path(env, path, path_str)"))
         assertTrue(chat.contains("read_java_path(env, mmproj_path, mmproj_str)"))
         assertTrue(chat.contains("read_java_path(env, jpath, image_path_storage[i])"))
@@ -72,14 +73,15 @@ class LocalLlamaOwnershipSourceContractTest {
         assertTrue(engine.contains("trySendBlocking(LlamaGenerationEvent.Thought(thought)).isSuccess"))
         assertTrue(engine.contains("trySendBlocking(LlamaGenerationEvent.ToolCallUpdate(call)).isSuccess"))
         assertFalse(engine.contains("trySend(token)"))
-        assertTrue(native.contains("std::atomic<bool> cancelled"))
-        assertFalse(native.contains("volatile bool cancelled"))
+        assertTrue(mainCppSource("llama_chat_handle.h").contains("std::atomic<bool> cancelled"))
+        assertFalse((native + mainCppSource("llama_chat_handle.h")).contains("volatile bool cancelled"))
     }
 
     @Test
     fun `chat templates use the official structured tool owner and fail closed by capability`() {
         val cmake = mainCppSource("CMakeLists.txt")
         val native = mainCppSource("llama_chat_jni.cpp")
+        val template = mainCppSource("llama_chat_template.cpp")
         val engine = mainSource("com/newoether/agora/api/LlamaChatEngine.kt")
         val provider = mainSource("com/newoether/agora/api/local/LocalProvider.kt")
 
@@ -88,14 +90,14 @@ class LocalLlamaOwnershipSourceContractTest {
         assertTrue(cmake.contains("target_link_libraries(agora_llama llama llama-common"))
         assertTrue(native.contains("common_chat_templates_init(handle->model"))
         assertTrue(native.contains("common_chat_templates_was_explicit"))
-        assertTrue(native.contains("common_chat_templates_apply("))
-        assertTrue(native.contains("inputs.enable_thinking ="))
-        assertTrue(native.contains("inputs.tool_choice = COMMON_CHAT_TOOL_CHOICE_AUTO"))
-        assertTrue(native.contains("inputs.parallel_tool_calls = true"))
-        assertTrue(native.contains("supports(\"supports_tools\")"))
-        assertTrue(native.contains("supports(\"supports_tool_calls\")"))
-        assertTrue(native.contains("!inputs.tools.empty() || has_tool_history"))
-        assertFalse(native.contains("llama_chat_apply_template("))
+        assertTrue(template.contains("common_chat_templates_apply("))
+        assertTrue(template.contains("inputs.enable_thinking ="))
+        assertTrue(template.contains("inputs.tool_choice = COMMON_CHAT_TOOL_CHOICE_AUTO"))
+        assertTrue(template.contains("inputs.parallel_tool_calls = true"))
+        assertTrue(template.contains("supports(\"supports_tools\")"))
+        assertTrue(template.contains("supports(\"supports_tool_calls\")"))
+        assertTrue(template.contains("!inputs.tools.empty() || has_tool_history"))
+        assertFalse((native + template).contains("llama_chat_apply_template("))
 
         assertTrue(engine.contains("class LlamaChatTemplateRequest("))
         assertTrue(engine.contains("class LlamaChatTemplateResult("))
@@ -323,7 +325,7 @@ class LocalLlamaOwnershipSourceContractTest {
         assertTrue(sameIdentity.contains("current.engine"))
         assertFalse(sameIdentity.contains("resetContext"))
 
-        assertTrue(native.contains("std::vector<llama_token> decoded_tokens;"))
+        assertTrue(mainCppSource("llama_chat_handle.h").contains("std::vector<llama_token> decoded_tokens;"))
         assertTrue(prepare.contains("handle->decoded_tokens[retained_prefix] =="))
         assertTrue(prepare.contains("retained_prefix == prompt_tokens.size()"))
         assertTrue(prepare.contains("retained_prefix--;"))
