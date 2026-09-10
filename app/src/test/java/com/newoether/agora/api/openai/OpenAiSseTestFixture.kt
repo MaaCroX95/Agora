@@ -21,8 +21,8 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Before
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import okio.buffer
+import okio.source
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketException
@@ -222,26 +222,18 @@ abstract class OpenAiSseTestFixture {
         }
 
         private fun readRequest(socket: Socket): CapturedRequest {
-            val reader = BufferedReader(
-                InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8)
-            )
-            val requestLine = reader.readLine() ?: error("missing request line")
+            val input = socket.getInputStream().source().buffer()
+            val requestLine = input.readUtf8LineStrict()
             var contentLength = 0
             while (true) {
-                val line = reader.readLine() ?: error("request ended before body")
+                val line = input.readUtf8LineStrict()
                 if (line.isEmpty()) break
                 if (line.startsWith("Content-Length:", ignoreCase = true)) {
                     contentLength = line.substringAfter(':').trim().toInt()
                 }
             }
-            val body = CharArray(contentLength)
-            var offset = 0
-            while (offset < body.size) {
-                val read = reader.read(body, offset, body.size - offset)
-                if (read < 0) error("request body ended early")
-                offset += read
-            }
-            return CapturedRequest(requestLine, String(body))
+            val body = input.readUtf8(contentLength.toLong())
+            return CapturedRequest(requestLine, body)
         }
     }
 
