@@ -276,8 +276,8 @@ internal fun RemoteConversation(
                     lifecycleEntranceTargetMessageId = animatedScrollRequest?.takeIf { it.conversationId == owner }?.targetMessageId,
                     leadingContentLayer = {
                         Box(
-                            modifier = Modifier.align(Alignment.TopCenter).offset(y = (-40).dp).size(40.dp),
-                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.matchParentSize().offset(y = (-30).dp),
+                            contentAlignment = Alignment.TopCenter,
                         ) {
                             AnimatedVisibility(
                                 visibleState = historyProgress,
