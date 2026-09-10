@@ -188,6 +188,10 @@ Chat-template verification must cover explicit-template enforcement, official Ji
 request-level thinking control, UTF-8-safe prompt transfer, and absence of generic fallbacks.
 Native-streaming verification must cover both generation loops, exact batch bounds, UTF-8 boundary
 safety, terminal flushing, callback rejection, per-token cancellation, and content-free telemetry.
+Java-to-native Chat and Embedding strings use standard UTF-8 with explicit byte lengths, including
+supplementary Unicode and embedded NUL in text. Filesystem paths reject NUL instead of truncating.
+Run the host test with "python scripts/test-native-utf8.py" and a JDK/C++ compiler when this boundary
+changes; the actual production JNI helper is compared with Java's UTF-8 encoder under JNI checks.
 Text-cache verification must cover same-identity reuse, token LCP divergence, exact-match one-token
 replay, prompt-capacity validation before mutation, failed truncation, decode failure, cancellation
 between successful batches, generated-token ledger ordering, and multimodal invalidation. Android

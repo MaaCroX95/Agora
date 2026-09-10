@@ -13,6 +13,24 @@ import org.junit.Test
 
 class LocalLlamaOwnershipSourceContractTest {
     @Test
+    fun nativeTextAndFilesystemInputsUseTheStandardUtf8Boundary() {
+        val chat = mainCppSource("llama_chat_jni.cpp")
+        val embedding = mainCppSource("llama_jni.cpp")
+        listOf(chat, embedding).forEach { native ->
+            assertTrue(native.contains("#include \"jni_utf8.h\""))
+            assertFalse(native.contains("GetStringUTFChars("))
+            assertFalse(native.contains("ReleaseStringUTFChars("))
+        }
+        assertTrue(chat.contains("read_java_string(env, value, result)"))
+        assertTrue(chat.contains("read_java_path(env, path, path_str)"))
+        assertTrue(chat.contains("read_java_path(env, mmproj_path, mmproj_str)"))
+        assertTrue(chat.contains("read_java_path(env, jpath, image_path_storage[i])"))
+        assertTrue(embedding.contains("read_java_string(env, text, input)"))
+        assertTrue(embedding.contains("read_java_path(env, path, path_str)"))
+        assertTrue(embedding.contains("read_java_path(env, native_library_dir, directory)"))
+    }
+
+    @Test
     fun `title generation delegates local serialization to the Provider`() {
         val source = mainSource("com/newoether/agora/viewmodel/ConversationTitleGenerator.kt")
 
@@ -391,7 +409,7 @@ class LocalLlamaOwnershipSourceContractTest {
         val initialization = embeddingNative
             .substringAfter("LlamaEngine_nativeInitializeBackends(")
             .substringBefore("\nJNIEXPORT")
-        val loadBackends = initialization.indexOf("ggml_backend_load_all_from_path(directory)")
+        val loadBackends = initialization.indexOf("ggml_backend_load_all_from_path(directory.c_str())")
         val verifyCpu = initialization.indexOf("ggml_backend_reg_by_name(\"CPU\")")
         val initializeLlama = initialization.indexOf("llama_backend_init()")
         assertTrue(loadBackends >= 0 && verifyCpu > loadBackends)

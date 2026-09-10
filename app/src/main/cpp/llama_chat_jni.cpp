@@ -15,6 +15,10 @@
 #include "nlohmann/json.hpp"
 #include "mtmd.h"
 #include "mtmd-helper.h"
+#include "jni_utf8.h"
+
+using agora::jni::read_java_path;
+using agora::jni::read_java_string;
 
 #define LOG_TAG "LlamaChatEngine"
 #ifndef NDEBUG
@@ -306,18 +310,6 @@ struct TemplateSamplingMetadata {
     common_chat_format format = COMMON_CHAT_FORMAT_CONTENT_ONLY;
     std::string parser;
 };
-
-static bool read_java_string(JNIEnv * env, jstring value, std::string & result) {
-    if (!value) {
-        result.clear();
-        return true;
-    }
-    const char * chars = env->GetStringUTFChars(value, nullptr);
-    if (!chars) return false;
-    result.assign(chars);
-    env->ReleaseStringUTFChars(value, chars);
-    return true;
-}
 
 static bool read_string_field(
     JNIEnv * env,
@@ -693,21 +685,19 @@ JNIEXPORT jlong JNICALL
 Java_com_newoether_agora_api_LlamaChatEngine_nativeChatLoadModel(
     JNIEnv * env, jclass /*clazz*/, jstring path, jint n_ctx) {
 
-    const char * path_str = env->GetStringUTFChars(path, nullptr);
-    if (!path_str) return 0;
+    std::string path_str;
+    if (!read_java_path(env, path, path_str)) return 0;
 
     ChatHandle * handle = new ChatHandle();
     if (!handle) {
-        env->ReleaseStringUTFChars(path, path_str);
         return 0;
     }
 
     const auto load_started = std::chrono::steady_clock::now();
     llama_model_params model_params = llama_model_default_params();
     const auto model_started = std::chrono::steady_clock::now();
-    handle->model = llama_model_load_from_file(path_str, model_params);
+    handle->model = llama_model_load_from_file(path_str.c_str(), model_params);
     const auto model_finished = std::chrono::steady_clock::now();
-    env->ReleaseStringUTFChars(path, path_str);
 
     if (!handle->model) {
         LOGE("Failed to load model from file");
@@ -1167,8 +1157,8 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatLoadMmproj(
     ChatHandle * handle = reinterpret_cast<ChatHandle *>(handle_ptr);
     if (!handle->model) return JNI_FALSE;
 
-    const char * mmproj_str = env->GetStringUTFChars(mmproj_path, nullptr);
-    if (!mmproj_str) return JNI_FALSE;
+    std::string mmproj_str;
+    if (!read_java_path(env, mmproj_path, mmproj_str)) return JNI_FALSE;
 
     mtmd_context_params params = mtmd_context_params_default();
     params.use_gpu = false;
@@ -1176,8 +1166,7 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatLoadMmproj(
     params.print_timings = false;
 
     // Try loading new mmproj first (don't free old one yet)
-    mtmd_context * new_mtmd = mtmd_init_from_file(mmproj_str, handle->model, params);
-    env->ReleaseStringUTFChars(mmproj_path, mmproj_str);
+    mtmd_context * new_mtmd = mtmd_init_from_file(mmproj_str.c_str(), handle->model, params);
 
     if (!new_mtmd) {
         LOGE("Failed to load mmproj, keeping previous if any");
@@ -1268,8 +1257,7 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerateWithImages(
                 env, callback, callbacks, "Unable to read image path.", 0, 0
             );
         }
-        const char * cpath = env->GetStringUTFChars(jpath, nullptr);
-        if (!cpath) {
+        if (!read_java_path(env, jpath, image_path_storage[i])) {
             env->DeleteLocalRef(jpath);
             if (env->ExceptionCheck()) env->ExceptionClear();
             for (auto & b : bitmaps) if (b) mtmd_bitmap_free(b);
@@ -1277,8 +1265,6 @@ Java_com_newoether_agora_api_LlamaChatEngine_nativeChatGenerateWithImages(
                 env, callback, callbacks, "Unable to read image path.", 0, 0
             );
         }
-        image_path_storage[i] = std::string(cpath);
-        env->ReleaseStringUTFChars(jpath, cpath);
         env->DeleteLocalRef(jpath);
 
         bitmaps[i] = mtmd_helper_bitmap_init_from_file(handle->mtmd_ctx,
