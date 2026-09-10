@@ -210,7 +210,7 @@ class ChatViewModel(
 
     /** Local (on-device) chat-model configuration CRUD. */
     val modelManager = ModelManager(settings, viewModelScope)
-    private val customModelConfiguration = CustomModelConfigurationController(
+    internal val customModelConfiguration = CustomModelConfigurationController(
         providers = providerRegistry,
         conversations = convRepo,
         settings = settings,
@@ -804,37 +804,6 @@ class ChatViewModel(
         // Loop cycles for the open conversation use the regular Send path; the bridge waits for
         // that exact durable turn and returns a typed result to the automation lease owner.
         foregroundAutomationBridge.start()
-    }
-
-    // ── Custom providers ──────────────────────────────────────
-    // Settings persistence lives in SettingsRepository; ChatViewModel only maintains
-    // the live in-memory provider instances (the `providers` map) via callbacks.
-    fun addCustomProvider(
-        name: String,
-        baseUrl: String,
-        protocol: com.newoether.agora.data.CustomEndpointProtocol =
-            com.newoether.agora.data.CustomEndpointProtocol.OPENAI,
-    ) = customModelConfiguration.addProvider(name, baseUrl, protocol)
-    fun renameCustomProvider(oldName: String, newName: String) =
-        customModelConfiguration.renameProvider(oldName, newName)
-    fun updateCustomProviderProtocol(
-        name: String,
-        protocol: com.newoether.agora.data.CustomEndpointProtocol,
-    ) = customModelConfiguration.updateProviderProtocol(name, protocol)
-    fun deleteCustomProvider(name: String) = customModelConfiguration.deleteProvider(name)
-
-    fun updateCustomModel(
-        oldModelId: String,
-        provider: String,
-        modelId: String,
-        alias: String,
-        showProviderName: Boolean? = null,
-    ) {
-        customModelConfiguration.updateModel(oldModelId, provider, modelId, alias, showProviderName)
-    }
-
-    fun deleteCustomModel(modelId: String) {
-        customModelConfiguration.deleteModel(modelId)
     }
 
     fun getCurrentVersion(): String {

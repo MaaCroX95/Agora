@@ -11,12 +11,10 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.offset
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.rememberTextFieldState
@@ -651,7 +649,7 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                     showProviderName = showProviderName,
                                 )
                             } else {
-                                viewModel.updateCustomModel(
+                                viewModel.customModelConfiguration.updateModel(
                                     oldModelId = originalModelId,
                                     provider = normalizedProvider,
                                     modelId = normalizedModelId,
@@ -703,7 +701,7 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                         contentColor = MaterialTheme.colorScheme.error,
                     ),
                     onClick = {
-                        viewModel.deleteCustomModel(model)
+                        viewModel.customModelConfiguration.deleteModel(model)
                         deletingCustomModel = null
                     },
                 ) {

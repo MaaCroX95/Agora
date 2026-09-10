@@ -269,7 +269,7 @@ fun SettingsProviderDetailPage(
                                         selected = config.protocol,
                                         onSelected = { protocol ->
                                             if (protocol != config.protocol) {
-                                                viewModel.updateCustomProviderProtocol(currentName, protocol)
+                                                viewModel.customModelConfiguration.updateProviderProtocol(currentName, protocol)
                                             }
                                         },
                                     )
@@ -767,7 +767,7 @@ fun SettingsProviderDetailPage(
                 currentName = currentName,
             )
             if (!renameError) {
-                viewModel.renameCustomProvider(currentName, trimmed)
+                viewModel.customModelConfiguration.renameProvider(currentName, trimmed)
                 showRenameProvider = false
                 if (trimmed != currentName) currentName = trimmed
             }
@@ -776,6 +776,6 @@ fun SettingsProviderDetailPage(
 
     // Delete custom provider
     if (showDeleteProvider) {
-        AlertDialog(containerColor = MaterialTheme.colorScheme.surfaceContainer, onDismissRequest = { showDeleteProvider = false }, title = { Text(stringResource(R.string.custom_provider_delete_title), fontWeight = FontWeight.Bold) }, text = { Text(stringResource(R.string.custom_provider_delete_text, currentName)) }, confirmButton = { TextButton(onClick = { viewModel.deleteCustomProvider(currentName); showDeleteProvider = false; onBack() }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text(stringResource(R.string.provider_delete)) } }, dismissButton = { TextButton(onClick = { showDeleteProvider = false }) { Text(stringResource(R.string.cancel)) } })
+        AlertDialog(containerColor = MaterialTheme.colorScheme.surfaceContainer, onDismissRequest = { showDeleteProvider = false }, title = { Text(stringResource(R.string.custom_provider_delete_title), fontWeight = FontWeight.Bold) }, text = { Text(stringResource(R.string.custom_provider_delete_text, currentName)) }, confirmButton = { TextButton(onClick = { viewModel.customModelConfiguration.deleteProvider(currentName); showDeleteProvider = false; onBack() }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text(stringResource(R.string.provider_delete)) } }, dismissButton = { TextButton(onClick = { showDeleteProvider = false }) { Text(stringResource(R.string.cancel)) } })
     }
 }

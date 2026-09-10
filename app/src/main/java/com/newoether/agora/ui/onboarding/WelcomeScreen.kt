@@ -306,11 +306,11 @@ fun WelcomeScreen(
                 if (baseUrlText.isNotBlank()) {
                     val existing = customProviders.firstOrNull { it.name == p }
                     if (existing == null) {
-                        viewModel.addCustomProvider(p, baseUrlText, customProtocol)
+                        viewModel.customModelConfiguration.addProvider(p, baseUrlText, customProtocol)
                     } else {
                         viewModel.settings.setProviderBaseUrl(p, baseUrlText)
                         if (existing.protocol != customProtocol) {
-                            viewModel.updateCustomProviderProtocol(p, customProtocol)
+                            viewModel.customModelConfiguration.updateProviderProtocol(p, customProtocol)
                         }
                     }
                 }
