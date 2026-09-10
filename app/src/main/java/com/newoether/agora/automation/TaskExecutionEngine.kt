@@ -33,9 +33,7 @@ import com.newoether.agora.viewmodel.ConversationGenerationState
 import com.newoether.agora.viewmodel.GenerationRequestBuilder
 import com.newoether.agora.viewmodel.ToolRoundBoundaryDecision
 import com.newoether.agora.viewmodel.StandardGenerationContinuationLauncher
-import com.newoether.agora.viewmodel.StandardGenerationContinuationRequest
 import com.newoether.agora.viewmodel.automaticCompactAllowsHandoff
-import com.newoether.agora.viewmodel.launchStandardContinuationAfterGuidance
 import com.newoether.agora.viewmodel.normalizePersistedGenerationErrorText
 import com.newoether.agora.viewmodel.ProviderRegistry
 import com.newoether.agora.viewmodel.RagManager
@@ -54,7 +52,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Headless single-shot generation engine (process-scoped).
@@ -196,112 +193,6 @@ class TaskExecutionEngine(
         generationManagerProvider = { generationManager },
         continuationLauncher = { compactContinuationLauncher },
     )
-
-    private suspend fun settleStopEffect(
-        state: ConversationGenerationState,
-        effect: RunEffect.FinalizeStop,
-        messages: List<ChatMessage>,
-    ) = withContext(NonCancellable) {
-        stopFinalizer.launchStopFinalization(
-            scope = state.scope,
-            identity = effect.identity,
-            messages = messages,
-        ) { completion ->
-            val result = state.finishStopFinalization(completion)
-            if (result.accepted && completion.success) state.clearStoppedOverlay()
-        }.join()
-    }
-
-    private data class StandardCompactContinuationResult(
-        val modelMessageId: String?,
-        val aborted: Boolean = false,
-    )
-
-    /**
-     * Runs every post-tool boundary as ordinary generations: terminal Assistant -> Compact Run ->
-     * fresh Assistant Run. No provider stream, Assistant row, or Run identity is resumed.
-     */
-    private suspend fun continueThroughStandardCompactGenerations(
-        initialRequest: AutomaticCompactContinuationRequest,
-        state: ConversationGenerationState,
-    ): StandardCompactContinuationResult {
-        val pendingRequest = AtomicReference<AutomaticCompactContinuationRequest?>()
-        lateinit var boundLauncher: BoundRunGenerationLauncher
-        val continuationLauncher = StandardGenerationContinuationLauncher(
-            conversations = convRepo,
-            executionCoordinator = executionCoordinator,
-            terminalSettlement = terminalSettlement,
-            boundRunGenerationLauncher = { boundLauncher },
-            toUiMessage = { it.toUiChatMessage(appContext) },
-            isConversationOpen = { false },
-            projectGraph = { _, _, _, _ -> },
-        )
-        boundLauncher = BoundRunGenerationLauncher(
-            conversations = convRepo,
-            generationManagerProvider = { generationManager },
-            automaticCompactNeeded = contextCompactor::automaticNeeded,
-            terminalSettlement = terminalSettlement,
-            toUiMessage = { it.toUiChatMessage(appContext) },
-            onAutomaticCompactContinuation = { request, generationState ->
-                generationState.deferNextQueueDrain()
-                check(pendingRequest.compareAndSet(null, request)) {
-                    "A standard generation produced overlapping continuation requests"
-                }
-            },
-        )
-
-        var request: AutomaticCompactContinuationRequest? = initialRequest
-        var lastModelMessageId: String? = null
-        while (request != null) {
-            val current = request
-            val guidanceClaimRevision = state.guidanceClaimRevision()
-            val compactLaunch = compactController.startAutomaticStandard(
-                conversationId = current.generationRequest.conversationId,
-                contextLimit = current.generationRequest.snapshot.config.maxContextWindow,
-                config = current.config,
-                state = state,
-            ) ?: return StandardCompactContinuationResult(lastModelMessageId, aborted = true)
-            try {
-                compactLaunch.job.join()
-            } catch (cancelled: CancellationException) {
-                withContext(NonCancellable) {
-                    compactLaunch.job.cancel(cancelled)
-                    compactLaunch.job.join()
-                }
-                throw cancelled
-            }
-            val compactMessageId = compactLaunch.messageId
-            val compactStatus = convRepo.getMessage(compactMessageId)?.status
-            if (!automaticCompactAllowsHandoff(compactStatus)) {
-                return StandardCompactContinuationResult(lastModelMessageId, aborted = true)
-            }
-            val launch = launchStandardContinuationAfterGuidance(
-                state = state,
-                guidanceClaimRevision = guidanceClaimRevision,
-            ) {
-                pendingRequest.set(null)
-                continuationLauncher.launch(
-                    request = StandardGenerationContinuationRequest(
-                        conversationId = current.generationRequest.conversationId,
-                        parentMessageId = compactMessageId,
-                        snapshot = current.generationRequest.snapshot,
-                        alreadyHoldsConversationLock = true,
-                        touchConversationOnAdmission = false,
-                    ),
-                    state = state,
-                )
-            } ?: return StandardCompactContinuationResult(lastModelMessageId)
-            launch.job.join()
-            state.awaitSendAvailable()
-            val continuationMessage = convRepo.getMessage(launch.modelMessageId)
-            if (continuationMessage?.status == MessageStatus.STOPPED) {
-                return StandardCompactContinuationResult(lastModelMessageId, aborted = true)
-            }
-            if (continuationMessage != null) lastModelMessageId = launch.modelMessageId
-            request = pendingRequest.getAndSet(null)
-        }
-        return StandardCompactContinuationResult(lastModelMessageId)
-    }
 
     /**
      * Task-only post-processing. Loop runs share this engine but never call this method, so a
@@ -617,7 +508,7 @@ class TaskExecutionEngine(
                 val stopping = bindingOutcome as?
                     ConversationGenerationState.RunBindingOutcome.Stopping
                 if (stopping != null) {
-                    settleStopEffect(
+                    stopFinalizer.settleTaskStopEffect(
                         state = generationState,
                         effect = stopping.finalizationEffect,
                         messages = emptyList(),
@@ -697,7 +588,13 @@ class TaskExecutionEngine(
             generationState.awaitSendAvailable()
 
             if (boundaryParentId != null) {
-                val continuationResult = continueThroughStandardCompactGenerations(
+                val continuationResult = compactController.continueTaskGenerations(
+                    convRepo = convRepo,
+                    executionCoordinator = executionCoordinator,
+                    terminalSettlement = terminalSettlement,
+                    generationManager = generationManager,
+                    contextCompactor = contextCompactor,
+                    appContext = appContext,
                     initialRequest = AutomaticCompactContinuationRequest(
                         generationRequest = BoundRunGenerationRequest(
                             conversationId = conversationId,
@@ -757,7 +654,7 @@ class TaskExecutionEngine(
                 when (val binding = bindingOutcome) {
                     is ConversationGenerationState.RunBindingOutcome.Stopping -> {
                         if (!stopEffectHandled) {
-                            settleStopEffect(
+                            stopFinalizer.settleTaskStopEffect(
                                 state = generationState,
                                 effect = binding.finalizationEffect,
                                 messages = emptyList(),
@@ -771,7 +668,7 @@ class TaskExecutionEngine(
                         if (!generationState.stopping.value) {
                             val stopped = generationState.stop()
                             stopped.finalizationEffect?.let { effect ->
-                                settleStopEffect(
+                                stopFinalizer.settleTaskStopEffect(
                                     state = generationState,
                                     effect = effect,
                                     messages = stopped.stoppedMessage?.let(::listOf).orEmpty(),
@@ -840,7 +737,7 @@ class TaskExecutionEngine(
                     ConversationGenerationState.RunBindingOutcome.Stopping
                 if (stopping != null) {
                     if (!stopEffectHandled) {
-                        settleStopEffect(
+                        stopFinalizer.settleTaskStopEffect(
                             state = generationState,
                             effect = stopping.finalizationEffect,
                             messages = emptyList(),

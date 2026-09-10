@@ -38,6 +38,9 @@ class ChatDaoRunAdmissionTest {
         val taskEngine = sourceFile(
             "app/src/main/java/com/newoether/agora/automation/TaskExecutionEngine.kt",
         ).replace("\r\n", "\n")
+        val taskTransitions = sourceFile(
+            "app/src/main/java/com/newoether/agora/automation/TaskGenerationTransitions.kt",
+        ).replace("\r\n", "\n")
         val generationController = sourceFile(
             "app/src/main/java/com/newoether/agora/viewmodel/MessageGenerationController.kt",
         ).replace("\r\n", "\n")
@@ -48,11 +51,11 @@ class ChatDaoRunAdmissionTest {
             .substringAfter("private fun scheduleAutomaticCompactContinuation(")
             .substringBefore("fun generateTitle(")
 
-        assertEquals(
-            2,
-            Regex("touchConversationOnAdmission = false").findAll(taskEngine).count(),
-        )
-        assertFalse(taskEngine.contains("touchConversationOnAdmission = true"))
+        listOf(taskEngine, taskTransitions).forEach { source ->
+            assertEquals(1, Regex("touchConversationOnAdmission = false").findAll(source).count())
+            assertFalse(source.contains("touchConversationOnAdmission = true"))
+        }
+        assertTrue(taskEngine.contains("compactController.continueTaskGenerations("))
         assertTrue(automationSend.contains("touchConversationOnAdmission = false"))
         assertTrue(automaticContinuation.contains("touchConversationOnAdmission = false"))
     }
