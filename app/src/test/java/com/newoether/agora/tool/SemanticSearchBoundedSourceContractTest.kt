@@ -17,6 +17,9 @@ class SemanticSearchBoundedSourceContractTest {
         val repository = File(
             root,
             "com/newoether/agora/data/repository/ConversationRepository.kt",
+        ).readText() + File(
+            root,
+            "com/newoether/agora/data/repository/ConversationMessageSearch.kt",
         ).readText()
         val provider = File(root, "com/newoether/agora/tool/RagToolProvider.kt").readText()
         val selector = File(

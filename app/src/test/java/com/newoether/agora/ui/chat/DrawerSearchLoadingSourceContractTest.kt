@@ -10,7 +10,7 @@ class DrawerSearchLoadingSourceContractTest {
     @Test
     fun `keyword search uses a single SQLite LIKE escape character`() {
         val dao = source("data/local/ChatSearchDao.kt")
-        val repository = source("data/repository/ConversationRepository.kt")
+        val repository = source("data/repository/ConversationMessageSearch.kt")
         val globalSearchQuery = dao
             .substringBefore("suspend fun searchMessages")
             .substringAfterLast("@Query(")
