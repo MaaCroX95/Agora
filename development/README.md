@@ -164,6 +164,15 @@ preserve migration or audit evidence only and never override the module contract
 
 ## 8. Development completion gate
 
+The owner requires a sustainable Filo and Agora baseline (2026-09-10). Split maintained
+source, tests, resources and contracts by responsibility before files approach 999 lines;
+target 700–800 lines or less. Never compress statements or remove useful formatting to
+evade this limit. Preserve established behavior throughout structural cleanup. Baseline
+equivalence checks and the full regression suite are mandatory after implementation;
+every discovered regression blocks delivery until repaired or the change is reverted.
+Compiler/cache success, artifact creation, deployment and owner phone UI acceptance
+remain separate evidence. Keep the active goal open until its authorized work is complete.
+
 Before completion:
 
 1. re-read this document and every applicable module contract;

@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -38,7 +36,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -64,16 +61,11 @@ import com.newoether.agora.ui.chat.message.SegmentAppearanceRegistry
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import com.newoether.agora.viewmodel.BranchReplacementTransitionRequest
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.isActive
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -146,7 +138,8 @@ internal fun MessageList(
     val groupedSegmentAutoExpansionController = remember(conversationId) {
         GroupedSegmentAutoExpansionController()
     }
-    var editingMessageId by remember(conversationId) { mutableStateOf<String?>(null) }
+    val editingMessageIdState = remember(conversationId) { mutableStateOf<String?>(null) }
+    var editingMessageId by editingMessageIdState
     var pendingEditMessageId by remember { mutableStateOf<String?>(null) }
     val editVisualKeyAliases = remember(conversationId) {
         mutableStateMapOf<String, String>()
@@ -170,16 +163,15 @@ internal fun MessageList(
     }
     val hydratedPayloads = remember(conversationId) { HydratedMessagePayloadLru() }
     var listRootY by remember(state) { mutableFloatStateOf(0f) }
-    var streamingTailFollowMode by remember(state, conversationId) {
+    val streamingTailFollowModeState = remember(state, conversationId) {
         mutableStateOf(StreamingTailFollowMode.INACTIVE)
     }
-    var userDragInProgress by remember(state, conversationId) {
+    val userDragInProgressState = remember(state, conversationId) {
         mutableStateOf(false)
     }
-    val latestIsLoading by rememberUpdatedState(isLoading)
-    val latestAutoFollowEnabled by rememberUpdatedState(streamingAutoFollowEnabled)
+    var streamingTailFollowMode by streamingTailFollowModeState
+    val userDragInProgress by userDragInProgressState
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val tailTolerancePx = with(density) { 2.dp.toPx() }
     fun cacheHydratedPayload(message: ChatMessage) {
         hydratedPayloads.put(message)
     }
@@ -199,41 +191,16 @@ internal fun MessageList(
         streamingTailController.isAttached = attached
         if (!attached) streamingTailController.isAutoFollowing = false
     }
-    SideEffect {
-        streamingTailController.isAttached =
-            streamingTailFollowMode == StreamingTailFollowMode.ATTACHED ||
-                streamingTailFollowMode == StreamingTailFollowMode.SETTLING
-    }
-    LaunchedEffect(isSwitching) {
-        if (isSwitching) cancelMutationAnchoring()
-    }
-    LaunchedEffect(state, conversationId) {
-        state.interactionSource.interactions.collect { interaction ->
-            when (interaction) {
-                is DragInteraction.Start -> {
-                    cancelMutationAnchoring()
-                    userDragInProgress = true
-                    // A real gesture is authoritative. Clear the externally-observed flag before
-                    // changing mode so the scroll-to-bottom button can react in the same frame.
-                    streamingTailController.isAutoFollowing = false
-                    setStreamingTailFollowMode(
-                        reduceStreamingTailFollow(
-                            streamingTailFollowMode,
-                            StreamingTailFollowEvent.UserDragStarted,
-                        ),
-                    )
-                }
-
-                is DragInteraction.Stop,
-                is DragInteraction.Cancel -> {
-                    userDragInProgress = false
-                }
-            }
-        }
-    }
-    DisposableEffect(state, conversationId) {
-        onDispose { cancelMutationAnchoring() }
-    }
+    MessageListTailInteractionEffects(
+        state = state,
+        conversationId = conversationId,
+        isSwitching = isSwitching,
+        streamingTailFollowModeState = streamingTailFollowModeState,
+        userDragInProgressState = userDragInProgressState,
+        streamingTailController = streamingTailController,
+        cancelMutationAnchoring = ::cancelMutationAnchoring,
+        setStreamingTailFollowMode = ::setStreamingTailFollowMode,
+    )
 
     val visibleProjectionKey = remember(messages) {
         messages.list.map(ChatMessage::toRunProjectionKey)
@@ -257,59 +224,15 @@ internal fun MessageList(
     val tailHolderKey = messageListTailHolderKey(turns)
     LaunchedEffect(conversationId, turns, searchQuery) { onSearchTurnsChanged(turns) }
 
-    LaunchedEffect(
-        conversationId,
-        editingMessageId,
-        turns,
-        motionPolicy.allowProgrammaticScrollMotion,
-    ) {
-        val messageId = editingMessageId ?: return@LaunchedEffect
-        val turnIndex = messageListTurnIndex(turns, messageId)
-        if (turnIndex < 0) {
-            editingMessageId = null
-            return@LaunchedEffect
-        }
-
-        withFrameNanos { }
-        cancelMutationAnchoring()
-        val topInsetPx = with(density) { 140.dp.toPx() }
-        if (!motionPolicy.allowProgrammaticScrollMotion) {
-            state.scrollToItem(
-                index = turnIndex,
-                scrollOffset = -topInsetPx.roundToInt(),
-            )
-            return@LaunchedEffect
-        }
-
-        val fallbackHeightPx = with(density) { 160.dp.toPx() }
-        val estimatedTurnHeights = FloatArray(turns.size) { index ->
-            estimateMessageListTurnHeightPx(
-                turn = turns[index],
-                messageHeights = messageHeights,
-                fallbackHeightPx = fallbackHeightPx,
-            )
-        }
-        val heightPrefix = FloatArray(turns.size + 1)
-        for (index in estimatedTurnHeights.indices) {
-            heightPrefix[index + 1] = heightPrefix[index] + estimatedTurnHeights[index]
-        }
-        state.smoothSeekToItem(
-            targetIndex = { turnIndex },
-            targetErrorPx = { visibleTarget -> visibleTarget.offset - topInsetPx },
-            estimatedErrorPx = {
-                val firstVisible = state.layoutInfo.visibleItemsInfo
-                    .minByOrNull { item -> item.index }
-                    ?: return@smoothSeekToItem null
-                val firstIndex = firstVisible.index.coerceIn(0, turns.size)
-                firstVisible.offset +
-                    heightPrefix[turnIndex] -
-                    heightPrefix[firstIndex] -
-                    topInsetPx
-            },
-            exactTargetReady = { true },
-            minimumStepPx = with(density) { 2.dp.toPx() },
-        )
-    }
+    MessageListEditScrollEffect(
+        conversationId = conversationId,
+        editingMessageIdState = editingMessageIdState,
+        turns = turns,
+        allowProgrammaticScrollMotion = motionPolicy.allowProgrammaticScrollMotion,
+        state = state,
+        messageHeights = messageHeights,
+        cancelMutationAnchoring = ::cancelMutationAnchoring,
+    )
     val lastUserMessage =
         messages.list.lastOrNull(MessageGenerationBoundaryResolver::isRealUser)
 
@@ -381,177 +304,20 @@ internal fun MessageList(
         latestBranchReplacementFadeFinished(transition.id)
     }
 
-    LaunchedEffect(
-        state,
-        conversationId,
-        isLoading,
-        streamingAutoFollowEnabled,
-        streamingAutoFollowPaused,
-        lastUserMessage?.id,
-    ) {
-        if (!isLoading || streamingAutoFollowPaused || !streamingAutoFollowEnabled) {
-            setStreamingTailFollowMode(
-                reduceStreamingTailGenerationAvailability(
-                    current = streamingTailFollowMode,
-                    active = isLoading,
-                    autoFollowEnabled = streamingAutoFollowEnabled,
-                    autoFollowPaused = streamingAutoFollowPaused,
-                ),
-            )
-            return@LaunchedEffect
-        }
-        val nextMode = reduceStreamingTailGenerationAvailability(
-            current = streamingTailFollowMode,
-            active = isLoading,
-            autoFollowEnabled = streamingAutoFollowEnabled,
-            autoFollowPaused = streamingAutoFollowPaused,
-        )
-        if (nextMode == StreamingTailFollowMode.ATTACHED) {
-            cancelMutationAnchoring()
-        }
-        setStreamingTailFollowMode(nextMode)
-    }
-
-    LaunchedEffect(
-        state,
-        conversationId,
-        isLoading,
-        streamingAutoFollowEnabled,
-        streamingAutoFollowPaused,
-        streamingTailWithinAttachThreshold,
-    ) {
-        snapshotFlow {
-            state.isScrollInProgress to streamingTailFollowMode
-        }
-            .distinctUntilChanged()
-            .collect { (scrollInProgress, _) ->
-                if (
-                    !isLoading ||
-                    !streamingAutoFollowEnabled ||
-                    streamingAutoFollowPaused
-                ) {
-                    return@collect
-                }
-                val nextMode = reduceStreamingTailFollow(
-                    streamingTailFollowMode,
-                    StreamingTailFollowEvent.ViewportProximityChanged(
-                        withinAttachThreshold = streamingTailWithinAttachThreshold,
-                        scrollInProgress = scrollInProgress,
-                    ),
-                )
-                if (
-                    nextMode == StreamingTailFollowMode.ATTACHED &&
-                    streamingTailFollowMode != StreamingTailFollowMode.ATTACHED
-                ) {
-                    cancelMutationAnchoring()
-                }
-                setStreamingTailFollowMode(nextMode)
-            }
-    }
-
-    // One frame-driven actor owns attached scrolling. It reads the newest cumulative geometry on
-    // every display frame, coalesces all token/layout deltas into one critically damped correction,
-    // and is cancelled immediately by a real drag or any competing transition.
-    LaunchedEffect(
-        state,
-        conversationId,
-        isLoading,
-        streamingAutoFollowEnabled,
-        streamingTailFollowMode,
-    ) {
-        val followingActiveGeneration =
-            isLoading &&
-                streamingAutoFollowEnabled &&
-                streamingTailFollowMode == StreamingTailFollowMode.ATTACHED
-        val settlingCompletedGeneration =
-            !isLoading &&
-                streamingTailFollowMode == StreamingTailFollowMode.SETTLING
-        if (!followingActiveGeneration && !settlingCompletedGeneration) {
-            streamingTailController.isAutoFollowing = false
-            return@LaunchedEffect
-        }
-        cancelMutationAnchoring()
-        streamingTailController.isAutoFollowing = true
-        val minimumStepPx = with(density) { 2.dp.toPx() }
-        var previousFrameNanos = withFrameNanos { frameTimeNanos -> frameTimeNanos }
-        val settlingStartNanos = previousFrameNanos
-        var stableFrames = 0
-        try {
-            // Attachment is a layout correction, not a user-visible scroll gesture. Raw one-frame
-            // deltas deliberately avoid LazyList's MutatorMutex and isScrollInProgress, so an
-            // attached list never cancels taps or competes with the horizontal drawer recognizer.
-            // A real vertical drag still emits DragInteraction.Start above and detaches first.
-            while (
-                currentCoroutineContext().isActive &&
-                (
-                    (
-                        streamingTailFollowMode == StreamingTailFollowMode.ATTACHED &&
-                            latestIsLoading &&
-                            latestAutoFollowEnabled
-                    ) ||
-                        (
-                            streamingTailFollowMode == StreamingTailFollowMode.SETTLING &&
-                                !latestIsLoading
-                        )
-                ) &&
-                !userDragInProgress
-            ) {
-                val frameNanos = withFrameNanos { frameTimeNanos -> frameTimeNanos }
-                val elapsedSeconds =
-                    ((frameNanos - previousFrameNanos).coerceAtLeast(1L) / 1_000_000_000f)
-                        .coerceAtMost(0.05f)
-                previousFrameNanos = frameNanos
-                val absoluteBottom = absoluteBottomLayoutSnapshot(
-                    layoutInfo = state.layoutInfo,
-                    canScrollForward = state.canScrollForward,
-                )
-                // Attachment has exactly one authority: the page's physical end sentinel.
-                // The visual tail dot is deliberately absent from this calculation.
-                val error = absoluteBottom.remainingDistancePx
-                    ?: if (state.canScrollForward) {
-                        absoluteBottom.viewportSizePx * 0.5f
-                    } else {
-                        0f
-                    }
-                if (error > 0.5f) {
-                    val step = coalescedScrollStep(
-                        errorPx = error,
-                        elapsedSeconds = elapsedSeconds,
-                        timeConstantSeconds = 0.055f,
-                        maximumVelocityPxPerSecond = 2_800f,
-                        minimumStepPx = minimumStepPx,
-                    )
-                    if (abs(step) > 0.05f) {
-                        val modeStillOwnsAttachment =
-                            streamingTailFollowMode == StreamingTailFollowMode.ATTACHED ||
-                                streamingTailFollowMode == StreamingTailFollowMode.SETTLING
-                        if (!userDragInProgress && modeStillOwnsAttachment) {
-                            state.dispatchRawDelta(step)
-                        }
-                    }
-                }
-
-                if (streamingTailFollowMode == StreamingTailFollowMode.SETTLING) {
-                    stableFrames = if (error <= tailTolerancePx) stableFrames + 1 else 0
-                    val settlingElapsedMs =
-                        (frameNanos - settlingStartNanos).coerceAtLeast(0L) / 1_000_000L
-                    val settledAfterFinalAnimations =
-                        settlingElapsedMs >= 700L && stableFrames >= 8
-                    val settlingTimedOut = settlingElapsedMs >= 1_600L
-                    if (settledAfterFinalAnimations || settlingTimedOut) {
-                        setStreamingTailFollowMode(
-                            reduceStreamingTailFollow(
-                                streamingTailFollowMode,
-                                StreamingTailFollowEvent.SettlingFinished,
-                            ),
-                        )
-                    }
-                }
-            }
-        } finally {
-            streamingTailController.isAutoFollowing = false
-        }
-    }
+    MessageListTailFollowEffects(
+        state = state,
+        conversationId = conversationId,
+        isLoading = isLoading,
+        streamingAutoFollowEnabled = streamingAutoFollowEnabled,
+        streamingAutoFollowPaused = streamingAutoFollowPaused,
+        lastUserMessageId = lastUserMessage?.id,
+        streamingTailWithinAttachThreshold = streamingTailWithinAttachThreshold,
+        streamingTailFollowModeState = streamingTailFollowModeState,
+        userDragInProgressState = userDragInProgressState,
+        streamingTailController = streamingTailController,
+        cancelMutationAnchoring = ::cancelMutationAnchoring,
+        setStreamingTailFollowMode = ::setStreamingTailFollowMode,
+    )
 
     // Text/status/tool deltas do not change branch/run structure. Cache this O(n) projection by its
     // structural fields; copy text is read from the live MessageItem below.

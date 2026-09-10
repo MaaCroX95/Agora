@@ -331,13 +331,14 @@ class ApplicationUiSourceContractTest {
         val scrollActor = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/chat/RobustLazyListScroll.kt",
         )
-        val editFocus = messageList
-            .substringAfter("LaunchedEffect(\n        conversationId,\n        editingMessageId,")
-            .substringBefore("LaunchedEffect(regenerationTransition?.id)")
+        val editFocus = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/chat/MessageListEditScrollEffect.kt",
+        ).substringAfter("LaunchedEffect(\n        conversationId,\n        editingMessageId,")
 
         assertTrue(messageList.contains(
-            "var editingMessageId by remember(conversationId) { mutableStateOf<String?>(null) }",
+            "val editingMessageIdState = remember(conversationId) { mutableStateOf<String?>(null) }",
         ))
+        assertTrue(messageList.contains("editingMessageIdState = editingMessageIdState,"))
         assertTrue(editFocus.contains("messageListTurnIndex(turns, messageId)"))
         assertTrue(editFocus.contains("withFrameNanos { }"))
         assertTrue(editFocus.contains("cancelMutationAnchoring()"))
