@@ -5,53 +5,36 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.newoether.agora.R
-import com.newoether.agora.api.*
-import com.newoether.agora.api.LlamaEngine
-import com.newoether.agora.api.anthropic.*
-import com.newoether.agora.api.gemini.*
-import com.newoether.agora.api.local.*
-import com.newoether.agora.api.ollama.*
-import com.newoether.agora.api.openai.*
+import com.newoether.agora.api.LlmProvider
+import com.newoether.agora.api.local.LocalProvider
 import com.newoether.agora.data.AutoBackupManager
-import com.newoether.agora.data.BuiltInPrompts
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.DataExporter
 import com.newoether.agora.data.DataImporter
 import com.newoether.agora.data.MemoryManager
 import com.newoether.agora.data.SkillManager
-import com.newoether.agora.data.PredefinedVariables
 import com.newoether.agora.data.forDisplay
 import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
 
 import com.newoether.agora.data.ShellDeviceConfig
 
-import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.ConversationSettingsTransferCoordinator
 import com.newoether.agora.data.repository.SettingsRepository
-import com.newoether.agora.model.AttachmentItem
 import com.newoether.agora.model.ChatConversation
 import com.newoether.agora.model.ChatMessage
-import com.newoether.agora.model.MessageStatus
-import com.newoether.agora.model.apiModelName
-import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.sandbox.SandboxManager
 import com.newoether.agora.sandbox.SandboxManagerFactory
 import com.newoether.agora.service.AgoraForegroundService
 import com.newoether.agora.service.AppForegroundTracker
-import com.newoether.agora.util.DebugLog
-import com.newoether.agora.util.PdfPageRenderer
 import com.newoether.agora.util.SnackbarEvent
 import com.newoether.agora.util.UpdateChecker
 import com.newoether.agora.util.UpdateInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import java.io.File
-import java.util.UUID
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ChatViewModel(
@@ -387,7 +370,6 @@ class ChatViewModel(
     val tasks: StateFlow<List<com.newoether.agora.data.local.TaskEntity>> get() = taskManager.tasks
     val runningTaskIds: StateFlow<Set<String>> get() = taskManager.runningTaskIds
 
-    fun executionsForTask(taskId: String) = taskManager.executionsForTask(taskId)
     fun executionSummariesForTask(taskId: String) = taskManager.executionSummariesForTask(taskId)
     suspend fun getTask(taskId: String) = taskManager.getTask(taskId)
 
@@ -545,12 +527,6 @@ class ChatViewModel(
     val generationSnapshot: StateFlow<ConversationGenerationSnapshot> =
         conversationUi.generationSnapshot
 
-    /** Content-free runtime history used only by the explicitly unlocked Developer inspector. */
-    internal fun developerRuntimeTraceSnapshot(
-        conversationId: String,
-    ): List<com.newoether.agora.model.ConversationRuntimeTraceEntry> =
-        generationRegistry.get(conversationId)?.runtimeTraceSnapshot().orEmpty()
-
     /** Per-conversation generation state registry. Each conversation owns an independent
      *  ConversationGenerationState; the global loading/render mirrors
      *  below are now a MIRROR of whichever conversation is currently open (see init collectors). */
@@ -653,8 +629,6 @@ class ChatViewModel(
     )
     val isCompacting: StateFlow<Boolean> get() = compactUi.isCompacting
     val compactPreview: StateFlow<String> get() = compactUi.compactPreview
-    fun setPendingConversationSettings(value: ConversationSettings?) =
-        setConversationSettings(null, value)
     fun setConversationSettings(convId: String?, value: ConversationSettings?) =
         conversationWorkspaces.setConversationSettings(convId ?: NEW_CHAT_WORKSPACE_ID, value)
     private val payloadBuilder by lazy(::MessagePayloadBuilder)
@@ -858,8 +832,6 @@ class ChatViewModel(
     fun forkConversationFrom(messageId: String? = null) =
         conversationForkShareController.fork(messageId)
 
-    fun shareConversation() = conversationForkShareController.shareConversation()
-
     fun shareGeneration(assistantMessageId: String) =
         conversationForkShareController.shareGeneration(assistantMessageId)
 
@@ -885,12 +857,6 @@ class ChatViewModel(
 
     fun isConversationDeleteLocked(id: String): Boolean =
         conversationComposerSubmission.isFrozen(id)
-
-    suspend fun compactContextManual(
-        model: String,
-        prompt: String,
-        retainLogicalMessages: Int,
-    ): CompactResult = compactUi.manual(model, prompt, retainLogicalMessages)
 
     /** Owns manual Compact beyond the lifetime of the dialog/composition that initiated it. */
     fun startContextCompactManual(
@@ -944,21 +910,4 @@ class ChatViewModel(
 
     fun fetchAvailableModels() = providerModelSyncUi.fetchAvailableModels()
 
-    // ── Per-conversation draft persistence ─────────────────────
-
-    suspend fun persistDraft(
-        conversationId: String,
-        expectedRevision: Long,
-        text: String,
-        attachments: List<SelectedAttachment>,
-        explicitlyRemovedAttachments: List<SelectedAttachment> = emptyList(),
-    ): DraftPersistResult = composerDrafts.persist(
-        conversationId = conversationId,
-        expectedRevision = expectedRevision,
-        text = text,
-        attachments = attachments,
-        explicitlyRemovedAttachments = explicitlyRemovedAttachments,
-    )
-
-    suspend fun loadDraft(conversationId: String): LoadedComposerDraft = composerDrafts.load(conversationId)
 }
