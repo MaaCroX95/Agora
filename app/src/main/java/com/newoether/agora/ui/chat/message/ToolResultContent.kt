@@ -469,7 +469,9 @@ private fun ToolImagePreview(
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val previewHeight = if (squareCrop || loadImage != null) {
+        val previewHeight = if (squareCrop) {
+            maxWidth
+        } else if (loadImage != null) {
             maxWidth
         } else {
             (maxWidth / aspectRatio).coerceIn(140.dp, 420.dp)
