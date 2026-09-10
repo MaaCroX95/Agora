@@ -6,7 +6,6 @@ import com.newoether.agora.util.DebugLog
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -19,8 +18,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 
-private const val MAX_GLOBAL_ATTACHMENT_PROCESSING = 2
-private const val MAX_OWNER_ATTACHMENT_PROCESSING = 1
 /** Owns durable attachment import sessions independently for every composer draft owner. */
 internal class ConversationComposerController(
     private val scope: CoroutineScope,
@@ -42,30 +39,13 @@ internal class ConversationComposerController(
         val jobs = mutableMapOf<String, Job>()
         var frozenSubmissionId: Long? = null
     }
-    private data class ProcessingKey(
-        val ownerId: String,
-        val attachmentId: String,
-    )
-
-    private class ProcessingRequest(
-        val key: ProcessingKey,
-        val generation: Long,
-        val sequence: Long,
-    ) {
-        val admitted = CompletableDeferred<Unit>()
-    }
     private val sessionsMutex = Mutex()
     private val sessions = mutableMapOf<String, OwnerSession>()
     private var selectionOrder = 0L
     @Volatile
     private var selectedOwnerId: String? = null
 
-    private val processingMutex = Mutex()
-    private val queuedProcessing = linkedMapOf<ProcessingKey, ProcessingRequest>()
-    private val activeProcessing = mutableMapOf<ProcessingKey, ProcessingRequest>()
-    private val activeProcessingByOwner = mutableMapOf<String, Int>()
-    private var processingSequence = 0L
-    private var lastDispatchedOwnerId: String? = null
+    private val processingQueue = ComposerAttachmentProcessingQueue { selectedOwnerId }
 
     /** Admits one exact owner until the matching [release] call. */
     suspend fun load(ownerId: String): ConversationComposerSnapshot = load(ownerId, selected = false)
@@ -94,7 +74,7 @@ internal class ConversationComposerController(
         }
         var admitted = false
         return try {
-            if (selected) refreshProcessingPriority()
+            if (selected) processingQueue.refreshProcessingPriority()
             ensureLoaded(ownerId, session).also { admitted = true }
         } finally {
             withContext(NonCancellable) {
@@ -201,7 +181,7 @@ internal class ConversationComposerController(
                 priorityChanged = true
             }
         }
-        if (priorityChanged) refreshProcessingPriority()
+        if (priorityChanged) processingQueue.refreshProcessingPriority()
     }
     private suspend fun releaseCommand(ownerId: String, session: OwnerSession) {
         sessionsMutex.withLock {
@@ -535,7 +515,7 @@ internal class ConversationComposerController(
         generation: Long,
     ): Job = scope.launch(start = CoroutineStart.LAZY) {
         try {
-            withProcessingPermit(ownerId, source.localId, generation) {
+            processingQueue.withProcessingPermit(ownerId, source.localId, generation) {
                 when (val staged = processor.stage(source)) {
                     is AttachmentImportProcessor.StageResult.Success -> {
                         val durable = persistReplacement(
@@ -593,7 +573,7 @@ internal class ConversationComposerController(
         generation: Long,
     ): Job = scope.launch(start = CoroutineStart.LAZY) {
         try {
-            withProcessingPermit(ownerId, attachment.localId, generation) {
+            processingQueue.withProcessingPermit(ownerId, attachment.localId, generation) {
                 runProcessing(ownerId, session, attachment, generation)
             }
         } finally {
@@ -811,88 +791,6 @@ internal class ConversationComposerController(
         }
         session.durable = loaded
         session.state.value = loaded.copy(attachments = merged)
-    }
-    private suspend fun <T> withProcessingPermit(
-        ownerId: String,
-        attachmentId: String,
-        generation: Long,
-        block: suspend () -> T,
-    ): T {
-        val request = processingMutex.withLock {
-            ProcessingRequest(
-                key = ProcessingKey(ownerId, attachmentId),
-                generation = generation,
-                sequence = ++processingSequence,
-            ).also { next ->
-                val latestGeneration = maxOf(
-                    queuedProcessing[next.key]?.generation ?: Long.MIN_VALUE,
-                    activeProcessing[next.key]?.generation ?: Long.MIN_VALUE,
-                )
-                if (latestGeneration >= generation) {
-                    next.admitted.cancel(
-                        CancellationException("Superseded attachment processing"),
-                    )
-                } else {
-                    queuedProcessing.put(next.key, next)?.admitted?.cancel()
-                    dispatchProcessingLocked()
-                }
-            }
-        }
-        return try {
-            request.admitted.await()
-            block()
-        } finally {
-            withContext(NonCancellable) {
-                processingMutex.withLock {
-                    if (queuedProcessing[request.key] === request) {
-                        queuedProcessing.remove(request.key)
-                    }
-                    if (activeProcessing[request.key] === request) {
-                        activeProcessing.remove(request.key)
-                        val remaining = activeProcessingByOwner.getValue(request.key.ownerId) - 1
-                        if (remaining == 0) {
-                            activeProcessingByOwner.remove(request.key.ownerId)
-                        } else {
-                            activeProcessingByOwner[request.key.ownerId] = remaining
-                        }
-                    }
-                    dispatchProcessingLocked()
-                }
-            }
-        }
-    }
-    private suspend fun refreshProcessingPriority() {
-        processingMutex.withLock {
-            dispatchProcessingLocked()
-        }
-    }
-    private fun dispatchProcessingLocked() {
-        while (activeProcessing.size < MAX_GLOBAL_ATTACHMENT_PROCESSING) {
-            val eligible = queuedProcessing.values.filter { request ->
-                request.key !in activeProcessing &&
-                    activeProcessingByOwner.getOrDefault(request.key.ownerId, 0) <
-                    MAX_OWNER_ATTACHMENT_PROCESSING
-            }
-            if (eligible.isEmpty()) return
-            val selected = selectedOwnerId
-            val next = eligible
-                .filter { it.key.ownerId == selected }
-                .minByOrNull(ProcessingRequest::sequence)
-                ?.takeUnless {
-                    lastDispatchedOwnerId == selected &&
-                        eligible.any { request -> request.key.ownerId != selected }
-                }
-                ?: eligible
-                    .filter { it.key.ownerId != lastDispatchedOwnerId }
-                    .minByOrNull(ProcessingRequest::sequence)
-                ?: eligible.minBy(ProcessingRequest::sequence)
-            queuedProcessing.remove(next.key)
-            activeProcessing[next.key] = next
-            activeProcessingByOwner[next.key.ownerId] =
-                activeProcessingByOwner.getOrDefault(next.key.ownerId, 0) + 1
-            lastDispatchedOwnerId = next.key.ownerId
-            next.admitted.complete(Unit)
-        }
     }
     private suspend fun finishJob(
         ownerId: String,
