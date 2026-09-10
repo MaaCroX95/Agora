@@ -174,6 +174,9 @@ internal class ChatMediaSourceContractTest : UiSourceContractFixture() {
         val fade = source(
             root,
             "com/newoether/agora/ui/chat/message/IncrementalStreamingMarkdown.kt",
+        ) + source(
+            root,
+            "com/newoether/agora/ui/chat/message/StreamingGlyphFade.kt",
         )
         val assets = source(
             root,
