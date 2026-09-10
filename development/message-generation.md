@@ -298,14 +298,41 @@ durable message identity and cannot become a parallel message graph.
 - Repair only selections and dedicated Run ancestry necessary to keep surviving graphs valid.
 - Surviving messages are still grouped by the global Run contract; deletion cannot merge Runs.
 
-For ordinary structural message-branch deletion, selected-message and selected-Run repair use the
-same sibling order. If the selected branch is deleted, choose the immediate surviving later sibling
-first, fall back to the immediate surviving earlier sibling only when no later sibling exists, and
-remove the selection when neither exists. Message and Run selections must not diverge. This ordering
-rule does not broaden the deleted subtree, change synthetic-row filtering, or move transaction/file
-cleanup ownership.
+### 8.5 Ordinary message-branch deletion
 
-### 8.5 Tool-result continuation priority
+Ordinary message-branch deletion removes one selected message and its complete structural subtree.
+It is the default deletion path for every non-Compact message.
+
+1. Collect the root message and every structural descendant by BFS through parent→child edges. The
+   root is included. No message outside this subtree may be deleted, reparented, or mutated.
+2. A Run may be deleted only when every message it owns belongs to the deleted subtree **and** every
+   Run reachable through its parentRunId descendants is equally removable (cascade-safe). A Run that
+   retains at least one surviving message stays intact; it still owns the shared boundary USER or
+   other retained rows. Only the topmost cascade-safe Runs are passed to the durable transaction;
+   their Run descendants are deleted transitively.
+3. Message branch selection repair: for each selection edge pointing at a deleted message, resolve a
+   replacement from the surviving siblings of the same participant, excluding synthetic tool/result
+   rows. Prefer the immediate surviving later sibling first; fall back to the immediate surviving
+   earlier sibling only when no later sibling exists. Remove the selection when neither exists.
+   Selection edges whose parent is itself deleted are removed unconditionally. Message and Run
+   selections must not diverge; Run selection repair uses the same next-then-previous ordering among
+   Run siblings.
+4. The complete plan (deleted message IDs, root Run IDs to delete, repaired message selections,
+   repaired Run selections) commits in one Room `@Transaction`. The transaction deletes embeddings
+   for all deleted messages, updates conversation selections and recency, deletes wholly-empty Runs,
+   and finally deletes the message rows. Failure at any step rolls back the entire transaction.
+5. Attachment files referenced by deleted messages are cleaned up only after the transaction commits
+   successfully. A failed or rolled-back transaction must never orphan or delete files.
+6. Ordinary message-branch deletion requires the conversation to be idle: no active Run may exist.
+   This is verified both before acquiring the queue mutation mutex and again under the conversation
+   execution lock. A generation that starts between these two checks causes the deletion to abort
+   without side effects.
+
+Ordinary message-branch deletion must not reparent children of the root (that is Compact deletion
+semantics), must not merge surviving generation groups across different Runs, and must not mutate
+any field of any message outside the deleted subtree.
+
+### 8.6 Tool-result continuation priority
 
 After a durable tool result:
 
@@ -320,7 +347,7 @@ message/status, stale identity, or any other Compact anomaly stops this automati
 claimed guidance remains owned and ordered but is not automatically invoked or cleared after that
 failure; only a later explicit user action may resume ordinary queue admission.
 
-### 8.6 Compact UI
+### 8.7 Compact UI
 
 Compact may own a capsule renderer, message label/menu, haptic exclusion, and stable presentation.
 Every durable Compact is an independent message and owns exactly one standalone LazyColumn item.
@@ -386,7 +413,7 @@ invariant/debug exceptions are not user-visible resources.
 Both terminal presentations derive from the ordinary durable message status/error fields. They do
 not own a Compact state machine or infer failure from missing text.
 
-### 8.7 Shared streaming Markdown UI
+### 8.8 Shared streaming Markdown UI
 
 Ordinary answer Markdown, Thinking Bottom Sheet Markdown, and Compact Bottom Sheet Markdown use one
 shared streaming Markdown message UI implementation. That implementation owns the existing
@@ -713,7 +740,7 @@ structured tree. It never inserts a missing quote, key, value, object/array deli
 syntax. Arbitrary trailing prose and genuinely impossible JSON prefixes remain invalid and retain the
 raw-text fallback.
 
-### 8.8 Empty output and automatic handoff
+### 8.9 Empty output and automatic handoff
 
 Provider completion with no answer, thought, follow-up, guidance, or other successful output is an
 ordinary generation error. Terminal persistence must include a nonblank error value so every
@@ -744,7 +771,65 @@ the origin release and very fast Compact completion can settle in either order a
 consume each other's decision. Failure never clears, drops, duplicates, or reorders queued user
 input; it leaves that input pending for a later explicit user action.
 
-### 8.9 Provider-hosted output and OpenAI-compatible controls
+### 8.10 Provider-hosted output and OpenAI-compatible controls
+
+#### Complete forwarding and explicit unsupported evidence (2026-09-08)
+
+The owner's following requirements are binding acceptance criteria, not a claim that the current
+implementation already satisfies them:
+
+```text
+帮我全面核查所有provider，不得有任何一个遗漏，不得有任何一个字段遗漏。每一个provider我必须看到所有字段的完整透传，且必须在最终api request内出现，还必须有效
+```
+
+```text
+对于不支持的字段，每一个都必须明确标出不支持的source，里面必须看到不支持的声明。如果没有source且没有支持该结论的声明，视为不合格。其他情况，必须透传，不得有任何遗漏借口。
+```
+
+1. Inventory every Provider, transport branch, configuration field and final request field. Include
+   built-in, custom and synthetic/local paths, nested message/tool fields, and every generation
+   caller. No Provider, field or branch may disappear from the audit because it is inconvenient,
+   untested, unknown, previously classified as not applicable, or inherited from another adapter.
+2. Trace every configured field to the final dispatched API request and show its exact location,
+   value, encoding and any transformation. Configuration objects, helper output and UI state alone
+   are not wire evidence. Body, headers and URL are distinct request locations; client-local
+   controls must show their final request effect rather than being silently excluded. A Local or
+   synthetic path must identify its real execution boundary and must not fabricate an HTTP request.
+3. Every field must be effective as well as forwarded. Distinguish final production-request capture,
+   upstream semantic evidence and actual behavior verification. HTTP success, compilation, a passed
+   test count or mere field presence cannot prove effectiveness. Sent-but-ignored, rejected,
+   incorrectly transformed and unverified fields must not receive an effective-forwarding pass.
+4. Every unsupported-field conclusion requires a directly inspectable source and the exact statement
+   in that source establishing non-support, with its Provider, protocol, model/version and operating
+   mode scope and retrieval date. Cite each field individually, even when several share a source.
+   Documentation silence, absence from a schema or SDK, legacy code, old contracts and previous
+   audit conclusions are not an explicit unsupported statement.
+5. A missing source or a source without a statement supporting that exact conclusion fails
+   acceptance. Mark it evidence-insufficient and unresolved, never supported, unsupported, N/A or
+   passed by assumption. It cannot authorize dropping a configured field. Apart from explicitly
+   evidenced non-support, complete forwarding remains mandatory; no silent omission, field-removal
+   retry, hidden default substitution or display-only setting may replace it.
+6. Deliver the complete Provider-by-field report to the owner with no blank/unaccounted cells.
+   Record the final request path, actual value/mapping, effectiveness evidence and verification
+   status for each field. Negative claims must include their source statement. Any missing field,
+   unproven exemption or unverified effect prevents an all-Providers/all-fields completion claim.
+
+This evidence gate takes precedence over earlier applicability, omission and N/A assertions in this
+document, including the provider-specific prose below. Those assertions do not themselves establish
+upstream non-support and must be revalidated field by field. Persisting this contract does not grant
+authorization for production/test edits, credentials, paid requests, Git mutations or deployment.
+
+The owner's repair-scope clarification on 2026-09-08 is:
+
+```text
+我让你修provider字段问题！
+```
+
+Repair Provider field forwarding, encoding, validation, decoding and continuation replay within the
+existing product. Do not turn this work into a new parameter-editor feature, Skill permission
+migration or backup-policy redesign. Those unrelated choices are not prerequisites for Provider
+field repair. Keep every Provider and unresolved field accounted for; a bounded completed batch
+does not establish completion of the full audit or model-side effectiveness.
 
 An official OpenAI Provider or a custom Provider selected as OpenAI-compatible, together with
 Responses API enabled, is sufficient to expose both `OpenAI Search` and `Service Tier` in the
@@ -955,7 +1040,7 @@ suffix after a supported close in a thought segment is recovered. UI and Provide
 both split that segment into thought plus answer without mutating Room, so visible history and the
 next request cannot drift. A real durable answer always wins and disables compatibility recovery.
 
-### 8.10 Provider reuse and mandatory minimum-abstraction rule
+### 8.11 Provider reuse and mandatory minimum-abstraction rule
 
 Official endpoints and compatible relays reuse the existing Provider implementation selected by the
 wire protocol. A relay carrying Claude or Gemini models through an OpenAI-compatible wire contract
@@ -989,7 +1074,7 @@ The following are binding review blockers:
   path until several real features need the exact same rule. Unknown relay behavior fails closed;
   that alone does not justify a capability framework.
 
-### 8.11 Conversation share projection
+### 8.12 Conversation share projection
 
 Every conversation-sharing mode—whole conversation, selected visible messages, and one assistant
 generation—uses one public-content formatter. The exported Markdown must omit every structured
