@@ -110,6 +110,8 @@ class CurrentApprovedFeatureSourceContractTest {
         )
         val manager = sourceFile(
             "app/src/main/java/com/newoether/agora/data/SettingsManager.kt",
+        ) + sourceFile(
+            "app/src/main/java/com/newoether/agora/data/PortableSettingsReset.kt",
         )
         val repository = sourceFile(
             "app/src/main/java/com/newoether/agora/data/repository/SettingsRepository.kt",

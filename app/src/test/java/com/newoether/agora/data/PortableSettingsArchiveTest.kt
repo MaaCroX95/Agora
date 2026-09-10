@@ -150,8 +150,10 @@ class PortableSettingsArchiveTest {
         coVerify(exactly = 2) { manager.resetPortableSettingsForImport() }
         val root = locateDirectory("app/src/main/java", "src/main/java")
         val export = File(root, "com/newoether/agora/data/PortableSettingsArchive.kt").readText()
-        val storage = File(root, "com/newoether/agora/data/SettingsManager.kt").readText()
+        val storage = File(root, "com/newoether/agora/data/SettingsManager.kt").readText() +
+            File(root, "com/newoether/agora/data/PortableSettingsReset.kt").readText()
         assertTrue(export.contains("putEncoded(\"modelProviderNames\", sm.modelProviderNames.first())"))
+        assertTrue(storage.contains("clearPortableSettings(prefs)"))
         assertTrue(storage.contains("prefs[MODEL_PROVIDER_NAMES_JSON] = \"{}\""))
         assertTrue(storage.contains("produceMigrations = { listOf(modelProviderNamesMigration) }"))
     }
@@ -160,7 +162,7 @@ class PortableSettingsArchiveTest {
     fun amoledIsDefaultOffPortableAndAvailableInEveryTheme() {
         val root = locateDirectory("app/src/main/java", "src/main/java")
         fun source(path: String) = File(root, "com/newoether/agora/$path").readText()
-        val manager = source("data/SettingsManager.kt")
+        val manager = source("data/SettingsManager.kt") + source("data/PortableSettingsReset.kt")
         val archive = source("data/PortableSettingsArchive.kt")
         val repository = source("data/repository/SettingsRepository.kt")
         val page = source("ui/settings/SettingsAppearancePage.kt")
@@ -240,7 +242,8 @@ class PortableSettingsArchiveTest {
         fun source(path: String) = File(mainRoot, path).readText().replace("\r\n", "\n")
 
         val schema = source("com/newoether/agora/data/SettingsPreferenceSchema.kt")
-        val manager = source("com/newoether/agora/data/SettingsManager.kt")
+        val manager = source("com/newoether/agora/data/SettingsManager.kt") +
+            source("com/newoether/agora/data/PortableSettingsReset.kt")
         val repository = source("com/newoether/agora/data/repository/SettingsRepository.kt")
         val archive = source("com/newoether/agora/data/PortableSettingsArchive.kt")
         val settingsPage = source("com/newoether/agora/ui/settings/SettingsSearchPage.kt")
