@@ -1,7 +1,6 @@
 package com.newoether.agora.data
 
 import android.util.JsonReader
-import android.util.JsonToken
 import com.newoether.agora.automation.LoopPolicy
 import com.newoether.agora.data.DataImporter.ImportStrategy
 import com.newoether.agora.data.NativeConversationMediaRestorer.RestoredMedia
@@ -30,11 +29,6 @@ import com.newoether.agora.service.MaintenanceDebtWorker
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 import java.io.InputStream
 import java.io.InputStreamReader
@@ -88,41 +82,11 @@ internal class NativeConversationGraphImporter(
         val messageParentOverrides: Map<String, String> = emptyMap(),
     )
 
-    /** Reads one JSON value only; callers retain at most one exported entity at a time. */
-    private fun readJsonElement(reader: JsonReader): JsonElement = when (reader.peek()) {
-        JsonToken.BEGIN_OBJECT -> {
-            val values = linkedMapOf<String, JsonElement>()
-            reader.beginObject()
-            while (reader.hasNext()) {
-                values[reader.nextName()] = readJsonElement(reader)
-            }
-            reader.endObject()
-            JsonObject(values)
-        }
-        JsonToken.BEGIN_ARRAY -> {
-            val values = mutableListOf<JsonElement>()
-            reader.beginArray()
-            while (reader.hasNext()) {
-                values.add(readJsonElement(reader))
-            }
-            reader.endArray()
-            JsonArray(values)
-        }
-        JsonToken.STRING -> JsonPrimitive(reader.nextString())
-        JsonToken.NUMBER -> importJson.parseToJsonElement(reader.nextString())
-        JsonToken.BOOLEAN -> JsonPrimitive(reader.nextBoolean())
-        JsonToken.NULL -> {
-            reader.nextNull()
-            JsonNull
-        }
-        else -> error("Unexpected JSON token ${reader.peek()}")
-    }
-
     private inline fun <reified T> JsonReader.readSerializableArray(): List<T> {
         val values = mutableListOf<T>()
         beginArray()
         while (hasNext()) {
-            values.add(importJson.decodeFromJsonElement(readJsonElement(this)))
+            values.add(importJson.decodeFromJsonElement(importJson.readNativeGraphValue(this)))
         }
         endArray()
         return values
@@ -397,7 +361,7 @@ internal class NativeConversationGraphImporter(
                 reader.beginArray()
                 while (reader.hasNext()) {
                     val exported = importJson.decodeFromJsonElement<ExportMessageEntity>(
-                        readJsonElement(reader)
+                        importJson.readNativeGraphValue(reader)
                     )
                     if (exported.conversationId in availableConversationIds) {
                         if (exported.id in deletedMessageIds) continue
@@ -443,7 +407,7 @@ internal class NativeConversationGraphImporter(
                 reader.beginArray()
                 while (reader.hasNext()) {
                     val exported = importJson.decodeFromJsonElement<ExportMessageEntity>(
-                        readJsonElement(reader)
+                        importJson.readNativeGraphValue(reader)
                     )
                     if (exported.conversationId in headers.availableConversationIds) {
                         val participant = try {
