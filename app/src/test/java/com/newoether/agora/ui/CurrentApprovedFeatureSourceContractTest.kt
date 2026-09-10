@@ -96,7 +96,11 @@ class CurrentApprovedFeatureSourceContractTest {
         assertTrue(registry.contains("Semaphore(permits = MAX_CONCURRENT_CONNECTIONS)"))
         assertTrue(registry.contains("connectionPermits.withPermit"))
         assertTrue(registry.contains("internal const val MAX_CONCURRENT_CONNECTIONS = 2"))
-        assertTrue(page.contains("val enabledToolCount = remember(tools)"))
+        val status = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/settings/McpStatusPresentation.kt",
+        )
+        assertTrue(page.contains("McpStatusText("))
+        assertTrue(status.contains("val enabledToolCount = remember(tools)"))
     }
 
     @Test
