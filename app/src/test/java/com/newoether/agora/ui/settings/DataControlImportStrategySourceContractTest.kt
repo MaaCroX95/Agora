@@ -12,6 +12,8 @@ class DataControlImportStrategySourceContractTest {
     fun unifiedImportPageUsesSharedStrategyControls() {
         val page = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/settings/datacontrol/SettingsDataControlPage.kt",
+        ).readText().normalizeLines() + sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/settings/datacontrol/NativeDataSelectionDialogs.kt",
         ).readText().normalizeLines()
 
         assertEquals(3, Regex("""\bPillTabSwitcher\(""").findAll(page).count())
@@ -198,7 +200,7 @@ class DataControlImportStrategySourceContractTest {
     @Test
     fun nativePreviewSeparatesCategoryBlocksWithoutChangingInternalGap() {
         val page = sourceFile(
-            "app/src/main/java/com/newoether/agora/ui/settings/datacontrol/SettingsDataControlPage.kt",
+            "app/src/main/java/com/newoether/agora/ui/settings/datacontrol/NativeDataSelectionDialogs.kt",
         ).readText().normalizeLines()
 
         assertTrue(page.contains("Column(verticalArrangement = Arrangement.spacedBy(16.dp))"))
