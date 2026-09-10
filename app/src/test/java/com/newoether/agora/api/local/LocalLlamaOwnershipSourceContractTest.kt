@@ -472,8 +472,12 @@ class LocalLlamaOwnershipSourceContractTest {
         )
         assertTrue(appContainer.contains("it.localModelIdleRetentionMinutes, appScope"))
         assertTrue(localModelsGroup >= 0 && advancedGroup > localModelsGroup)
-        assertTrue(settingsPage.contains("LOCAL_MODEL_IDLE_RETENTION_PRESETS"))
-        assertTrue(settingsPage.contains("PersistedSliderFeedbackGate"))
+        val slider = mainSource(
+            "com/newoether/agora/ui/settings/LocalModelIdleRetentionSlider.kt",
+        )
+        assertTrue(settingsPage.contains("LocalModelIdleRetentionSlider("))
+        assertTrue(slider.contains("LOCAL_MODEL_IDLE_RETENTION_PRESETS"))
+        assertTrue(slider.contains("PersistedSliderFeedbackGate"))
         assertFalse(portable.contains("localModelIdleRetentionMinutes"))
         assertFalse(portable.contains("local_model_idle_retention_minutes"))
         assertFalse(portableReset.contains("LOCAL_MODEL_IDLE_RETENTION_MINUTES"))

@@ -13,7 +13,10 @@ class SettingsResourceContractTest {
     fun anthropicCacheControlsFollowProviderScopeAndAppearanceInteractions() {
         val detail = readSettingsSource("SettingsProviderDetailPage.kt")
         val gate = "if (isAnthropicProtocolProvider(currentName, customProviders))"
-        assertTrue(detail.indexOf(gate) > detail.lastIndexOf("R.string.provider_api_keys"))
+        val apiKeys = readSettingsSource("ProviderApiKeysSettings.kt")
+        val keysPosition = detail.indexOf("ProviderApiKeysSettings(")
+        assertTrue(keysPosition >= 0 && detail.indexOf(gate) > keysPosition)
+        assertTrue(apiKeys.contains("R.string.provider_api_keys"))
         val controls = detail.substringAfter(gate).substringBefore("if (showDocFab)")
         assertTrue(controls.contains("R.string.advanced_title"))
         assertTrue(controls.contains("customConfig?.providerId ?: currentName"))
