@@ -178,6 +178,9 @@ internal class ChatMediaSourceContractTest : UiSourceContractFixture() {
         val assets = source(
             root,
             "com/newoether/agora/ui/chat/message/MessageBubbleAssets.kt",
+        ) + source(
+            root,
+            "com/newoether/agora/ui/chat/message/ChatMarkdownCode.kt",
         )
         val timeline = source(
             root,

@@ -234,9 +234,13 @@ class LatexRendererTest {
         val component = images
             .substringAfter("internal fun ScrollableDisplayLatexImage(")
             .substringBefore("internal fun ChatMarkdownInlineImage(")
-        val tracker = source
+        val code = File(
+            locateMainSourceRoot(),
+            "com/newoether/agora/ui/chat/message/ChatMarkdownCode.kt",
+        ).readText()
+        val tracker = code
             .substringAfter("internal fun TrackStreamingHorizontalScroll(")
-            .substringBefore("private fun SearchHighlightedMarkdownCode(")
+            .substringBefore("internal fun SearchHighlightedMarkdownCode(")
 
         assertTrue(
             Regex("""image\s*=\s*\{\s*model\s*->\s*ScrollableDisplayLatexImage\(model\)\s*}""")

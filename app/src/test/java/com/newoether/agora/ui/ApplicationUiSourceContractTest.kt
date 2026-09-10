@@ -742,11 +742,11 @@ class ApplicationUiSourceContractTest {
     fun `shell confirmation code surface provides standalone Markdown locals`() {
         val main = sourceFile("app/src/main/java/com/newoether/agora/MainActivity.kt")
         val assets = sourceFile(
-            "app/src/main/java/com/newoether/agora/ui/chat/message/MessageBubbleAssets.kt",
+            "app/src/main/java/com/newoether/agora/ui/chat/message/ChatMarkdownCode.kt",
         )
         val codeBlock = assets
             .substringAfter("internal fun ChatMarkdownCodeBlock(")
-            .substringBefore("private fun OverflowFriendlyMarkdownTable(")
+            .substringBefore("internal fun TrackStreamingHorizontalScroll(")
 
         assertTrue(main.contains("ChatMarkdownCodeBlock(code = pending.summary)"))
         assertTrue(codeBlock.contains("CompositionLocalProvider("))
