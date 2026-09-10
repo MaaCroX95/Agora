@@ -622,6 +622,8 @@ internal class ApprovedFeatureSourceContractTest : UiSourceContractFixture() {
 
         listOf(
             "com/newoether/agora/ui/settings/SettingsModelsPage.kt",
+            "com/newoether/agora/ui/settings/ModelSettingsProjection.kt",
+            "com/newoether/agora/ui/settings/CustomModelProviderPicker.kt",
             "com/newoether/agora/ui/settings/SettingsContextPage.kt",
             "com/newoether/agora/ui/settings/SettingsTitleGenPage.kt",
             "com/newoether/agora/ui/settings/SettingsTranscriptionPage.kt",
