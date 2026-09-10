@@ -199,7 +199,8 @@ class StreamingMarkdownMessageSourceContractTest {
         val normal = source(root, "MessageItemMarkdown.kt")
         val incremental = source(root, "IncrementalStreamingMarkdown.kt")
         val timeline = source(root, "MessageItemTimeline.kt")
-        val citation = source(root, "CitationMessageContent.kt")
+        val citation = source(root, "CitationMarkdownProjection.kt")
+        val presentation = source(root, "CitationMessageContent.kt")
 
         listOf(normal, incremental).forEach { owner ->
             assertTrue(owner.contains("val inlineContent = LocalMarkdownInlineContent.current"))
@@ -210,7 +211,7 @@ class StreamingMarkdownMessageSourceContractTest {
             Regex("isStreaming = answerIsStreaming").findAll(timeline).count(),
         )
         assertTrue(citation.contains("internal fun citationMarkdownProjection("))
-        assertFalse(citation.contains("terminalCitationMarkdownProjection"))
+        assertFalse((citation + presentation).contains("terminalCitationMarkdownProjection"))
         assertTrue(citation.contains("val unsupported by lazy(LazyThreadSafetyMode.NONE)"))
         assertTrue(citation.contains("boundedTrailingCitationWrapperStart("))
         assertTrue(citation.contains("PlainCitationArtifact.findAll(answerText)"))
@@ -220,7 +221,7 @@ class StreamingMarkdownMessageSourceContractTest {
         assertTrue(projectionPolicy.indexOf("if (isStreaming)") <
             projectionPolicy.indexOf("projectCitationMarkdown(answerText, citations)"))
         assertTrue(projectionPolicy.contains("markers = emptyList()"))
-        assertFalse(citation.contains("answerText.lastIndexOf(\"([\")"))
+        assertFalse((citation + presentation).contains("answerText.lastIndexOf(\"([\")"))
     }
 
     @Test
