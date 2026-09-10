@@ -188,7 +188,7 @@ internal class ApprovedFeatureSourceContractTest : UiSourceContractFixture() {
     @Test
     fun ratingPaddingBelongsOnlyToDialogHost() {
         val root = sourceRoot()
-        val mainActivity = source(root, "com/newoether/agora/MainActivity.kt")
+        val mainActivity = source(root, "com/newoether/agora/MainApplicationDialogs.kt")
         val rating = source(root, "com/newoether/agora/ui/settings/RatingForm.kt")
         val settings = source(root, "com/newoether/agora/ui/settings/SettingsAboutPage.kt")
 

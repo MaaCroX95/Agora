@@ -626,7 +626,7 @@ internal class ApplicationUiSourceContractTest : UiSourceContractFixture() {
 
     @Test
     fun `shell confirmation code surface provides standalone Markdown locals`() {
-        val main = sourceFile("app/src/main/java/com/newoether/agora/MainActivity.kt")
+        val main = sourceFile("app/src/main/java/com/newoether/agora/MainApplicationDialogs.kt")
         val assets = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/chat/message/ChatMarkdownCode.kt",
         )
