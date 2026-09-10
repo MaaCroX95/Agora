@@ -23,8 +23,9 @@ class Phase32DirectDotSourceContractTest {
         ).forEach { symbol -> assertFalse("MessageList retains $symbol", list.contains(symbol)) }
         assertFalse(list.contains("StreamingTailIndicator("))
 
-        val assistantActivity = assistant
-            .substringAfter("private fun AssistantInlineActivity(")
+        val activity = messageSource("AssistantInlineActivity.kt")
+        val assistantActivity = activity
+            .substringAfter("internal fun AssistantInlineActivity(")
             .substringBefore("/**")
         assertTrue(assistant.contains("import com.newoether.agora.ui.chat.GenerationActivityDot"))
         assertTrue(assistantActivity.contains("GenerationActivityDot()"))
@@ -36,15 +37,15 @@ class Phase32DirectDotSourceContractTest {
         assertTrue(assistantActivity.contains(
             "alpha = if (terminalText == null) activityOpacity else 1f"
         ))
-        assertTrue(assistant.contains(".heightIn(min = AssistantInlineActivityHeight)"))
-        assertTrue(assistant.contains("import androidx.compose.ui.graphics.CompositingStrategy"))
+        assertTrue(activity.contains(".heightIn(min = AssistantInlineActivityHeight)"))
+        assertTrue(activity.contains("import androidx.compose.ui.graphics.CompositingStrategy"))
         assertTrue(assistantActivity.contains(
             "compositingStrategy = CompositingStrategy.ModulateAlpha"
         ))
         assertFalse(assistantActivity.contains("CompositingStrategy.Offscreen"))
         assertTrue(assistantActivity.contains("clip = false"))
-        assertFalse(assistant.contains("InlineActivityDotMarker"))
-        assertFalse(assistant.contains("InlineActivityDotSource"))
+        assertFalse((assistant + activity).contains("InlineActivityDotMarker"))
+        assertFalse((assistant + activity).contains("InlineActivityDotSource"))
 
         assertTrue(retry.contains("GenerationActivityDot("))
         assertTrue(retry.contains("translationX = dotTranslationPx"))

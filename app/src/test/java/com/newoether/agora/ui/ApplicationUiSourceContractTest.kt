@@ -294,7 +294,7 @@ internal class ApplicationUiSourceContractTest : UiSourceContractFixture() {
             "app/src/main/java/com/newoether/agora/viewmodel/GenerationManager.kt",
         )
         val assistant = sourceFile(
-            "app/src/main/java/com/newoether/agora/ui/chat/message/AssistantMessageContent.kt",
+            "app/src/main/java/com/newoether/agora/ui/chat/message/AssistantInlineActivity.kt",
         )
 
         assertFalse(transcription.contains("retryText ="))

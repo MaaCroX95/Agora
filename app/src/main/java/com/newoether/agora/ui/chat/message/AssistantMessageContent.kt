@@ -1,11 +1,9 @@
 package com.newoether.agora.ui.chat.message
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.Transition
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -32,7 +30,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -50,166 +47,15 @@ import com.newoether.agora.model.CitationRecord
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.Participant
-import com.newoether.agora.model.TokenUsage
 import com.newoether.agora.model.ToolCallDisplayModes
 import com.newoether.agora.model.ThinkingSegmentDisplayModes
 import com.newoether.agora.model.citationRecords
 import com.newoether.agora.ui.chat.GenerationActivityDot
-import com.newoether.agora.ui.chat.StreamingTailAnchorHeight
 import com.newoether.agora.ui.chat.shouldShowStreamingTailIndicator
 import com.newoether.agora.ui.common.LocalAgoraHaptics
-import com.newoether.agora.ui.theme.ChatType
 
 internal val AssistantMessageHorizontalInset = 8.dp
 private val FormerAssistantStatusSpacerHeight = 6.dp
-private val AssistantInlineActivityHeight = StreamingTailAnchorHeight
-
-internal data class TokenUsagePresentation(
-    val input: Int?,
-    val cachedInput: Int?,
-    val output: Int?,
-)
-
-internal fun tokenUsagePresentation(
-    usage: TokenUsage?,
-): TokenUsagePresentation {
-    if (usage == null) return TokenUsagePresentation(null, null, null)
-    val input = usage.inputTokenCount
-        ?: if (
-            usage.cachedInputTokenCount != null &&
-            usage.uncachedInputTokenCount != null
-        ) {
-            TokenUsage.addCounts(
-                usage.cachedInputTokenCount,
-                usage.uncachedInputTokenCount,
-            )
-        } else {
-            usage.outputTokenCount
-                ?.let { output -> (usage.totalTokenCount - output).takeIf { it >= 0 } }
-        }
-    val output = usage.outputTokenCount
-        ?: input?.let { inputCount ->
-            (usage.totalTokenCount - inputCount).takeIf { it >= 0 }
-        }
-    return TokenUsagePresentation(
-        input = input,
-        cachedInput = usage.cachedInputTokenCount,
-        output = output,
-    )
-}
-
-internal enum class AssistantInlineActivityMode {
-    NONE,
-    EMPTY,
-    RETRY,
-}
-
-internal fun assistantInlineActivityMode(
-    generationActive: Boolean,
-    hasAnswer: Boolean,
-    hasVisibleInfoSegment: Boolean,
-    retryText: String?,
-): AssistantInlineActivityMode = when {
-    !generationActive -> AssistantInlineActivityMode.NONE
-    !retryText.isNullOrBlank() -> AssistantInlineActivityMode.RETRY
-    !hasAnswer && !hasVisibleInfoSegment -> AssistantInlineActivityMode.EMPTY
-    else -> AssistantInlineActivityMode.NONE
-}
-
-internal data class AssistantInlineActivityPresentation(
-    val mode: AssistantInlineActivityMode,
-    val retainLayout: Boolean,
-)
-
-internal fun assistantInlineActivityPresentation(
-    generationActive: Boolean,
-    isStopping: Boolean,
-    hasAnswer: Boolean,
-    hasVisibleInfoSegment: Boolean,
-    retryText: String?,
-): AssistantInlineActivityPresentation {
-    val ownedMode = assistantInlineActivityMode(
-        generationActive,
-        hasAnswer,
-        hasVisibleInfoSegment,
-        retryText,
-    )
-    return AssistantInlineActivityPresentation(
-        mode = if (isStopping) AssistantInlineActivityMode.NONE else ownedMode,
-        retainLayout = isStopping && ownedMode != AssistantInlineActivityMode.NONE,
-    )
-}
-
-@Composable
-private fun AssistantInlineActivity(
-    mode: AssistantInlineActivityMode,
-    retryText: String?,
-    visibilityTransition: Transition<Boolean>,
-    activityOpacity: Float,
-    retainExitLayout: Boolean,
-    terminalText: String?,
-    terminalIsError: Boolean,
-    terminalShowLocalContextHelp: Boolean,
-    precededByCard: Boolean,
-) {
-    var retainedMode by remember {
-        mutableStateOf(
-            mode.takeUnless { it == AssistantInlineActivityMode.NONE }
-                ?: AssistantInlineActivityMode.EMPTY,
-        )
-    }
-    var retainedRetryText by remember { mutableStateOf(retryText) }
-    LaunchedEffect(mode, retryText) {
-        if (mode != AssistantInlineActivityMode.NONE) {
-            retainedMode = mode
-            retainedRetryText = retryText
-        }
-    }
-    val activityVisible = visibilityTransition.targetState
-    val ownsCurrentActivity = activityVisible && mode != AssistantInlineActivityMode.NONE
-    val visibleMode = if (ownsCurrentActivity) mode else retainedMode
-    val visibleRetryText = if (ownsCurrentActivity) retryText else retainedRetryText
-    if (visibilityTransition.targetState || retainExitLayout || terminalText != null) {
-        Box(
-            modifier = Modifier
-                .padding(top = if (precededByCard) 12.dp else 0.dp)
-                .heightIn(min = AssistantInlineActivityHeight),
-        ) {
-            Crossfade(
-                targetState = terminalText,
-                animationSpec = tween(durationMillis = 180, easing = LinearEasing),
-                label = "AssistantInlineTerminalTransition",
-            ) { visibleTerminalText ->
-                if (visibleTerminalText == null) {
-                    Row(
-                        modifier = Modifier.graphicsLayer {
-                            compositingStrategy = CompositingStrategy.ModulateAlpha
-                            // Crossfade exclusively owns alpha after the terminal handoff begins.
-                            alpha = if (terminalText == null) activityOpacity else 1f
-                            clip = false
-                        },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (visibleMode == AssistantInlineActivityMode.RETRY) {
-                            RetryActivityIndicator(label = visibleRetryText.orEmpty() + "...")
-                        } else {
-                            GenerationActivityDot()
-                        }
-                    }
-                } else if (terminalIsError) {
-                    GenerationErrorBar(
-                        errorText = visibleTerminalText,
-                        showLocalContextHelp = terminalShowLocalContextHelp,
-                        topPadding = 0.dp,
-                    )
-                } else {
-                    GenerationTerminalText(visibleTerminalText)
-                }
-            }
-        }
-    }
-}
-
 
 /**
  * The left-aligned assistant (and error) message content: the streaming status header,

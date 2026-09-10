@@ -9,7 +9,7 @@ class Phase27UiSourceContractTest {
     @Test
     fun `direct sources own visuals with no clone or coordinate follower`() {
         val list = chatSource("MessageList.kt")
-        val assistant = source("AssistantMessageContent.kt")
+        val assistant = source("AssistantMessageContent.kt") + source("AssistantInlineActivity.kt")
         val retry = source("RetryActivityIndicator.kt")
         val tail = chatSource("StreamingTailIndicator.kt")
         val follower = File(
