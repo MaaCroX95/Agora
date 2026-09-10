@@ -457,4 +457,28 @@
     <string name="provider_cache_desc">Solicitar cache de prompts; o cache do relay é independente</string>
     <string name="provider_cache_duration">Duração do cache</string>
     <string name="provider_cache_duration_desc">Por quanto tempo os prompts em cache podem ser reutilizados</string>
+    <!-- Network and service tier -->
+    <string name="settings_group_network">Rede</string>
+    <string name="settings_proxy">Proxy</string>
+    <string name="settings_proxy_desc">Encaminhar o tráfego de rede por um proxy HTTP ou SOCKS</string>
+    <string name="proxy_enable">Ativar proxy</string>
+    <string name="proxy_enable_desc">Encaminhar todo o tráfego de rede do app pelo proxy</string>
+    <string name="proxy_type">Tipo</string>
+    <string name="proxy_host">Host</string>
+    <string name="proxy_port">Porta</string>
+    <string name="proxy_username">Usuário (opcional)</string>
+    <string name="proxy_password">Senha (opcional)</string>
+    <string name="proxy_bypass">Lista de exceções</string>
+    <string name="proxy_bypass_desc">Hosts e faixas CIDR que conectam diretamente, um por linha</string>
+    <string name="default_service_tier">Nível de serviço padrão</string>
+    <string name="openai_service_tier_title">Nível de serviço</string>
+    <string name="openai_service_tier_desc">Controla a latência e a prioridade das solicitações com protocolo OpenAI.</string>
+    <string name="openai_service_tier_off">Desativado</string>
+    <string name="openai_service_tier_auto">Automático</string>
+    <string name="openai_service_tier_default">Padrão</string>
+    <string name="openai_service_tier_flex">Flexível</string>
+    <string name="openai_service_tier_scale">Escala</string>
+    <string name="openai_service_tier_priority">Prioridade</string>
+    <string name="openai_service_tier_fast">Rápido</string>
+    <string name="openai_service_tier_ultrafast">Ultrarrápido</string>
 </resources>

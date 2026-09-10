@@ -457,4 +457,28 @@
     <string name="provider_cache_desc">Yêu cầu lưu đệm lời nhắc; bộ nhớ đệm của máy chủ chuyển tiếp hoạt động độc lập</string>
     <string name="provider_cache_duration">Thời hạn lưu đệm</string>
     <string name="provider_cache_duration_desc">Khoảng thời gian có thể tái sử dụng lời nhắc đã lưu đệm</string>
+    <!-- Network and service tier -->
+    <string name="settings_group_network">Mạng</string>
+    <string name="settings_proxy">Proxy</string>
+    <string name="settings_proxy_desc">Định tuyến lưu lượng truy cập mạng thông qua một proxy HTTP hoặc SOCKS</string>
+    <string name="proxy_enable">Bật proxy</string>
+    <string name="proxy_enable_desc">Định tuyến tất cả lưu lượng mạng của ứng dụng qua proxy</string>
+    <string name="proxy_type">Loại</string>
+    <string name="proxy_host">Máy chủ</string>
+    <string name="proxy_port">Cổng</string>
+    <string name="proxy_username">Tên đăng nhập (tùy chọn)</string>
+    <string name="proxy_password">Mật khẩu (tùy chọn)</string>
+    <string name="proxy_bypass">Danh sách bỏ qua</string>
+    <string name="proxy_bypass_desc">Các máy chủ và dải CIDR kết nối trực tiếp, mỗi địa chỉ một dòng</string>
+    <string name="default_service_tier">Cấp dịch vụ mặc định</string>
+    <string name="openai_service_tier_title">Cấp dịch vụ</string>
+    <string name="openai_service_tier_desc">Kiểm soát độ trễ và mức ưu tiên cho các yêu cầu theo giao thức OpenAI.</string>
+    <string name="openai_service_tier_off">Tắt</string>
+    <string name="openai_service_tier_auto">Tự động</string>
+    <string name="openai_service_tier_default">Mặc định</string>
+    <string name="openai_service_tier_flex">Linh hoạt</string>
+    <string name="openai_service_tier_scale">Quy mô</string>
+    <string name="openai_service_tier_priority">Ưu tiên</string>
+    <string name="openai_service_tier_fast">Nhanh</string>
+    <string name="openai_service_tier_ultrafast">Siêu nhanh</string>
 </resources>

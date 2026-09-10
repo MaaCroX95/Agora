@@ -457,4 +457,28 @@
     <string name="provider_cache_desc">프롬프트 캐시를 요청합니다. 릴레이 캐시는 별도로 관리됩니다</string>
     <string name="provider_cache_duration">캐시 유지 시간</string>
     <string name="provider_cache_duration_desc">캐시된 프롬프트를 재사용할 수 있는 시간</string>
+    <!-- Network and service tier -->
+    <string name="settings_group_network">네트워크</string>
+    <string name="settings_proxy">프록시</string>
+    <string name="settings_proxy_desc">HTTP 또는 SOCKS 프록시를 통해 트래픽 전송</string>
+    <string name="proxy_enable">프록시 사용</string>
+    <string name="proxy_enable_desc">앱의 모든 네트워크 트래픽을 프록시로 전송</string>
+    <string name="proxy_type">유형</string>
+    <string name="proxy_host">호스트</string>
+    <string name="proxy_port">포트</string>
+    <string name="proxy_username">사용자 이름(선택)</string>
+    <string name="proxy_password">비밀번호(선택)</string>
+    <string name="proxy_bypass">우회 목록</string>
+    <string name="proxy_bypass_desc">직접 연결하는 호스트와 CIDR 범위, 한 줄에 하나씩</string>
+    <string name="default_service_tier">기본 서비스 티어</string>
+    <string name="openai_service_tier_title">서비스 티어</string>
+    <string name="openai_service_tier_desc">OpenAI 프로토콜 요청의 지연 시간과 처리 우선순위를 제어합니다.</string>
+    <string name="openai_service_tier_off">꺼짐</string>
+    <string name="openai_service_tier_auto">자동</string>
+    <string name="openai_service_tier_default">기본</string>
+    <string name="openai_service_tier_flex">유연</string>
+    <string name="openai_service_tier_scale">스케일</string>
+    <string name="openai_service_tier_priority">우선</string>
+    <string name="openai_service_tier_fast">빠름</string>
+    <string name="openai_service_tier_ultrafast">초고속</string>
 </resources>

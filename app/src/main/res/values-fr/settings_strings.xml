@@ -457,4 +457,28 @@
     <string name="provider_cache_desc">Demander la mise en cache des prompts ; le cache du relais est indépendant</string>
     <string name="provider_cache_duration">Durée du cache</string>
     <string name="provider_cache_duration_desc">Durée pendant laquelle les prompts en cache restent réutilisables</string>
+    <!-- Network and service tier -->
+    <string name="settings_group_network">Réseau</string>
+    <string name="settings_proxy">Proxy</string>
+    <string name="settings_proxy_desc">Acheminer le trafic réseau via un proxy HTTP ou SOCKS</string>
+    <string name="proxy_enable">Activer le proxy</string>
+    <string name="proxy_enable_desc">Acheminer tout le trafic réseau via le proxy</string>
+    <string name="proxy_type">Type</string>
+    <string name="proxy_host">Hôte</string>
+    <string name="proxy_port">Port</string>
+    <string name="proxy_username">Identifiant (facultatif)</string>
+    <string name="proxy_password">Mot de passe (facultatif)</string>
+    <string name="proxy_bypass">Liste de contournement</string>
+    <string name="proxy_bypass_desc">Hôtes et plages CIDR connectés directement, un par ligne</string>
+    <string name="default_service_tier">Niveau de service par défaut</string>
+    <string name="openai_service_tier_title">Niveau de service</string>
+    <string name="openai_service_tier_desc">Contrôle la latence et la priorité des requêtes utilisant le protocole OpenAI.</string>
+    <string name="openai_service_tier_off">Désactivé</string>
+    <string name="openai_service_tier_auto">Automatique</string>
+    <string name="openai_service_tier_default">Par défaut</string>
+    <string name="openai_service_tier_flex">Flexible</string>
+    <string name="openai_service_tier_scale">Échelle</string>
+    <string name="openai_service_tier_priority">Prioritaire</string>
+    <string name="openai_service_tier_fast">Rapide</string>
+    <string name="openai_service_tier_ultrafast">Ultra-rapide</string>
 </resources>

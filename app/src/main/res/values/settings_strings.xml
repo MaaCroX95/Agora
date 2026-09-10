@@ -473,4 +473,28 @@
     <string name="provider_cache_desc">Request prompt caching; relay caching is independent</string>
     <string name="provider_cache_duration">Cache Duration</string>
     <string name="provider_cache_duration_desc">How long cached prompts remain reusable</string>
+    <!-- Network and service tier -->
+    <string name="settings_group_network">Network</string>
+    <string name="settings_proxy">Proxy</string>
+    <string name="settings_proxy_desc">Route network traffic through an HTTP or SOCKS proxy</string>
+    <string name="proxy_enable">Enable Proxy</string>
+    <string name="proxy_enable_desc">Route all app network traffic through the proxy</string>
+    <string name="proxy_type">Type</string>
+    <string name="proxy_host">Host</string>
+    <string name="proxy_port">Port</string>
+    <string name="proxy_username">Username (optional)</string>
+    <string name="proxy_password">Password (optional)</string>
+    <string name="proxy_bypass">Bypass List</string>
+    <string name="proxy_bypass_desc">Hosts and CIDR ranges that connect directly, one per line</string>
+    <string name="default_service_tier">Default Service Tier</string>
+    <string name="openai_service_tier_title">Service Tier</string>
+    <string name="openai_service_tier_desc">Controls latency and processing priority for OpenAI-protocol requests.</string>
+    <string name="openai_service_tier_off">Off</string>
+    <string name="openai_service_tier_auto">Auto</string>
+    <string name="openai_service_tier_default">Default</string>
+    <string name="openai_service_tier_flex">Flex</string>
+    <string name="openai_service_tier_scale">Scale</string>
+    <string name="openai_service_tier_priority">Priority</string>
+    <string name="openai_service_tier_fast">Fast</string>
+    <string name="openai_service_tier_ultrafast">Ultrafast</string>
 </resources>

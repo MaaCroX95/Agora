@@ -462,4 +462,28 @@
     <string name="provider_cache_desc">請求快取提示詞；中繼服務的快取獨立控制</string>
     <string name="provider_cache_duration">快取時長</string>
     <string name="provider_cache_duration_desc">已快取提示詞可重複使用的時間</string>
+    <!-- Network and service tier -->
+    <string name="settings_group_network">網路</string>
+    <string name="settings_proxy">代理</string>
+    <string name="settings_proxy_desc">透過 HTTP 或 SOCKS 代理轉送網路流量</string>
+    <string name="proxy_enable">啟用代理</string>
+    <string name="proxy_enable_desc">將應用程式的所有網路流量透過代理轉送</string>
+    <string name="proxy_type">類型</string>
+    <string name="proxy_host">主機</string>
+    <string name="proxy_port">連接埠</string>
+    <string name="proxy_username">使用者名稱(選填)</string>
+    <string name="proxy_password">密碼(選填)</string>
+    <string name="proxy_bypass">直連清單</string>
+    <string name="proxy_bypass_desc">直接連線、不經過代理的主機與 CIDR 範圍,每行一個</string>
+    <string name="default_service_tier">預設服務層級</string>
+    <string name="openai_service_tier_title">服務層級</string>
+    <string name="openai_service_tier_desc">控制 OpenAI 協定請求的延遲與處理優先順序。</string>
+    <string name="openai_service_tier_off">關閉</string>
+    <string name="openai_service_tier_auto">自動</string>
+    <string name="openai_service_tier_default">預設</string>
+    <string name="openai_service_tier_flex">彈性</string>
+    <string name="openai_service_tier_scale">規模</string>
+    <string name="openai_service_tier_priority">優先</string>
+    <string name="openai_service_tier_fast">快速</string>
+    <string name="openai_service_tier_ultrafast">超高速</string>
 </resources>

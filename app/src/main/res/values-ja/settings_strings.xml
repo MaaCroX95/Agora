@@ -457,4 +457,28 @@
     <string name="provider_cache_desc">プロンプトのキャッシュを要求します。中継サーバーのキャッシュは独立しています</string>
     <string name="provider_cache_duration">キャッシュ保持期間</string>
     <string name="provider_cache_duration_desc">キャッシュされたプロンプトを再利用できる期間</string>
+    <!-- Network and service tier -->
+    <string name="settings_group_network">ネットワーク</string>
+    <string name="settings_proxy">プロキシ</string>
+    <string name="settings_proxy_desc">HTTP または SOCKS プロキシ経由で通信します</string>
+    <string name="proxy_enable">プロキシを有効にする</string>
+    <string name="proxy_enable_desc">アプリのすべての通信をプロキシ経由にします</string>
+    <string name="proxy_type">種類</string>
+    <string name="proxy_host">ホスト</string>
+    <string name="proxy_port">ポート</string>
+    <string name="proxy_username">ユーザー名(任意)</string>
+    <string name="proxy_password">パスワード(任意)</string>
+    <string name="proxy_bypass">バイパスリスト</string>
+    <string name="proxy_bypass_desc">直接接続するホストと CIDR 範囲(1 行に 1 つ)</string>
+    <string name="default_service_tier">デフォルトのサービス階層</string>
+    <string name="openai_service_tier_title">サービス階層</string>
+    <string name="openai_service_tier_desc">OpenAI プロトコルのリクエストの遅延と処理優先度を制御します。</string>
+    <string name="openai_service_tier_off">オフ</string>
+    <string name="openai_service_tier_auto">自動</string>
+    <string name="openai_service_tier_default">デフォルト</string>
+    <string name="openai_service_tier_flex">フレックス</string>
+    <string name="openai_service_tier_scale">スケール</string>
+    <string name="openai_service_tier_priority">優先</string>
+    <string name="openai_service_tier_fast">高速</string>
+    <string name="openai_service_tier_ultrafast">超高速</string>
 </resources>

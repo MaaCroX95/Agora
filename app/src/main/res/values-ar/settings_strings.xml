@@ -457,4 +457,28 @@
     <string name="provider_cache_desc">طلب تخزين المطالبات مؤقتًا؛ تخزين خادم الترحيل مستقل</string>
     <string name="provider_cache_duration">مدة التخزين المؤقت</string>
     <string name="provider_cache_duration_desc">مدة إمكانية إعادة استخدام المطالبات المخزنة مؤقتًا</string>
+    <!-- Network and service tier -->
+    <string name="settings_group_network">الشبكة</string>
+    <string name="settings_proxy">الوكيل</string>
+    <string name="settings_proxy_desc">توجيه حركة الشبكة عبر وكيل HTTP أو SOCKS</string>
+    <string name="proxy_enable">تفعيل الوكيل</string>
+    <string name="proxy_enable_desc">توجيه كل حركة شبكة التطبيق عبر الوكيل</string>
+    <string name="proxy_type">النوع</string>
+    <string name="proxy_host">المضيف</string>
+    <string name="proxy_port">المنفذ</string>
+    <string name="proxy_username">اسم المستخدم (اختياري)</string>
+    <string name="proxy_password">كلمة المرور (اختياري)</string>
+    <string name="proxy_bypass">قائمة التجاوز</string>
+    <string name="proxy_bypass_desc">المضيفون ونطاقات CIDR التي تتصل مباشرةً، واحد في كل سطر</string>
+    <string name="default_service_tier">مستوى الخدمة الافتراضي</string>
+    <string name="openai_service_tier_title">مستوى الخدمة</string>
+    <string name="openai_service_tier_desc">يتحكم في زمن الاستجابة وأولوية طلبات بروتوكول OpenAI.</string>
+    <string name="openai_service_tier_off">إيقاف</string>
+    <string name="openai_service_tier_auto">تلقائي</string>
+    <string name="openai_service_tier_default">افتراضي</string>
+    <string name="openai_service_tier_flex">مرن</string>
+    <string name="openai_service_tier_scale">التوسّع</string>
+    <string name="openai_service_tier_priority">الأولوية</string>
+    <string name="openai_service_tier_fast">سريع</string>
+    <string name="openai_service_tier_ultrafast">فائق السرعة</string>
 </resources>

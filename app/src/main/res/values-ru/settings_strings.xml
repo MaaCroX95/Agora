@@ -457,4 +457,28 @@
     <string name="provider_cache_desc">Запрашивать кэширование промптов; кэш ретранслятора независим</string>
     <string name="provider_cache_duration">Срок хранения кэша</string>
     <string name="provider_cache_duration_desc">Как долго можно повторно использовать кэшированные промпты</string>
+    <!-- Network and service tier -->
+    <string name="settings_group_network">Сеть</string>
+    <string name="settings_proxy">Прокси</string>
+    <string name="settings_proxy_desc">Направлять сетевой трафик через HTTP- или SOCKS-прокси</string>
+    <string name="proxy_enable">Включить прокси</string>
+    <string name="proxy_enable_desc">Направлять весь сетевой трафик приложения через прокси</string>
+    <string name="proxy_type">Тип</string>
+    <string name="proxy_host">Хост</string>
+    <string name="proxy_port">Порт</string>
+    <string name="proxy_username">Имя пользователя (необязательно)</string>
+    <string name="proxy_password">Пароль (необязательно)</string>
+    <string name="proxy_bypass">Список исключений</string>
+    <string name="proxy_bypass_desc">Хосты и диапазоны CIDR для прямого подключения, по одному в строке</string>
+    <string name="default_service_tier">Уровень обслуживания по умолчанию</string>
+    <string name="openai_service_tier_title">Уровень обслуживания</string>
+    <string name="openai_service_tier_desc">Управляет задержкой и приоритетом запросов по протоколу OpenAI.</string>
+    <string name="openai_service_tier_off">Выкл.</string>
+    <string name="openai_service_tier_auto">Авто</string>
+    <string name="openai_service_tier_default">По умолчанию</string>
+    <string name="openai_service_tier_flex">Гибкий</string>
+    <string name="openai_service_tier_scale">Масштаб</string>
+    <string name="openai_service_tier_priority">Приоритет</string>
+    <string name="openai_service_tier_fast">Быстрый</string>
+    <string name="openai_service_tier_ultrafast">Ультрабыстрый</string>
 </resources>
