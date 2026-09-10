@@ -68,7 +68,11 @@ endif()
 target_compile_definitions(ggml-base PRIVATE GGML_COMMIT="unknown")
 
 # Build llama JNI wrapper
-add_library(agora_llama SHARED llama_jni.cpp llama_chat_jni.cpp)
+add_library(agora_llama SHARED
+    llama_jni.cpp
+    llama_chat_jni.cpp
+    llama_chat_callbacks.cpp
+)
 target_link_libraries(agora_llama llama llama-common mtmd log)
 target_include_directories(agora_llama PRIVATE ${LLAMA_CPP_DIR}/include ${LLAMA_CPP_DIR}/tools/mtmd)
 target_link_options(agora_llama PRIVATE

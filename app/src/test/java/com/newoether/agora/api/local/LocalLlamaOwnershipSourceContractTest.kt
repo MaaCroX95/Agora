@@ -195,6 +195,7 @@ class LocalLlamaOwnershipSourceContractTest {
     @Test
     fun `local output uses the template parser as the typed stream authority`() {
         val native = mainCppSource("llama_chat_jni.cpp")
+        val callbacks = mainCppSource("llama_chat_callbacks.cpp")
         val engine = mainSource("com/newoether/agora/api/LlamaChatEngine.kt")
         val providerContract = mainSource("com/newoether/agora/api/LlmProvider.kt")
         val provider = mainSource("com/newoether/agora/api/local/LocalProvider.kt")
@@ -231,8 +232,8 @@ class LocalLlamaOwnershipSourceContractTest {
             .findAll(native).count())
         assertEquals(2, Regex("parser\\.finish\\(env, callback, callbacks, failure\\)")
             .findAll(native).count())
-        assertFalse(native.contains("report_token("))
-        assertFalse(native.contains("\"onToken\""))
+        assertFalse((native + callbacks).contains("report_token("))
+        assertFalse((native + callbacks).contains("\"onToken\""))
 
         assertTrue(providerContract.contains("val nativeTextParsingAuthoritative: Boolean"))
         assertTrue(providerContract.contains("get() = false"))
@@ -314,7 +315,7 @@ class LocalLlamaOwnershipSourceContractTest {
         val text = nativeFunctionSection(native, "nativeChatGenerate")
         val prepare = native
             .substringAfter("static size_t prepare_text_cache(")
-            .substringBefore("// Returns the byte length")
+            .substringBefore("static bool token_to_piece(")
 
         val sameIdentity = runtime
             .substringAfter("current is Resident.Chat && current.identity == identity")
