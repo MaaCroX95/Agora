@@ -25,7 +25,7 @@ internal class RemoteViewModel(
     private val imageStore: com.newoether.agora.tool.ToolImageStore? = null,
     private val imageCache: RemoteImageCache? = null,
     projectionDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
-    private val createClient: (String, String) -> FiloClient = { address, token -> FiloClient(address, token) },
+    createClient: (String, String) -> FiloClient = { address, token -> FiloClient(address, token) },
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(RemoteState())
     val state = mutableState.asStateFlow()
@@ -59,9 +59,6 @@ internal class RemoteViewModel(
     private val scrollRequests = ScrollRequestCoordinator()
     val animatedScrollRequest = scrollRequests.request
     fun completeAnimatedScroll(id: Long) = scrollRequests.complete(id)
-    private val clients = mutableMapOf<String, FiloClient>()
-    private val configurations = mutableMapOf<String, RemoteConnection>()
-    private val checks = mutableMapOf<String, Job>()
     private val checkSlots = Semaphore(2)
     private var epoch = 0L
     private var selectionEpoch = 0L
@@ -73,11 +70,24 @@ internal class RemoteViewModel(
     private var visibleSessions: List<String> = emptyList()
     private var modelLoading: Job? = null
     private var modelEpoch = 0L
-    private var storing: Job? = null
     private val createdAt = System.nanoTime()
     private val diagnosticContext = DiagnosticRequestContext(
         requestId = UUID.randomUUID().toString(), provider = "Filo", model = "Codex", requestKind = "remote",
     )
+
+    private val deviceDirectory = RemoteDeviceDirectory(
+        connections = connections,
+        scope = viewModelScope,
+        mutableState = mutableState,
+        checkSlots = checkSlots,
+        createClient = createClient,
+        selectionEpoch = { selectionEpoch },
+        selectDevice = ::selectDevice,
+        refresh = ::refresh,
+        updateDevice = ::updateDevice,
+        report = { stage, error -> trace(stage, error) },
+    )
+    private val clients get() = deviceDirectory.clients
 
     init { trace("owner_created"); restoreConnections() }
 
@@ -114,41 +124,11 @@ internal class RemoteViewModel(
         super.onCleared()
     }
 
-    fun restoreConnections() {
-        if (storing?.isActive == true) return
-        trace("restore_started")
-        mutableState.value = state.value.copy(restoring = true, storageError = false)
-        selectDevice(null)
-        storing = viewModelScope.launch {
-            try {
-                val restored = connections.load().map { connection ->
-                    createClient(connection.address, connection.token) to connection
-                }
-                checks.values.forEach { it.cancel() }
-                checks.clear()
-                clients.clear()
-                configurations.clear()
-                restored.forEach { (client, _) -> clients[client.address] = client }
-                restored.forEach { (client, connection) -> configurations[client.address] = connection }
-                mutableState.value = state.value.copy(viewedTurns = restored.flatMap { (client, connection) ->
-                    connection.viewedTurns.map { (session, turn) -> "${client.address}/$session" to turn }
-                }.toMap(), devices = restored.map { (client, connection) ->
-                    RemoteDevice(client.address, remoteDeviceName(connection.name), client.address)
-                })
-                trace("restore_completed")
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) {
-                trace("restore_failed", error)
-                mutableState.value = state.value.copy(storageError = true)
-            }
-            finally { mutableState.value = state.value.copy(restoring = false) }
-            if (!state.value.storageError) refresh()
-        }
-    }
+    fun restoreConnections() = deviceDirectory.restoreConnections()
 
     fun addDevice() = editDevice(null)
 
-    fun editorConnection(): RemoteConnection? = configurations[state.value.editedDeviceId]
+    fun editorConnection(): RemoteConnection? = deviceDirectory.editorConnection()
 
     fun editDevice(id: String?) {
         if (state.value.saving || state.value.restoring || (id != null && id !in clients)) return
@@ -159,102 +139,12 @@ internal class RemoteViewModel(
             editedDeviceId = id, storageError = false, failure = null)
     }
 
-    fun saveDevice(address: String, token: String, name: String? = null) {
-        if (state.value.saving || state.value.restoring) return
-        val generation = selectionEpoch
-        val previous = state.value.editedDeviceId
-        mutableState.value = state.value.copy(saving = true, failure = null, storageError = false)
-        trace("save_started")
-        storing = viewModelScope.launch {
-            try {
-                val client = createClient(address, token.trim())
-                val id = client.address
-                if (previous != null && previous != id && id in clients) throw FiloConfigurationException()
-                val savedName = name?.trim()
-                    ?: state.value.devices.firstOrNull { it.id == (previous ?: id) }?.name.orEmpty()
-                val connection = RemoteConnection(savedName, id, token.trim())
-                connections.save(connection, previous)
-                val replaced = previous ?: id
-                checks.remove(replaced)?.cancel()
-                clients.remove(replaced)
-                configurations.remove(replaced)
-                clients[id] = client
-                configurations[id] = connection
-                val device = RemoteDevice(id, savedName, client.address)
-                val devices = state.value.devices
-                mutableState.value = state.value.copy(
-                    devices = if (devices.any { it.id == replaced }) {
-                        devices.map { if (it.id == replaced) device else it }
-                    } else devices + device,
-                    drafts = state.value.drafts.filterKeys { replaced == id || !it.startsWith("$replaced/") },
-                    attempts = state.value.attempts.filterKeys { replaced == id || !it.startsWith("$replaced/") },
-                    sessionOwners = state.value.sessionOwners.filterKeys { replaced == id || !it.startsWith("$replaced/") },
-                    sessionStatuses = state.value.sessionStatuses.filterKeys { !it.startsWith("$replaced/") },
-                )
-                // Saving an explicitly submitted connection must not undo a later Back/navigation.
-                if (generation == selectionEpoch) selectDevice(null)
-                checkDevice(id)
-                trace("saved")
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: RemoteStorageException) {
-                trace("save_failed", error)
-                mutableState.value = state.value.copy(storageError = true)
-            }
-            catch (error: Exception) {
-                val failure = trace("save_failed", error)
-                mutableState.value = state.value.copy(
-                    failure = if (generation == selectionEpoch) failure else state.value.failure)
-            }
-            finally { mutableState.value = state.value.copy(saving = false) }
-        }
-    }
+    fun saveDevice(address: String, token: String, name: String? = null) =
+        deviceDirectory.saveDevice(address, token, name)
 
-    fun removeDevice(id: String) {
-        if (state.value.saving || state.value.restoring || id !in clients) return
-        mutableState.value = state.value.copy(saving = true, storageError = false)
-        storing = viewModelScope.launch {
-            try {
-                connections.remove(id)
-                checks.remove(id)?.cancel()
-                clients.remove(id)
-                configurations.remove(id)
-                mutableState.value = state.value.copy(
-                    devices = state.value.devices.filterNot { it.id == id },
-                    drafts = state.value.drafts.filterKeys { !it.startsWith("$id/") },
-                    attempts = state.value.attempts.filterKeys { !it.startsWith("$id/") },
-                    sessionOwners = state.value.sessionOwners.filterKeys { !it.startsWith("$id/") },
-                    sessionStatuses = state.value.sessionStatuses.filterKeys { !it.startsWith("$id/") },
-                )
-                if (state.value.deviceId == id) selectDevice(null)
-                trace("device_removed")
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) {
-                trace("remove_failed", error)
-                mutableState.value = state.value.copy(storageError = true)
-            }
-            finally { mutableState.value = state.value.copy(saving = false) }
-        }
-    }
+    fun removeDevice(id: String) = deviceDirectory.removeDevice(id)
 
-    private fun checkDevice(id: String) {
-        val client = clients[id] ?: return
-        if (checks[id]?.isActive == true) return
-        updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTING, failure = null) }
-        checks[id] = viewModelScope.launch {
-            try {
-                checkSlots.withPermit { client.connect() }
-                if (clients[id] !== client) return@launch
-                updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTED, failure = null) }
-                if (state.value.deviceId == id) refresh()
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) {
-                if (clients[id] !== client) return@launch
-                val failure = trace("check_failed", error)
-                updateDevice(id) { it.copy(status = RemoteDeviceStatus.ERROR, failure = failure) }
-                if (state.value.deviceId == id) mutableState.value = state.value.copy(loading = false, failure = failure)
-            }
-        }
-    }
+    private fun checkDevice(id: String) = deviceDirectory.checkDevice(id)
 
     private fun updateDevice(id: String, update: (RemoteDevice) -> RemoteDevice) {
         mutableState.value = state.value.copy(devices = state.value.devices.map { if (it.id == id) update(it) else it })
