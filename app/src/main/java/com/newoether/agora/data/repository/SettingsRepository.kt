@@ -38,10 +38,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -70,18 +67,7 @@ class SettingsRepository(
         val loaded = CompletableDeferred<Unit>()
         initialLoadSignals += loaded
         val state = MutableStateFlow(initial)
-        flow
-            .onEach { value ->
-                // Publish first: an awaiter must never resume while `.value` still exposes the
-                // eager default for this particular setting.
-                state.value = value
-                loaded.complete(Unit)
-            }
-            .catch { error ->
-                loaded.completeExceptionally(error)
-                throw error
-            }
-            .launchIn(scope)
+        flow.publishSetting(scope, loaded) { state.value = it }
         return state.asStateFlow()
     }
 
@@ -91,16 +77,9 @@ class SettingsRepository(
     private fun hotConversationSettings(): StateFlow<Map<String, ConversationSettings>> {
         val loaded = CompletableDeferred<Unit>()
         initialLoadSignals += loaded
-        settingsManager.conversationSettings
-            .onEach { value ->
-                conversationSettingsState.acceptPersisted(value)
-                loaded.complete(Unit)
-            }
-            .catch { error ->
-                loaded.completeExceptionally(error)
-                throw error
-            }
-            .launchIn(scope)
+        settingsManager.conversationSettings.publishSetting(scope, loaded) { value ->
+            conversationSettingsState.acceptPersisted(value)
+        }
         return conversationSettingsState.state
     }
 
