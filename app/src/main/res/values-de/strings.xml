@@ -1254,4 +1254,8 @@
     <string name="thought_for_a_while_called_tools">Eine Weile nachgedacht, %1$d Werkzeuge aufgerufen</string>
     <string name="remote_response_too_large">Die Dienstantwort war zu groß. Aktualisiere Filo und versuche es erneut.</string>
     <string name="remote_device">Gerät</string>
+    <string name="provider_cache">Cache</string>
+    <string name="provider_cache_desc">Prompt-Caching anfordern; der Relay-Cache ist unabhängig</string>
+    <string name="provider_cache_duration">Cache-Dauer</string>
+    <string name="provider_cache_duration_desc">Wie lange zwischengespeicherte Prompts wiederverwendbar bleiben</string>
 </resources>

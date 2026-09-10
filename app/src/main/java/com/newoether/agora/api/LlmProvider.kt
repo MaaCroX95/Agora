@@ -111,6 +111,8 @@ data class ProviderConfig(
     val thinkingBudgetTokens: Int = 4096,
     val openAiServiceTier: String? = null,
     val responsesApiEnabled: Boolean = false,
+    val anthropicCacheEnabled: Boolean = true,
+    val anthropicCacheTtl: String = "1h",
     val openAiWebSearchEnabled: Boolean = false,
     val baseUrl: String? = null,
     val tools: List<ToolDefinition>? = null,

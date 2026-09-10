@@ -27,6 +27,8 @@ editing, branching and tool-execution controls are unsupported.
 ## Devices and local persistence
 
 Remote sits below Tasks in their original joined drawer group and opens SettingsOverlayHost.
+Both drawer buttons retain their original 42 dp height, joined 24/5 dp corner shapes and
+2 dp inter-button gap. Their icons, labels, focus clearing and navigation remain unchanged.
 Device selection precedes Sessions; Add Device is a separate shared settings page.
 Devices renders its scaffold and locally saved rows independently of all network checks.
 No loading text, bar or overlay belongs here. The original MCP status dot reports

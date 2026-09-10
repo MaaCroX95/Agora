@@ -22,6 +22,52 @@ import org.junit.Test
 
 class SettingsModelPreferenceStoreTest {
     @Test
+    fun cacheDefaultsAndIndependentFieldsSurviveRestart() = runTest {
+        val dataStore = InMemoryPreferencesDataStore()
+        val store = SettingsModelPreferenceStore(dataStore, testJson)
+        assertTrue(store.anthropicCacheEnabled.first())
+        assertEquals("1h", store.anthropicCacheTtl.first())
+        store.saveAnthropicCacheTtl("5m")
+        store.saveAnthropicCacheEnabled(false)
+        val restarted = SettingsModelPreferenceStore(dataStore, testJson)
+        assertFalse(restarted.anthropicCacheEnabled.first())
+        assertEquals("5m", restarted.anthropicCacheTtl.first())
+        restarted.saveAnthropicCacheEnabled(true)
+        assertEquals("5m", restarted.anthropicCacheTtl.first())
+        val before = dataStore.data.first()
+        assertTrue(runCatching { restarted.saveAnthropicCacheTtl("invalid") }.isFailure)
+        assertEquals(before, dataStore.data.first())
+    }
+    @Test
+    fun customCacheUpdatesUseStableIdentityPreserveOtherFieldsAndNeverRecreateDeletedProviders() = runTest {
+        val dataStore = InMemoryPreferencesDataStore()
+        val store = SettingsModelPreferenceStore(dataStore, testJson)
+        store.saveCustomProviders(listOf(
+            CustomProviderConfig("Relay", CustomEndpointProtocol.ANTHROPIC),
+            CustomProviderConfig("Other", CustomEndpointProtocol.ANTHROPIC),
+        ))
+        val original = store.customProviders.first()
+        val id = original.first().providerId
+        store.updateCustomProviderCache(id, ttl = "5m")
+        store.updateCustomProviderCache(id, enabled = false)
+        val saved = store.customProviders.first()
+        assertFalse(saved.first().anthropicCacheEnabled)
+        assertEquals("5m", saved.first().anthropicCacheTtl)
+        assertEquals(original.last(), saved.last())
+        store.saveCustomProviders(saved.map { it.copy(name = it.name + " renamed", protocol = CustomEndpointProtocol.OPENAI) })
+        store.updateCustomProviderCache(id, enabled = true)
+        val restarted = SettingsModelPreferenceStore(dataStore, testJson)
+        assertEquals("5m", restarted.customProviders.first().first().anthropicCacheTtl)
+        assertTrue(restarted.customProviders.first().first().anthropicCacheEnabled)
+        assertEquals(CustomEndpointProtocol.OPENAI, restarted.customProviders.first().first().protocol)
+        store.saveCustomProviders(emptyList())
+        store.updateCustomProviderCache(id, enabled = false)
+        assertTrue(store.customProviders.first().isEmpty())
+        val before = dataStore.data.first()
+        assertTrue(runCatching { store.updateCustomProviderCache(id, ttl = "invalid") }.isFailure)
+        assertEquals(before, dataStore.data.first())
+    }
+    @Test
     fun providerNameMigrationPreservesExistingPresentationOnceWithoutChangingAliases() = runTest {
         val dataStore = InMemoryPreferencesDataStore()
         dataStore.edit {

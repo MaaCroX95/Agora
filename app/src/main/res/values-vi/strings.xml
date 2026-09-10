@@ -1260,4 +1260,8 @@
     <string name="thought_for_a_while_called_tools">Đã suy nghĩ một lúc, đã gọi %1$d công cụ</string>
     <string name="remote_response_too_large">Phản hồi của dịch vụ quá lớn. Hãy cập nhật Filo và thử lại.</string>
     <string name="remote_device">Thiết bị</string>
+    <string name="provider_cache">Bộ nhớ đệm</string>
+    <string name="provider_cache_desc">Yêu cầu lưu đệm lời nhắc; bộ nhớ đệm của máy chủ chuyển tiếp hoạt động độc lập</string>
+    <string name="provider_cache_duration">Thời hạn lưu đệm</string>
+    <string name="provider_cache_duration_desc">Khoảng thời gian có thể tái sử dụng lời nhắc đã lưu đệm</string>
 </resources>

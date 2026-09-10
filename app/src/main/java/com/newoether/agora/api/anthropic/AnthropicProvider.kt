@@ -44,7 +44,7 @@ internal data class AnthropicRequest(
     val thinking: AnthropicThinking? = null,
     @SerialName("output_config") val outputConfig: AnthropicOutputConfig? = null,
     val tools: List<AnthropicTool>? = null,
-    @SerialName("cache_control") val cacheControl: AnthropicCacheControl = AnthropicCacheControl(),
+    @SerialName("cache_control") val cacheControl: AnthropicCacheControl? = null,
     val temperature: Float? = null,
     @SerialName("top_p") val topP: Float? = null
 )
@@ -52,6 +52,7 @@ internal data class AnthropicRequest(
 @Serializable
 internal data class AnthropicCacheControl(
     val type: String = "ephemeral",
+    val ttl: String = "1h",
 )
 
 @Serializable
@@ -328,6 +329,9 @@ class AnthropicProvider(
         }
 
         fun buildRequestBody(resolvedRequest: ProviderRequestInput): AnthropicRequest {
+            if (config.anthropicCacheEnabled && config.anthropicCacheTtl !in setOf("5m", "1h")) {
+                throw RequestFormatException(name, listOf("Invalid Anthropic cache duration"))
+            }
             val validatedPath = adaptToolRoundsForProvider(
                 messages = resolvedRequest.messages,
                 providerName = name,
@@ -378,6 +382,9 @@ class AnthropicProvider(
             model = modelName,
             messages = apiMessages,
             system = resolvedRequest.systemPrompt,
+            cacheControl = if (config.anthropicCacheEnabled) {
+                AnthropicCacheControl(ttl = config.anthropicCacheTtl)
+            } else null,
             thinking = thinking,
             outputConfig = outputConfig,
             // On always-on/adaptive-thinking models max_tokens caps thinking + answer TOGETHER,

@@ -1262,4 +1262,8 @@
     <string name="thought_for_a_while_called_tools">思考了一會兒，呼叫 %1$d 個工具</string>
     <string name="remote_response_too_large">服務傳回的資料過大。請更新 Filo 後重試。</string>
     <string name="remote_device">裝置</string>
+    <string name="provider_cache">快取</string>
+    <string name="provider_cache_desc">請求快取提示詞；中繼服務的快取獨立控制</string>
+    <string name="provider_cache_duration">快取時長</string>
+    <string name="provider_cache_duration_desc">已快取提示詞可重複使用的時間</string>
 </resources>

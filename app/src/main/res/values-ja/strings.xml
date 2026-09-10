@@ -1254,4 +1254,8 @@
     <string name="thought_for_a_while_called_tools">しばらく思考し、%1$d 個のツールを呼び出しました</string>
     <string name="remote_response_too_large">サービスの応答が大きすぎます。Filo を更新して再試行してください。</string>
     <string name="remote_device">デバイス</string>
+    <string name="provider_cache">キャッシュ</string>
+    <string name="provider_cache_desc">プロンプトのキャッシュを要求します。中継サーバーのキャッシュは独立しています</string>
+    <string name="provider_cache_duration">キャッシュ保持期間</string>
+    <string name="provider_cache_duration_desc">キャッシュされたプロンプトを再利用できる期間</string>
 </resources>

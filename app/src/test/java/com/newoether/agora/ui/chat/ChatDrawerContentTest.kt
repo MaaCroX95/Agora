@@ -1,12 +1,33 @@
 package com.newoether.agora.ui.chat
 
 import androidx.compose.ui.unit.dp
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatDrawerContentTest {
+    @Test
+    fun tasksAndRemoteKeepOriginalHeightAndJoinedGeometry() {
+        val root = generateSequence(File(requireNotNull(System.getProperty("user.dir"))).absoluteFile) {
+            it.parentFile
+        }.first { File(it, "app/src/main/java").isDirectory }
+        val source = File(root,
+            "app/src/main/java/com/newoether/agora/ui/chat/ChatDrawerContent.kt").readText()
+        val group = source.substringAfter("Column(modifier = Modifier.fillMaxSize()) {")
+            .substringBefore("val newChatDisabled")
+        assertEquals(2, Regex("""\.height\(42\.dp\)""").findAll(group).count())
+        assertFalse(group.contains("height(52.dp)"))
+        assertTrue(group.contains("Spacer(modifier = Modifier.height(2.dp))"))
+        assertTrue(group.contains("topStart = 24.dp, topEnd = 24.dp"))
+        assertTrue(group.contains("bottomStart = 5.dp, bottomEnd = 5.dp"))
+        assertTrue(group.contains("topStart = 5.dp, topEnd = 5.dp"))
+        assertTrue(group.contains("bottomStart = 24.dp, bottomEnd = 24.dp"))
+        assertEquals(2, Regex("""focusManager\.clearFocus\(\)""").findAll(group).count())
+        assertEquals(2, Regex("""scope\.launch \{ onRequestClose\(\) \}""").findAll(group).count())
+        assertTrue(group.indexOf("onOpenTasks()") < group.indexOf("onOpenRemote()"))
+    }
     @Test
     fun generationIndicatorHasPriorityOverUnread() {
         assertEquals(

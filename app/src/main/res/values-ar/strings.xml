@@ -1254,4 +1254,8 @@
     <string name="thought_for_a_while_called_tools">فكّر لبعض الوقت، واستدعى %1$d أداة</string>
     <string name="remote_response_too_large">استجابة الخدمة كبيرة جدًا. حدّث Filo وحاول مرة أخرى.</string>
     <string name="remote_device">جهاز</string>
+    <string name="provider_cache">التخزين المؤقت</string>
+    <string name="provider_cache_desc">طلب تخزين المطالبات مؤقتًا؛ تخزين خادم الترحيل مستقل</string>
+    <string name="provider_cache_duration">مدة التخزين المؤقت</string>
+    <string name="provider_cache_duration_desc">مدة إمكانية إعادة استخدام المطالبات المخزنة مؤقتًا</string>
 </resources>

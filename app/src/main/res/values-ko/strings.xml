@@ -1254,4 +1254,8 @@
     <string name="thought_for_a_while_called_tools">잠시 생각하고 도구 %1$d개를 호출했습니다</string>
     <string name="remote_response_too_large">서비스 응답이 너무 큽니다. Filo를 업데이트하고 다시 시도하세요.</string>
     <string name="remote_device">기기</string>
+    <string name="provider_cache">캐시</string>
+    <string name="provider_cache_desc">프롬프트 캐시를 요청합니다. 릴레이 캐시는 별도로 관리됩니다</string>
+    <string name="provider_cache_duration">캐시 유지 시간</string>
+    <string name="provider_cache_duration_desc">캐시된 프롬프트를 재사용할 수 있는 시간</string>
 </resources>

@@ -20,6 +20,12 @@ A provider can store multiple named API keys. Select the radio button beside one
 
 API keys are stored in preferences rather than the Room conversation database. `SecretCrypto` normally applies an Android Keystore AES-256-GCM envelope, but legacy plaintext remains readable and encryption failure falls back to plaintext rather than losing the value. Requests send the active credential only to the configured destination when needed. Because the Base URL determines the server contacted, verify custom endpoints carefully.
 
+## Anthropic Cache
+
+For the built-in Anthropic provider and custom providers using the Anthropic protocol, **Advanced** appears below API Keys. **Cache** is on by default. While enabled, **Cache Duration** offers **5m** and **1h**, with **1h** selected by default. Each provider saves changes immediately.
+
+Turning Cache off omits Agora's top-level `cache_control` request marker and retains the selected duration for later. It does not disable caching added by a relay. Match the duration to your relay policy, or turn off Agora's marker when the relay manages caching. Changing a custom provider to another protocol hides these controls without erasing their values.
+
 ## Local Models
 
 The **Local** provider imports chat models from GGUF files. Each entry has a model ID and alias, context size, temperature, Top P, and maximum output-token setting. An optional vision projector (`.mmproj`) adds vision support and is shown on the model row.

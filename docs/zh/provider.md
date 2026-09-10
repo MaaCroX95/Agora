@@ -20,6 +20,12 @@ Agora 包含 OpenAI、Anthropic、Google Gemini、DeepSeek、DashScope/通义千
 
 API Key 保存在偏好设置而非 Room 对话数据库中。`SecretCrypto` 通常使用 Android Keystore AES-256-GCM 封装；旧明文仍可读取，加密失败时会为避免丢失数据而回退为明文。请求只会在需要时把活动凭据发送到已配置目的地。实际服务器由 Base URL 决定，请仔细核对自定义端点。
 
+## Anthropic 缓存
+
+内置 Anthropic 提供商和使用 Anthropic 协议的自定义提供商，会在 API Key 下方显示**高级**分组。**缓存**默认开启，开启后可在**缓存时长**中选择 **5m** 或 **1h**，默认 **1h**。修改按提供商立即保存。
+
+关闭缓存会省略 Agora 请求中的顶层 `cache_control` 标记，并保留已选时长供再次开启时使用。这不会关闭中转服务自行添加的缓存。可让时长与中转策略保持一致，或在中转管理缓存时关闭 Agora 的标记。自定义提供商切换到其他协议后会隐藏这些控件，但不会清除已保存的值。
+
 ## 本地模型
 
 **本地**提供商可从 GGUF 文件导入聊天模型。每个条目包含模型 ID、别名、上下文大小、Temperature、Top P 和最大输出 Token。可选的视觉投影文件（`.mmproj`）用于增加视觉能力，并会在模型行显示标记。

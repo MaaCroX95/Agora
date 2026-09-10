@@ -1,6 +1,7 @@
 package com.newoether.agora.viewmodel
 
 import android.content.Context
+import android.os.Looper
 import com.newoether.agora.R
 import com.newoether.agora.api.GenerationError
 import com.newoether.agora.api.LlmProvider
@@ -11,14 +12,59 @@ import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.ToolImageAttachment
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.test.resetMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class TranscriptionManagerTest {
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun bothTranscriptionPathsForwardTheFrozenCacheFields() = runTest {
+        val captured = mutableListOf<ProviderConfig>()
+        val provider = mockk<LlmProvider>()
+        every { provider.generateResponse(any(), capture(captured)) } returns flowOf(StreamEvent.TextChunk("Description"))
+        val manager = manager(mapOf("transcriber" to provider))
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        mockkStatic(Looper::class)
+        every { Looper.getMainLooper() } returns mockk(relaxed = true)
+        try {
+            for ((enabled, ttl) in listOf(false to "5m", true to "5m", true to "1h")) {
+                manager.describeImageWithProgress(
+                    image = image,
+                    ctx = context("transcriber").copy(
+                        transcriptionAnthropicCacheEnabled = enabled,
+                        transcriptionAnthropicCacheTtl = ttl,
+                    ),
+                    generationJob = null, conversationId = "conversation", runId = "run",
+                    pass = 0, modelMessageId = "assistant", onProgress = {},
+                )
+                manager.transcribe(
+                    targets = listOf(TranscriptionManager.TranscriptionTarget("user", image.path, 0)),
+                    conversationId = "conversation", runId = "run", pass = 0,
+                    providerName = "transcriber", modelId = "vision-model", apiKey = "",
+                    baseUrl = null, prompt = "Describe", generationJob = null,
+                    modelMessageId = "assistant", startTime = 0L,
+                    anthropicCacheEnabled = enabled, anthropicCacheTtl = ttl, onProgress = {},
+                )
+                assertEquals(listOf(enabled, enabled), captured.takeLast(2).map { it.anthropicCacheEnabled })
+                assertEquals(listOf(ttl, ttl), captured.takeLast(2).map { it.anthropicCacheTtl })
+            }
+            assertEquals(6, captured.size)
+        } finally {
+            unmockkStatic(Looper::class)
+            Dispatchers.resetMain()
+        }
+    }
     private val image = ToolImageAttachment(
         path = "/private/tool.png",
         mimeType = "image/png",

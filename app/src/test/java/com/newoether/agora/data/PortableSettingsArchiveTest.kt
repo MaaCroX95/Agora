@@ -1,19 +1,122 @@
 package com.newoether.agora.data
 
 import java.io.File
+import com.newoether.agora.util.SecretCrypto
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PortableSettingsArchiveTest {
+    @Test
+    fun cacheArchiveRoundTripAndLegacyStrategiesUseRealSettingsStorage() = runTest {
+        val directory = java.nio.file.Files.createTempDirectory("agora-cache-settings").toFile()
+        val context = mockk<android.content.Context>()
+        every { context.applicationContext } returns context
+        every { context.filesDir } returns directory
+        // The Android JVM stub selects pre-26 renameTo, which cannot replace files on Windows.
+        val movesClass = "androidx.datastore.core.FileMoves_androidKt"
+        val atomicMove = Class.forName(movesClass).getDeclaredMethod("atomicMoveTo", File::class.java, File::class.java)
+        mockkStatic(movesClass)
+        every { atomicMove.invoke(null, any<File>(), any<File>()) } answers {
+            java.nio.file.Files.move(firstArg<File>().toPath(), secondArg<File>().toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            true
+        }
+        try {
+            mockkObject(SecretCrypto)
+            every { SecretCrypto.encrypt(any()) } answers { firstArg<String>() }
+            every { SecretCrypto.decrypt(any()) } answers { firstArg<String>() }
+            val manager = SettingsManager(context)
+            assertTrue(manager.anthropicCacheEnabled.first())
+            assertEquals("1h", manager.anthropicCacheTtl.first())
+            manager.saveAnthropicCacheEnabled(false)
+            manager.saveAnthropicCacheTtl("5m")
+            manager.saveLocalLowContextModeEnabled(true)
+            manager.saveCustomProviders(listOf(CustomProviderConfig(
+                name = "Relay", protocol = CustomEndpointProtocol.ANTHROPIC,
+                anthropicCacheEnabled = false, anthropicCacheTtl = "5m",
+            )))
+            val exported = PortableSettingsArchive.toJsonObject(manager, false)
+            assertEquals("false", exported.getValue("anthropicCacheEnabled").jsonPrimitive.content)
+            assertEquals("5m", exported.getValue("anthropicCacheTtl").jsonPrimitive.content)
+            val cacheArchive = JsonObject(exported.filterKeys {
+                it in setOf("anthropicCacheEnabled", "anthropicCacheTtl", "customProviders")
+            })
+            val empty = JsonObject(emptyMap())
+            PortableSettingsArchive.restoreFromJsonObject(empty, manager, false, false, null) { it }
+            assertFalse(manager.anthropicCacheEnabled.first())
+            assertEquals("5m", manager.anthropicCacheTtl.first())
+            PortableSettingsArchive.restoreFromJsonObject(empty, manager, true, false, null) { it }
+            assertTrue(manager.anthropicCacheEnabled.first())
+            assertEquals("1h", manager.anthropicCacheTtl.first())
+            assertTrue(manager.localLowContextModeEnabled.first())
+            PortableSettingsArchive.restoreFromJsonObject(cacheArchive, manager, true, false, null) { it }
+            val reopened = SettingsManager(context)
+            assertFalse(reopened.anthropicCacheEnabled.first())
+            assertEquals("5m", reopened.anthropicCacheTtl.first())
+            val custom = reopened.customProviders.first().single()
+            assertFalse(custom.anthropicCacheEnabled)
+            assertEquals("5m", custom.anthropicCacheTtl)
+            val legacy = Json.parseToJsonElement("""{"customProviders":[{"name":"Relay","protocol":"anthropic"}]}""") as JsonObject
+            PortableSettingsArchive.restoreFromJsonObject(legacy, manager, false, false, null) { it }
+            val imported = manager.customProviders.first().single()
+            assertEquals(custom.providerId, imported.providerId)
+            assertTrue(imported.anthropicCacheEnabled)
+            assertEquals("1h", imported.anthropicCacheTtl)
+            assertFalse(manager.anthropicCacheEnabled.first())
+            assertEquals("5m", manager.anthropicCacheTtl.first())
+        } finally {
+            unmockkObject(SecretCrypto)
+            unmockkStatic(movesClass)
+            directory.deleteRecursively()
+        }
+    }
+    @Test
+    fun invalidCacheArchiveFailsBeforeAnySettingsWrite() = runTest {
+        val manager = mockk<SettingsManager>(relaxed = true)
+        every { manager.shellDevices } returns flowOf(emptyList())
+        every { manager.mcpServers } returns flowOf(emptyList())
+        every { manager.embeddingModels } returns flowOf(emptyList())
+        every { manager.activeEmbeddingModelId } returns flowOf("")
+        every { manager.customFontPath } returns flowOf("")
+        every { manager.customFontName } returns flowOf("")
+        every { manager.customProviders } returns flowOf(emptyList())
+        for (field in listOf("anthropicCacheTtl", "anthropicCacheEnabled")) {
+            for (invalid in listOf(JsonNull, JsonObject(emptyMap()), JsonArray(emptyList()), JsonPrimitive(7), JsonPrimitive("invalid"))) {
+                val record = JsonObject(mapOf("name" to JsonPrimitive("Relay"), field to invalid))
+                val nested = JsonObject(mapOf("customProviders" to JsonArray(listOf(record))))
+                for (body in listOf(record, nested)) {
+                    val result = runCatching {
+                        PortableSettingsArchive.restoreFromJsonObject(
+                            body, manager, true, false, null,
+                        ) { it }
+                    }
+                    assertTrue(body.toString(), result.exceptionOrNull() is IllegalArgumentException)
+                }
+            }
+        }
+        coVerify(exactly = 0) { manager.resetPortableSettingsForImport() }
+        coVerify(exactly = 0) { manager.saveAnthropicCacheEnabled(any()) }
+        coVerify(exactly = 0) { manager.saveAnthropicCacheTtl(any()) }
+        coVerify(exactly = 0) { manager.saveCustomProviders(any()) }
+    }
     @Test
     fun providerNamePreferencesRestoreWithIdentityRemappingAndAbsencePreservation() = runTest {
         val providerId = "custom-provider-00000000-0000-4000-8000-000000000001"

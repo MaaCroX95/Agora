@@ -1254,4 +1254,8 @@
     <string name="thought_for_a_while_called_tools">A réfléchi un moment, a appelé %1$d outils</string>
     <string name="remote_response_too_large">La réponse du service était trop volumineuse. Mettez Filo à jour et réessayez.</string>
     <string name="remote_device">Appareil</string>
+    <string name="provider_cache">Cache</string>
+    <string name="provider_cache_desc">Demander la mise en cache des prompts ; le cache du relais est indépendant</string>
+    <string name="provider_cache_duration">Durée du cache</string>
+    <string name="provider_cache_duration_desc">Durée pendant laquelle les prompts en cache restent réutilisables</string>
 </resources>

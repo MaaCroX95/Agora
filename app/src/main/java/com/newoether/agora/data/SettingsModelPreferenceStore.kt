@@ -37,6 +37,31 @@ internal class SettingsModelPreferenceStore(
     private val json: Json,
 ) {
     val selectedModel: Flow<String> = dataStore.data.map { it[SELECTED_MODEL] ?: Constants.EXAMPLE_MODEL_ID }
+    val anthropicCacheEnabled: Flow<Boolean> = dataStore.data.map { it[ANTHROPIC_CACHE_ENABLED] ?: true }
+    val anthropicCacheTtl: Flow<String> = dataStore.data.map { it[ANTHROPIC_CACHE_TTL] ?: "1h" }
+
+    suspend fun saveAnthropicCacheEnabled(enabled: Boolean) {
+        dataStore.edit { it[ANTHROPIC_CACHE_ENABLED] = enabled }
+    }
+
+    suspend fun saveAnthropicCacheTtl(ttl: String) {
+        require(ttl == "5m" || ttl == "1h") { "Invalid Anthropic cache duration" }
+        dataStore.edit { it[ANTHROPIC_CACHE_TTL] = ttl }
+    }
+
+    suspend fun updateCustomProviderCache(providerId: String, enabled: Boolean? = null, ttl: String? = null) {
+        require(ttl == null || ttl == "5m" || ttl == "1h") { "Invalid Anthropic cache duration" }
+        dataStore.edit { prefs ->
+            val current = json.decodeFromString<List<CustomProviderConfig>>(prefs[CUSTOM_PROVIDERS_JSON] ?: "[]")
+            val updated = current.map { config ->
+                if (config.providerId == providerId) config.copy(
+                    anthropicCacheEnabled = enabled ?: config.anthropicCacheEnabled,
+                    anthropicCacheTtl = ttl ?: config.anthropicCacheTtl,
+                ) else config
+            }
+            if (updated != current) prefs[CUSTOM_PROVIDERS_JSON] = json.encodeToString(updated)
+        }
+    }
 
     val providerBaseUrls: Flow<Map<String, String>> = dataStore.data.map { pref ->
         val jsonStr = pref[PROVIDER_BASE_URLS] ?: "{}"

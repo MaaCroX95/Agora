@@ -10,6 +10,41 @@ import org.w3c.dom.Element
 
 class SettingsResourceContractTest {
     @Test
+    fun anthropicCacheControlsFollowProviderScopeAndAppearanceInteractions() {
+        val detail = readSettingsSource("SettingsProviderDetailPage.kt")
+        val gate = "if (isAnthropicProtocolProvider(currentName, customProviders))"
+        assertTrue(detail.indexOf(gate) > detail.lastIndexOf("R.string.provider_api_keys"))
+        val controls = detail.substringAfter(gate).substringBefore("if (showDocFab)")
+        assertTrue(controls.contains("R.string.advanced_title"))
+        assertTrue(controls.contains("customConfig?.providerId ?: currentName"))
+        assertTrue(controls.contains("Switch(checked = cacheEnabled, onCheckedChange = null)"))
+        assertTrue(controls.contains("role = Role.Switch"))
+        assertTrue(controls.contains("setAnthropicCacheEnabled(providerId, it)"))
+        assertTrue(controls.indexOf("if (cacheEnabled)") < controls.indexOf("R.string.provider_cache_duration"))
+        assertTrue(controls.contains("listOf(\"5m\", \"1h\")"))
+        assertTrue(controls.contains("setAnthropicCacheTtl(providerId, ttl)"))
+        assertTrue(controls.contains("Modifier.clickable { expanded = true }"))
+        assertTrue(controls.contains("if (cacheTtl == ttl)"))
+        assertTrue(controls.contains("Icons.Default.Check"))
+        assertTrue(controls.contains("MaterialTheme.colorScheme.surfaceContainer"))
+        assertTrue(controls.contains("tonalElevation = 16.dp"))
+        assertTrue(controls.contains("RoundedCornerShape(12.dp)"))
+        assertFalse(controls.contains("R.string.save"))
+        val resources = locateResourceDirectory()
+        val defaults = readStringValues(File(resources, "values"))
+        assertEquals("Cache", defaults["provider_cache"])
+        assertEquals("Cache Duration", defaults["provider_cache_duration"])
+        val keys = setOf("provider_cache", "provider_cache_desc", "provider_cache_duration", "provider_cache_duration_desc")
+        resources.listFiles().orEmpty().filter { File(it, "strings.xml").isFile }.forEach { locale ->
+            val values = readStringValues(locale)
+            assertTrue(locale.name, keys.all { !values[it].isNullOrBlank() })
+            if (locale.name != "values") {
+                assertTrue(locale.name, values["provider_cache_desc"] != defaults["provider_cache_desc"])
+                assertTrue(locale.name, values["provider_cache_duration_desc"] != defaults["provider_cache_duration_desc"])
+            }
+        }
+    }
+    @Test
     fun localizedStringKeysMatchDefaultResources() {
         val resourceDirectory = locateResourceDirectory()
         val defaultKeys = readStringKeys(File(resourceDirectory, "values"))

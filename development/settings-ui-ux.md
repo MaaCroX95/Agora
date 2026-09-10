@@ -48,6 +48,22 @@ layout, states, density, or interaction design has been approved.
   `SettingsAnimations.kt` for page transitions. Copy their behavior through the
   shared APIs rather than recreating their dimensions or motion locally.
 
+## Anthropic Provider cache controls
+- Built-in Anthropic and custom Anthropic-protocol Provider details place an Advanced group directly
+  below the complete API Keys group. Other protocols and the Local Advanced group are unchanged.
+- Advanced contains a whole-row Cache Switch. Only while enabled, a following Cache Duration
+  SettingsItem shows the selected 5m or 1h value and opens the existing Appearance-style dropdown,
+  including its selected-item checkmark. Reuse the shared group, item, icon, description, and motion
+  conventions; do not replace the choice with segmented buttons or add a separate Save action.
+- Existing and newly created Provider configurations default to Cache enabled and duration 1h.
+  Changes apply and persist immediately per Provider. Disabling retains the selected duration;
+  re-enabling restores it. Changing a custom Provider's protocol hides and ignores these controls
+  without erasing their stored values.
+- Cache controls only Agora's Anthropic request marker: disabled omits the entire top-level
+  `cache_control`; enabled sends ephemeral caching with the selected duration. It does not disable
+  relay-owned caching, negotiate relay policy, add block-level breakpoints, or retry with altered
+  cache parameters. Provider settings must reach every applicable request caller.
+
 ## Appearance defaults
 
 - When no appearance preference has been persisted, the app uses the Forest color scheme with the

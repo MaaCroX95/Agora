@@ -1359,4 +1359,8 @@
     <string name="thought_for_a_while_called_tools">思考了一会儿，调用 %1$d 个工具</string>
     <string name="remote_response_too_large">服务返回的数据过大。请更新 Filo 后重试。</string>
     <string name="remote_device">设备</string>
+    <string name="provider_cache">缓存</string>
+    <string name="provider_cache_desc">请求缓存提示词；中转服务的缓存独立控制</string>
+    <string name="provider_cache_duration">缓存时长</string>
+    <string name="provider_cache_duration_desc">已缓存提示词可复用的时间</string>
 </resources>

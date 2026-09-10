@@ -1255,4 +1255,8 @@
     <string name="thought_for_a_while_called_tools">Thought for a while, called %1$d tools</string>
     <string name="remote_response_too_large">The service response was too large. Update Filo and try again.</string>
     <string name="remote_device">Device</string>
+    <string name="provider_cache">Cache</string>
+    <string name="provider_cache_desc">Request prompt caching; relay caching is independent</string>
+    <string name="provider_cache_duration">Cache Duration</string>
+    <string name="provider_cache_duration_desc">How long cached prompts remain reusable</string>
 </resources>

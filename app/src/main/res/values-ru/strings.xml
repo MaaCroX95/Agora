@@ -1254,4 +1254,8 @@
     <string name="thought_for_a_while_called_tools">Размышлял некоторое время, вызвано инструментов: %1$d</string>
     <string name="remote_response_too_large">Ответ сервиса слишком велик. Обновите Filo и повторите попытку.</string>
     <string name="remote_device">Устройство</string>
+    <string name="provider_cache">Кэш</string>
+    <string name="provider_cache_desc">Запрашивать кэширование промптов; кэш ретранслятора независим</string>
+    <string name="provider_cache_duration">Срок хранения кэша</string>
+    <string name="provider_cache_duration_desc">Как долго можно повторно использовать кэшированные промпты</string>
 </resources>
