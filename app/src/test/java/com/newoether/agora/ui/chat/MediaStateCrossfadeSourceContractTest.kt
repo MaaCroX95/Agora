@@ -178,11 +178,13 @@ class MediaStateCrossfadeSourceContractTest {
 
     @Test
     fun generatedAndToolImagesCrossfadeInsideTheWholeViewport() {
-        val source = source("ui/chat/message/ToolResultContent.kt")
-        val generated = source
+        val toolSource = source("ui/chat/message/ToolResultContent.kt")
+        val generatedSource = source("ui/chat/message/GeneratedImageThumbnail.kt")
+        val source = toolSource + generatedSource
+        val generated = generatedSource
             .substringAfter("internal fun GeneratedImageThumbnail(")
             .substringBefore("private fun GeneratedImagePendingDots(")
-        val toolImage = source.substringAfter("private fun ToolImagePreview(")
+        val toolImage = toolSource.substringAfter("private fun ToolImagePreview(")
 
         listOf(generated, toolImage).forEach { media ->
             assertTrue(media.contains("MediaLoadPresentation.LOADING"))

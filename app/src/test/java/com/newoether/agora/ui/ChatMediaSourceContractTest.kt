@@ -186,6 +186,9 @@ internal class ChatMediaSourceContractTest : UiSourceContractFixture() {
         val tool = source(
             root,
             "com/newoether/agora/ui/chat/message/ToolResultContent.kt",
+        ) + source(
+            root,
+            "com/newoether/agora/ui/chat/message/GeneratedImageThumbnail.kt",
         )
         val stableText = source(
             root,
