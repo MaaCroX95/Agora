@@ -121,9 +121,10 @@ class LocalLlamaOwnershipSourceContractTest {
         val provider = mainSource("com/newoether/agora/api/local/LocalProvider.kt")
         val engine = mainSource("com/newoether/agora/api/LlamaChatEngine.kt")
         val native = mainCppSource("llama_chat_jni.cpp")
-        val sampler = native
-            .substringAfter("static common_sampler * init_chat_sampler(")
-            .substringBefore("static bool is_preserved_token(")
+        val generation = mainCppSource("llama_chat_generation.cpp")
+        val sampler = generation
+            .substringAfter("common_sampler * init_chat_sampler(")
+            .substringBefore("bool is_preserved_token(")
 
         assertEquals(2, Regex("frequencyPenalty = config\\.frequencyPenalty \\?: 0f")
             .findAll(provider).count())
@@ -131,7 +132,7 @@ class LocalLlamaOwnershipSourceContractTest {
             .findAll(provider).count())
         assertEquals(4, Regex("frequencyPenalty: Float").findAll(engine).count())
         assertEquals(4, Regex("presencePenalty: Float").findAll(engine).count())
-        assertTrue(native.contains("static constexpr int32_t PENALTY_LAST_N = 64;"))
+        assertTrue(generation.contains("static constexpr int32_t PENALTY_LAST_N = 64;"))
         assertEquals(2, Regex("common_sampler \\* smpl = init_chat_sampler\\(")
             .findAll(native).count())
         assertTrue(sampler.contains("params.grammar = { COMMON_GRAMMAR_TYPE_TOOL_CALLS"))
@@ -148,16 +149,18 @@ class LocalLlamaOwnershipSourceContractTest {
         val temperature = sampler.indexOf("COMMON_SAMPLER_TYPE_TEMPERATURE")
         assertTrue(penalties >= 0 && penalties < minP)
         assertTrue(minP < topP && topP < temperature)
-        assertFalse(native.contains("llama_sampler_init_penalties("))
-        assertFalse(native.contains("llama_sampler_chain_init("))
+        assertFalse((native + generation).contains("llama_sampler_init_penalties("))
+        assertFalse((native + generation).contains("llama_sampler_chain_init("))
     }
 
     @Test
     fun `text and multimodal loops accept template sampling before lossless delivery`() {
         val native = mainCppSource("llama_chat_jni.cpp")
+        val generationHeader = mainCppSource("llama_chat_generation.h")
+        val generation = mainCppSource("llama_chat_generation.cpp")
 
-        assertTrue(native.contains("CALLBACK_TOKEN_BATCH = 4"))
-        assertTrue(native.contains("CALLBACK_BYTE_BATCH = 64"))
+        assertTrue(generationHeader.contains("CALLBACK_TOKEN_BATCH = 4"))
+        assertTrue(generationHeader.contains("CALLBACK_BYTE_BATCH = 64"))
         listOf("nativeChatGenerate", "nativeChatGenerateWithImages").forEach { functionName ->
             val function = nativeFunctionSection(native, functionName)
             val loop = function.substringAfter("while (generated < generation_limit)")
@@ -190,8 +193,8 @@ class LocalLlamaOwnershipSourceContractTest {
             assertFalse(loop.contains("llama_synchronize"))
             assertFalse(loop.contains("char piece[256]"))
         }
-        assertFalse(native.contains("llama_sampler_sample("))
-        assertFalse(native.contains("llama_sampler_free("))
+        assertFalse((native + generation).contains("llama_sampler_sample("))
+        assertFalse((native + generation).contains("llama_sampler_free("))
     }
 
     @Test
@@ -203,9 +206,8 @@ class LocalLlamaOwnershipSourceContractTest {
         val provider = mainSource("com/newoether/agora/api/local/LocalProvider.kt")
         val normalizer = mainSource("com/newoether/agora/api/util/ProviderStreamNormalizer.kt")
         val runner = mainSource("com/newoether/agora/viewmodel/ProviderPassRunner.kt")
-        val parser = native
+        val parser = mainCppSource("llama_chat_parser.h")
             .substringAfter("struct NativeChatParser {")
-            .substringBefore("static common_sampler * init_chat_sampler(")
 
         assertTrue(engine.contains("val format: Int = 0"))
         assertTrue(engine.contains("val parser: String = \"\""))
@@ -218,9 +220,9 @@ class LocalLlamaOwnershipSourceContractTest {
         assertTrue(engine.contains("toolCalls.toSortedMap().values.toList()"))
         assertFalse(engine.contains("fun onToken("))
 
-        assertTrue(native.contains("params.format = metadata.format"))
-        assertTrue(native.contains("params.generation_prompt = metadata.generation_prompt"))
-        assertTrue(native.contains("params.parser.load(metadata.parser)"))
+        assertTrue(parser.contains("params.format = metadata.format"))
+        assertTrue(parser.contains("params.generation_prompt = metadata.generation_prompt"))
+        assertTrue(parser.contains("params.parser.load(metadata.parser)"))
         assertTrue(parser.contains("common_chat_parse(generated_text, is_partial, params)"))
         assertTrue(parser.contains("common_chat_msg_diff::compute_diffs(message, next)"))
         assertTrue(parser.contains("message.tool_calls[diff.tool_call_index]"))
@@ -234,8 +236,8 @@ class LocalLlamaOwnershipSourceContractTest {
             .findAll(native).count())
         assertEquals(2, Regex("parser\\.finish\\(env, callback, callbacks, failure\\)")
             .findAll(native).count())
-        assertFalse((native + callbacks).contains("report_token("))
-        assertFalse((native + callbacks).contains("\"onToken\""))
+        assertFalse((native + callbacks + parser).contains("report_token("))
+        assertFalse((native + callbacks + parser).contains("\"onToken\""))
 
         assertTrue(providerContract.contains("val nativeTextParsingAuthoritative: Boolean"))
         assertTrue(providerContract.contains("get() = false"))
@@ -315,9 +317,9 @@ class LocalLlamaOwnershipSourceContractTest {
         val runtime = mainSource("com/newoether/agora/api/LocalModelRuntime.kt")
         val native = mainCppSource("llama_chat_jni.cpp")
         val text = nativeFunctionSection(native, "nativeChatGenerate")
-        val prepare = native
-            .substringAfter("static size_t prepare_text_cache(")
-            .substringBefore("static bool token_to_piece(")
+        val prepare = mainCppSource("llama_chat_generation.cpp")
+            .substringAfter("size_t prepare_text_cache(")
+            .substringBefore("bool token_to_piece(")
 
         val sameIdentity = runtime
             .substringAfter("current is Resident.Chat && current.identity == identity")

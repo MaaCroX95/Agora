@@ -203,3 +203,16 @@ Settings tests must cover the exact presets/default/normalization, DataStore rea
 AppContainer binding, Local Advanced placement and slider commit behavior, locale key/placeholder
 parity, portable-export absence, and Settings Replace preservation. The project full build remains
 required; build success alone does not prove real-device memory release or model reload latency.
+
+## 10. Native module boundaries
+
+`llama_chat_jni.cpp` owns the existing model lifetime, cancellation entry, text generation and
+multimodal generation entry points. `llama_chat_handle.h` declares their shared per-model state;
+moving that declaration does not create another runtime owner. Template request/result conversion
+and get/apply entry points live in `llama_chat_template.cpp`.
+
+Both generation paths use `llama_chat_generation.cpp` for token conversion, proven-prefix cache
+operations and sampler setup. `llama_chat_parser.h` retains per-request typed stream parsing;
+`llama_chat_callbacks.cpp` retains JNI output conversion and callback dispatch. These modules add
+no global model state, queue, timer or lifecycle. Keep their batching, cancellation and failure
+ordering equivalent when changing module boundaries.

@@ -1,306 +1,45 @@
 #include <jni.h>
 #include <algorithm>
-#include <atomic>
 #include <chrono>
-#include <set>
 #include <string>
 #include <vector>
 #include <cstring>
 #include <cstdint>
 #include <cstdio>
-#include <android/log.h>
 #include "llama.h"
 #include "chat.h"
 #include "sampling.h"
-#include "nlohmann/json.hpp"
 #include "mtmd.h"
 #include "mtmd-helper.h"
 #include "jni_utf8.h"
+#include "llama_chat_callbacks.h"
+#include "llama_chat_generation.h"
 #include "llama_chat_handle.h"
 #include "llama_chat_log.h"
+#include "llama_chat_parser.h"
 #include "llama_chat_template.h"
 
 using agora::chat::ChatHandle;
-using agora::chat::TemplateSamplingMetadata;
-using agora::chat::read_template_metadata;
-#include "llama_chat_callbacks.h"
-
 using agora::chat::NativeChatCallbacks;
-using agora::chat::utf8_complete_prefix_len;
-using agora::chat::utf8_to_jstring;
+using agora::chat::NativeChatParser;
+using agora::chat::TemplateSamplingMetadata;
+using agora::chat::CALLBACK_TOKEN_BATCH;
+using agora::chat::CALLBACK_BYTE_BATCH;
+using agora::chat::clear_text_cache;
+using agora::chat::prepare_text_cache;
+using agora::chat::token_to_piece;
+using agora::chat::init_chat_sampler;
+using agora::chat::is_preserved_token;
 using agora::chat::init_callbacks;
+using agora::chat::read_template_metadata;
 using agora::chat::report_error;
 using agora::chat::report_done;
-using agora::chat::report_string;
-using agora::chat::report_tool_call;
-using agora::chat::report_tool_calls_complete;
-
+using agora::chat::utf8_complete_prefix_len;
 using agora::jni::read_java_path;
-using agora::jni::read_java_string;
-
-static constexpr int32_t CALLBACK_TOKEN_BATCH = 4;
-static constexpr size_t CALLBACK_BYTE_BATCH = 64;
-static constexpr int32_t PENALTY_LAST_N = 64;
 
 static bool abort_callback(void * data) {
     ChatHandle * handle = (ChatHandle *)data;
     return handle->cancelled.load(std::memory_order_relaxed);
-}
-
-static void clear_text_cache(ChatHandle * handle) {
-    if (handle->ctx) {
-        llama_memory_clear(llama_get_memory(handle->ctx), true);
-    }
-    handle->decoded_tokens.clear();
-}
-
-static size_t prepare_text_cache(
-    ChatHandle * handle,
-    const std::vector<llama_token> & prompt_tokens
-) {
-    size_t retained_prefix = 0;
-    const size_t comparable = std::min(
-        handle->decoded_tokens.size(), prompt_tokens.size()
-    );
-    while (retained_prefix < comparable &&
-           handle->decoded_tokens[retained_prefix] == prompt_tokens[retained_prefix]) {
-        retained_prefix++;
-    }
-
-    // Sampling needs logits from this request, so an exact prompt match must replay one token.
-    if (retained_prefix == prompt_tokens.size() && retained_prefix > 0) {
-        retained_prefix--;
-    }
-
-    llama_memory_t memory = llama_get_memory(handle->ctx);
-    const bool removed = llama_memory_seq_rm(
-        memory, 0, static_cast<llama_pos>(retained_prefix), -1
-    );
-    const llama_pos pos_min = llama_memory_seq_pos_min(memory, 0);
-    const llama_pos pos_max = llama_memory_seq_pos_max(memory, 0);
-    const bool memory_matches = retained_prefix == 0
-        ? pos_max == -1
-        : pos_min == 0 && pos_max + 1 == static_cast<llama_pos>(retained_prefix);
-    if (!removed || !memory_matches) {
-        clear_text_cache(handle);
-        return 0;
-    }
-    handle->decoded_tokens.resize(retained_prefix);
-    return retained_prefix;
-}
-
-static bool token_to_piece(
-    const llama_vocab * vocab,
-    llama_token token,
-    std::string & piece
-) {
-    char inline_buffer[256];
-    int32_t length = llama_token_to_piece(
-        vocab, token, inline_buffer, sizeof(inline_buffer), 0, true
-    );
-    if (length >= 0) {
-        piece.assign(inline_buffer, static_cast<size_t>(length));
-        return true;
-    }
-    std::vector<char> dynamic_buffer(static_cast<size_t>(-length));
-    length = llama_token_to_piece(
-        vocab, token, dynamic_buffer.data(), dynamic_buffer.size(), 0, true
-    );
-    if (length < 0) return false;
-    piece.assign(dynamic_buffer.data(), static_cast<size_t>(length));
-    return true;
-}
-
-struct NativeChatParser {
-    common_chat_parser_params params;
-    common_chat_msg message;
-    std::string generated_text;
-    std::string initialization_error;
-
-    explicit NativeChatParser(const TemplateSamplingMetadata & metadata) {
-        params.format = metadata.format;
-        params.generation_prompt = metadata.generation_prompt;
-        params.parse_tool_calls = true;
-        if (metadata.parser.empty()) {
-            if (metadata.format != COMMON_CHAT_FORMAT_CONTENT_ONLY) {
-                initialization_error = "Chat template parser metadata is missing";
-            }
-            return;
-        }
-        try {
-            params.parser.load(metadata.parser);
-        } catch (const std::exception & exception) {
-            initialization_error = exception.what();
-        }
-    }
-
-    bool update(
-        JNIEnv * env,
-        jobject callback,
-        const NativeChatCallbacks & methods,
-        const char * data,
-        size_t length,
-        bool is_partial,
-        std::string & error
-    ) {
-        if (!initialization_error.empty()) {
-            error = initialization_error;
-            return false;
-        }
-        generated_text.append(data, length);
-        try {
-            common_chat_msg next = common_chat_parse(generated_text, is_partial, params);
-            if (next.empty()) {
-                if (!is_partial) message = {};
-                return true;
-            }
-            const auto diffs = common_chat_msg_diff::compute_diffs(message, next);
-            message = std::move(next);
-            for (const auto & diff : diffs) {
-                if (!diff.reasoning_content_delta.empty() && !report_string(
-                        env, callback, methods.on_thought,
-                        diff.reasoning_content_delta
-                    )) return false;
-                if (!diff.content_delta.empty() && !report_string(
-                        env, callback, methods.on_text, diff.content_delta
-                    )) return false;
-                if (diff.tool_call_index != std::string::npos) {
-                    if (diff.tool_call_index >= message.tool_calls.size()) {
-                        error = "Parsed tool call index is out of range";
-                        return false;
-                    }
-                    if (!report_tool_call(
-                            env, callback, methods,
-                            diff.tool_call_index,
-                            message.tool_calls[diff.tool_call_index]
-                        )) return false;
-                }
-            }
-            return true;
-        } catch (const std::exception & exception) {
-            error = exception.what();
-            return false;
-        }
-    }
-
-    bool finish(
-        JNIEnv * env,
-        jobject callback,
-        const NativeChatCallbacks & methods,
-        std::string & error
-    ) {
-        if (!update(env, callback, methods, "", 0, false, error)) return false;
-        if (message.tool_calls.empty()) return true;
-        for (const auto & call : message.tool_calls) {
-            if (call.name.empty()) {
-                error = "Parsed tool call is missing a name";
-                return false;
-            }
-            try {
-                const auto arguments = nlohmann::ordered_json::parse(
-                    call.arguments.empty() ? "{}" : call.arguments
-                );
-                if (!arguments.is_object()) {
-                    error = "Parsed tool call arguments are not a JSON object";
-                    return false;
-                }
-            } catch (const std::exception & exception) {
-                error = std::string("Parsed tool call arguments are incomplete: ") +
-                    exception.what();
-                return false;
-            }
-        }
-        return report_tool_calls_complete(env, callback, methods);
-    }
-};
-
-static common_sampler * init_chat_sampler(
-    ChatHandle * handle,
-    TemplateSamplingMetadata & metadata,
-    float temperature,
-    float top_p,
-    float frequency_penalty,
-    float presence_penalty,
-    std::string & error
-) {
-    common_params_sampling params;
-    params.samplers = {
-        COMMON_SAMPLER_TYPE_PENALTIES,
-        COMMON_SAMPLER_TYPE_MIN_P,
-        COMMON_SAMPLER_TYPE_TOP_P,
-        COMMON_SAMPLER_TYPE_TEMPERATURE,
-    };
-    params.penalty_last_n = PENALTY_LAST_N;
-    params.penalty_repeat = 1.0f;
-    params.penalty_freq = frequency_penalty;
-    params.penalty_present = presence_penalty;
-    params.min_p = 0.05f;
-    params.min_keep = 1;
-    params.top_p = top_p;
-    params.temp = temperature;
-    if (!metadata.grammar.empty()) {
-        params.grammar = { COMMON_GRAMMAR_TYPE_TOOL_CALLS, metadata.grammar };
-    }
-    params.grammar_lazy = metadata.grammar_lazy;
-    params.generation_prompt = metadata.generation_prompt;
-    for (const auto & value : metadata.preserved_tokens) {
-        const auto tokens = common_tokenize(handle->vocab, value, false, true);
-        if (tokens.size() == 1) {
-            params.preserved_tokens.insert(tokens.front());
-            metadata.preserved_token_ids.insert(tokens.front());
-        }
-    }
-    for (const auto & source : metadata.grammar_triggers) {
-        common_grammar_trigger trigger = source;
-        switch (trigger.type) {
-            case COMMON_GRAMMAR_TRIGGER_TYPE_WORD: {
-                const auto tokens = common_tokenize(handle->vocab, trigger.value, false, true);
-                if (tokens.size() == 1) {
-                    if (metadata.preserved_token_ids.find(tokens.front()) ==
-                        metadata.preserved_token_ids.end()) {
-                        error = "Grammar trigger word is not a preserved token";
-                        return nullptr;
-                    }
-                    trigger.type = COMMON_GRAMMAR_TRIGGER_TYPE_TOKEN;
-                    trigger.token = tokens.front();
-                }
-                break;
-            }
-            case COMMON_GRAMMAR_TRIGGER_TYPE_TOKEN:
-                if (metadata.preserved_token_ids.find(trigger.token) ==
-                    metadata.preserved_token_ids.end()) {
-                    error = "Grammar trigger token is not preserved";
-                    return nullptr;
-                }
-                break;
-            case COMMON_GRAMMAR_TRIGGER_TYPE_PATTERN:
-            case COMMON_GRAMMAR_TRIGGER_TYPE_PATTERN_FULL:
-                break;
-            default:
-                error = "Unknown grammar trigger type";
-                return nullptr;
-        }
-        params.grammar_triggers.push_back(std::move(trigger));
-    }
-    if (params.grammar_lazy && params.grammar_triggers.empty()) {
-        error = "Lazy grammar requires at least one trigger";
-        return nullptr;
-    }
-    try {
-        common_sampler * sampler = common_sampler_init(handle->model, params);
-        if (!sampler) error = "Unable to initialize chat sampler";
-        return sampler;
-    } catch (const std::exception & exception) {
-        error = exception.what();
-        return nullptr;
-    }
-}
-
-static bool is_preserved_token(
-    const TemplateSamplingMetadata & metadata,
-    llama_token token
-) {
-    return metadata.preserved_token_ids.find(token) != metadata.preserved_token_ids.end();
 }
 
 extern "C" {
