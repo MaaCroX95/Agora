@@ -3,7 +3,6 @@ package com.newoether.agora.ui.tasks
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,7 +31,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -50,7 +48,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
 import com.newoether.agora.automation.CronExpression
@@ -65,7 +62,6 @@ import com.newoether.agora.ui.components.clearFocusOnTap
 import com.newoether.agora.ui.settings.AnimatedActionFab
 import com.newoether.agora.ui.settings.CollapsingSettingsLazyScaffold
 import com.newoether.agora.ui.settings.SettingsGroup
-import com.newoether.agora.ui.settings.SettingsIconContent
 import com.newoether.agora.ui.settings.SettingsItem
 import com.newoether.agora.viewmodel.ChatViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -307,7 +303,7 @@ internal fun TaskDetailPage(
                 title = stringResource(R.string.task_section_details),
                 items = listOf(
                     {
-                        LabeledField(
+                        TaskLabeledField(
                             label = stringResource(R.string.task_name),
                             icon = Icons.Default.Label,
                             value = name,
@@ -317,7 +313,7 @@ internal fun TaskDetailPage(
                         )
                     },
                     {
-                        LabeledField(
+                        TaskLabeledField(
                             label = stringResource(R.string.task_prompt),
                             icon = Icons.Default.Psychology,
                             value = prompt,
@@ -449,59 +445,6 @@ internal fun TaskDetailPage(
                 if (executionDeletePhase != ChatDeleteDialogPhase.PENDING) executionToDelete = null
             },
         )
-    }
-}
-
-/** A group row whose value is typed in place. Icon-bearing fields use the same leading-icon
- *  content column as the Proxy settings page, so the label and field share its left inset. */
-@Composable
-private fun LabeledField(
-    label: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-    placeholder: String,
-    singleLine: Boolean,
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    isError: Boolean = false,
-    supporting: String? = null,
-    supportingIsError: Boolean = false,
-) {
-    val fieldContent: @Composable () -> Unit = {
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            placeholder = { Text(placeholder, style = MaterialTheme.typography.bodyMedium) },
-            singleLine = singleLine,
-            minLines = if (singleLine) 1 else 4,
-            isError = isError,
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth(),
-            textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
-        )
-        if (supporting != null) {
-            Spacer(Modifier.height(6.dp))
-            Text(
-                supporting,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (supportingIsError) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-    if (icon != null) {
-        SettingsIconContent(icon = icon) {
-            fieldContent()
-        }
-    } else {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)) {
-            fieldContent()
-        }
     }
 }
 
@@ -705,7 +648,7 @@ private fun ScheduleGroup(
             // ── Custom cron passthrough ──
             if (isCustomCron) {
                 add {
-                    LabeledField(
+                    TaskLabeledField(
                         label = stringResource(R.string.task_schedule_custom),
                         icon = Icons.Default.Code,
                         value = cronExpr,

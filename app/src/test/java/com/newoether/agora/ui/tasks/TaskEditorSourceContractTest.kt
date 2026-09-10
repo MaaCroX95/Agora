@@ -11,7 +11,7 @@ class TaskEditorSourceContractTest {
         val editor = source("ui/tasks/TaskEditorPage.kt")
         val detail = editor
             .substringAfter("internal fun TaskDetailPage(")
-            .substringBefore("/** A group row")
+            .substringBefore("internal fun formatDateTime(")
 
         assertTrue(detail.contains("BackHandler(enabled = backHandlingEnabled) { onBack() }"))
         assertFalse(detail.contains("BackHandler { onBack() }"))
@@ -35,7 +35,7 @@ class TaskEditorSourceContractTest {
         val editor = source("ui/tasks/TaskEditorPage.kt")
         val detail = editor
             .substringAfter("internal fun TaskDetailPage(")
-            .substringBefore("/** A group row")
+            .substringBefore("internal fun formatDateTime(")
         val listCall = tasks
             .substringAfter("TasksListPage(")
             .substringBefore("onNewTask =")
