@@ -76,6 +76,7 @@ internal class FiloClient(
     private val calls: Call.Factory = OkHttpClient.Builder()
         .retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false)
         .callTimeout(30, TimeUnit.SECONDS).build(),
+    mutationTimeoutMillis: Long = 210_000,
 ) {
     private val endpoint = try { address.trim().toHttpUrl().also {
         require(it.username.isEmpty() && it.password.isEmpty() && it.query == null &&
@@ -97,6 +98,12 @@ internal class FiloClient(
     // recover on a fresh connection; native mutations keep the non-retrying transport.
     private val readCalls: Call.Factory = (calls as? OkHttpClient)?.newBuilder()
         ?.retryOnConnectionFailure(true)?.build() ?: calls
+    // Filo allows 180 seconds for cold executor readiness and native mutation acknowledgement.
+    // Both the socket read and whole-call deadline must outlive that inner operation.
+    private val mutationCalls: Call.Factory = (calls as? OkHttpClient)?.newBuilder()
+        ?.retryOnConnectionFailure(false)?.followRedirects(false)?.followSslRedirects(false)
+        ?.readTimeout(mutationTimeoutMillis, TimeUnit.MILLISECONDS)
+        ?.callTimeout(mutationTimeoutMillis, TimeUnit.MILLISECONDS)?.build() ?: calls
 
     suspend fun connect(): String {
         val info = json.decodeFromString<FiloInfo>(request("v1/info"))
@@ -238,7 +245,7 @@ internal class FiloClient(
             }.build()
             val request = Request.Builder().url(url).header("Authorization", "Bearer $token")
                 .apply { body?.let { post(it.toRequestBody("application/json".toMediaType())) } }.build()
-            val call = (if (body == null) readCalls else calls).newCall(request)
+            val call = (if (body == null) readCalls else mutationCalls).newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {

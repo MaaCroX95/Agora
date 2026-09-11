@@ -28,6 +28,10 @@ Protocol 2 requires Bearer authentication, explicit service address, native-stee
 and live-messages output. Idle Send starts a native turn; active Send steers the exact
 original turn. Stop requires its native active ID. HTTP acceptance and native client-ID
 visibility are separate confirmations; unknown delivery is reconciled without blind resend.
+Native mutations have a 210-second mobile read/whole-call budget, enclosing Filo's
+180-second private request, 90-second executor readiness and 60-second protected
+creation budgets. Ordinary reads retain their shorter timeout. Cancellation still
+closes only the request; a timeout never grants permission to replay accepted input.
 Native approvals remain with their owner. Remote attachment uploads, approvals, transcript
 editing, branching and tool-execution controls are unsupported.
 
