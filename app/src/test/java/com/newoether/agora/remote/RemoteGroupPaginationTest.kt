@@ -15,7 +15,7 @@ class RemoteGroupPaginationTest {
     private val dispatcher = StandardTestDispatcher()
     private val client = mockk<FiloClient>()
     private val connections = mockk<RemoteConnectionStore>(relaxed = true)
-    private val session = RemoteSession("history", "History", "/workspace", 1, readOnly = true)
+    private val session = RemoteSession("history", "History", "/workspace", 1)
     private fun tool(index: Int) = RemoteMessage("tool-$index", "turn", null, "assistant", "", 1,
         activity = RemoteActivity("tool", "shell", result = "done", state = "succeeded"))
     private fun packet(range: IntRange, next: String?, continuation: String?, bookmark: String) =
@@ -28,7 +28,10 @@ class RemoteGroupPaginationTest {
         coEvery { client.connect() } returns "Computer"
         coEvery { client.sessions(any()) } returns RemoteSessionPage(listOf(session), null)
         coEvery { client.models() } returns emptyList()
-        every { client.events(any()) } returns flow { awaitCancellation() }
+        every { client.events(any()) } answers {
+            val id = firstArg<String>()
+            flow { emit(client.conversation(id)); awaitCancellation() }
+        }
     }
     @After fun tearDown() { Dispatchers.resetMain() }
 

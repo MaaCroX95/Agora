@@ -771,7 +771,6 @@
     <string name="composer_clear_failed">A mensagem foi enviada, mas não foi possível limpar o rascunho.</string>
     <string name="models_show_provider_name">Mostrar nome do provedor</string>
     <string name="models_show_provider_name_desc">Adicionar o nome do provedor após o nome do modelo.</string>
-    <string name="remote_history_read_only">Histórico somente leitura</string>
     <string name="remote_resume_history">Continuar esta conversa</string>
     <string name="remote_session_busy">Outro processo do Codex está usando esta conversa. Tente novamente quando ela for liberada.</string>
     <string name="thought_for_a_while">Pensou por um tempo</string>

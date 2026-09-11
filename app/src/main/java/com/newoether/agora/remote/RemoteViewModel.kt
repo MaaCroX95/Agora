@@ -62,7 +62,6 @@ internal class RemoteViewModel(
     private val checkSlots = Semaphore(2)
     private var epoch = 0L
     private var selectionEpoch = 0L
-    private var historyAdmissionSelection: Long? = null
     private var visible = false
     private var polling: Job? = null
     private var paging: Job? = null
@@ -173,7 +172,6 @@ internal class RemoteViewModel(
         invalidateReads()
         mutableState.value = state.value.copy(session = session, nodes = emptyList(), messageGroups = emptyList(), historyCursor = null, queued = emptyList(), failure = null, runtime = null, composerFocusOwner = null,
             draftSessionId = null, draftSettings = RemoteSettings(), draftNativeSession = null)
-        historyAdmissionSelection = selectionEpoch.takeIf { session?.readOnly == true && session.canResume }
         refresh()
     }
 
@@ -215,7 +213,7 @@ internal class RemoteViewModel(
         }
         val generation = epoch
         val session = state.value.session
-        if (session?.readOnly != true && modelLoading?.isActive != true) {
+        if (modelLoading?.isActive != true) {
             val modelGeneration = ++modelEpoch
             mutableState.value = state.value.copy(modelsLoading = true)
             modelLoading = viewModelScope.launch {
@@ -249,17 +247,6 @@ internal class RemoteViewModel(
                             loading = false, failure = null,
                         )
                         startSessionStatusReads()
-                    } else if (session.readOnly) {
-                        applyPage(client, session.id, generation, client.conversation(session.id))
-                        if (generation != epoch) return@launch
-                        if (historyAdmissionSelection == selectionEpoch) {
-                            historyAdmissionSelection = null // A selection admits once; refresh/reconnect never resends.
-                            client.resume(session.id)
-                            if (generation != epoch) return@launch
-                            markConnected(session)
-                            refresh()
-                            return@launch
-                        }
                     } else {
                         client.events(session.id).collect { page ->
                             if (generation == epoch) {
@@ -278,7 +265,7 @@ internal class RemoteViewModel(
                             stoppingOwner = null, stoppingTurnId = null)
                         // A failed native read is not proof that the device is offline.
                         var reachable = false
-                        if (session?.readOnly == false && readFailure in setOf(RemoteFailure.NETWORK, RemoteFailure.SERVICE)) {
+                        if (session != null && readFailure in setOf(RemoteFailure.NETWORK, RemoteFailure.SERVICE)) {
                             try {
                                 // Read the same original owner when subscription fails; never admit another host.
                                 applyPage(client, session.id, generation, client.conversation(session.id), liveControl = false)
@@ -317,7 +304,7 @@ internal class RemoteViewModel(
                         consecutiveFailures++
                         // One interrupted GET may recover on the existing three-second loop.
                         // Health failure and non-network errors remain immediately visible.
-                        val recovering = session?.readOnly == false && readFailure == RemoteFailure.NETWORK &&
+                        val recovering = session != null && readFailure == RemoteFailure.NETWORK &&
                             reachable && consecutiveFailures == 1
                         mutableState.value = state.value.copy(failure = failure.takeUnless { recovering })
                         if (!recovering && notifiedFailure != failure) {
@@ -327,7 +314,7 @@ internal class RemoteViewModel(
                         }
                     }
                 }
-                if (session == null || session.readOnly) break
+                if (session == null) break
                 delay(3000)
             } while (isActive && visible && generation == epoch)
         }
@@ -357,7 +344,7 @@ internal class RemoteViewModel(
             if (generation != epoch) return
             var nodes = state.value.nodes
             for (chunk in incoming.asReversed()) nodes = admitRemoteNodes(nodes, chunk.nodes)
-            val runtime = page.runtime.takeUnless { state.value.session?.readOnly == true }
+            val runtime = page.runtime
             val groups = projectRemoteTopology(nodes, runtime)
             for (chunk in incoming.asReversed()) hydration.accept(owner, chunk, groups, live = false)
             if (generation != epoch) return
@@ -483,25 +470,6 @@ internal class RemoteViewModel(
         if (state.value.composerFocusOwner == owner) mutableState.value = state.value.copy(composerFocusOwner = null)
     }
 
-    fun resumeSession() {
-        val session = state.value.session ?: return
-        if (!session.readOnly || !session.canResume) return
-        val selected = selectionEpoch
-        control { client ->
-            client.resume(session.id)
-            if (selected == selectionEpoch) {
-                markConnected(session)
-                refresh()
-            }
-        }
-    }
-
-    private fun markConnected(session: RemoteSession) {
-        val connected = session.copy(readOnly = false, canResume = false)
-        mutableState.value = state.value.copy(session = connected,
-            sessions = state.value.sessions.map { if (it.id == session.id) connected else it }, failure = null)
-    }
-
     fun setModel(model: String) {
         val snapshot = state.value
         val session = snapshot.session ?: return
@@ -568,7 +536,7 @@ internal class RemoteViewModel(
     fun stop() {
         val snapshot = state.value
         val session = snapshot.session ?: return
-        if (session.readOnly || snapshot.runtime?.isRunning != true) return
+        if (snapshot.runtime?.isRunning != true) return
         val turn = snapshot.runtime.activeTurnId ?: return
         control(stoppingTurnId = turn) { client -> client.stop(session.id, turn) }
     }
@@ -716,7 +684,7 @@ internal class RemoteViewModel(
 
     fun send() {
         val snapshot = state.value
-        if (!visible || snapshot.session?.readOnly == true || snapshot.controlling || snapshot.isStopping) return
+        if (!visible || snapshot.controlling || snapshot.isStopping) return
         val owner = snapshot.owner ?: return
         val client = clients[snapshot.deviceId] ?: return
         val text = snapshot.drafts[owner].orEmpty()

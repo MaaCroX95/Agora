@@ -513,55 +513,21 @@ internal class RemoteViewModelTest : RemoteViewModelFixture() {
             assertFalse(events.any { it.contains("PRIVATE_") || it.contains("http://") })
         } finally { unmockkObject(DeveloperDiagnostics) }
     }
-    @Test fun selectingHistoryAdmitsOnceAndEnablesExistingStreamOnlyAfterAcceptance() = runTest(dispatcher) {
-        val gate = CompletableDeferred<Unit>()
-        coEvery { client.resume("history") } coAnswers { gate.await() }
-        val old = RemoteMessage("old", "old-turn", null, "user", "Preserved", 1)
-        val history = CompletableDeferred<RemoteConversationPage>()
-        coEvery { client.conversation("history", any()) } coAnswers { history.await() }
+    @Test fun unloadedOriginalTaskStillLoadsModelsAndDispatchesExplicitSend() = runTest(dispatcher) {
+        coEvery { client.conversation("history", any()) } returns bodyPage(
+            emptyList(), null, emptyList(), RemoteRuntime("notLoaded"))
+        coEvery { client.send("history", any(), any()) } throws FiloHttpException(409, detail = "Original owner unavailable")
         val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
-        vm.selectSession(session.copy(id = "history", readOnly = true, canResume = true)); runCurrent()
-        val owner = vm.state.value.owner!!
-        vm.editDraft(owner, "Written while history loads")
-        vm.send(); runCurrent()
-        assertTrue(vm.state.value.loading)
-        coVerify(exactly = 0) { client.resume("history") }
-        coVerify(exactly = 0) { client.send(any(), any(), any()) }
-        history.complete(bodyPage(listOf(old), null, emptyList(), RemoteRuntime("ready"))); runCurrent()
-        vm.send(); runCurrent()
-        assertEquals("Written while history loads", vm.state.value.drafts[owner])
-        coVerify(exactly = 1) { client.resume("history") }
-        assertTrue(vm.state.value.session!!.readOnly)
-        verify(exactly = 0) { client.events("history") }
-        gate.complete(Unit); runCurrent()
-        assertFalse(vm.state.value.controlling)
-        assertFalse(vm.state.value.session!!.readOnly)
-        assertEquals(owner, vm.state.value.owner)
-        assertEquals("Written while history loads", vm.state.value.drafts[owner])
-        assertEquals(listOf(old.id), vm.state.value.nodes.map { it.id })
+        vm.selectSession(session.copy(id = "history")); runCurrent()
+        assertEquals("notLoaded", vm.state.value.runtime?.status)
+        assertEquals("model", vm.state.value.models.single().id)
         verify(exactly = 1) { client.events("history") }
-        coVerify(exactly = 1) { client.resume("history") }
         coVerify(exactly = 0) { client.send(any(), any(), any()) }
-        vm.setVisible(false)
-    }
-
-    @Test fun busyHistoryStaysReadableAndLateResumeCannotNavigateAfterBack() = runTest(dispatcher) {
-        coEvery { client.resume("history") } throws FiloHttpException(409, "session_busy")
-        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
-        vm.setVisible(true); saveAndSelect(vm)
-        vm.selectSession(session.copy(id = "history", readOnly = true, canResume = true)); runCurrent()
-        assertEquals(RemoteFailure.SESSION_BUSY, vm.state.value.failure)
-        vm.refresh(); runCurrent()
-        coVerify(exactly = 1) { client.resume("history") }
-        assertTrue(vm.state.value.session!!.readOnly)
-        assertFalse(vm.state.value.controlling)
-        verify(exactly = 0) { client.events("history") }
-        val gate = CompletableDeferred<Unit>()
-        coEvery { client.resume("history") } coAnswers { gate.await() }
-        vm.resumeSession(); runCurrent(); vm.selectSession(null); runCurrent()
-        gate.complete(Unit); runCurrent()
-        assertNull(vm.state.value.session)
+        vm.editDraft(vm.state.value.owner!!, "Explicit input")
+        vm.send(); runCurrent()
+        coVerify(exactly = 1) { client.send("history", "Explicit input", any()) }
+        assertEquals("Explicit input", vm.state.value.drafts[vm.state.value.owner])
         assertFalse(vm.state.value.controlling)
         vm.setVisible(false)
     }
@@ -569,11 +535,11 @@ internal class RemoteViewModelTest : RemoteViewModelFixture() {
     @Test fun olderPageLoadingEndsOnFailureAndDoesNotSurviveNavigation() = runTest(dispatcher) {
         val page = CompletableDeferred<RemoteConversationPage>()
         coEvery { client.conversation("history", null) } returns bodyPage(listOf(
-            RemoteMessage("recent", "turn", null, "assistant", "Recent history", 2)), "older", emptyList(), RemoteRuntime("readOnly"))
+            RemoteMessage("recent", "turn", null, "assistant", "Recent history", 2)), "older", emptyList(), RemoteRuntime("notLoaded"))
         coEvery { client.conversation("history", "older") } coAnswers { page.await() }
         val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
-        vm.selectSession(session.copy(id = "history", readOnly = true)); vm.state.first { it.historyCursor == "older" && it.nodes.isNotEmpty() }
+        vm.selectSession(session.copy(id = "history")); vm.state.first { it.historyCursor == "older" && it.nodes.isNotEmpty() }
         assertFalse(vm.state.value.loading)
         coVerify(exactly = 0) { client.conversation("history", "older") }
         vm.loadMore(); vm.state.first { it.loadingMore }
@@ -587,13 +553,13 @@ internal class RemoteViewModelTest : RemoteViewModelFixture() {
     }
 
     @Test fun openingReadsOneBodyPageAndOlderAdmissionKeepsExistingItemsUnchanged() = runTest(dispatcher) {
-        val historical = session.copy(id = "historical", readOnly = true)
+        val historical = session.copy(id = "historical")
         val recent = RemoteMessage("recent", "turn", null, "assistant", "Recent history", 2)
         val older = RemoteMessage("older", "old-turn", null, "user", "Earlier history", 1)
         coEvery { client.conversation("historical", null) } returns
             bodyPage(listOf(recent), "older", emptyList(), RemoteRuntime("active", "turn", "model"))
         coEvery { client.conversation("historical", "older") } returns
-            bodyPage(listOf(older), null, emptyList(), RemoteRuntime("readOnly"))
+            bodyPage(listOf(older), null, emptyList(), RemoteRuntime("notLoaded"))
         val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
         vm.setVisible(true); saveAndSelect(vm)
         vm.selectSession(historical); vm.state.first { it.nodes.isNotEmpty() }
@@ -607,27 +573,10 @@ internal class RemoteViewModelTest : RemoteViewModelFixture() {
         assertEquals(group, vm.state.value.messageGroups.last())
         coVerify(exactly = 1) { client.conversation("historical", null) }
         coVerify(exactly = 1) { client.conversation("historical", "older") }
-        vm.editDraft(vm.state.value.owner!!, "must not send")
-        vm.send(); vm.stop(); vm.setModel("model"); runCurrent()
-        verify(exactly = 0) { client.events("historical") }
+        verify(exactly = 1) { client.events("historical") }
         coVerify(exactly = 0) { client.send(any(), any(), any()) }
         coVerify(exactly = 0) { client.stop(any(), any()) }
         coVerify(exactly = 0) { client.setModel(any(), any()) }
-        vm.setVisible(false)
-    }
-
-    @Test fun lateSelectionAdmissionCannotReplaceAnotherSessionOrReplayOnVisibility() = runTest(dispatcher) {
-        val gate = CompletableDeferred<Unit>()
-        coEvery { client.resume("history") } coAnswers { withContext(NonCancellable) { gate.await() } }
-        val vm = RemoteViewModel(connections, projectionDispatcher = dispatcher) { _, _ -> client }; runCurrent()
-        vm.setVisible(true); saveAndSelect(vm)
-        vm.selectSession(session.copy(id = "history", readOnly = true, canResume = true)); runCurrent()
-        vm.selectSession(session); runCurrent()
-        gate.complete(Unit); runCurrent()
-        assertEquals("session", vm.state.value.session!!.id)
-        vm.setVisible(false); vm.setVisible(true); runCurrent()
-        coVerify(exactly = 1) { client.resume("history") }
-        coVerify(exactly = 0) { client.send(any(), any(), any()) }
         vm.setVisible(false)
     }
 
@@ -646,7 +595,6 @@ internal class RemoteViewModelTest : RemoteViewModelFixture() {
         vm.archiveSession(session.id); runCurrent()
         assertTrue(vm.state.value.sessions.isEmpty())
         coVerify(exactly = 2) { client.archiveSession(session.id) }
-        coVerify(exactly = 0) { client.resume(any()) }
         vm.setVisible(false)
     }
 

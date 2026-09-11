@@ -8,7 +8,7 @@ import kotlinx.serialization.json.put
 @Serializable
 internal data class RemoteSession(
     val id: String, val title: String, val cwd: String, val updatedAt: Long,
-    val readOnly: Boolean = false, val canResume: Boolean = false, val status: String? = null,
+    val status: String? = null,
     @kotlinx.serialization.Transient val listCursor: String? = null,
 )
 @Serializable

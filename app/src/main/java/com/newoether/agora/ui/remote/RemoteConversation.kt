@@ -77,7 +77,7 @@ internal fun RemoteConversation(
     val attempt = state.attempts[owner]
     val running = state.runtime?.isRunning == true
     val stopping = state.isStopping
-    val ready = state.isDraft || !session.readOnly && state.runtime?.status in setOf("idle", "active", "ready")
+    val ready = state.isDraft || state.runtime?.status in setOf("idle", "active", "ready")
     val newChatEntry = remember(owner) { state.composerFocusOwner == owner }
     ChatLaunchInteractionEffects(
         initialComposerFocusReady = active && ready && state.composerFocusOwner == owner,
@@ -476,7 +476,7 @@ internal fun RemoteConversation(
                         }
                     }
                     val showStop = running && !stopping && field.text.isBlank()
-                    ComposerSendButton(isActionable = active && !session.readOnly && !stopping && !state.controlling && !submitting &&
+                    ComposerSendButton(isActionable = active && !stopping && !state.controlling && !submitting &&
                         (if (showStop) state.runtime?.activeTurnId != null else field.text.isNotBlank()),
                         isBusy = submitting || stopping, showStop = showStop,
                         onBusyShown = { shownBusyAttempt = attempt?.clientId }) {

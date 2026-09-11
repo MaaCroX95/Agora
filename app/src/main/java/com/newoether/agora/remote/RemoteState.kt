@@ -58,7 +58,7 @@ internal data class RemoteState(
     val selectedServiceTier: String? get() = (if (isDraft) {
         if (draftSettings.updateServiceTier) draftSettings.serviceTier else settingsModel?.defaultServiceTier
     } else runtime?.serviceTier).takeUnless { it == "default" }
-    val canEditSettings: Boolean get() = session?.readOnly == false && settingsModel != null &&
+    val canEditSettings: Boolean get() = session != null && settingsModel != null &&
         (isDraft || runtime?.status in setOf("idle", "active", "ready")) &&
         !controlling && !isStopping && attempts[owner]?.delivery !in
             setOf(RemoteDelivery.SUBMITTING, RemoteDelivery.ACCEPTED, RemoteDelivery.UNKNOWN)

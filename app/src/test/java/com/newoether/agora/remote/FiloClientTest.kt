@@ -256,7 +256,7 @@ class FiloClientTest {
         } finally { server.stop(0) }
     }
 
-    @Test fun connectionAcceptsExplicitStandaloneModeAndRejectsUnknownModes() = runBlocking {
+    @Test fun connectionAcceptsOriginalDesktopGatewayAndRejectsRetiredOrUnknownModes() = runBlocking {
         for (mode in listOf("existing", "standalone", "unsupported")) {
             val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
             server.createContext("/v1/info") { exchange ->
@@ -267,8 +267,8 @@ class FiloClientTest {
             server.start()
             try {
                 val client = FiloClient("http://127.0.0.1:${server.address.port}/", token)
-                if (mode == "unsupported") {
-                    try { client.connect(); fail("Unknown mode must be rejected") }
+                if (mode != "existing") {
+                    try { client.connect(); fail("Retired or unknown mode must be rejected") }
                     catch (_: IllegalArgumentException) { }
                 } else assertEquals("quantum", client.connect())
             } finally { server.stop(0) }

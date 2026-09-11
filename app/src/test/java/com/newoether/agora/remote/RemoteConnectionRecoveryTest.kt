@@ -81,7 +81,7 @@ class RemoteConnectionRecoveryTest {
         assertEquals(2, reads)
         assertEquals("idle", vm.state.value.runtime?.status)
         assertTrue(notices.isEmpty())
-        coVerify(exactly = 0) { client.resume(any()); client.create(); client.send(any(), any(), any()) }
+        coVerify(exactly = 0) { client.create(); client.send(any(), any(), any()) }
         vm.setVisible(false)
     }
 
@@ -217,7 +217,7 @@ class RemoteConnectionRecoveryTest {
         assertEquals(listOf("answer"), vm.state.value.nodes.map { it.id })
         assertEquals(RemoteFailure.SERVICE, notices.single().failure)
         coVerify(exactly = 1) { client.connect() }
-        coVerify(exactly = 0) { client.resume(any()); client.create(); client.send(any(), any(), any()) }
+        coVerify(exactly = 0) { client.create(); client.send(any(), any(), any()) }
         vm.setVisible(false)
     }
 }

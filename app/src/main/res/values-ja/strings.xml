@@ -771,7 +771,6 @@
     <string name="composer_clear_failed">メッセージは送信されましたが、下書きを消去できませんでした。</string>
     <string name="models_show_provider_name">プロバイダー名を表示</string>
     <string name="models_show_provider_name_desc">モデル名の後にプロバイダー名を追加します。</string>
-    <string name="remote_history_read_only">読み取り専用の履歴</string>
     <string name="remote_resume_history">この会話を続ける</string>
     <string name="remote_session_busy">別の Codex プロセスがこの会話を使用しています。解放後に再試行してください。</string>
     <string name="thought_for_a_while">しばらく思考しました</string>

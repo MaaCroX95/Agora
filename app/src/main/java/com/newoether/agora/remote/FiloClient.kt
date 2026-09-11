@@ -101,7 +101,7 @@ internal class FiloClient(
     suspend fun connect(): String {
         val info = json.decodeFromString<FiloInfo>(request("v1/info"))
         require(info.protocolVersion == 2 && info.agent == "codex" &&
-            info.sessionMode in setOf("existing", "standalone") && info.messageDelivery == "native-steer" &&
+            info.sessionMode == "existing" && info.messageDelivery == "native-steer" &&
             info.outputMode == "live-messages" && info.supportsLazyMessages) { "Incompatible Filo service" }
         return info.device
     }
@@ -201,7 +201,6 @@ internal class FiloClient(
         require(result["archived"]?.jsonPrimitive?.booleanOrNull == true) { "Native archive is unconfirmed" }
     }
 
-    suspend fun resume(id: String) { request("v1/sessions/${sessionId(id)}/resume", body = "{}") }
     suspend fun create(): RemoteSession = json.decodeFromString(request("v1/sessions", body = "{}"))
     suspend fun models(): List<RemoteModel> = json.decodeFromString<RemoteModels>(request("v1/models")).models
     suspend fun setModel(id: String, model: String) {

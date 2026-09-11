@@ -178,7 +178,7 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                                             forward = true; focus.clearFocus(); vm.selectSession(session)
                                         },
                                         headlineContent = { Text(session.displayTitle(stringResource(R.string.new_chat)), maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                                        supportingContent = { Text(if (session.readOnly && !session.canResume) stringResource(R.string.remote_history_read_only) + " · " + session.displayDirectory() else session.displayDirectory(),
+                                        supportingContent = { Text(session.displayDirectory(),
                                             maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                         leadingContent = { Icon(Icons.Default.ChatBubbleOutline, null) },
                                         trailingContent = {

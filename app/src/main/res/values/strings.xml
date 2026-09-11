@@ -756,7 +756,6 @@
     <string name="local_model_limitations_body">Local models are limited by the memory available on mobile devices. Context size is one of the main constraints. Context often includes the system prompt, tool or function definitions, and skills. To reduce initial context use, open the three-dot menu beside the model selector and enable Low Context Mode.</string>
     <string name="models_show_provider_name">Show Provider name</string>
     <string name="models_show_provider_name_desc">Append the Provider name to the model name.</string>
-    <string name="remote_history_read_only">Read-only history</string>
     <string name="remote_resume_history">Continue this conversation</string>
     <string name="remote_session_busy">This conversation is in use by another Codex process. Try again after it releases the conversation.</string>
     <string name="thought_for_a_while">Thought for a while</string>
