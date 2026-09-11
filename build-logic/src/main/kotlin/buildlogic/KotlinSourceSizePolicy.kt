@@ -1,29 +1,9 @@
 package buildlogic
 
-internal const val KOTLIN_SOURCE_MAX_LINES = 999
+internal const val KOTLIN_SOURCE_MAX_LINES = 800
 
-/** Immutable ceiling for the one migration baseline authorized on 2026-08-09. */
-internal val INITIAL_KOTLIN_SOURCE_BASELINE_CAPS = mapOf(
-    "app/src/fdroid/java/com/newoether/agora/sandbox/ProotSandboxManager.kt" to 1153,
-    "app/src/main/java/com/newoether/agora/MainActivity.kt" to 1138,
-    "app/src/main/java/com/newoether/agora/api/anthropic/AnthropicProvider.kt" to 1037,
-    "app/src/main/java/com/newoether/agora/data/DataImporter.kt" to 1509,
-    "app/src/main/java/com/newoether/agora/data/SettingsManager.kt" to 1369,
-    "app/src/main/java/com/newoether/agora/data/local/ChatDatabase.kt" to 1587,
-    "app/src/main/java/com/newoether/agora/model/RunLifecycle.kt" to 1389,
-    "app/src/main/java/com/newoether/agora/tool/ShellToolProvider.kt" to 1514,
-    "app/src/main/java/com/newoether/agora/ui/chat/ChatApp.kt" to 2313,
-    "app/src/main/java/com/newoether/agora/ui/chat/MessageList.kt" to 1181,
-    "app/src/main/java/com/newoether/agora/ui/settings/SettingsModelsPage.kt" to 1004,
-    "app/src/main/java/com/newoether/agora/ui/tasks/TasksScreen.kt" to 1712,
-    "app/src/main/java/com/newoether/agora/viewmodel/ChatViewModel.kt" to 1897,
-    "app/src/main/java/com/newoether/agora/viewmodel/ConversationGenerationState.kt" to 1080,
-    "app/src/main/java/com/newoether/agora/viewmodel/GenerationManager.kt" to 1689,
-    "app/src/main/java/com/newoether/agora/viewmodel/MessageGenerationController.kt" to 2108,
-    "app/src/test/java/com/newoether/agora/model/ConversationRuntimeReducerTest.kt" to 1433,
-    "app/src/test/java/com/newoether/agora/ui/chat/MessageListLayoutTest.kt" to 1256,
-    "app/src/test/java/com/newoether/agora/viewmodel/ConversationGenerationStateTest.kt" to 1145,
-)
+/** Decomposition is complete; no historical oversized exception can be restored. */
+internal val KOTLIN_SOURCE_BASELINE_CAPS = emptyMap<String, Int>()
 
 internal enum class KotlinSourceSizeViolationReason {
     INVALID_BASELINE,

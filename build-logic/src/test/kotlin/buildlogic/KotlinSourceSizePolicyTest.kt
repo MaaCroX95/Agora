@@ -7,15 +7,15 @@ import org.junit.Test
 
 class KotlinSourceSizePolicyTest {
     @Test
-    fun `999 lines pass without a baseline`() {
-        assertTrue(evaluate(999).isEmpty())
+    fun `800 lines pass without a baseline`() {
+        assertTrue(evaluate(800).isEmpty())
     }
 
     @Test
-    fun `1000 lines fail without a baseline`() {
-        val violation = evaluate(1000).single()
+    fun `801 lines fail without a baseline`() {
+        val violation = evaluate(801).single()
         assertEquals(KotlinSourceSizeViolationReason.NEW_OVERSIZED_SOURCE, violation.reason)
-        assertEquals(999, violation.allowedLines)
+        assertEquals(800, violation.allowedLines)
     }
 
     @Test
@@ -49,7 +49,18 @@ class KotlinSourceSizePolicyTest {
             allowedBaselineCaps = mapOf("app/Legacy.kt" to 1500),
         ).single()
         assertEquals(KotlinSourceSizeViolationReason.INVALID_BASELINE, violation.reason)
-        assertEquals(999, violation.allowedLines)
+        assertEquals(800, violation.allowedLines)
+    }
+
+    @Test
+    fun `completed migration cannot restore an old oversized allowance`() {
+        val path = "app/src/main/java/com/newoether/agora/viewmodel/ChatViewModel.kt"
+        val violation = KotlinSourceSizePolicy.evaluate(
+            currentLines = mapOf(path to 1897),
+            baselineLines = mapOf(path to 1897),
+            allowedBaselineCaps = KOTLIN_SOURCE_BASELINE_CAPS,
+        ).single()
+        assertEquals(KotlinSourceSizeViolationReason.INVALID_BASELINE, violation.reason)
     }
 
     @Test
