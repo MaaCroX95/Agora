@@ -26,6 +26,7 @@ import com.newoether.agora.model.ChatConversation
 import com.newoether.agora.ui.common.NoOpAgoraHaptics
 import com.newoether.agora.ui.motion.AgoraMotionPolicy
 import com.newoether.agora.viewmodel.ChatViewModel
+import com.newoether.agora.viewmodel.ScrollRequestCoordinator
 import com.newoether.agora.viewmodel.AnimatedScrollDestination
 import com.newoether.agora.viewmodel.AnimatedScrollRequest
 import com.newoether.agora.viewmodel.ConversationContextProjection
@@ -228,7 +229,9 @@ class ChatScrollTargetResolverTest {
             message("user", Participant.USER), message("sent", Participant.USER),
         ))
         val viewModel = mockk<ChatViewModel>(relaxed = true)
-        every { viewModel.completeAnimatedScroll(1) } answers { request.value = null }
+        val scrollRequests = mockk<ScrollRequestCoordinator>(relaxed = true)
+        every { viewModel.scrollRequests } returns scrollRequests
+        every { scrollRequests.complete(1) } answers { request.value = null }
         val coordinator = coordinator(list, "new")
         val clock = BroadcastFrameClock()
         val recomposer = Recomposer(backgroundScope.coroutineContext + clock)
@@ -249,18 +252,18 @@ class ChatScrollTargetResolverTest {
                     regenerationTransition = null, animatedScrollRequest = request.value,
                     messages = rows, density = Density(1f), motionPolicy = AgoraMotionPolicy.Default,
                     bottomBarHeight = 0.dp, shareSelectionBarSpace = 0.dp,
-                    onAnimatedScrollFinished = viewModel::completeAnimatedScroll,
+                    onAnimatedScrollFinished = viewModel.scrollRequests::complete,
                 )
             }
             runCurrent()
-            verify(exactly = 0) { viewModel.completeAnimatedScroll(any()) }
+            verify(exactly = 0) { scrollRequests.complete(any()) }
 
             measuredCount.intValue = 3
             Snapshot.sendApplyNotifications()
             runCurrent()
             clock.sendFrame(16_000_000)
             runCurrent()
-            verify(exactly = 1) { viewModel.completeAnimatedScroll(1) }
+            verify(exactly = 1) { scrollRequests.complete(1) }
             coVerify(exactly = 1) { list.scroll(any(), any()) }
         } finally {
             composition.dispose()

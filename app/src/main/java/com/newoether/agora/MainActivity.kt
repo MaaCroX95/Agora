@@ -357,7 +357,7 @@ fun MainNavigation(
     }
     var pdfPreviewFromDialog by remember { mutableStateOf(false) }
     val hapticsEnabled by viewModel.settings.hapticsEnabled.collectAsState()
-    val pdfPages by viewModel.previewPdfPages.collectAsState()
+    val pdfPages by viewModel.mediaPreview.pdfPages.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarVersionState = remember { mutableIntStateOf(0) }
     var snackbarVersion by snackbarVersionState
@@ -475,18 +475,18 @@ fun MainNavigation(
                 onFileContentClick = { name, content ->
                     focusManager.clearFocus()
                     topLevelPresentation.present(TopLevelPresentation.TEXT_PREVIEW)
-                    viewModel.showFilePreview(name, content)
+                    viewModel.mediaPreview.showFile(name, content)
                 },
                 onPdfPagesClick = { pages, idx ->
                     focusManager.clearFocus()
-                    viewModel.showPdfPreview(pages, idx)
+                    viewModel.mediaPreview.showPdf(pages, idx)
                     mediaPreviewTarget = MediaPreviewTarget(pages, idx)
                     pdfPreviewFromDialog = false
                     topLevelPresentation.present(TopLevelPresentation.MEDIA_PREVIEW)
                 },
                 onPdfPreviewSelect = { pages, idx ->
                     focusManager.clearFocus()
-                    viewModel.showPdfPreview(pages, idx)
+                    viewModel.mediaPreview.showPdf(pages, idx)
                     mediaPreviewTarget = MediaPreviewTarget(pages, idx)
                     pdfPreviewFromDialog = true
                     topLevelPresentation.present(TopLevelPresentation.MEDIA_PREVIEW)
@@ -577,7 +577,7 @@ fun MainNavigation(
                 },
                 onClose = { target ->
                     if (mediaPreviewTarget?.requestId != target.requestId) return@FullScreenMediaPreviewDialog
-                    viewModel.clearPreviews()
+                    viewModel.mediaPreview.clear()
                     mediaPreviewTarget = null
                     pdfPreviewFromDialog = false
                 },
@@ -591,8 +591,8 @@ fun MainNavigation(
             )
 
             // Text file viewer
-            val fileContent by viewModel.previewFileContent.collectAsState()
-            val fileName by viewModel.previewFileName.collectAsState()
+            val fileContent by viewModel.mediaPreview.fileContent.collectAsState()
+            val fileName by viewModel.mediaPreview.fileName.collectAsState()
             var savedContent by remember { mutableStateOf(fileContent) }
             var savedName by remember { mutableStateOf(fileName) }
             if (fileContent != null) { savedContent = fileContent; savedName = fileName }
@@ -615,7 +615,7 @@ fun MainNavigation(
                 exit = fullScreenPreviewExitTransition(motionPolicy.allowSpatialTransitions)
             ) {
                 if (savedContent != null && savedName != null) {
-                    com.newoether.agora.ui.chat.TextFileViewer(content = savedContent!!, fileName = savedName!!, onClose = { viewModel.clearPreviews() })
+                    com.newoether.agora.ui.chat.TextFileViewer(content = savedContent!!, fileName = savedName!!, onClose = { viewModel.mediaPreview.clear() })
                 }
             }
 

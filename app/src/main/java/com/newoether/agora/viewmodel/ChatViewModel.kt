@@ -294,7 +294,7 @@ class ChatViewModel(
      *  provider is deleted and must render gracefully instead of crashing. */
     fun getProviderInstanceOrNull(name: String): LlmProvider? = providerRegistry.getInstanceOrNull(name)
 
-    private val scrollRequests = ScrollRequestCoordinator()
+    internal val scrollRequests = ScrollRequestCoordinator()
     private val selectionController: ConversationSelectionController by lazy {
         ConversationSelectionController(
             scope = viewModelScope,
@@ -316,22 +316,6 @@ class ChatViewModel(
     /** Callback invoked when any send path (manual/queue/loop) accepts a message.
      *  ChatApp wires this to trigger a single haptics.confirm() for all three paths. */
     @Volatile var onSendAccepted: ((conversationId: String, messageId: String) -> Unit)? = null
-    val animatedScrollRequest: StateFlow<AnimatedScrollRequest?> =
-        scrollRequests.request
-
-    /** One-shot: set when sendMessage creates a new conversation so the conversation-open
-     *  auto-scroll skips once (the send's scroll-to-message already handles it), preventing
-     *  a double scroll on the first message of a new chat. Consumed by ChatApp. */
-    var suppressNextOpenScroll: Boolean
-        get() = scrollRequests.suppressNextOpenScroll
-        set(value) { scrollRequests.suppressNextOpenScroll = value }
-
-    /** When true, draft write-backs are suppressed to prevent feedback loops while
-     *  programmatically loading a stored draft into the composer field. */
-    var loadingDraft: Boolean
-        get() = scrollRequests.loadingDraft
-        set(value) { scrollRequests.loadingDraft = value }
-
     fun triggerScrollToMessage(messageId: String? = null) {
         scrollRequests.requestMessage(currentConversationId.value, messageId)
     }
@@ -347,8 +331,6 @@ class ChatViewModel(
             attachedOnly = true,
         )
     }
-
-    fun completeAnimatedScroll(requestId: Long) = scrollRequests.complete(requestId)
 
     val currentActiveModel: StateFlow<String> get() = selectionController.currentActiveModel
 
@@ -509,16 +491,8 @@ class ChatViewModel(
     fun dismissUpdateDialog() { _updateDialogData.value = null }
     fun showUpdateDialog(info: UpdateInfo) { _updateDialogData.value = info }
 
-    /** PDF / text-file preview state (see [MediaPreviewState]). */
-    private val mediaPreview = MediaPreviewState()
-    val previewPdfPages: StateFlow<List<String>> get() = mediaPreview.pdfPages
-    val previewPdfIndex: StateFlow<Int> get() = mediaPreview.pdfIndex
-    val previewFileContent: StateFlow<String?> get() = mediaPreview.fileContent
-    val previewFileName: StateFlow<String?> get() = mediaPreview.fileName
-
-    fun showPdfPreview(pages: List<String>, startIndex: Int) = mediaPreview.showPdf(pages, startIndex)
-    fun showFilePreview(fileName: String, content: String) = mediaPreview.showFile(fileName, content)
-    fun clearPreviews() = mediaPreview.clear()
+    /** PDF / text-file preview state shared by the existing UI consumers. */
+    val mediaPreview = MediaPreviewState()
 
     val messages: StateFlow<List<ChatMessage>> = conversationUi.messages
     val isLoading: StateFlow<Boolean> = conversationUi.isLoading
@@ -585,22 +559,7 @@ class ChatViewModel(
 
     val isSwitching: StateFlow<Boolean> get() = selectionController.isSwitching
 
-    private val regenerationTransitions = BranchReplacementTransitionCoordinator()
-    internal val regenerationTransition: StateFlow<BranchReplacementTransitionRequest?> =
-        regenerationTransitions.request
-
-    fun acknowledgeRegenerationFade(requestId: Long) {
-        regenerationTransitions.acknowledgeFade(requestId)
-    }
-
-    fun acknowledgeRegenerationScroll(requestId: Long, success: Boolean) {
-        regenerationTransitions.acknowledgeScroll(requestId, success)
-    }
-
-    fun completeRegenerationTransition(requestId: Long) {
-        regenerationTransitions.complete(requestId)
-    }
-
+    internal val regenerationTransitions = BranchReplacementTransitionCoordinator()
     val isNewChatMode: StateFlow<Boolean> get() = selectionController.isNewChatMode
     val newChatEntryId: StateFlow<Long> get() = selectionController.newChatEntryId
     val isTransitioningToNewChat: StateFlow<Boolean>
@@ -714,7 +673,7 @@ class ChatViewModel(
             onSnackbar = { msg -> emitSnackbar(msg) },
             onSnackbarSuspend = { msg -> _snackbarMessage.emit(SnackbarEvent(msg)) },
             onConversationCreatedBySend = { conversationId ->
-                suppressNextOpenScroll = true
+                scrollRequests.suppressNextOpenScroll = true
                 _firstMessageCommitted.tryEmit(conversationId)
             },
             onConversationAcceptedBySend = { conversationId, modelId, entryId ->

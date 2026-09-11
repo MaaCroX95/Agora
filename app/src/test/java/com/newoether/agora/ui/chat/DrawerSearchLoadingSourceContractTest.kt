@@ -112,7 +112,7 @@ class DrawerSearchLoadingSourceContractTest {
         assertTrue(
             normalizedViewModel.contains(
                 "onConversationCreatedBySend = { conversationId ->\n" +
-                    "                suppressNextOpenScroll = true\n" +
+                    "                scrollRequests.suppressNextOpenScroll = true\n" +
                     "                _firstMessageCommitted.tryEmit(conversationId)",
             ),
         )

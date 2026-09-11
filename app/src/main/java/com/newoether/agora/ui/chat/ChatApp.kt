@@ -129,7 +129,7 @@ fun ChatApp(
     val isNewChatMode by viewModel.isNewChatMode.collectAsState()
     val newChatEntryId by viewModel.newChatEntryId.collectAsState()
     val isSwitching by viewModel.isSwitching.collectAsState()
-    val regenerationTransition by viewModel.regenerationTransition.collectAsState()
+    val regenerationTransition by viewModel.regenerationTransitions.request.collectAsState()
     val isTransitioningToNewChat by viewModel.isTransitioningToNewChat.collectAsState()
     val visualizeContextRollout by viewModel.settings.visualizeContextRollout.collectAsState()
     val customProviders by viewModel.settings.customProviders.collectAsState()
@@ -297,7 +297,7 @@ fun ChatApp(
         textFieldState = textFieldState,
     )
 
-    val animatedScrollRequest by viewModel.animatedScrollRequest.collectAsState()
+    val animatedScrollRequest by viewModel.scrollRequests.request.collectAsState()
     scrollCoordinator.BindRequestEffects(
         currentConversationId = currentConversationId,
         isNewChatMode = isNewChatMode,
@@ -313,9 +313,9 @@ fun ChatApp(
         motionPolicy = motionPolicy,
         bottomBarHeight = bottomBarHeight,
         shareSelectionBarSpace = shareSelectionBarSpace,
-        onRegenerationScrollFinished = viewModel::acknowledgeRegenerationScroll,
-        onRegenerationTransitionFinished = viewModel::completeRegenerationTransition,
-        onAnimatedScrollFinished = viewModel::completeAnimatedScroll,
+        onRegenerationScrollFinished = viewModel.regenerationTransitions::acknowledgeScroll,
+        onRegenerationTransitionFinished = viewModel.regenerationTransitions::complete,
+        onAnimatedScrollFinished = viewModel.scrollRequests::complete,
     )
 
     ChatNavigationEffects(
@@ -524,7 +524,7 @@ fun ChatApp(
                                 streamingTailController = streamingTailController,
                                 regenerationTransition = regenerationTransition,
                                 onRegenerationFadeOutFinished =
-                                    viewModel::acknowledgeRegenerationFade,
+                                    viewModel.regenerationTransitions::acknowledgeFade,
                                 visualizeContextRollout = visualizeContextRollout && contextProjectionReady,
                                 toolCallDisplayMode = toolCallDisplayMode,
                                 thinkingSegmentDisplayMode = thinkingSegmentDisplayMode,
@@ -735,7 +735,7 @@ fun ChatApp(
                         // previous double buzz for one physical tap.
                         onModelSelect = { viewModel.setActiveModel(it) },
                         onAllMediaClick = { urls, idx -> onMediaClick(urls, idx) },
-                        onFileContentClick = { name, content -> viewModel.showFilePreview(name, content) },
+                        onFileContentClick = { name, content -> viewModel.mediaPreview.showFile(name, content) },
                         modifier = Modifier,
                         textFieldState = textFieldState,
                         composerState = composer,

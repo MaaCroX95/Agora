@@ -38,7 +38,7 @@ internal fun rememberComposerDraftSnapshot(
         mutableStateOf(com.newoether.agora.viewmodel.ConversationComposerSnapshot())
     }
     LaunchedEffect(ownerId) {
-        viewModel.loadingDraft = true
+        viewModel.scrollRequests.loadingDraft = true
         val loaded = try {
             controller.loadSelected(ownerId)
         } catch (cancelled: CancellationException) {
@@ -47,7 +47,7 @@ internal fun rememberComposerDraftSnapshot(
             DebugLog.e("AgoraUI", "Failed to load composer draft for $ownerId", failure)
             return@LaunchedEffect
         } finally {
-            viewModel.loadingDraft = false
+            viewModel.scrollRequests.loadingDraft = false
         }
         try {
             if (!loaded.loaded) return@LaunchedEffect

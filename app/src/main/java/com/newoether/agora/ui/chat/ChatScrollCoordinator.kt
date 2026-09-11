@@ -348,8 +348,8 @@ internal class ChatScrollCoordinator internal constructor(
         }
 
         LaunchedEffect(currentConversationId) {
-            if (viewModel.suppressNextOpenScroll) {
-                viewModel.suppressNextOpenScroll = false
+            if (viewModel.scrollRequests.suppressNextOpenScroll) {
+                viewModel.scrollRequests.suppressNextOpenScroll = false
             }
         }
     }
