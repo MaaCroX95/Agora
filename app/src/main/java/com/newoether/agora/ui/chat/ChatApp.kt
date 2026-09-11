@@ -90,7 +90,7 @@ fun ChatApp(
     val messagesState = viewModel.messages.collectAsState()
     val allMessagesState = viewModel.allMessages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val isCompacting by viewModel.isCompacting.collectAsState()
+    val isCompacting by viewModel.compactUi.isCompacting.collectAsState()
     val compactModel by viewModel.settings.contextCompactModel.collectAsState()
     val compactPrompt by viewModel.settings.contextCompactPrompt.collectAsState()
     val compactRetainCount by viewModel.settings.contextCompactRetainCount.collectAsState()
@@ -508,7 +508,7 @@ fun ChatApp(
                                 // conversation generates — background conversations don't affect it.
                                 isLoading = isLoading,
                                 isCompacting = isCompacting,
-                                compactPreview = viewModel.compactPreview,
+                                compactPreview = viewModel.compactUi.compactPreview,
                                 isStopping = isStopping,
                                 isSwitching = isSwitching,
                                 streamingMessage = generationSnapshot.streamingMessage?.forDisplay(customProviders),
@@ -561,7 +561,7 @@ fun ChatApp(
                                     viewModel.shareGeneration(id)
                                 },
                                 onRecompact = { id ->
-                                    viewModel.startContextRecompact(id)
+                                    viewModel.compactUi.startRecompact(id)
                                 },
                                 onDelete = { id, result ->
                                     viewModel.deleteMessage(id, result) > 0

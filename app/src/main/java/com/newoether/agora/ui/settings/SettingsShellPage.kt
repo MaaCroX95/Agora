@@ -94,8 +94,8 @@ fun SettingsShellPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                             headlineContent = { Text(stringResource(R.string.shell_confirm_setting)) },
                             supportingContent = { Text(stringResource(R.string.shell_confirm_setting_desc)) },
                             leadingContent = { Icon(Icons.Default.Shield, null, tint = MaterialTheme.colorScheme.primary) },
-                            trailingContent = { Switch(checked = shellConfirmEnabled, onCheckedChange = { viewModel.setShellConfirmEnabled(it) }) },
-                            modifier = Modifier.clickable { viewModel.setShellConfirmEnabled(!shellConfirmEnabled) }
+                            trailingContent = { Switch(checked = shellConfirmEnabled, onCheckedChange = { viewModel.shellConfirmation.setEnabled(it) }) },
+                            modifier = Modifier.clickable { viewModel.shellConfirmation.setEnabled(!shellConfirmEnabled) }
                         )
                     }
                 }
@@ -128,7 +128,7 @@ fun SettingsShellPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                             onClick = {
                                 val newId = UUID.randomUUID().toString()
                                 newlyAddedDeviceId = newId
-                                viewModel.addShellDevice(ShellDeviceConfig(id = newId, name = "", description = ""))
+                                viewModel.settings.addShellDevice(ShellDeviceConfig(id = newId, name = "", description = ""))
                             },
                         )
                     }
@@ -386,7 +386,7 @@ private fun DeviceEditor(
                         onClick = {
                             verifyError = null; verifying = true
                             scope.launch {
-                                val result = viewModel.verifySshHostKey(
+                                val result = viewModel.sshHostKeyVerifier.verify(
                                     sshHostInput.trim(), sshPortInput.toIntOrNull() ?: 22,
                                     sshUserInput.trim().ifBlank { "root" }, sshPwInput
                                 )
@@ -426,7 +426,7 @@ private fun DeviceEditor(
                         Icon(Icons.Default.Delete, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.shell_remove_device))
                     }
                     Button(onClick = {
-                        viewModel.updateShellDevice(device.copy(
+                        viewModel.settings.updateShellDevice(device.copy(
                             name = nameInput.trim(), description = descInput.trim(), type = typeInput,
                             serverUrl = if (typeInput == "conch") urlInput.trim() else "",
                             apiKey = if (typeInput == "conch") keyInput.trim() else "",

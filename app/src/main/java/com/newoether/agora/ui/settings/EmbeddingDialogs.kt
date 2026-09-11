@@ -278,7 +278,7 @@ internal fun AddRemoteEmbeddingDialog(
                     state.isTesting = true
                     state.testStatus = null
                     scope.launch {
-                        val result = viewModel.testRemoteEmbedding(finalModel, state.baseUrl, state.apiKeys[state.selectedProviderIdx])
+                        val result = viewModel.remoteEmbeddingConnectionTester.test(finalModel, state.baseUrl, state.apiKeys[state.selectedProviderIdx])
                         if (result != null && result.startsWith("OK")) {
                             viewModel.ragManager.addEmbeddingModel(
                                 com.newoether.agora.data.EmbeddingModelConfig(

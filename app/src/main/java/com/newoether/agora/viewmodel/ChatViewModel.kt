@@ -16,7 +16,6 @@ import com.newoether.agora.data.SkillManager
 import com.newoether.agora.data.forDisplay
 import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
 
-import com.newoether.agora.data.ShellDeviceConfig
 
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.ConversationSettingsTransferCoordinator
@@ -65,7 +64,7 @@ class ChatViewModel(
     private val conversationExecutionCoordinator: com.newoether.agora.automation.ConversationExecutionCoordinator,
     private val automationExecutionGate: com.newoether.agora.automation.AutomationExecutionGate,
     private val generationRegistry: ConversationStateRegistry,
-    private val shellConfirmation: ShellConfirmationController,
+    internal val shellConfirmation: ShellConfirmationController,
     private val mcpRegistry: com.newoether.agora.mcp.McpRegistry,
     private val mcpToolProvider: com.newoether.agora.tool.McpToolProvider,
     private val taskExecutionEngine: com.newoether.agora.automation.TaskExecutionEngine,
@@ -336,17 +335,6 @@ class ChatViewModel(
 
     fun getProviderForModel(modelId: String): String = providerRegistry.providerForModel(modelId)
 
-    // ── Remote shell command confirmation gate ───────────────────────────
-    /** Shell-command confirmation policy + pending-prompt handshake (see [ShellConfirmationController]). */
-    val pendingShellCommand: StateFlow<ShellConfirmationController.PendingShellCommand?>
-        get() = shellConfirmation.pendingShellCommand
-
-    /** Called by the UI to resolve a pending confirmation. */
-    fun resolveShellConfirmation(allow: Boolean, alwaysAllowServer: Boolean = false) =
-        shellConfirmation.resolve(allow, alwaysAllowServer)
-
-    fun setShellConfirmEnabled(enabled: Boolean) = shellConfirmation.setEnabled(enabled)
-
     // ── Tasks (automation) ────────────────────────────────────
     /** Saved automation tasks; CRUD + run-now delegate to the app-scoped [taskManager]. */
     val tasks: StateFlow<List<com.newoether.agora.data.local.TaskEntity>> get() = taskManager.tasks
@@ -574,7 +562,7 @@ class ChatViewModel(
 
     val pendingConversationSettings: StateFlow<ConversationSettings?> =
         conversationWorkspaces.newChatConversationSettings
-    private val compactUi = ConversationCompactUiCoordinator(
+    internal val compactUi = ConversationCompactUiCoordinator(
         currentConversationId = currentConversationId,
         registry = generationRegistry,
         scope = viewModelScope,
@@ -586,8 +574,6 @@ class ChatViewModel(
         failureMessage = { result -> compactFailureMessage(appContext, result) },
         onFailure = { message -> emitSnackbar(message) },
     )
-    val isCompacting: StateFlow<Boolean> get() = compactUi.isCompacting
-    val compactPreview: StateFlow<String> get() = compactUi.compactPreview
     fun setConversationSettings(convId: String?, value: ConversationSettings?) =
         conversationWorkspaces.setConversationSettings(convId ?: NEW_CHAT_WORKSPACE_ID, value)
     private val payloadBuilder by lazy(::MessagePayloadBuilder)
@@ -750,30 +736,13 @@ class ChatViewModel(
     suspend fun semanticSearch(query: String, limit: Int = 20) =
         semanticSearchService.search(query, limit)
     suspend fun searchMessages(query: String, limit: Int = 20) = convRepo.searchMessages(query, limit)
-    fun addShellDevice(device: ShellDeviceConfig) {
-        settings.addShellDevice(device)
-    }
-    fun updateShellDevice(device: ShellDeviceConfig) {
-        settings.updateShellDevice(device)
-    }
-
-    private val sshHostKeyVerifier = SshHostKeyVerifier()
-    private val remoteEmbeddingConnectionTester by lazy {
+    internal val sshHostKeyVerifier = SshHostKeyVerifier()
+    internal val remoteEmbeddingConnectionTester by lazy {
         RemoteEmbeddingConnectionTester(
             resolveApiKey = ragManager::resolveEmbeddingApiKey,
             resolveBaseUrl = ragManager::resolveEmbeddingBaseUrl,
         )
     }
-
-    suspend fun verifySshHostKey(
-        host: String, port: Int, user: String, password: String
-    ): Result<Pair<String, String>> = sshHostKeyVerifier.verify(host, port, user, password)
-
-    suspend fun testRemoteEmbedding(
-        modelName: String,
-        baseUrl: String,
-        apiKey: String = "",
-    ): String? = remoteEmbeddingConnectionTester.test(modelName, baseUrl, apiKey)
 
     fun createNewChat() = selectionController.createNewChat()
 
@@ -816,16 +785,6 @@ class ChatViewModel(
 
     fun isConversationDeleteLocked(id: String): Boolean =
         conversationComposerSubmission.isFrozen(id)
-
-    /** Owns manual Compact beyond the lifetime of the dialog/composition that initiated it. */
-    fun startContextCompactManual(
-        model: String,
-        prompt: String,
-        retainMessages: Int,
-    ) = compactUi.startManual(model, prompt, retainMessages)
-
-    /** Re-runs Compact for one terminal Compact pill while preserving its graph position. */
-    fun startContextRecompact(messageId: String) = compactUi.startRecompact(messageId)
 
     /**
      * Deletes a message and all its descendants (BFS cascade).
