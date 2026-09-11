@@ -6,8 +6,9 @@ superseded UI decisions are retained in Git and the single active task log.
 ## Ownership and protocol
 
 Remote connects Agora to an independent Filo service. The current Codex adapter supports
-the original desktop owner and explicitly admitted dormant history; Filo's REDLINES.md
-and HARNESS.md govern native ownership and product qualification. Never patch Codex,
+the original desktop owner for execution and bounded read-only native history for browsing.
+Isolated native helpers may handle peripheral operations such as model catalog, rename
+and archive. Filo's REDLINES.md and HARNESS.md govern ownership and qualification. Never patch Codex,
 redirect its global backend, write native transcripts or acquire a competing writer.
 Failed desktop discovery/dispatch cannot fall back to another host, queue or fork.
 
@@ -56,7 +57,7 @@ Visible entry/save starts coalesced connection checks; no periodic device-health
 Load failures use the original application Snackbar, positioned by the original composer
 inset owner in chat and the system inset on Devices/Sessions. Preserve the current page and
 loaded content; no permanent inline error rows. Read retry is bound to the current selection
-and cannot replay sends, settings, admission or other writes.
+and cannot replay sends, settings or other writes.
 
 Storage and protocol errors stay distinct from connection errors.
 Device health is independent of a native session read: an HTTP/service/protocol error must
@@ -103,12 +104,12 @@ retry. There is no Refresh or Load More button. Sessions alone shows a bottom 4d
 bar for actual loading/paging/control work: opacity enter/exit 300ms, fixed thickness,
 initially hidden transition state, retained composition until exit finishes. No overlay.
 
-Selecting eligible history is the explicit one-time admission after its readable page loads.
-Preserve ID/history. Compose the original input bar immediately, allowing a local draft while
-history and native admission are pending; settings/SSE wait for native acceptance.
-Unsupported history retains its read-only notice inside the composer. Failure remains
-readable. No Continue this conversation button, background admission or automatic POST
-retry. Unavailable read-only history cannot subscribe or mutate; occupied writers fail safely.
+Selecting history preserves its native ID and starts bounded reads and original-owner
+subscription. Compose the original input bar immediately, allowing a local draft while
+history and native state are pending. There is no history-admission registry, resume POST,
+read-only composer notice or Continue this conversation button. Failed operations retain
+readable content and report through Snackbar; they do not disable explicit Send retry.
+Execution requires the original owner and cannot fall back to a competing helper writer.
 
 Opening publishes only the latest bounded packet and settles at its bottom, including when
 it contains only tool/thinking records. Never scan older packets for ordinary text or a group
@@ -254,6 +255,10 @@ Each explicit setting change issues one request and reads native truth; failure 
 the prior value and settles the panel feedback gate. Settings apply to subsequent turns.
 Draft choices apply after one native creation and before first Send. If settings fail after
 known creation, explicit retry uses the same native ID. Unknown creation/send stays guarded.
+The owner-approved creation flow must let the original desktop create and own the task,
+including its first-input receipt and initial settings. A helper-created empty task is not
+delivery. This native first-send implementation and acceptance remain incomplete; desktop
+page switching and input verification are currently paused by the owner.
 
 Read-only HTTP requests may recover from a closed pooled connection on a fresh connection.
 This includes catalog, history, model, image and event-stream reads. Native mutations
