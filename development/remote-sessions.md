@@ -210,7 +210,10 @@ cover for ordinary settings changes/generation. Devices/Sessions retain their ow
 The native active turn plus native user acknowledgement drives streaming presentation.
 Never create the assistant dot before input exists. Appended SSE snapshot text supplies
 StreamingTextDelta boundaries to the original fade tracker; initial history/rewrites do not
-invent token events. No artificial typing timers. The last card is active only when generation
+invent token events. No artificial typing timers. A history-first inactive observation cannot
+permanently close a card: later authoritative generation reactivates it through the original
+expansion animation and layout-mutation owner. Continuous activity never repeats an expansion.
+The last card is active only when generation
 is active AND no newer block lies below it; stale tool state cannot animate a middle card.
 Use the original active-card expansion/collapse. Unknown completed thought duration uses
 exact English fallback Thought for a while; when the card contains tools it remains

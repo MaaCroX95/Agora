@@ -384,14 +384,14 @@ internal fun groupedSegmentExpandedState(
  * Session-scoped lifecycle memory for Grouped cards.
  *
  * This lives above LazyColumn items so recomposition and off-screen disposal cannot replay an
- * automatic expansion. A completed group is terminal: append-only message segments may create a
- * new group with a new key, but an old group never becomes active again.
+ * automatic expansion during one active period. Native generation can arrive after the history
+ * body or recover after reconnecting; the latest authoritative activity owns that transition.
  */
 @Stable
 internal class GroupedSegmentAutoExpansionController {
     private enum class State {
         ACTIVE,
-        FINISHED,
+        INACTIVE,
     }
 
     private val states = HashMap<String, State>()
@@ -407,7 +407,7 @@ internal class GroupedSegmentAutoExpansionController {
         hasImageBoundary: Boolean,
     ): Boolean {
         if (!hasImageBoundary || !collapsedImageBoundaryKeys.add(key)) return false
-        states[key] = State.FINISHED
+        states[key] = State.INACTIVE
         return true
     }
 
@@ -422,18 +422,19 @@ internal class GroupedSegmentAutoExpansionController {
         isActive: Boolean,
         enabled: Boolean,
     ): GroupedSegmentAutoExpansionAction {
+        if (key in collapsedImageBoundaryKeys) return GroupedSegmentAutoExpansionAction.NONE
         if (!enabled) {
             if (isActive) {
                 states.remove(key)
             } else {
-                states[key] = State.FINISHED
+                states[key] = State.INACTIVE
             }
             return GroupedSegmentAutoExpansionAction.NONE
         }
 
         return when (states[key]) {
-            null -> {
-                states[key] = if (isActive) State.ACTIVE else State.FINISHED
+            null, State.INACTIVE -> {
+                states[key] = if (isActive) State.ACTIVE else State.INACTIVE
                 if (isActive) {
                     GroupedSegmentAutoExpansionAction.EXPAND
                 } else {
@@ -444,11 +445,10 @@ internal class GroupedSegmentAutoExpansionController {
                 if (isActive) {
                     GroupedSegmentAutoExpansionAction.NONE
                 } else {
-                    states[key] = State.FINISHED
+                    states[key] = State.INACTIVE
                     GroupedSegmentAutoExpansionAction.COLLAPSE
                 }
             }
-            State.FINISHED -> GroupedSegmentAutoExpansionAction.NONE
         }
     }
 }
