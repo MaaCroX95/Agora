@@ -8,6 +8,13 @@ import com.newoether.agora.model.MessageStatus
 
 internal fun RemoteSession.displayTitle(untitled: String): String = title.takeUnless { it.isBlank() || it == id } ?: untitled
 
+/** Windows extended paths are retained for native operations, but not shown as device syntax. */
+internal fun RemoteSession.displayDirectory(): String = when {
+    cwd.startsWith("\\\\?\\UNC\\", ignoreCase = true) -> "\\\\" + cwd.substring(8)
+    cwd.startsWith("\\\\?\\") && cwd.length >= 7 && cwd[4].isLetter() && cwd[5] == ':' && cwd[6] == '\\' -> cwd.substring(4)
+    else -> cwd
+}
+
 /** Native records stay in the Remote cache; only presentation groups adjacent assistant records. */
 internal fun projectRemoteMessages(messages: List<RemoteMessage>, runtime: RemoteRuntime? = null): List<ChatMessage> = buildList {
     var index = 0

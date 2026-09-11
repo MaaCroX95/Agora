@@ -345,8 +345,8 @@ internal fun RemoteConversation(
                             onCamera = {}, onPhotos = {}, onVideos = {}, onFiles = {},
                         )
                         ComposerModelSelector(
-                            displayText = state.models.firstOrNull { it.id == state.selectedModel }?.name
-                                ?: state.selectedModel ?: stringResource(
+                            displayText = (state.models.firstOrNull { it.id == state.selectedModel }?.name
+                                ?: state.selectedModel)?.replace('-', ' ') ?: stringResource(
                                     if (state.modelsLoading || state.loading) R.string.loading_label else R.string.remote_model_unavailable),
                             isModelValid = state.selectedModel != null, expanded = activeMenu == "model",
                             enabled = active && ready && !submitting && !stopping && !state.controlling && state.models.isNotEmpty(),
@@ -365,7 +365,7 @@ internal fun RemoteConversation(
                                 val sortedModels = remember(state.models) { state.models.sortedBy { it.id.lowercase() } }
                                 sortedModels.forEach { model ->
                                     ComposerModelMenuItem(
-                                        displayText = model.name,
+                                        displayText = model.name.replace('-', ' '),
                                         selected = model.id == state.selectedModel,
                                         onClick = {
                                             haptics.selection()
