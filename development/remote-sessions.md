@@ -1,6 +1,6 @@
 # Remote Sessions
 
-Status: current owner-approved Filo integration, 2026-09-08. Earlier staged plans and
+Status: current owner-approved Filo integration, 2026-09-11. Earlier staged plans and
 superseded UI decisions are retained in Git and the single active task log.
 
 ## Ownership and protocol
@@ -11,6 +11,12 @@ Isolated native helpers may handle peripheral operations such as model catalog, 
 and archive. Filo's REDLINES.md and HARNESS.md govern ownership and qualification. Never patch Codex,
 redirect its global backend, write native transcripts or acquire a competing writer.
 Failed desktop discovery/dispatch cannot fall back to another host, queue or fork.
+Every operation prefers verified Codex Desktop IPC; only an established capability
+gap permits an additional unchanged Desktop-provided runtime. No separate Codex CLI
+installation or desktop page/focus/input automation is allowed. Filo-created new tasks
+may execute on that additional runtime; ordinary desktop tasks keep their owner.
+Filo service stop/crash/kill/removal must not affect normal Codex or accepted native
+execution. Independent completion and writer release require actual qualification.
 
 Remote transport, saved connections and transient presentation are independent of Room,
 LlmProvider, GenerationManager and ordinary conversation drafts. Codex is durable truth.
@@ -255,10 +261,11 @@ Each explicit setting change issues one request and reads native truth; failure 
 the prior value and settles the panel feedback gate. Settings apply to subsequent turns.
 Draft choices apply after one native creation and before first Send. If settings fail after
 known creation, explicit retry uses the same native ID. Unknown creation/send stays guarded.
-The owner-approved creation flow must let the original desktop create and own the task,
-including its first-input receipt and initial settings. A helper-created empty task is not
-delivery. This native first-send implementation and acceptance remain incomplete; desktop
-page switching and input verification are currently paused by the owner.
+The owner-approved creation flow uses native APIs without desktop control, preferring
+Desktop IPC and using its bundled runtime when that creation capability is unavailable.
+Verify native task identity, initial settings and first-input receipt; an empty task is
+not delivery. The installed first-send flow remains incomplete until production routing
+and independent native lifetime pass qualification. Desktop page switching is forbidden.
 
 Read-only HTTP requests may recover from a closed pooled connection on a fresh connection.
 This includes catalog, history, model, image and event-stream reads. Native mutations
