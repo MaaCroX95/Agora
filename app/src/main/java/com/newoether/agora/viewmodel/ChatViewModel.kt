@@ -374,28 +374,8 @@ class ChatViewModel(
             AgoraForegroundService.cancelTerminalNotification(appContext, conversationId)
         },
     )
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val currentLoop: StateFlow<com.newoether.agora.data.local.LoopEntity?> = currentConversationId
-        .flatMapLatest { id ->
-            if (id == null) {
-                flowOf(null)
-            } else {
-                combine(
-                    loopManager.loopForConversation(id),
-                    loopManager.runningConversationIds,
-                ) { loop, _ ->
-                    // Visibility tracks the TIMER only. The card is a schedule indicator, so once
-                    // the schedule is inactive it must disappear at once, even mid-cycle.
-                    //
-                    // It deliberately does not stay up for a running worker: an in-flight
-                    // generation is already stoppable through the composer's Stop button, so
-                    // keeping the card alive for that would make one control appear to own two
-                    // unrelated lifetimes.
-                    loop?.takeIf { it.active }
-                }
-            }
-        }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val currentLoop: StateFlow<com.newoether.agora.data.local.LoopEntity?> =
+        loopManager.observeCurrentLoop(currentConversationId, viewModelScope)
     val runningLoopConversationIds: StateFlow<Set<String>> get() = loopManager.runningConversationIds
 
     fun stopCurrentLoop() {
@@ -424,20 +404,7 @@ class ChatViewModel(
     private val providerModelSyncUi by lazy {
         ProviderModelSyncUiAdapter(
             controller = providerModelSync,
-            text = ProviderModelSyncUiText(
-                failureLabels = ModelSyncFailureLabels(
-                    noModels = appContext.getString(R.string.sync_error_no_models),
-                    timeout = appContext.getString(R.string.sync_error_timeout),
-                    invalidResponse = appContext.getString(R.string.sync_error_invalid_response),
-                    unknown = appContext.getString(R.string.unknown_error),
-                ),
-                globalProviderName = appContext.getString(R.string.models_title),
-                successfulProviders = { count ->
-                    appContext.getString(R.string.sync_success_providers, count)
-                },
-                noProviders = appContext.getString(R.string.sync_no_providers),
-                completed = appContext.getString(R.string.sync_completed),
-            ),
+            text = appContext.providerModelSyncUiText(),
             publishMessage = { message -> _snackbarMessage.emit(SnackbarEvent(message)) },
         )
     }

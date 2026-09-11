@@ -291,13 +291,6 @@ class SettingsRepository(
         }
     }
 
-    fun removeCustomModel(modelId: String) {
-        if (modelId !in customModels.value) return
-        scope.launch {
-            settingsManager.replaceCustomModel(modelId, null, "")
-        }
-    }
-
     suspend fun replaceCustomModel(
         oldModelId: String,
         newModelId: String?,
@@ -750,9 +743,6 @@ class SettingsRepository(
     suspend fun getAutoCacheEnabled(): Boolean = settingsManager.autoCacheEnabled.first()
     suspend fun getShowUncachedNotification(): Boolean = settingsManager.showUncachedNotification.first()
     suspend fun getLastUpdateCheckTime(): Long = settingsManager.lastUpdateCheckTime.first()
-    suspend fun getEmbeddingModels(): List<EmbeddingModelConfig> = settingsManager.embeddingModels.first()
-    suspend fun getActiveEmbeddingModelId(): String = settingsManager.activeEmbeddingModelId.first()
-    suspend fun getModelAliases(): Map<String, String> = settingsManager.modelAliases.first()
     suspend fun getProviderBaseUrls(): Map<String, String> = settingsManager.providerBaseUrls.first()
     suspend fun saveCustomEndpointResolution(
         provider: String,
