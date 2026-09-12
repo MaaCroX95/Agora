@@ -263,6 +263,7 @@ internal fun RemoteConversation(
                     isLoading = generationVisible, isSwitching = switching, streamingMessage = streaming,
                     searchQuery = if (interaction.searchActive) interaction.searchQuery else "",
                     activeSearchMatch = searchMatch,
+                    searchScrollRequestKey = interaction.searchScrollRequestKey,
                     onSearchMatchDistance = interaction::recordSearchMatchDistance,
                     onSearchTurnsChanged = interaction::recordSearchTurns,
                     streamingAutoFollowEnabled = follow.enabled && stickToBottom,

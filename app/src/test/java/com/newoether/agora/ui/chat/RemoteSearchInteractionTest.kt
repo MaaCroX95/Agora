@@ -24,6 +24,56 @@ import org.robolectric.annotation.Config
 class RemoteSearchInteractionTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun typingSettlesOnceAndLaterPagesCannotRenewTheScrollRequest() {
+        val match = ConversationSearchMatch("current", 0, 6, 0)
+        val results = MutableStateFlow(listOf(match))
+        lateinit var interaction: ConversationInteractionProjection
+        compose.setContent {
+            val messages = remember { mutableStateOf(listOf(
+                ChatMessage(id = "current", text = "needle", participant = Participant.USER),
+            )) }
+            val all = remember { { _: String -> results } }
+            interaction = rememberConversationInteractionState("owner", messages, rememberLazyListState(),
+                searchAllMessages = all)
+            Text("${interaction.searchMatchIndex + 1}/${interaction.searchMatches.size}")
+        }
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle {
+            interaction.activateSearch()
+            interaction.updateSearchQuery("need")
+            interaction.recordSearchMatchDistance(match.key, 0f)
+        }
+        compose.mainClock.advanceTimeBy(150)
+        compose.runOnIdle {
+            org.junit.Assert.assertNull(interaction.searchScrollRequestKey)
+            interaction.updateSearchQuery("needle")
+            interaction.recordSearchMatchDistance(match.key, 0f)
+        }
+        compose.mainClock.advanceTimeBy(200)
+        compose.runOnIdle { org.junit.Assert.assertNull(interaction.searchScrollRequestKey) }
+        compose.mainClock.advanceTimeBy(400)
+        var request: Int? = null
+        compose.runOnIdle {
+            request = interaction.searchScrollRequestKey
+            org.junit.Assert.assertNotNull(request)
+        }
+        repeat(3) { page ->
+            compose.runOnIdle {
+                results.value = listOf(ConversationSearchMatch("older$page", 0, 6, 0)) + results.value
+            }
+            compose.mainClock.advanceTimeBy(500)
+            compose.runOnIdle {
+                assertEquals(request, interaction.searchScrollRequestKey)
+                assertEquals(match, interaction.searchMatches[interaction.searchMatchIndex])
+            }
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(interaction.previousSearchMatch())
+            org.junit.Assert.assertNotEquals(request, interaction.searchScrollRequestKey)
+        }
+        compose.mainClock.autoAdvance = true
+    }
+
     @Test fun progressiveCountRetainsSelectionAndDoesNotRestartOnHydrationRetry() {
         val current = ConversationSearchMatch("current", 0, 6, 0)
         val older = ConversationSearchMatch("older", 0, 6, 0)

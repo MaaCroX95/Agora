@@ -365,3 +365,4 @@ end and bottom spacing beyond the system navigation inset, counted only once.
 The scrollable list reserves 104dp below its last row: the 64dp action, 24dp
 bottom inset and a 16dp clear gap. The final row must scroll fully above the FAB.
 Remote exposes the native ultrafast tier when advertised for that device/model, keeps its wire ID unchanged and uses the localized Ultra Fast label. Do not invent availability for another model/account.
+While Remote Search is open, matches and count may update as pages arrive without moving the viewport. Automatic positioning is admitted once after input settles; a page, hydration or result refresh cannot renew it. Explicit Previous/Next still positions the requested match. Selection uses match identity, not a stale index into a new list. An ongoing seek must resolve the current index of that identity as pages are prepended.

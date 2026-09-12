@@ -117,6 +117,7 @@ internal fun MessageList(
     onDeleteConversation: (Set<String>, (Boolean) -> Unit) -> Boolean = { _, _ -> false },
     searchQuery: String = "",
     activeSearchMatch: ConversationSearchMatch? = null,
+    searchScrollRequestKey: Any? = activeSearchMatch?.key,
     onSearchMatchDistance: (key: String, distanceToViewportCenter: Float) -> Unit = { _, _ -> },
     onSearchTurnsChanged: (List<MessageListTurn>) -> Unit = {},
     selectionMode: Boolean = false,
@@ -219,6 +220,7 @@ internal fun MessageList(
     }
     val turnCache = remember { MessageListTurnCache() }
     val turns = remember(presentationMessages) { turnCache.update(presentationMessages) }
+    val latestSearchTurns by rememberUpdatedState(turns)
     val pageSpacing = remember(presentationMessages) { messageListPageTrailingSpacing(presentationMessages) }
     val tailAnchorKey = messageListTailAnchorKey(turns)
     val tailHolderKey = messageListTailHolderKey(turns)
@@ -344,10 +346,8 @@ internal fun MessageList(
     // One progressive actor owns the complete search movement. Far-away turns are approached in
     // bounded per-frame steps; once composed, the same actor retargets against exact glyph
     // geometry. There is no animateScrollToItem teleport and no second correction animation.
-    LaunchedEffect(
-        activeSearchMatch?.key,
-        motionPolicy.allowProgrammaticScrollMotion,
-    ) {
+    LaunchedEffect(conversationId, searchScrollRequestKey, motionPolicy.allowProgrammaticScrollMotion) {
+        if (searchScrollRequestKey == null) return@LaunchedEffect
         val match = activeSearchMatch ?: return@LaunchedEffect
         val turnIndex = messageListTurnIndex(turns, match.messageId)
         if (turnIndex < 0) return@LaunchedEffect
@@ -387,7 +387,7 @@ internal fun MessageList(
             }
                 .first { it != null }!!
             state.scrollToItem(
-                index = turnIndex,
+                index = messageListTurnIndex(latestSearchTurns, match.messageId).coerceAtLeast(0),
                 scrollOffset = searchMatchScrollOffsetPx(
                     matchCenterInTurnPx = exactCenterInTurn,
                     viewportCenterInListPx = targetCenterY,
@@ -397,7 +397,7 @@ internal fun MessageList(
         }
 
         state.smoothSeekToItem(
-            targetIndex = { turnIndex },
+            targetIndex = { messageListTurnIndex(latestSearchTurns, match.messageId) },
             targetErrorPx = { visibleTarget ->
                 searchMatchScrollErrorPx(
                     turnOffsetInListPx = visibleTarget.offset.toFloat(),
@@ -407,6 +407,9 @@ internal fun MessageList(
                 )
             },
             estimatedErrorPx = {
+                // The old prefix cannot describe a newly prepended page. The same seek
+                // actor can approach the current target using its bounded viewport step.
+                if (latestSearchTurns !== turns) return@smoothSeekToItem null
                 val firstVisible = state.layoutInfo.visibleItemsInfo
                     .minByOrNull { item -> item.index }
                     ?: return@smoothSeekToItem null

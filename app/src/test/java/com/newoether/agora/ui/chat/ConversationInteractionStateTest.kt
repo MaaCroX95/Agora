@@ -3,6 +3,7 @@ package com.newoether.agora.ui.chat
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.Participant
 import java.io.File
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -164,6 +165,24 @@ class ConversationInteractionStateTest {
         assertTrue(acceptsSearchMatchMeasurement("active", "active", "active"))
         assertFalse(acceptsSearchMatchMeasurement("active", "old", "active"))
         assertFalse(acceptsSearchMatchMeasurement("active", "active", "old"))
+    }
+
+    @Test
+    fun selectedMatchIsStableInTheFrameBeforePageReconciliation() {
+        val first = ConversationSearchMatch("first", 0, 6, 0)
+        val selected = ConversationSearchMatch("selected", 0, 6, 0)
+        val older = ConversationSearchMatch("older", 0, 6, 0)
+        val state = ConversationInteractionState(initialSearchMatchIndex = 0)
+        val before = ConversationInteractionProjection(state, emptySet(), listOf(first, selected))
+        assertTrue(before.nextSearchMatch())
+        val request = before.searchScrollRequestKey
+        val after = ConversationInteractionProjection(state, emptySet(), listOf(older, first, selected))
+        assertEquals(2, after.searchMatchIndex)
+        assertEquals(selected, after.searchMatches[after.searchMatchIndex])
+        assertEquals(request, after.searchScrollRequestKey)
+        assertTrue(after.previousSearchMatch())
+        assertEquals(first, after.searchMatches[after.searchMatchIndex])
+        assertNotEquals(request, after.searchScrollRequestKey)
     }
 
     @Test
