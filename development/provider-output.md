@@ -214,3 +214,18 @@ only an assistant row with blank durable answer text, no nonblank answer segment
 suffix after a supported close in a thought segment is recovered. UI and Provider-history projection
 both split that segment into thought plus answer without mutating Room, so visible history and the
 next request cannot drift. A real durable answer always wins and disables compatibility recovery.
+
+## Assistant message generation speed (2026-09-12)
+The existing assistant Info dialog also shows average output generation speed in
+token/s. It uses reported output tokens and the sum of measured content-arrival
+intervals across that message's Provider requests. Monotonic timing begins with
+actual text, public thought content or tool-argument content, excludes initial
+response wait and local/hosted tool execution gaps, and restarts for a retry.
+Repeated cumulative usage snapshots replace rather than add within a request.
+The displayed tilde makes the client observation explicit; it is not server decode
+telemetry or prefill time. Network buffering can affect the observation.
+Missing counts, unmeasured/single-chunk output and legacy/Remote data without
+matching timing stay unknown. Do not infer timing from message timestamps,
+thinking duration, polling intervals, or text length.
+The optional duration follows ordinary Room checkpoint/read and native archive
+transport. Schema 31 to 32 adds a nullable column and preserves existing messages.

@@ -95,6 +95,14 @@ internal class GenerationOutputAccumulator(
         publishRetrySnapshot: () -> Unit,
     ) {
         when (event) {
+            is StreamEvent.TextChunk -> if (event.text.isNotEmpty()) tokenUsageAccumulator.observeGenerationContent()
+            is StreamEvent.ThoughtChunk -> if (event.thought.isNotEmpty()) tokenUsageAccumulator.observeGenerationContent()
+            is StreamEvent.ToolCallUpdate -> if (event.arguments.isNotEmpty()) tokenUsageAccumulator.observeGenerationContent()
+            is StreamEvent.HostedToolCallUpdate -> tokenUsageAccumulator.pauseGeneration()
+            is StreamEvent.Retrying -> tokenUsageAccumulator.resetGenerationTiming()
+            else -> Unit
+        }
+        when (event) {
             is StreamEvent.TextChunk -> {
                 val answerText = if (currentStatus == MessageStatus.THINKING) event.text.trimStart() else event.text
                 if (currentStatus == MessageStatus.THINKING && answerText.isBlank()) {

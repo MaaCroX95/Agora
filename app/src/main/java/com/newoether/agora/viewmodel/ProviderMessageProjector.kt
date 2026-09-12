@@ -102,6 +102,7 @@ internal fun projectProviderMessages(
                 uncachedInputTokenCount = entity.uncachedInputTokenCount,
                 outputTokenCount = entity.outputTokenCount,
                 reasoningTokenCount = entity.reasoningTokenCount,
+                generationDurationMs = entity.generationDurationMs,
             ),
             status = entity.status,
             participant = entity.participant,

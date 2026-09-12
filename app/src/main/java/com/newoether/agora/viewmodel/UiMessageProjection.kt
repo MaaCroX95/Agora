@@ -116,6 +116,7 @@ internal fun MessageEntity.toUiChatMessage(
                 uncachedInputTokenCount = uncachedInputTokenCount,
                 outputTokenCount = outputTokenCount,
                 reasoningTokenCount = reasoningTokenCount,
+                generationDurationMs = generationDurationMs,
             )
         },
         status = status,

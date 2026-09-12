@@ -573,6 +573,7 @@ interface ChatDao :
                             uncachedInputTokenCount = message.uncachedInputTokenCount,
                             outputTokenCount = message.outputTokenCount,
                             reasoningTokenCount = message.reasoningTokenCount,
+                            generationDurationMs = message.generationDurationMs,
                             status = recoveredStatus,
                             thoughtTimeMs = message.thoughtTimeMs,
                             toolCallJson = recoveredToolJson,

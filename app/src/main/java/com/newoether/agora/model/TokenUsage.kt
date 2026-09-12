@@ -22,6 +22,8 @@ data class TokenUsage(
     val uncachedInputTokenCount: Int? = null,
     val outputTokenCount: Int? = null,
     val reasoningTokenCount: Int? = null,
+    /** Sum of observed generation intervals; excludes first-content wait and tool execution. */
+    val generationDurationMs: Long? = null,
 ) {
     fun plusRequest(other: TokenUsage): TokenUsage = TokenUsage(
         totalTokenCount = addCounts(totalTokenCount, other.totalTokenCount),
@@ -35,6 +37,9 @@ data class TokenUsage(
         outputTokenCount = addReported(outputTokenCount, other.outputTokenCount),
         reasoningTokenCount =
             addReported(reasoningTokenCount, other.reasoningTokenCount),
+        generationDurationMs = if (generationDurationMs != null && other.generationDurationMs != null)
+            generationDurationMs.takeIf { it <= Long.MAX_VALUE - other.generationDurationMs }
+                ?.plus(other.generationDurationMs) else null,
     )
 
     companion object {
@@ -46,6 +51,7 @@ data class TokenUsage(
             uncachedInputTokenCount: Int?,
             outputTokenCount: Int?,
             reasoningTokenCount: Int?,
+            generationDurationMs: Long? = null,
         ): TokenUsage? {
             if (
                 totalTokenCount <= 0 &&
@@ -66,6 +72,7 @@ data class TokenUsage(
                 uncachedInputTokenCount = uncachedInputTokenCount.nonNegativeOrNull(),
                 outputTokenCount = outputTokenCount.nonNegativeOrNull(),
                 reasoningTokenCount = reasoningTokenCount.nonNegativeOrNull(),
+                generationDurationMs = generationDurationMs?.takeIf { it > 0 },
             )
         }
 
@@ -88,7 +95,34 @@ data class TokenUsage(
  * current request snapshot. Only [finishRequest] adds that final snapshot to previous tool-loop
  * rounds.
  */
-internal class RequestTokenUsageAccumulator {
+internal class RequestTokenUsageAccumulator(
+    private val nowNanos: () -> Long = System::nanoTime,
+) {
+    private var firstContentNanos: Long? = null
+    private var lastContentNanos: Long? = null
+    private var completedGenerationNanos = 0L
+
+    fun observeGenerationContent() {
+        if (!requestActive) return
+        val now = nowNanos()
+        if (firstContentNanos == null) firstContentNanos = now
+        lastContentNanos = now
+    }
+
+    fun pauseGeneration() {
+        val first = firstContentNanos
+        val last = lastContentNanos
+        if (first != null && last != null && last > first) completedGenerationNanos += last - first
+        firstContentNanos = null
+        lastContentNanos = null
+    }
+
+    fun resetGenerationTiming() {
+        firstContentNanos = null
+        lastContentNanos = null
+        completedGenerationNanos = 0L
+    }
+
     private var completedUsage: TokenUsage? = null
     private var currentRequestUsage: TokenUsage? = null
     private var requestActive = false
@@ -96,6 +130,7 @@ internal class RequestTokenUsageAccumulator {
     fun beginRequest() {
         check(!requestActive) { "A token-usage request is already active" }
         currentRequestUsage = null
+        resetGenerationTiming()
         requestActive = true
     }
 
@@ -106,7 +141,12 @@ internal class RequestTokenUsageAccumulator {
 
     fun finishRequest() {
         if (!requestActive) return
-        currentRequestUsage?.let { requestUsage ->
+        pauseGeneration()
+        currentRequestUsage?.let { usage ->
+            val requestUsage = usage.copy(
+                generationDurationMs = usage.generationDurationMs
+                    ?: (completedGenerationNanos / 1_000_000L).takeIf { it > 0 },
+            )
             completedUsage = completedUsage?.plusRequest(requestUsage) ?: requestUsage
         }
         currentRequestUsage = null
