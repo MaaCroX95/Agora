@@ -438,8 +438,7 @@ fun MainNavigation(
             ChatApp(
                 viewModel = viewModel,
                 initialComposerFocusReady = initialComposerFocusReady,
-                onNavigateBack = taskHistoryPreview.taskId
-                    ?.takeIf { taskHistoryPreview.active }
+                onNavigateBack = taskHistoryPreview.backTaskId(currentConversationId, isNewChatMode)
                     ?.let { taskId ->
                         {
                             taskToOpen = taskId
@@ -457,7 +456,7 @@ fun MainNavigation(
                             showTasks = true
                         }
                     },
-                drawerEnabled = !taskHistoryPreview.active,
+                drawerEnabled = taskHistoryPreview.backTaskId(currentConversationId, isNewChatMode) == null,
                 onOpenSettings = {
                     topLevelPresentation.present(TopLevelPresentation.SETTINGS)
                     showSettings = true

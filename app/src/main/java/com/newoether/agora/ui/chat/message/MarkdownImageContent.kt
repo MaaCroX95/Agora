@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrokenImage
@@ -31,6 +33,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
+import java.io.File
 import com.newoether.agora.R
 import com.newoether.agora.model.MarkdownImage
 import com.newoether.agora.ui.chat.MEDIA_LOADING_INDICATOR_STROKE_WIDTH
@@ -62,7 +65,7 @@ internal fun MarkdownImageThumbnail(link: String, image: MarkdownImage, onClick:
     val context = LocalContext.current
     val pixels = with(LocalDensity.current) { 300.dp.roundToPx().coerceAtLeast(1) }
     val request = remember(context, image.attachment?.path, pixels) {
-        image.attachment?.path?.let { ImageRequest.Builder(context).data(it).size(pixels, pixels).build() }
+        image.attachment?.path?.let { ImageRequest.Builder(context).data(File(it)).size(pixels, pixels).build() }
     }
     val painter = rememberAsyncImagePainter(request)
     val target = when {
@@ -74,7 +77,8 @@ internal fun MarkdownImageThumbnail(link: String, image: MarkdownImage, onClick:
     LaunchedEffect(target) { presented = target }
     val background = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
     Box(
-        modifier = Modifier.size(300.dp).clip(RoundedCornerShape(8.dp)).background(background),
+        modifier = Modifier.widthIn(max = 300.dp).fillMaxWidth().aspectRatio(1f)
+            .clip(RoundedCornerShape(8.dp)).background(background),
         contentAlignment = Alignment.Center,
     ) {
         if (request != null) Image(

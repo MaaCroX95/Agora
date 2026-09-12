@@ -331,3 +331,19 @@ metadata, parses the retained real JSON prefix, and displays the marker separate
 structured tree. It never inserts a missing quote, key, value, object/array delimiter, or other JSON
 syntax. Arbitrary trailing prose and genuinely impossible JSON prefixes remain invalid and retain the
 raw-text fallback.
+
+The same rule applies to the exact terminal Filo preview marker
+`[Filo preview truncated; full output remains in Codex.]`. Its preceding JSON prefix
+remains a structured tree with partial leaves, and the marker stays separate neutral
+metadata. A marker quoted inside valid JSON remains ordinary data. A locally bounded
+Remote preview may carry both markers; neither marker may become a fabricated field.
+
+Native Markdown images reserve a square viewport before their file is available,
+up to 300 dp and constrained by the current content width. The same dimensions
+remain through pending, failed and decoded states. A known intrinsic viewport
+lets the shared Markdown renderer measure images as blocks instead of allowing
+large images to escape a text line's height. Each image keeps its rounded corners
+and the existing fading circular overlay. Load local attachments as files.
+Regression coverage must decode real images and compare the entire message and
+both image rectangles before, between and after asynchronous loads at phone density
+and narrow large-font width; failed placeholders alone do not qualify this behavior.

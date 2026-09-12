@@ -204,8 +204,12 @@ private fun JsonScalarView(
     )
 }
 
+internal const val FiloPreviewTruncationMarker =
+    "\n[Filo preview truncated; full output remains in Codex.]"
+
 internal fun persistenceAwareJsonSource(text: String): String =
     text.removeSuffix(MessagePersistenceGuard.TRUNCATION_MARKER)
+        .removeSuffix(FiloPreviewTruncationMarker)
 
 @Composable
 internal fun JsonOrPlainView(text: String) {
@@ -243,7 +247,7 @@ internal fun JsonOrPlainView(text: String) {
                     }
                     if (persistenceTruncated) {
                         Text(
-                            text = MessagePersistenceGuard.TRUNCATION_MARKER.trimStart(),
+                            text = text.substring(jsonSource.length).trimStart(),
                             style = ChatType.meta,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

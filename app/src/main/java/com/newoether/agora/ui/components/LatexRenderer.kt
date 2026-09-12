@@ -583,7 +583,19 @@ class LatexImageTransformer(
     @Composable
     override fun transform(link: String): ImageData? {
         // Markdown measures the slot here; both image components render the shared viewport.
-        if (inlineImage(link) != null) return ImageData(painter = ColorPainter(Color.Transparent))
+        if (inlineImage(link) != null) {
+            val side = with(LocalDensity.current) { 300.dp.toPx() }
+            val viewport = remember(side) {
+                object : Painter() {
+                    override val intrinsicSize = Size(side, side)
+                    override fun DrawScope.onDraw() = Unit
+                }
+            }
+            // A known size promotes the image to a measured block before decoding.
+            // An unspecified transparent painter leaves it in the text line, whose
+            // height can be smaller than the actual thumbnail on Android.
+            return ImageData(painter = viewport)
+        }
         val request = decodeLatexLink(link) ?: return null
         val key = LatexRenderKey(request.latex, textSize, color)
         var bitmap by remember(key) { mutableStateOf(LatexBitmapCache.get(key)) }

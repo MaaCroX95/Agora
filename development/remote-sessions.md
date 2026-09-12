@@ -37,6 +37,12 @@ editing, branching and tool-execution controls are unsupported.
 
 ## Devices and local persistence
 
+Root Back must leave Agora through Android's normal activity behavior, never reopen
+a retained page. Task-history return is available only while that exact preview is
+the displayed destination; pending, failed, stale and returning previews cannot
+intercept Back on the ordinary/new-chat home. Remote Back still unwinds the selected
+conversation, device and overlay in their existing order.
+
 Remote sits below Tasks in their original joined drawer group and opens SettingsOverlayHost.
 Both drawer buttons use the owner-requested 46 dp height, joined 24/5 dp corner shapes and
 2 dp inter-button gap. Their icons, labels, focus clearing and navigation remain unchanged.
