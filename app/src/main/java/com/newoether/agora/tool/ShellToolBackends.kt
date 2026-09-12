@@ -93,6 +93,10 @@ internal class ConchBackend(override val device: ShellDeviceConfig) : Backend {
                 "${prepared.serverUrl}/execute",
                 prepared.body,
                 prepared.headers,
+                scope = HttpClient.boundStreamScope(),
+                callClient = com.newoether.agora.util.ConchNetwork.client,
+                maxLineBytes = com.newoether.agora.util.ConchNetwork.LINE_LIMIT,
+                maxErrorBytes = com.newoether.agora.util.ConchNetwork.CONTROL_LIMIT,
             )
         } catch (cancelled: CancellationException) {
             throw cancelled

@@ -144,6 +144,7 @@ Never:
 | Scope | Required module contract |
 |---|---|
 | External agent devices, existing sessions, independent Remote transport and shared chat presentation | [remote-sessions.md](remote-sessions.md) |
+| Conch/Filo encrypted network requests and client read limits | [encrypted-agent-transport.md](encrypted-agent-transport.md) |
 | Message generation, Run lifecycle, queue, tools, Compact, Regenerate, message actions/status, or Provider context | [message-generation.md](message-generation.md) |
 | Shared streaming Markdown, timeline/detail rendering, selection, media loading, and generation motion | [streaming-markdown.md](streaming-markdown.md) |
 | Provider-hosted output, OpenAI-compatible request controls, thinking, service tier, and hosted tools | [provider-output.md](provider-output.md) |
@@ -165,6 +166,11 @@ Documents under [`baselines/`](baselines/) are explicitly historical and non-aut
 preserve migration or audit evidence only and never override the module contracts in this registry.
 
 ## 8. Development completion gate
+
+The 2026-09-11 owner requirement prohibits TypeScript in Agora, Filo and Conch.
+Agora remains Kotlin; Filo moves fully to Go with no Node.js runtime dependency.
+The current delivery includes merging Remote into the original Agora branch after
+qualification, preserving its existing commits and unrelated uncommitted changes.
 
 The owner requires a sustainable Filo and Agora baseline (2026-09-10). Split maintained
 source, tests, resources and contracts by responsibility before files approach 999 lines;

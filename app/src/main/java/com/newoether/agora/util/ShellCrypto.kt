@@ -15,7 +15,7 @@ import javax.crypto.spec.SecretKeySpec
 object ShellCrypto {
     private const val GCM_NONCE_SIZE = 12
     private const val GCM_TAG_SIZE = 128
-    private const val HKDF_INFO = "conch-agora-v1"
+    private const val HKDF_INFO = "conch-agora-v2"
 
     private val secureRandom = SecureRandom()
     private const val B64_URL_FLAGS = Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
@@ -60,7 +60,11 @@ object ShellCrypto {
         keyAgreement.init(ourPrivateKey)
         keyAgreement.doPhase(theirPublicKey, true)
         val sharedSecret = keyAgreement.generateSecret()
-        return hkdfExpand(sharedSecret, HKDF_INFO.toByteArray(Charsets.UTF_8), 32)
+        // RFC 5869: raw Diffie-Hellman output needs Extract before Expand.
+        val extract = Mac.getInstance("HmacSHA256")
+        extract.init(SecretKeySpec(ByteArray(32), "HmacSHA256"))
+        val pseudorandomKey = extract.doFinal(sharedSecret)
+        return hkdfExpand(pseudorandomKey, HKDF_INFO.toByteArray(Charsets.UTF_8), 32)
     }
 
     private fun hkdfExpand(prk: ByteArray, info: ByteArray, length: Int): ByteArray {
@@ -124,6 +128,20 @@ object ShellCrypto {
         val digest = MessageDigest.getInstance("SHA-256")
         return digest.digest(data).joinToString("") { "%02x".format(it) }
     }
+
+    internal fun responseSignature(sessionKey: ByteArray, status: Int, body: String): String {
+        val key = hkdfExpand(sessionKey, "conch-response-auth-v1".toByteArray(Charsets.UTF_8), 32)
+        val payload = "conch-response-v1|$status|${sha256Hex(body.toByteArray(Charsets.UTF_8))}"
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(key, "HmacSHA256"))
+        return mac.doFinal(payload.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    }
+
+    internal fun verifyResponseSignature(sessionKey: ByteArray, status: Int, body: String, signature: String): Boolean =
+        sessionKey.size == 32 && signature.length == 64 && MessageDigest.isEqual(
+            responseSignature(sessionKey, status, body).toByteArray(Charsets.US_ASCII),
+            signature.toByteArray(Charsets.US_ASCII),
+        )
 
     fun generateNonce(): String {
         val bytes = ByteArray(12)

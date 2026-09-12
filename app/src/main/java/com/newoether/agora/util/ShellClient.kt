@@ -244,6 +244,7 @@ class ShellClient(
     cachedPublicKey: String = ""
 ) {
     private var serverPublicKey: java.security.PublicKey? = null
+    private var securityVerified = false
     private var currentAesKey: ByteArray? = null
     private var currentKeyPair: java.security.KeyPair? = null
     var lastError: String? = null
@@ -260,39 +261,31 @@ class ShellClient(
     }
 
     suspend fun fetchPublicKey(): Boolean {
-        if (serverPublicKey != null) return true
+        if (securityVerified && serverPublicKey != null) return true
         if (apiKey.isBlank()) {
             lastError = "Conch authentication is disabled locally; no public-key exchange is needed"
             return false
         }
-        var rawResponse: String? = null
         return try {
-            val response = com.newoether.agora.api.HttpClient.getTextResponse(
-                "$serverUrl/public-key",
+            val challenge = ShellCrypto.generateNonce()
+            val response = ConchNetwork.getTextResponse(
+                "$serverUrl/public-key?challenge=$challenge",
                 emptyMap()
             )
-            rawResponse = response.body
             if (!response.isSuccessful) {
                 val detail = response.body.take(240).ifBlank { "empty response" }
                 lastError = "Conch at $serverUrl returned HTTP ${response.code}: $detail"
                 DebugLog.e("ShellClient", lastError!!)
                 return false
             }
-            val json = Json.parseToJsonElement(rawResponse).jsonObject
-            val pubKeyStr = json["public_key"]?.jsonPrimitive?.content
-            val nonce = json["nonce"]?.jsonPrimitive?.content
-            val sig = json["signature"]?.jsonPrimitive?.content
-            if (pubKeyStr == null || nonce == null || sig == null) {
-                lastError = "Invalid Conch public-key response from $serverUrl: missing public_key, nonce, or signature"
-                DebugLog.e("ShellClient", "$lastError: $rawResponse")
-                return false
-            }
-            if (!verifyPublicKeySignature(pubKeyStr, nonce, sig)) {
-                lastError = "Conch authentication failed at $serverUrl: the public-key signature does not match the configured API key"
+            val handshake = ConchHandshake.decode(response.body)
+            if (!handshake.verify(apiKey, challenge)) {
+                lastError = "Conch security handshake failed at $serverUrl. Check the API key and update Conch before sending requests."
                 DebugLog.e("ShellClient", lastError!!)
                 return false
             }
-            serverPublicKey = ShellCrypto.decodePublicKey(pubKeyStr)
+            serverPublicKey = ShellCrypto.decodePublicKey(handshake.public_key)
+            securityVerified = true
             lastError = null
             true
         } catch (e: Exception) {
@@ -300,17 +293,6 @@ class ShellClient(
             DebugLog.w("ShellClient", lastError!!)
             false
         }
-    }
-
-    private fun verifyPublicKeySignature(pubKey: String, nonce: String, sig: String): Boolean {
-        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
-        mac.init(javax.crypto.spec.SecretKeySpec(apiKey.toByteArray(Charsets.UTF_8), "HmacSHA256"))
-        val message = "$nonce|$pubKey"
-        val expected = mac.doFinal(message.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
-        return java.security.MessageDigest.isEqual(
-            expected.toByteArray(Charsets.UTF_8),
-            sig.toByteArray(Charsets.UTF_8)
-        )
     }
 
     fun getServerPublicKeyBase64(): String? {
@@ -335,6 +317,7 @@ class ShellClient(
             return PreparedRequest(jsonBody, mapOf("Content-Type" to "application/json"), false, serverUrl)
         }
 
+        check(securityVerified) { "Conch security handshake is required before sending requests" }
         val pubKey = serverPublicKey
             ?: throw IllegalStateException("Server public key not available. Call fetchPublicKey() first.")
 
@@ -358,7 +341,7 @@ class ShellClient(
             "X-Timestamp" to timestamp.toString(),
             "X-Signature" to signature,
             "X-Nonce" to nonce,
-            "X-Encryption" to "v1",
+            "X-Encryption" to "v2",
             "X-Client-Public-Key" to clientPubKey
         )
 
@@ -404,7 +387,7 @@ class ShellClient(
     ): String {
         if (apiKey.isBlank()) {
             val response = try {
-                com.newoether.agora.api.HttpClient.postTextResponse(
+                ConchNetwork.postTextResponse(
                     "$serverUrl$path",
                     payload,
                     mapOf("Content-Type" to "application/json"),
@@ -427,7 +410,7 @@ class ShellClient(
         // Lazily establish the encrypted session. The file endpoints need the server
         // public key just like /execute does, but (unlike executeCommand) nothing
         // pre-fetches it for the file tools — so fetch it here on first use.
-        if (serverPublicKey == null && !fetchPublicKey()) {
+        if (!securityVerified && !fetchPublicKey()) {
             throw IllegalStateException(lastError ?: "Failed to fetch server public key")
         }
         val pubKey = serverPublicKey
@@ -448,12 +431,12 @@ class ShellClient(
             "X-Timestamp" to timestamp.toString(),
             "X-Signature" to signature,
             "X-Nonce" to nonce,
-            "X-Encryption" to "v1",
+            "X-Encryption" to "v2",
             "X-Client-Public-Key" to clientPubKey
         )
 
         val response = try {
-            com.newoether.agora.api.HttpClient.postTextResponse(
+            ConchNetwork.postTextResponse(
                 "$serverUrl$path",
                 encryptedBody,
                 headers,
@@ -472,6 +455,9 @@ class ShellClient(
             )
         }
 
+        if (!ShellCrypto.verifyResponseSignature(aesKey, response.code, response.body, response.signature)) {
+            throw IllegalStateException("Conch response authentication failed at $serverUrl")
+        }
         val plaintext = try {
             ShellCrypto.decrypt(aesKey, response.body)
         } catch (e: Exception) {

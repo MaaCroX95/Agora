@@ -269,6 +269,8 @@ object HttpClient {
         private val scope: com.newoether.agora.viewmodel.StreamScope?,
         private val trace: RequestTrace?,
         private val diagnosticContext: DiagnosticRequestContext?,
+        private val maxLineBytes: Long? = null,
+        private val maxErrorBytes: Long? = null,
     ) : com.newoether.agora.viewmodel.GenerationCancelHandle {
         private val response = AtomicReference<okhttp3.Response?>(null)
         private val cancelled = AtomicBoolean(false)
@@ -281,7 +283,10 @@ object HttpClient {
         val errorBody: String?
             get() = try {
                 val openedResponse = response.get()
-                val body = openedResponse?.body?.string()
+                val body = openedResponse?.body?.let { responseBody ->
+                    maxErrorBytes?.let { responseBody.source().readBoundedWireText(it) }
+                        ?: responseBody.string()
+                }
                 if (openedResponse != null && body != null) {
                     DeveloperDiagnostics.recordHttpResponseBody(
                         context = diagnosticContext,
@@ -318,7 +323,9 @@ object HttpClient {
         }
 
         fun readLine(): String? {
-            val line = source?.readUtf8Line()
+            val line = source?.let { input ->
+                if (maxLineBytes != null) input.readBoundedWireLine(maxLineBytes) else input.readUtf8Line()
+            }
             if (line != null) {
                 DeveloperDiagnostics.recordWireLine(
                     context = diagnosticContext,
@@ -367,6 +374,9 @@ object HttpClient {
         jsonBody: String,
         headers: Map<String, String> = emptyMap(),
         scope: com.newoether.agora.viewmodel.StreamScope?,
+        callClient: OkHttpClient = client,
+        maxLineBytes: Long? = null,
+        maxErrorBytes: Long? = null,
     ): StreamHandle {
         guardCleartextCredentials(url, headers)
         val trace = boundRequestTrace()
@@ -384,8 +394,8 @@ object HttpClient {
         val request = requestBuilder.build().newBuilder()
             .tag(RequestTrace::class.java, trace)
             .build()
-        val call = client.newCall(request)
-        val handle = StreamHandle(call, scope, trace, diagnosticContext)
+        val call = callClient.newCall(request)
+        val handle = StreamHandle(call, scope, trace, diagnosticContext, maxLineBytes, maxErrorBytes)
         // Register before execute(): Stop must be able to cancel DNS, connect, TLS, request upload,
         // and response-header wait rather than only an already-open response body.
         if (scope != null) scope.register(handle)
