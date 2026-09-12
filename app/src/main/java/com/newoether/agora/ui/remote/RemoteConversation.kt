@@ -151,7 +151,9 @@ internal fun RemoteConversation(
     val focusManager = LocalFocusManager.current
     val searchMessages: suspend (String, List<String>) -> List<com.newoether.agora.model.ChatMessage> =
         remember(owner, state.hydrationRevision) { { _, ids -> vm.searchMessages(owner, ids) } }
-    val searchAllMessages: suspend (String) -> List<ConversationSearchMatch> = remember(owner) { vm::searchHistory }
+    val searchAllMessages = remember(owner, vm, state.hydrationEnabled) {
+        { query: String -> vm.searchHistory(query) }
+    }
     val interaction = rememberConversationInteractionState(owner, messageState, scroll.listState, searchMessages,
         searchAllMessages = searchAllMessages)
     val searchMatch = interaction.searchMatches.getOrNull(interaction.searchMatchIndex)

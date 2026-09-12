@@ -17,6 +17,7 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.newoether.agora"
+    testOptions.unitTests.isIncludeAndroidResources = true
     compileSdk {
         version = release(36)
     }
@@ -191,6 +192,9 @@ dependencies {
     testImplementation("io.mockk:mockk:1.13.12")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
+    testImplementation("org.robolectric:robolectric:4.16")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
 tasks.whenTaskAdded {

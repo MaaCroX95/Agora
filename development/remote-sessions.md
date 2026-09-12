@@ -170,6 +170,12 @@ into newly prepended rows. Drag ownership lasts until gesture Stop/Cancel even w
 stationary or generation has ended; hydration/card mutations cannot claim that viewport.
 Original MessageList, body observation, Search highlights and scroll owners remain shared.
 Explicit Search may read older pages with cancellation, without changing admitted positions.
+Search publishes matches from the admitted hydrated bodies before waiting for older pages,
+then updates the count in canonical message order as each bounded batch completes. A failed
+older read reports through Snackbar and retains known matches; it must not turn visible
+highlights into a persistent 0/0 result. Live text revisions refresh their own matches without
+reloading unchanged bodies. Query/owner changes cancel stale work. Appending older matches
+retains the selected match by identity, and Search never downloads image bytes.
 Reconnecting updates the native tail without replacing the historical reading position.
 Active-body observation is keyed to its owner/message and begins with the admitted cached
 body. Suspending observation is not deletion. The original bounded MessageList payload

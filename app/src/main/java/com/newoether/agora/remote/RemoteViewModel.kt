@@ -652,24 +652,21 @@ internal class RemoteViewModel(
         }
     }
 
-    suspend fun searchHistory(query: String): List<com.newoether.agora.ui.chat.ConversationSearchMatch> {
+    fun searchHistory(query: String): kotlinx.coroutines.flow.Flow<List<com.newoether.agora.ui.chat.ConversationSearchMatch>> {
         val snapshot = state.value
-        val owner = snapshot.owner ?: return emptyList()
-        val client = clients[snapshot.deviceId] ?: return emptyList()
-        val session = snapshot.session ?: return emptyList()
+        val owner = snapshot.owner ?: return kotlinx.coroutines.flow.flowOf(emptyList())
+        val client = clients[snapshot.deviceId] ?: return kotlinx.coroutines.flow.flowOf(emptyList())
+        val session = snapshot.session ?: return kotlinx.coroutines.flow.flowOf(emptyList())
         val generation = epoch
-        try {
-            // Explicit Search may discover older pages; opening and ordinary scrolling never scan ahead.
-            while (generation == epoch) {
-                val cursor = state.value.historyCursor ?: break
+        return remoteHistorySearch(state, owner, query,
+            loadMessages = { ids -> hydration.loadMessages(owner, ids) },
+            loadEarlier = { cursor ->
+                if (generation != epoch) throw CancellationException()
                 prependPage(client, session.id, generation, cursor)
-            }
-            if (generation != epoch) return emptyList()
-            return com.newoether.agora.ui.chat.scanConversationSearchMatches(
-                state.value.messageGroups.map { it.stub.id }, query,
-            ) { ids -> hydration.loadMessages(owner, ids) }
-        } catch (cancelled: CancellationException) { throw cancelled }
-        catch (error: Exception) { trace("page_failed", error); return emptyList() }
+            },
+            failed = { trace("page_failed", it) },
+            isCached = { group -> hydration.cachedMessage(owner, group) != null },
+        )
     }
 
     fun editDraft(owner: String, text: String) {

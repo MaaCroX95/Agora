@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import com.newoether.agora.model.ChatMessage
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
@@ -149,7 +150,7 @@ internal class ConversationInteractionState internal constructor(
         messages: State<List<ChatMessage>>,
         listState: LazyListState,
         searchMessages: suspend (String, List<String>) -> List<ChatMessage>,
-        searchAllMessages: (suspend (String) -> List<ConversationSearchMatch>)? = null,
+        searchAllMessages: ((String) -> Flow<List<ConversationSearchMatch>>)? = null,
     ): ConversationInteractionProjection {
         val selectedPathSearchMessages = remember(messages.value) {
             messages.value.filter(::isConversationSearchBodyEligible)
@@ -166,12 +167,14 @@ internal class ConversationInteractionState internal constructor(
             searchActive,
             searchQuery,
             selectedPathSearchRevision.takeIf { searchAllMessages == null },
-            searchMessages,
+            searchMessages.takeIf { searchAllMessages == null },
             searchAllMessages,
         ) {
             value = emptyList()
             if (searchActive && currentConversationId != null && searchQuery.isNotBlank()) {
-                value = searchAllMessages?.invoke(searchQuery) ?: scanConversationSearchMatches(
+                if (searchAllMessages != null) {
+                    searchAllMessages(searchQuery).collect { value = it }
+                } else value = scanConversationSearchMatches(
                     selectedPathMessageIds = selectedPathSearchMessageIds,
                     query = searchQuery,
                     loadMessages = { messageIds ->
@@ -185,9 +188,18 @@ internal class ConversationInteractionState internal constructor(
             messagesForSelection.mapTo(linkedSetOf()) { it.id }
         }
 
+        var precedingMatches by remember(currentConversationId, searchQuery, searchActive) {
+            mutableStateOf<List<ConversationSearchMatch>>(emptyList())
+        }
         LaunchedEffect(searchActive, searchQuery, searchMatches, currentConversationId) {
+            val retainedIndex = retainedConversationSearchMatchIndex(precedingMatches, searchMatches, searchMatchIndex)
+            precedingMatches = searchMatches
             if (!searchActive || searchQuery.isBlank() || searchMatches.isEmpty()) {
                 replaceSearchMatchIndex(-1)
+                return@LaunchedEffect
+            }
+            if (searchAllMessages != null && retainedIndex != null) {
+                replaceSearchMatchIndex(retainedIndex)
                 return@LaunchedEffect
             }
             val retainedVisibleDistances = visibleSearchMatchDistances(searchMatches)
@@ -305,7 +317,7 @@ internal fun rememberConversationInteractionState(
     messages: State<List<ChatMessage>>,
     listState: LazyListState,
     searchMessages: suspend (String, List<String>) -> List<ChatMessage> = { _, _ -> emptyList() },
-    searchAllMessages: (suspend (String) -> List<ConversationSearchMatch>)? = null,
+    searchAllMessages: ((String) -> Flow<List<ConversationSearchMatch>>)? = null,
 ): ConversationInteractionProjection {
     val state = rememberSaveable(saver = ConversationInteractionState.Saver) {
         ConversationInteractionState()
