@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="remote_usage">Использование</string>
-    <string name="remote_usage_unavailable">Данные об использовании недоступны</string>
     <string name="remote_usage_remaining">Осталось %1$d%%</string>
     <string name="remote_usage_window">Период: %1$d мин.</string>
     <string name="remote_usage_resets">Сброс %1$s</string>

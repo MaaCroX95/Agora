@@ -32,6 +32,7 @@ class FiloStreamFailureTest {
                 } catch (error: Exception) {
                     val detail = remoteErrorDetail(error)!!
                     assertEquals(2048, detail.length)
+                    assertEquals("native_unavailable", remoteErrorCode(error))
                     org.junit.Assert.assertTrue(detail.startsWith("Original desktop owner unavailable: [redacted]"))
                     org.junit.Assert.assertFalse(error.toString().contains(token))
                     org.junit.Assert.assertFalse(error.toString().contains("Original desktop"))

@@ -775,9 +775,7 @@
     <string name="models_show_provider_name">顯示 Provider 名稱</string>
     <string name="models_show_provider_name_desc">在模型名稱後附加服務供應商名稱。</string>
     <string name="remote_resume_history">繼續此會話</string>
-    <string name="remote_session_busy">此會話仍由其他 Codex 程序使用，請在釋放後重試。</string>
     <string name="thought_for_a_while">思考了一會兒</string>
     <string name="thought_for_a_while_called_tools">思考了一會兒，呼叫 %1$d 個工具</string>
-    <string name="remote_response_too_large">服務傳回的資料過大。請更新 Filo 後重試。</string>
     <string name="remote_device">裝置</string>
 </resources>

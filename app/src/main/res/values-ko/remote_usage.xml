@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="remote_usage">사용량</string>
-    <string name="remote_usage_unavailable">사용량을 확인할 수 없습니다</string>
     <string name="remote_usage_remaining">%1$d%% 남음</string>
     <string name="remote_usage_window">%1$d분 기준</string>
     <string name="remote_usage_resets">초기화: %1$s</string>

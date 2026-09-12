@@ -44,11 +44,16 @@ private data class SendResult(val turnId: String, val clientId: String)
 private data class FiloError(val code: String? = null, val error: String? = null)
 
 internal class FiloHttpException(val status: Int, val code: String? = null, val detail: String? = null) : IOException("Filo HTTP $status")
-internal class FiloStreamException(val detail: String? = null) : IOException("Filo could not read the native session")
+internal class FiloStreamException(val detail: String? = null, val code: String? = null) : IOException("Filo could not read the native session")
 internal fun remoteErrorDetail(error: Exception): String? = when (error) {
     is FiloHttpException -> error.detail
     is FiloStreamException -> error.detail
     is RemoteAttachmentException -> error.message
+    else -> null
+}
+internal fun remoteErrorCode(error: Exception): String? = when (error) {
+    is FiloHttpException -> error.code
+    is FiloStreamException -> error.code
     else -> null
 }
 internal class FiloInputException : IllegalArgumentException("Invalid Filo message")
@@ -91,7 +96,7 @@ internal class FiloClient(
     private val json = Json { ignoreUnknownKeys = true }
     private fun decodeError(text: String): FiloError {
         val error = runCatching { json.decodeFromString<FiloError>(text) }.getOrNull() ?: return FiloError()
-        return error.copy(error = error.error?.replace(token, "[redacted]")
+        return error.copy(code = error.code?.takeIf { it.matches(Regex("[a-z][a-z0-9_]{0,63}")) }, error = error.error?.replace(token, "[redacted]")
             ?.filter { !it.isISOControl() || it == '\n' }?.trim()?.take(2048)?.takeIf { it.isNotBlank() })
     }
     private fun httpError(response: Response, text: String = response.body.source().readRemoteResponse()): FiloHttpException {
@@ -191,7 +196,10 @@ internal class FiloClient(
                             if (line.isEmpty() && errorEvent) throw FiloStreamException()
                             if (line.startsWith("data: ")) {
                                 val data = line.removePrefix("data: ")
-                                if (errorEvent) throw FiloStreamException(decodeError(data).error)
+                                if (errorEvent) {
+                                    val failure = decodeError(data)
+                                    throw FiloStreamException(failure.error, failure.code)
+                                }
                                 trySend(decode(data))
                             }
                         }

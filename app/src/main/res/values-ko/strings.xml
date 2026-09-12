@@ -772,9 +772,7 @@
     <string name="models_show_provider_name">제공업체 이름 표시</string>
     <string name="models_show_provider_name_desc">모델 이름 뒤에 제공업체 이름을 추가합니다.</string>
     <string name="remote_resume_history">이 대화 계속하기</string>
-    <string name="remote_session_busy">다른 Codex 프로세스가 이 대화를 사용 중입니다. 사용이 끝나면 다시 시도하세요.</string>
     <string name="thought_for_a_while">잠시 생각했습니다</string>
     <string name="thought_for_a_while_called_tools">잠시 생각하고 도구 %1$d개를 호출했습니다</string>
-    <string name="remote_response_too_large">서비스 응답이 너무 큽니다. Filo를 업데이트하고 다시 시도하세요.</string>
     <string name="remote_device">기기</string>
 </resources>

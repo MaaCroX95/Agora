@@ -33,7 +33,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.newoether.agora.remote.RemoteConnectionStore
-import com.newoether.agora.remote.RemoteFailure
 import java.io.File
 import com.newoether.agora.R
 import com.newoether.agora.SettingsOverlayHost
@@ -67,6 +66,7 @@ internal fun RemoteOverlay(
     onMediaClick: (List<String>, Int) -> Unit,
     onSnackbarOffsetChanged: (androidx.compose.ui.unit.Dp) -> Unit,
 ) {
+    val messageContext by rememberUpdatedState(LocalContext.current)
     val context = LocalContext.current.applicationContext
     val remote: RemoteViewModel = viewModel {
         val imageDirectory = File(context.cacheDir, "remote-images")
@@ -80,8 +80,8 @@ internal fun RemoteOverlay(
         if (!visible) return@LaunchedEffect
         remote.notices.collect { notice ->
             if (remote.isNoticeCurrent(notice)) messageHandler(
-                notice.detail ?: context.getString(remoteFailureResource(notice.failure)),
-                if (notice.canRetryRead) context.getString(R.string.retry) else null,
+                remoteNoticeMessage(messageContext, notice),
+                if (notice.canRetryRead) messageContext.getString(R.string.retry) else null,
                 if (notice.canRetryRead) ({ remote.retryNotice(notice) }) else null,
             )
         }
@@ -397,16 +397,4 @@ private fun RemoteAddDevice(state: RemoteState, vm: RemoteViewModel, onBack: () 
             }
         }))
     }
-}
-
-private fun remoteFailureResource(failure: RemoteFailure?): Int = when (failure) {
-    RemoteFailure.NETWORK -> R.string.remote_network_failed
-    RemoteFailure.AUTHENTICATION -> R.string.remote_auth_failed
-    RemoteFailure.CONFIGURATION -> R.string.remote_configuration_failed
-    RemoteFailure.PROTOCOL -> R.string.remote_protocol_failed
-    RemoteFailure.SESSION_BUSY -> R.string.remote_session_busy
-    RemoteFailure.CONTENT_TOO_LARGE -> R.string.remote_response_too_large
-    RemoteFailure.SERVICE -> R.string.remote_service_failed
-    RemoteFailure.STORAGE -> R.string.remote_storage_failed
-    else -> R.string.remote_failed
 }

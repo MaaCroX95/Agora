@@ -772,9 +772,7 @@
     <string name="models_show_provider_name">Afficher le nom du fournisseur</string>
     <string name="models_show_provider_name_desc">Ajouter le nom du fournisseur après le nom du modèle.</string>
     <string name="remote_resume_history">Continuer cette conversation</string>
-    <string name="remote_session_busy">Un autre processus Codex utilise cette conversation. Réessayez après sa libération.</string>
     <string name="thought_for_a_while">A réfléchi un moment</string>
     <string name="thought_for_a_while_called_tools">A réfléchi un moment, a appelé %1$d outils</string>
-    <string name="remote_response_too_large">La réponse du service était trop volumineuse. Mettez Filo à jour et réessayez.</string>
     <string name="remote_device">Appareil</string>
 </resources>

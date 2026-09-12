@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="remote_usage">Utilisation</string>
-    <string name="remote_usage_unavailable">Utilisation indisponible</string>
     <string name="remote_usage_remaining">%1$d%% restants</string>
     <string name="remote_usage_window">Période de %1$d minutes</string>
     <string name="remote_usage_resets">Réinitialisation %1$s</string>

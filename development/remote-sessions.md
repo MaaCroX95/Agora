@@ -245,9 +245,11 @@ Thought for a while, called X tools. The fallback only replaces the duration, ne
 native tool count. Genuine timing retains original duration text.
 
 Errors and unknown runtime never disable an explicit Send with nonblank input. Filo decides
-whether the original owner can accept that request; failures show the bounded actual HTTP/SSE
-error text in the existing Snackbar, with the localized category as fallback. Never log this
-text or credentials. An unconfirmed previous delivery keeps Send clickable and presents the
+whether the original owner can accept that request; HTTP/SSE failures use stable Filo error
+codes to select an actionable Snackbar in the current application locale. Unknown codes and
+older servers retain the bounded native detail beside a localized category. Keep the detail
+in the transient notice for diagnosis; never log this text or credentials. Every default
+error key must exist in every supported locale. Codes do not authorize mutation retries. An unconfirmed previous delivery keeps Send clickable and presents the
 existing check action in Snackbar before any new attempt; no automatic retry or duplicate send.
 Reuse original ComposerSendButton: active + empty draft means Stop, text means Send/steer,
 submission/Stop settlement means Busy. Keep pending Stop through both HTTP success and
