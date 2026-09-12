@@ -36,7 +36,7 @@ class FiloClientTest {
         }
         server.start()
         try {
-            val client = FiloClient("http://127.0.0.1:${server.address.port}/", token)
+            val client = applicationFixtureClient("http://127.0.0.1:${server.address.port}/", token)
             client.archiveSession(id)
             reply = """{"deleted":true}"""
             try { client.archiveSession(id); fail("Legacy deletion is not an archive receipt") }
@@ -58,7 +58,7 @@ class FiloClientTest {
         }
         server.start()
         try {
-            val page = FiloClient("http://127.0.0.1:${server.address.port}/", token).sessions()
+            val page = applicationFixtureClient("http://127.0.0.1:${server.address.port}/", token).sessions()
             assertEquals(listOf("active", "unknown"), page.sessions.map { it.id })
             assertEquals(listOf("active", null), page.sessions.map { it.status })
         } finally { server.stop(0) }
@@ -78,9 +78,9 @@ class FiloClientTest {
 
     @Test fun malformedEndpointOrTokenIsRejectedBeforeNetwork() {
         listOf("http://user:secret@localhost/", "http://localhost/?token=x", "http://localhost/path").forEach {
-            assertThrows(IllegalArgumentException::class.java) { FiloClient(it, token) }
+            assertThrows(IllegalArgumentException::class.java) { applicationFixtureClient(it, token) }
         }
-        assertThrows(IllegalArgumentException::class.java) { FiloClient("http://localhost/", "short") }
+        assertThrows(IllegalArgumentException::class.java) { applicationFixtureClient("http://localhost/", "short") }
     }
 
     @Test fun onlyNativeActiveTurnOwnsSharedStreamingPresentation() {
@@ -202,7 +202,7 @@ class FiloClientTest {
         }
         server.start()
         try {
-            val client = FiloClient("http://127.0.0.1:${server.address.port}/", token)
+            val client = applicationFixtureClient("http://127.0.0.1:${server.address.port}/", token)
             assertNull(client.conversation(id).messages.single().activity)
             val loaded = client.conversation(id, "cursor + next").messages.single()
             assertEquals(rich, loaded)
@@ -221,7 +221,7 @@ class FiloClientTest {
         assertEquals(RemoteFailure.PROTOCOL, classifyRemoteFailure(SerializationException("payload")))
         assertEquals(RemoteFailure.PROTOCOL, classifyRemoteFailure(IllegalArgumentException("incompatible")))
         assertEquals(RemoteFailure.STORAGE, classifyRemoteFailure(RemoteStorageException()))
-        val invalid = assertThrows(FiloConfigurationException::class.java) { FiloClient("broken", token) }
+        val invalid = assertThrows(FiloConfigurationException::class.java) { applicationFixtureClient("broken", token) }
         assertEquals(RemoteFailure.CONFIGURATION, classifyRemoteFailure(invalid))
     }
 
@@ -244,7 +244,7 @@ class FiloClientTest {
         }
         server.start()
         try {
-            val client = FiloClient("http://127.0.0.1:${server.address.port}/", token)
+            val client = applicationFixtureClient("http://127.0.0.1:${server.address.port}/", token)
             try { client.send(id, "hello", id); fail("Redirect must fail") }
             catch (error: FiloHttpException) { assertEquals(307, error.status) }
             assertEquals(1, requests.get())
@@ -266,7 +266,7 @@ class FiloClientTest {
             }
             server.start()
             try {
-                val client = FiloClient("http://127.0.0.1:${server.address.port}/", token)
+                val client = applicationFixtureClient("http://127.0.0.1:${server.address.port}/", token)
                 if (mode != "existing") {
                     try { client.connect(); fail("Retired or unknown mode must be rejected") }
                     catch (_: IllegalArgumentException) { }
@@ -292,7 +292,7 @@ class FiloClientTest {
         }
         server.start()
         try {
-            val client = FiloClient("http://127.0.0.1:${server.address.port}/", token)
+            val client = applicationFixtureClient("http://127.0.0.1:${server.address.port}/", token)
             assertEquals("Computer", client.connect())
             assertEquals("turn", client.send(id, "hello", id))
             assertEquals(page, client.events(id).first())
@@ -314,7 +314,7 @@ class FiloClientTest {
         }
         server.start()
         try {
-            val result = FiloClient("http://127.0.0.1:" + server.address.port + "/", token).sessions("page-two")
+            val result = applicationFixtureClient("http://127.0.0.1:" + server.address.port + "/", token).sessions("page-two")
             assertEquals("native-turn", result.statuses.single().activeTurnId)
             assertEquals("page-two", result.sessions.single().listCursor)
             assertEquals(listOf("/v1/sessions?cursor=page-two"), requests)

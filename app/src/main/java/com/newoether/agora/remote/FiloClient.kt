@@ -59,6 +59,7 @@ internal fun classifyRemoteFailure(error: Exception): RemoteFailure = when (erro
     is RemoteContentLimitException -> RemoteFailure.CONTENT_TOO_LARGE
     is RemoteStorageException -> RemoteFailure.STORAGE
     is RemoteAttachmentException -> RemoteFailure.STORAGE
+    is com.newoether.agora.util.ConchChannelException -> RemoteFailure.PROTOCOL
     is FiloConfigurationException, is FiloInputException -> RemoteFailure.CONFIGURATION
     is FiloStreamException -> RemoteFailure.SERVICE
     is FiloHttpException -> when {
@@ -77,6 +78,7 @@ internal class FiloClient(
     private val token: String,
     private val calls: Call.Factory = OkHttpClient.Builder()
         .retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false)
+        .addInterceptor(com.newoether.agora.util.ConchEncryptedHttp(token))
         .callTimeout(30, TimeUnit.SECONDS).build(),
     mutationTimeoutMillis: Long = 210_000,
 ) {
@@ -99,7 +101,7 @@ internal class FiloClient(
     // A server can close an idle pooled connection just before its next use. GETs can
     // recover on a fresh connection; native mutations keep the non-retrying transport.
     private val readCalls: Call.Factory = (calls as? OkHttpClient)?.newBuilder()
-        ?.retryOnConnectionFailure(true)?.build() ?: calls
+        ?.retryOnConnectionFailure(calls.interceptors.none { it is com.newoether.agora.util.ConchEncryptedHttp })?.build() ?: calls
     // Filo allows 180 seconds for cold executor readiness and native mutation acknowledgement.
     // Both the socket read and whole-call deadline must outlive that inner operation.
     private val mutationCalls: Call.Factory = (calls as? OkHttpClient)?.newBuilder()

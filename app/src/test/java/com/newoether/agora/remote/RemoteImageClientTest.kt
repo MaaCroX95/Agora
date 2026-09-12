@@ -25,7 +25,7 @@ class RemoteImageClientTest {
         server.start()
         val file = File.createTempFile("filo-image-client-", ".png")
         try {
-            val client = FiloClient("http://127.0.0.1:" + server.address.port, "a".repeat(64))
+            val client = applicationFixtureClient("http://127.0.0.1:" + server.address.port, "a".repeat(64))
             assertEquals(0, reads)
             val result = client.image("11111111-1111-4111-8111-111111111111",
                 RemotePayloadRequest("native-image", "b".repeat(64))) { input, mime ->
@@ -48,7 +48,7 @@ class RemoteImageClientTest {
         }
         server.start()
         try {
-            val client = FiloClient("http://127.0.0.1:" + server.address.port, "a".repeat(64))
+            val client = applicationFixtureClient("http://127.0.0.1:" + server.address.port, "a".repeat(64))
             try {
                 client.image("11111111-1111-4111-8111-111111111111",
                     RemotePayloadRequest("native-image", "b".repeat(64))) { _, _ ->

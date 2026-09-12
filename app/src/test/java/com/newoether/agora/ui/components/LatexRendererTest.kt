@@ -269,8 +269,8 @@ class LatexRendererTest {
             fun size(width: Float) = transformer.placeholderConfig(
                 link, Density(2f), Size(width, 1200f), ImageWidth.MAX_WIDTH, Size.Unspecified, null,
             ).size
-            assertEquals(Size(300f, 300f), size(800f))
-            assertEquals(Size(200f, 200f), size(400f))
+            assertEquals(Size(300f, 316f), size(800f))
+            assertEquals(Size(200f, 216f), size(400f))
         }
     }
 

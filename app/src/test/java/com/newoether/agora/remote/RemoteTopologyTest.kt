@@ -123,7 +123,7 @@ class RemoteTopologyTest {
         }
         server.start()
         try {
-            val client = FiloClient("http://127.0.0.1:" + server.address.port + "/", "a".repeat(64))
+            val client = applicationFixtureClient("http://127.0.0.1:" + server.address.port + "/", "a".repeat(64))
             assertEquals(page, client.conversation(session))
             assertEquals(1, paths.size)
             assertTrue(paths.single().endsWith("includeActivity=true&includeMetadata=true"))

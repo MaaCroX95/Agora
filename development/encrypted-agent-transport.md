@@ -29,3 +29,24 @@ Qualification requires isolated HTTP fixtures for tampering, replay, timeout, fr
 read bounds and legitimate key rotation. A source fix, a passed focused test and an
 installed fleet update are distinct statuses. Do not declare the old mobile parser
 safe merely because a server can emit authenticated framing metadata.
+
+## Shared Filo channel
+
+Filo uses Conch's Go `crypto` and `encryptedhttp` packages without a separate
+cryptographic implementation. Its public handler accepts an authenticated challenge
+handshake and `/e2e/request`; a plain Bearer request cannot reach application code.
+A verified encrypted envelope carries the method, path, query, content type and raw
+body. Encrypted response frames carry HTTP status and ordered binary body chunks.
+The server's encryption key is memory-only and new for every gateway lifetime.
+
+Agora's default Filo client requires this channel. Read requests may cache a verified
+server key and recover once using a fresh handshake. Mutations always perform a fresh
+handshake and have no automatic retry. Upload chunks are bounded at 256 KiB, the
+channel request at 512 KiB, and decrypted response chunks at 16 KiB. Images and event
+streams use the same incremental encrypted transport. There is no plaintext fallback.
+Application fixture tests inject a plain local transport explicitly so they can test
+the API beneath encryption; production transport is covered by Go/Android fixtures.
+
+Do not enable the new client against an old public Filo server. Complete Go service
+assembly, native attachment consumption, full failure-isolation qualification and the
+owner's all-features delivery gate before updating the installed computers and phone.

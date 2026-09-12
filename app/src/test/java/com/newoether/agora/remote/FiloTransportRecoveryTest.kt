@@ -27,7 +27,7 @@ class FiloTransportRecoveryTest {
             }
             start()
         }
-    private fun client(server: HttpServer) = FiloClient("http://127.0.0.1:${server.address.port}/", token)
+    private fun client(server: HttpServer) = applicationFixtureClient("http://127.0.0.1:${server.address.port}/", token)
 
     @Test fun readRecoversWhenAPooledConnectionClosesBeforeResponseHeaders() = runBlocking {
         val requests = AtomicInteger()

@@ -23,7 +23,7 @@ class FiloStreamFailureTest {
         }
         server.start()
         try {
-            val client = FiloClient("http://127.0.0.1:${server.address.port}/", token)
+            val client = applicationFixtureClient("http://127.0.0.1:${server.address.port}/", token)
             for (stream in listOf(false, true)) {
                 try {
                     val id = "00000000-0000-0000-0000-000000000001"
@@ -52,7 +52,7 @@ class FiloStreamFailureTest {
         }
         server.start()
         try {
-            val client = FiloClient("http://127.0.0.1:${server.address.port}/", "a".repeat(64))
+            val client = applicationFixtureClient("http://127.0.0.1:${server.address.port}/", "a".repeat(64))
             for (expected in listOf(RemoteFailure.SERVICE, RemoteFailure.NETWORK)) {
                 try {
                     client.events("00000000-0000-0000-0000-000000000001").first()
