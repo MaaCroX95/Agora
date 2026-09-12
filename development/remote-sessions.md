@@ -24,16 +24,17 @@ Only the selected session owns Remote history/subscription. Changing selection, 
 visibility or read generation cancels old reads and rejects late results. In-flight writes
 stay bound to their original owner. No automatic POST retry or input replay is allowed.
 
-Protocol 2 requires Bearer authentication, explicit service address, native-steer delivery
-and live-messages output. Idle Send starts a native turn; active Send steers the exact
+Protocol 2 uses the shared authenticated encrypted channel, an explicit service address,
+native-steer delivery and live-messages output. Bearer authentication is private-loopback
+only; public callers cannot bypass the encrypted envelope. Idle Send starts a native turn; active Send steers the exact
 original turn. Stop requires its native active ID. HTTP acceptance and native client-ID
 visibility are separate confirmations; unknown delivery is reconciled without blind resend.
 Native mutations have a 210-second mobile read/whole-call budget, enclosing Filo's
 180-second private request, 90-second executor readiness and 60-second protected
 creation budgets. Ordinary reads retain their shorter timeout. Cancellation still
 closes only the request; a timeout never grants permission to replay accepted input.
-Native approvals remain with their owner. Remote attachment uploads, approvals, transcript
-editing, branching and tool-execution controls are unsupported.
+Native approvals remain with their owner. Remote supports raw photo/file uploads as defined
+below; approval handling, transcript editing, branching and tool-execution controls remain unsupported.
 
 ## Devices and local persistence
 
@@ -220,7 +221,7 @@ ChatScrollCoordinator, ChatLaunchInteractionEffects and bottom-scroll button dir
 No invented Remote renderer, scroll algorithm, keyboard behavior or animation.
 Unsupported message mutations are hidden; Copy, Select text and Info remain available.
 Top More contains Search only, with original highlights and navigation. Absent/ID titles
-display New Chat. Remote title subtitle shows a bullet plus Online, Offline or Connecting
+display New Chat. Remote title subtitle uses the shared Devices status dot beside Online, Offline or Connecting
 from its real connection/read state, replacing context usage there. The composer context
 indicator retains native telemetry; unknown context shows an empty circular indicator
 without a dash or fabricated numeric usage.
@@ -260,8 +261,9 @@ scroll. Navigation and repeated reconciliation cannot duplicate it.
 New Chat is local until Send: immediate original keyboard, no background creation/request.
 Within chat, New Chat replaces the current conversation in place using the original title,
 composer and scroll owners; the enclosing settings navigation must not create another page.
-The top plus is NOP on an existing draft. The original attachment plus/menu is present with
-Camera/Photos/Videos/Files callbacks NOP. Model catalog reads admitted by prior navigation
+The Sessions FAB enters that same local draft. The original attachment plus/menu offers
+Photos and Files with raw draft copies; Camera and Videos are absent. Picking does not
+upload or create a native task; upload begins only on Send. Model catalog reads admitted by prior navigation
 may finish; draft entry/refresh does not start them. Actual model loading says Loading…,
 not Model Unavailable. Display cached native defaults or local choices without fabrication.
 
@@ -280,8 +282,8 @@ known creation, explicit retry uses the same native ID. Unknown creation/send st
 The owner-approved creation flow uses native APIs without desktop control, preferring
 Desktop IPC and using its bundled runtime when that creation capability is unavailable.
 Verify native task identity, initial settings and first-input receipt; an empty task is
-not delivery. The installed first-send flow remains incomplete until production routing
-and independent native lifetime pass qualification. Desktop page switching is forbidden.
+not delivery. First-send qualification requires actual production routing and independent native lifetime
+evidence; installation status belongs in the delivery record. Desktop page switching is forbidden.
 
 Read-only HTTP requests may recover from a closed pooled connection on a fresh connection.
 This includes catalog, history, model, image and event-stream reads. Native mutations
