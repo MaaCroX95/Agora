@@ -24,6 +24,7 @@ internal data class RemoteState(
     val historyCursor: String? = null,
     val queued: List<RemoteQueuedMessage> = emptyList(),
     val drafts: Map<String, String> = emptyMap(), val attempts: Map<String, RemoteAttempt> = emptyMap(),
+    val attachments: Map<String, List<com.newoether.agora.model.SelectedAttachment>> = emptyMap(),
     val saving: Boolean = false, val loading: Boolean = false, val loadingMore: Boolean = false, val failure: RemoteFailure? = null,
     val restoring: Boolean = true, val storageError: Boolean = false, val addingDevice: Boolean = false,
     val editedDeviceId: String? = null,

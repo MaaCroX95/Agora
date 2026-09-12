@@ -36,7 +36,7 @@ private data class FiloInfo(
     val supportsLazyMessages: Boolean = false,
 )
 @Serializable
-private data class SendInput(val text: String, val clientId: String)
+private data class SendInput(val text: String, val clientId: String, val attachments: List<String> = emptyList())
 @Serializable
 private data class SendResult(val turnId: String, val clientId: String)
 
@@ -48,6 +48,7 @@ internal class FiloStreamException(val detail: String? = null) : IOException("Fi
 internal fun remoteErrorDetail(error: Exception): String? = when (error) {
     is FiloHttpException -> error.detail
     is FiloStreamException -> error.detail
+    is RemoteAttachmentException -> error.message
     else -> null
 }
 internal class FiloInputException : IllegalArgumentException("Invalid Filo message")
@@ -57,6 +58,7 @@ internal enum class RemoteFailure { NETWORK, AUTHENTICATION, CONFIGURATION, PROT
 internal fun classifyRemoteFailure(error: Exception): RemoteFailure = when (error) {
     is RemoteContentLimitException -> RemoteFailure.CONTENT_TOO_LARGE
     is RemoteStorageException -> RemoteFailure.STORAGE
+    is RemoteAttachmentException -> RemoteFailure.STORAGE
     is FiloConfigurationException, is FiloInputException -> RemoteFailure.CONFIGURATION
     is FiloStreamException -> RemoteFailure.SERVICE
     is FiloHttpException -> when {
@@ -210,6 +212,7 @@ internal class FiloClient(
 
     suspend fun create(): RemoteSession = json.decodeFromString(request("v1/sessions", body = "{}"))
     suspend fun models(): List<RemoteModel> = json.decodeFromString<RemoteModels>(request("v1/models")).models
+    suspend fun usage(): RemoteUsage = json.decodeFromString(request("v1/usage"))
     suspend fun setModel(id: String, model: String) {
         request("v1/sessions/${sessionId(id)}/model", body = json.encodeToString(mapOf("model" to model)))
     }
@@ -220,9 +223,13 @@ internal class FiloClient(
         request("v1/sessions/${sessionId(id)}/stop", body = json.encodeToString(mapOf("turnId" to turnId)))
     }
 
-    suspend fun send(id: String, text: String, clientId: String): String {
-        val body = json.encodeToString(SendInput(text, clientId))
-        if (text.isBlank() || body.toByteArray(Charsets.UTF_8).size > 65536) throw FiloInputException()
+    suspend fun upload(item: com.newoether.agora.model.SelectedAttachment): RemoteUpload =
+        uploadRemoteAttachment(item) { path, method, payload -> request(path, uploadBody = payload, method = method) }
+
+    suspend fun send(id: String, text: String, clientId: String, attachments: List<String> = emptyList()): String {
+        val body = json.encodeToString(SendInput(text, clientId, attachments))
+        if ((text.isBlank() && attachments.isEmpty()) || attachments.size > REMOTE_ATTACHMENT_COUNT ||
+            attachments.any { !it.matches(Regex("[a-f0-9]{32}")) } || body.toByteArray(Charsets.UTF_8).size > 65536) throw FiloInputException()
         return json.decodeFromString<SendResult>(
             request("v1/sessions/${sessionId(id)}/messages", body = body),
         ).also { require(it.clientId == clientId && it.turnId.isNotBlank()) }.turnId
@@ -236,16 +243,20 @@ internal class FiloClient(
     private suspend fun request(
         path: String, cursor: String? = null, body: String? = null, includeActivity: Boolean = false,
         includeMetadata: Boolean = false,
+        uploadBody: okhttp3.RequestBody? = null, method: String? = null,
     ): String =
         suspendCancellableCoroutine { continuation ->
-            val url = endpoint.newBuilder().addPathSegments(path).apply {
+            val url = requireNotNull(endpoint.resolve(path)).newBuilder().apply {
                 cursor?.let { addQueryParameter("cursor", it) }
                 if (includeActivity) addQueryParameter("includeActivity", "true")
                 if (includeMetadata) addQueryParameter("includeMetadata", "true")
             }.build()
             val request = Request.Builder().url(url).header("Authorization", "Bearer $token")
-                .apply { body?.let { post(it.toRequestBody("application/json".toMediaType())) } }.build()
-            val call = (if (body == null) readCalls else mutationCalls).newCall(request)
+                .apply {
+                    val payload = uploadBody ?: body?.toRequestBody("application/json".toMediaType())
+                    if (payload != null) method(method ?: "POST", payload)
+                }.build()
+            val call = (if (body == null && uploadBody == null) readCalls else mutationCalls).newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {

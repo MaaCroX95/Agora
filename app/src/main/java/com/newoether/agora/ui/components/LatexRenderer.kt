@@ -6,6 +6,8 @@ import android.graphics.Canvas
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.model.MarkdownImage
 import com.newoether.agora.ui.chat.message.MarkdownImageThumbnail
@@ -573,9 +575,11 @@ class LatexImageTransformer(
         val paths = remember(inlineImages) {
             inlineImages.values.mapNotNull { it.attachment?.path }.distinct()
         }
-        MarkdownImageThumbnail(link, image) {
-            val index = paths.indexOf(image.attachment?.path)
-            if (index >= 0) onMediaClick(paths, index)
+        Box(Modifier.padding(vertical = 8.dp)) {
+            MarkdownImageThumbnail(link, image) {
+                val index = paths.indexOf(image.attachment?.path)
+                if (index >= 0) onMediaClick(paths, index)
+            }
         }
         return true
     }
@@ -585,9 +589,10 @@ class LatexImageTransformer(
         // Markdown measures the slot here; both image components render the shared viewport.
         if (inlineImage(link) != null) {
             val side = with(LocalDensity.current) { 300.dp.toPx() }
-            val viewport = remember(side) {
+            val verticalSpace = with(LocalDensity.current) { 16.dp.toPx() }
+            val viewport = remember(side, verticalSpace) {
                 object : Painter() {
-                    override val intrinsicSize = Size(side, side)
+                    override val intrinsicSize = Size(side, side + verticalSpace)
                     override fun DrawScope.onDraw() = Unit
                 }
             }
@@ -655,7 +660,7 @@ class LatexImageTransformer(
             val side = with(density) {
                 if (containerSize.isUnspecified) 300f else containerSize.width.toDp().value.coerceIn(1f, 300f)
             }
-            return PlaceholderConfig(Size(side, side))
+            return PlaceholderConfig(Size(side, side + 16f))
         }
         val request = decodeLatexLink(link) ?: return super.placeholderConfig(
             link, density, containerSize, imageWidth, imageSize, imageSizeChanged

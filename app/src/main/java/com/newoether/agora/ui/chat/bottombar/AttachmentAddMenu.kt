@@ -39,6 +39,8 @@ internal fun AttachmentAddMenu(
     onPhotos: () -> Unit,
     onVideos: () -> Unit,
     onFiles: () -> Unit,
+    showCamera: Boolean = true,
+    showVideos: Boolean = true,
 ) {
     var showAddMenu by remember { mutableStateOf(false) }
     var lastAddDismissTime by remember { mutableLongStateOf(0L) }
@@ -80,9 +82,9 @@ internal fun AttachmentAddMenu(
             matchTextFieldWidth = false,
             shape = RoundedCornerShape(16.dp),
         ) {
-            AttachmentMenuItem(Icons.Default.PhotoCamera, R.string.camera) { select(onCamera) }
+            if (showCamera) AttachmentMenuItem(Icons.Default.PhotoCamera, R.string.camera) { select(onCamera) }
             AttachmentMenuItem(Icons.Default.Image, R.string.photos) { select(onPhotos) }
-            AttachmentMenuItem(Icons.Default.Videocam, R.string.videos) { select(onVideos) }
+            if (showVideos) AttachmentMenuItem(Icons.Default.Videocam, R.string.videos) { select(onVideos) }
             AttachmentMenuItem(Icons.Default.AttachFile, R.string.files) { select(onFiles) }
         }
     }

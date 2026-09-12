@@ -75,6 +75,7 @@ internal fun RemoteConversation(
     val field = remember(owner) { TextFieldState(state.drafts[owner].orEmpty()) }
     val focus = remember { FocusRequester() }
     val attempt = state.attempts[owner]
+    val attachments = state.attachments[owner].orEmpty()
     val running = state.runtime?.isRunning == true
     val stopping = state.isStopping
     val ready = state.isDraft || state.runtime?.status in setOf("idle", "active", "ready")
@@ -340,12 +341,16 @@ internal fun RemoteConversation(
                 statusContent = {
                     ComposerStatusColumn(state.queued, { it.id }) { QueuedMessageRow(text = it.text) }
                 },
+                attachmentContent = {
+                    if (attachments.isNotEmpty()) AttachmentPreviewRow(
+                        attachments = attachments, editable = active && !submitting,
+                        onRemove = { vm.removeAttachment(owner, it) }, onRetry = { vm.retryAttachment(owner, it) },
+                        onAllMediaClick = onMediaClick, onFileContentClick = null, onPdfPagesClick = null,
+                    )
+                },
                 controls = {
                     ComposerControlGroup {
-                        AttachmentAddMenu(
-                            enabled = active && !submitting,
-                            onCamera = {}, onPhotos = {}, onVideos = {}, onFiles = {},
-                        )
+                        RemoteAttachmentPicker(owner, active && !submitting, vm)
                         ComposerModelSelector(
                             displayText = (state.models.firstOrNull { it.id == state.selectedModel }?.name
                                 ?: state.selectedModel)?.replace('-', ' ') ?: stringResource(
@@ -477,9 +482,9 @@ internal fun RemoteConversation(
                             }
                         }
                     }
-                    val showStop = running && !stopping && field.text.isBlank()
+                    val showStop = running && !stopping && field.text.isBlank() && attachments.isEmpty()
                     ComposerSendButton(isActionable = active && !stopping && !state.controlling && !submitting &&
-                        (if (showStop) state.runtime?.activeTurnId != null else field.text.isNotBlank()),
+                        (if (showStop) state.runtime?.activeTurnId != null else field.text.isNotBlank() || attachments.isNotEmpty()),
                         isBusy = submitting || stopping, showStop = showStop,
                         onBusyShown = { shownBusyAttempt = attempt?.clientId }) {
                         if (showStop) vm.stop()

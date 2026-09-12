@@ -150,9 +150,9 @@ class MarkdownImageLayoutTest {
             val b = requireNotNull(bounds[second])
             val side = minOf(width, 300f) * density
             assertEquals(side, a.width, 1f)
-            assertEquals(side, a.height, 1f)
+            assertEquals(side + 16f * density, a.height, 1f)
             assertEquals(side, b.width, 1f)
-            assertEquals(side, b.height, 1f)
+            assertEquals(side + 16f * density, b.height, 1f)
             assertTrue("Images overlap: $a / $b", a.bottom <= b.top)
             val message = requireNotNull(bounds["message"])
             assertTrue("Message did not reserve the final image: $message / $b", message.bottom >= b.bottom)

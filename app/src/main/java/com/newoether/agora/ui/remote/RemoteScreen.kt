@@ -72,7 +72,8 @@ internal fun RemoteOverlay(
         val imageDirectory = File(context.cacheDir, "remote-images")
         RemoteViewModel(RemoteConnectionStore(File(context.noBackupFilesDir, "remote-connections.json")),
             com.newoether.agora.tool.ToolImageStore(context, imageDirectory),
-            com.newoether.agora.remote.RemoteImageCache(imageDirectory))
+            com.newoether.agora.remote.RemoteImageCache(imageDirectory),
+            attachmentStore = com.newoether.agora.remote.RemoteAttachmentStore(context))
     }
     val messageHandler by rememberUpdatedState(onMessage)
     LaunchedEffect(remote, visible) {
@@ -134,6 +135,8 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
             page.third != null -> RemoteAddDevice(displayed, vm, back) { forward = false; focus.clearFocus() }
             page.second != null -> RemoteConversation(displayed, vm, settings, active && current, back, onSnackbarOffsetChanged, onMediaClick, onMessage)
             page.first != null -> {
+                var showUsage by remember(displayed.deviceId) { mutableStateOf(false) }
+                if (showUsage && current && active) RemoteUsageSheet(vm) { showUsage = false }
                 val listState = rememberLazyListState()
                 val visibleRows = remember { mutableStateMapOf<String, Boolean>() }
                 LaunchedEffect(current, active, displayed.deviceId, displayed.sessions) {
@@ -152,8 +155,15 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                     listState = listState,
                     title = stringResource(R.string.remote_sessions), onBack = back,
                     actions = {
-                        IconButton(onClick = { forward = true; vm.newSession() }, enabled = current && active && !displayed.controlling) {
-                            Icon(Icons.Default.Add, stringResource(R.string.new_chat))
+                        IconButton(onClick = { showUsage = true }, enabled = current && active) {
+                            Icon(Icons.Default.DataUsage, stringResource(R.string.remote_usage))
+                        }
+                    },
+                    floatingActionButton = {
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.BottomEnd) {
+                            FloatingActionButton(onClick = { if (current && active && !displayed.controlling) { forward = true; vm.newSession() } }) {
+                                Icon(Icons.Default.Add, stringResource(R.string.new_chat))
+                            }
                         }
                     },
                 ) {

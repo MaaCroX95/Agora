@@ -328,3 +328,22 @@ notification. Neither desktop ownership nor generation disables Archive. Update/
 a row only after confirmed native success; failures use Snackbar and never hide the task.
 Permanent deletion, local record deletion and stopping a writer are prohibited. Cancel stale list reads before a mutation;
 late results cannot alter another selected device and repeated pending clicks do not resend.
+
+## Raw attachments and delivery gate (2026-09-12)
+Remote picks photos and files with the shared attachment menu and preview row. It
+never offers video, extracts documents, converts images, or uploads when New Chat
+opens. Private draft copies preserve the source bytes. Sending first uploads
+bounded 256 KiB chunks, confirms size and SHA-256 on the selected target, then
+submits only server-issued attachment identities. Filo resolves those identities
+to raw target file references; unconfirmed uploads must not reach native input.
+Failures remain snackbar messages and cannot erase a draft or replay a native send.
+
+The Sessions header opens native account Usage; New Chat lives in the bottom-right
+FAB. Unknown usage stays unavailable. Reading usage never consumes reset credits.
+Inline image blocks reserve the complete square plus 8 dp above and below before
+decoding, and keep exactly that geometry after decode.
+
+Owner release gate: all requested Agora features and the complete regression must
+pass before any further Agora deployment. Partial feature builds are development
+checkpoints only. The Filo runtime assembly, actual encrypted upload/native-input
+round trip and owner-visible phone acceptance remain separate required evidence.

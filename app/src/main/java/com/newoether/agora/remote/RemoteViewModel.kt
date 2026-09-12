@@ -25,9 +25,16 @@ internal class RemoteViewModel(
     private val imageStore: com.newoether.agora.tool.ToolImageStore? = null,
     private val imageCache: RemoteImageCache? = null,
     projectionDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
+    private val attachmentStore: RemoteAttachmentStore? = null,
     createClient: (String, String) -> FiloClient = { address, token -> FiloClient(address, token) },
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(RemoteState())
+    private val attachmentDrafts = RemoteAttachmentDrafts(attachmentStore, viewModelScope, mutableState) { owner, error ->
+        if (state.value.owner == owner) trace("attachment_failed", error)
+    }
+    fun addAttachments(owner: String, uris: List<android.net.Uri>) = attachmentDrafts.add(owner, uris)
+    fun removeAttachment(owner: String, id: String) = attachmentDrafts.remove(owner, id)
+    fun retryAttachment(owner: String, id: String) = attachmentDrafts.retry(owner, id)
     val state = mutableState.asStateFlow()
     private val noticeChannel = Channel<RemoteNotice>(Channel.BUFFERED)
     val notices = noticeChannel.receiveAsFlow()
@@ -124,6 +131,12 @@ internal class RemoteViewModel(
     }
 
     fun restoreConnections() = deviceDirectory.restoreConnections()
+    suspend fun usage(): RemoteUsage? {
+        val device = state.value.deviceId ?: return null
+        return try { clients[device]?.usage()?.takeIf { state.value.deviceId == device } }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { if (state.value.deviceId == device) trace("usage_failed", error); null }
+    }
 
     fun addDevice() = editDevice(null)
 
@@ -685,15 +698,23 @@ internal class RemoteViewModel(
         val owner = snapshot.owner ?: return
         val client = clients[snapshot.deviceId] ?: return
         val text = snapshot.drafts[owner].orEmpty()
-        if (text.isBlank() || snapshot.attempts[owner]?.delivery in
+        val attachments = snapshot.attachments[owner].orEmpty()
+        if ((text.isBlank() && attachments.isEmpty()) || snapshot.attempts[owner]?.delivery in
             setOf(RemoteDelivery.SUBMITTING, RemoteDelivery.ACCEPTED, RemoteDelivery.UNKNOWN)) return
+        if (attachments.any { it.importState != com.newoether.agora.model.AttachmentImportState.READY }) {
+            trace("send_failed", RemoteAttachmentException("Finish or remove pending attachments before sending")); return
+        }
         val selected = selectionEpoch
         val attempt = RemoteAttempt(UUID.randomUUID().toString(), text, RemoteDelivery.SUBMITTING)
         mutableState.value = state.value.copy(attempts = state.value.attempts + (owner to attempt))
         viewModelScope.launch {
             var knownSession = !snapshot.isDraft
             var inputStarted = false
+            var uploadComplete = false
             try {
+                val uploads = attachments.map { client.upload(it) }
+                uploadComplete = true
+                if (selected != selectionEpoch || clients[snapshot.deviceId] !== client) throw FiloInputException()
                 var sessionId = snapshot.session!!.id
                 if (snapshot.isDraft) {
                     val created = snapshot.draftNativeSession ?: client.create()
@@ -718,7 +739,7 @@ internal class RemoteViewModel(
                     refresh()
                 }
                 inputStarted = true
-                client.send(sessionId, text, attempt.clientId)
+                client.send(sessionId, text, attempt.clientId, uploads.map { it.id })
                 if (state.value.attempts[owner]?.clientId == attempt.clientId &&
                     state.value.attempts[owner]?.delivery == RemoteDelivery.SUBMITTING) {
                     mutableState.value = state.value.copy(attempts = state.value.attempts +
@@ -733,7 +754,7 @@ internal class RemoteViewModel(
                 }
                 if (state.value.attempts[owner]?.clientId == attempt.clientId &&
                     state.value.attempts[owner]?.delivery == RemoteDelivery.SUBMITTING) {
-                    val rejected = knownSession && !inputStarted || error is FiloInputException ||
+                    val rejected = !uploadComplete || knownSession && !inputStarted || error is FiloInputException ||
                         error is FiloHttpException && error.status in setOf(400, 401, 403, 404, 409, 413, 415, 429)
                     mutableState.value = state.value.copy(attempts = state.value.attempts +
                         (owner to attempt.copy(delivery = if (rejected) RemoteDelivery.REJECTED else RemoteDelivery.UNKNOWN)))
@@ -746,7 +767,9 @@ internal class RemoteViewModel(
         if (state.value.attempts[owner]?.clientId != attempt.clientId) return
         if (state.value.attempts[owner]?.delivery == RemoteDelivery.DELIVERED || state.value.owner != owner) return
         val message = fresh.firstOrNull { it.role == "user" && it.clientId == attempt.clientId } ?: return
+        state.value.attachments[owner].orEmpty().forEach { attachmentStore?.remove(it) }
         mutableState.value = state.value.copy(
+            attachments = state.value.attachments - owner,
             drafts = if (state.value.drafts[owner] == attempt.text) state.value.drafts - owner else state.value.drafts,
             attempts = state.value.attempts + (owner to attempt.copy(delivery = RemoteDelivery.DELIVERED)),
         )
