@@ -163,7 +163,7 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                     floatingActionButton = {
                         Box(Modifier.fillMaxWidth().padding(end = 24.dp, bottom = 8.dp), contentAlignment = Alignment.BottomEnd) {
                             FloatingActionButton(modifier = Modifier.size(64.dp), shape = CircleShape, onClick = { if (current && active && !displayed.controlling) { forward = true; vm.newSession() } }) {
-                                Icon(Icons.Default.Add, stringResource(R.string.new_chat))
+                                Icon(Icons.Default.Add, stringResource(R.string.new_chat), Modifier.size(32.dp))
                             }
                         }
                     },
