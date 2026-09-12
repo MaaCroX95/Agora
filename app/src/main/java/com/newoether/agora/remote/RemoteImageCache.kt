@@ -21,13 +21,24 @@ internal class RemoteImageCache(private val directory: File, private val maxByte
                 synchronized(lock) {
                     entries[key] = image
                     File(image.path).setLastModified(System.currentTimeMillis())
-                    val files = directory.listFiles().orEmpty().filter { it.isFile && !it.name.startsWith(".") }
-                        .sortedBy { it.lastModified() }.toMutableList()
+                    val current = File(image.path).absolutePath
+                    val recency = entries.values.mapIndexed { index, entry ->
+                        File(entry.path).absolutePath to index
+                    }.toMap()
+                    val files = directory.listFiles().orEmpty()
+                        .filter { it.isFile && !it.name.startsWith(".") }
                     var bytes = files.sumOf { it.length() }
-                    while ((bytes > maxBytes || files.size > 64) && files.size > 1) {
-                        val old = files.removeAt(0)
-                        bytes -= old.length()
-                        if (old.absolutePath != image.path) old.delete()
+                    var count = files.size
+                    // Filesystem timestamp resolution cannot establish access order.
+                    // Keep the image being returned, and count a victim only after deletion.
+                    val victims = files.filter { it.absolutePath != current }.sortedWith(
+                        compareBy<File> { recency[it.absolutePath] ?: -1 }
+                            .thenBy { it.lastModified() }.thenBy { it.name },
+                    )
+                    for (old in victims) {
+                        if (bytes <= maxBytes && count <= 64) break
+                        val size = old.length()
+                        if (old.delete()) { bytes -= size; count-- }
                     }
                     entries.entries.removeAll { !File(it.value.path).isFile }
                     image

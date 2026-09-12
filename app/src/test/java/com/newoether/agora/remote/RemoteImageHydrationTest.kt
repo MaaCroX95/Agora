@@ -231,4 +231,26 @@ class RemoteImageHydrationTest {
             assertTrue(directory.listFiles().orEmpty().sumOf { it.length() } <= 12)
         } finally { directory.deleteRecursively() }
     }
+    @Test fun evictionUsesAccessOrderWhenFileTimesTieOrPutCurrentImageFirst() = runTest {
+        val directory = Files.createTempDirectory("filo-cache-order-").toFile()
+        try {
+            val cache = RemoteImageCache(directory, maxBytes = 16)
+            var reads = 0
+            suspend fun load(key: String) = cache.load(key) {
+                val file = File(directory, "image-${++reads}").apply { writeBytes(ByteArray(8)) }
+                ToolImageAttachment(file.path, "image/png", 8, sha256 = key)
+            }
+            val first = load("one")
+            val second = load("two")
+            directory.listFiles().orEmpty().forEach { assertTrue(it.setLastModified(1)) }
+            assertEquals(first, load("one"))
+            load("three")
+            assertTrue(File(first.path).exists())
+            assertFalse(File(second.path).exists())
+            File(first.path).setLastModified(System.currentTimeMillis() + 60_000)
+            load("four")
+            assertFalse(File(first.path).exists())
+            assertEquals(16, directory.listFiles().orEmpty().sumOf { it.length() }.toInt())
+        } finally { directory.deleteRecursively() }
+    }
 }
