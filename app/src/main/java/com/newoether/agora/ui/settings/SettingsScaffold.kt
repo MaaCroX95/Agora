@@ -239,6 +239,7 @@ fun CollapsingSettingsLazyScaffold(
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
     contentHorizontalPadding: Dp = 16.dp,
+    contentBottomPadding: Dp = 32.dp,
     actions: @Composable RowScope.() -> Unit = {},
     floatingActionButton: @Composable () -> Unit = {},
     content: LazyListScope.() -> Unit
@@ -270,7 +271,7 @@ fun CollapsingSettingsLazyScaffold(
         ) {
             item { Spacer(modifier = Modifier.height(titleAreaHeight)) }
             content()
-            item { Spacer(modifier = Modifier.height(32.dp)) }
+            item { Spacer(modifier = Modifier.height(contentBottomPadding)) }
         }
         CollapsingSettingsTitleBar(
             title = title,

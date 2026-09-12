@@ -99,6 +99,8 @@ internal fun RemoteConversation(
     var showOpenAiServiceTierSheet by remember(owner) { mutableStateOf(false) }
     val effortChoices = state.settingsModel?.reasoningEfforts.orEmpty()
     val tierChoices = state.settingsModel?.serviceTiers.orEmpty()
+    val ultraFastLabel = stringResource(R.string.openai_service_tier_ultrafast)
+    val tierLabels = tierChoices.associate { it.id to if (it.id == "ultrafast") ultraFastLabel else it.name }
     val settingsEnabled = active && state.canEditSettings
     val thinkingEnabled = state.selectedEffort != null && state.selectedEffort != "none"
     val thinkingLevel = state.selectedEffort.orEmpty()
@@ -467,7 +469,7 @@ internal fun RemoteConversation(
                                                     text = if (!serviceTierKnown) "" else openAiServiceTierShortLabel(
                                                         openAiServiceTierEnabled,
                                                         openAiServiceTier,
-                                                        nativeLabel = tierChoices.firstOrNull { it.id == openAiServiceTier }?.name
+                                                        nativeLabel = tierLabels[openAiServiceTier]
                                                             ?: openAiServiceTier,
                                                     ),
                                                     style = MaterialTheme.typography.labelSmall,
@@ -528,7 +530,7 @@ internal fun RemoteConversation(
                     enabled = openAiServiceTierEnabled, tier = openAiServiceTier,
                     onEnabledChange = {}, onTierChange = { vm.setServiceTier(it.takeIf(String::isNotEmpty)) },
                     availableTiers = listOf("") + tierChoices.filterNot { it.id == "default" }.map { it.id },
-                    tierLabels = tierChoices.associate { it.id to it.name } +
+                    tierLabels = tierLabels +
                         ("" to stringResource(R.string.openai_service_tier_default)),
                     controlsEnabled = settingsEnabled, showHeader = false, showEnabledToggle = false,
                     settingsRevision = state.settingsRevision,

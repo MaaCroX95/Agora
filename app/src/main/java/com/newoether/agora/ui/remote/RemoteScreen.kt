@@ -153,6 +153,7 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                 }
                 CollapsingSettingsLazyScaffold(
                     listState = listState,
+                    contentBottomPadding = 104.dp,
                     title = stringResource(R.string.remote_sessions), onBack = back,
                     actions = {
                         IconButton(onClick = { showUsage = true }, enabled = current && active) {
@@ -160,8 +161,8 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                         }
                     },
                     floatingActionButton = {
-                        Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.BottomEnd) {
-                            FloatingActionButton(onClick = { if (current && active && !displayed.controlling) { forward = true; vm.newSession() } }) {
+                        Box(Modifier.fillMaxWidth().padding(end = 24.dp, bottom = 8.dp), contentAlignment = Alignment.BottomEnd) {
+                            FloatingActionButton(modifier = Modifier.size(64.dp), shape = CircleShape, onClick = { if (current && active && !displayed.controlling) { forward = true; vm.newSession() } }) {
                                 Icon(Icons.Default.Add, stringResource(R.string.new_chat))
                             }
                         }

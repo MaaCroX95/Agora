@@ -351,3 +351,17 @@ Owner release gate: all requested Agora features and the complete regression mus
 pass before any further Agora deployment. Partial feature builds are development
 checkpoints only. The Filo runtime assembly, actual encrypted upload/native-input
 round trip and owner-visible phone acceptance remain separate required evidence.
+
+
+## Usage presentation correction (2026-09-13)
+Retain the existing Usage bottom-sheet layout and ordering. Use a bold title, semibold
+model labels and an 8dp progress bar. Center the circular loading indicator horizontally
+and vertically inside the 96dp loading content area below the title. Format window durations into localized days,
+hours and remaining minutes without discarding precision. Loading-to-content fades
+and sheet height growth animate over the shared 250ms transition; reduced motion
+keeps opacity feedback but removes spatial growth. The original modal entrance
+remains the sheet owner. The Sessions New Chat FAB is circular and 64dp across, with effective 24dp
+end and bottom spacing beyond the system navigation inset, counted only once.
+The scrollable list reserves 104dp below its last row: the 64dp action, 24dp
+bottom inset and a 16dp clear gap. The final row must scroll fully above the FAB.
+Remote exposes the native ultrafast tier when advertised for that device/model, keeps its wire ID unchanged and uses the localized Ultra Fast label. Do not invent availability for another model/account.

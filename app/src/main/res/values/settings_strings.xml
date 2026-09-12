@@ -496,5 +496,5 @@
     <string name="openai_service_tier_scale">Scale</string>
     <string name="openai_service_tier_priority">Priority</string>
     <string name="openai_service_tier_fast">Fast</string>
-    <string name="openai_service_tier_ultrafast">Ultrafast</string>
+    <string name="openai_service_tier_ultrafast">Ultra Fast</string>
 </resources>

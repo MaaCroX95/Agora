@@ -144,6 +144,21 @@ class RemoteSettingsTest {
         vm.setVisible(false)
     }
 
+    @Test fun ultraFastIsAppliedOnceOnlyWhenTheNativeModelOffersIt() = runTest(dispatcher) {
+        coEvery { client.models() } returns listOf(model.copy(
+            serviceTiers = model.serviceTiers.orEmpty() + RemoteServiceTier("ultrafast", "Ultrafast"),
+        ))
+        val vm = open()
+        vm.setServiceTier("ultrafast"); runCurrent()
+        assertEquals("ultrafast", vm.state.value.selectedServiceTier)
+        coVerify(exactly = 1) {
+            client.updateSettings("session", RemoteSettings(serviceTier = "ultrafast", updateServiceTier = true))
+        }
+        assertTrue(vm.state.value.runtime!!.isRunning)
+        coVerify(exactly = 0) { client.send(any(), any(), any()) }
+        vm.setVisible(false)
+    }
+
     @Test fun changingModelResetsOnlyIncompatibleOptions() {
         val state = RemoteState(session = session, runtime = runtime.copy(effort = "ultra", serviceTier = "priority"), models = listOf(model))
         assertEquals(RemoteSettings("small", "low", null, true),
