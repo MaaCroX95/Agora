@@ -25,7 +25,10 @@ class DatabaseStartupSafetySourceContractTest {
             .map { it.relativeTo(root).invariantSeparatorsPath }
             .toSet()
         assertEquals(
-            setOf("com/newoether/agora/AgoraApplication.kt"),
+            setOf(
+                "com/newoether/agora/AgoraApplication.kt",
+                "com/newoether/agora/data/ConversationExportSnapshotReader.kt",
+            ),
             directBuilders,
         )
     }

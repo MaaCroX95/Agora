@@ -21,6 +21,7 @@ import com.newoether.agora.data.local.migration.MIGRATION_28_29
 import com.newoether.agora.data.local.migration.MIGRATION_29_30
 import com.newoether.agora.data.local.migration.MIGRATION_30_31
 import com.newoether.agora.data.local.migration.MIGRATION_31_32
+import java.util.concurrent.Executor
 
 @Database(
     entities = [
@@ -213,19 +214,25 @@ abstract class ChatDatabase : RoomDatabase() {
          * The compatibility check is repeated here as a defense-in-depth boundary for
          * Workers or future callers that do not enter through AgoraApplication.
          */
-        fun build(context: Context): ChatDatabase {
+        fun build(
+            context: Context,
+            queryExecutor: Executor? = null,
+            transactionExecutor: Executor? = null,
+        ): ChatDatabase {
             val compatibility = inspectCompatibility(context)
             check(compatibility.canOpen) {
                 "Refusing to open incompatible Agora database: " +
                     compatibility.javaClass.simpleName
             }
 
-            val database = Room.databaseBuilder(
+            val builder = Room.databaseBuilder(
                 context.applicationContext,
                 ChatDatabase::class.java,
                 DB_NAME,
             ).addMigrations(*ALL_MIGRATIONS.toTypedArray())
-                .build()
+            queryExecutor?.let { builder.setQueryExecutor(it) }
+            transactionExecutor?.let { builder.setTransactionExecutor(it) }
+            val database = builder.build()
 
             return try {
                 // Force Room to run supported migrations and schema validation before the

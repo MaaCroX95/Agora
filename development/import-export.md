@@ -60,11 +60,18 @@ destination capacity, checks space again while streaming, and deletes partial fi
 custom-font owner retains its separate 64 MiB limit. Sandbox and proot payloads remain excluded rather
 than becoming resources.
 
-A conversation export reads conversation settings before entering Room, then captures Conversations,
-Runs, paged Messages, Tasks, Loops, and every raw media reference into a temporary typed JSONL spool
-inside one `ChatDatabase` transaction. The transaction performs no destination, ZIP, or media I/O.
-Only after it returns may export open the destination, read media, rewrite archive paths, and emit
-`conversations.json`. The spool is deleted on success, failure, and coroutine cancellation.
+A conversation export reads conversation settings before entering the database, then opens an
+independent `ChatDatabase` instance and captures Conversations, Runs, paged Messages, Tasks, Loops,
+and every raw media reference into a temporary typed JSONL spool inside one DEFERRED read
+transaction. The independent instance uses dedicated background-priority executors and never
+occupies the process Room transaction executor, connection pool, or executors. Under WAL, foreground
+generation may continue committing atomic checkpoints: a checkpoint committed before the export
+snapshot is established is included, later checkpoints are excluded, and no partial transaction is
+visible. The read transaction performs no destination, ZIP, or media I/O. Only after it returns may
+export open the destination, read media, rewrite archive paths, and emit `conversations.json`. The
+snapshot database and its executors are released on success, failure, and coroutine cancellation.
+The spool is deleted on success, failure, and coroutine cancellation. Import terminalizes an
+archived active Run as recovered STOPPED while retaining its last committed message checkpoint.
 
 ## 3. Portable `settings.json` allowlist
 

@@ -107,10 +107,10 @@ private inline fun <reified T : Enum<T>> safeValueOf(name: String): T? =
  * engines. Extracted out of [ChatViewModel] (Phase E5); the ViewModel keeps thin
  * delegating wrappers and supplies [onDataChanged] to refresh its own data counts.
  *
- * NOTE: [chatDao] and [settingsManager] are retained here (not replaced by repos)
- * because they are passed directly to [DataExporter] / [DataImporter], which perform
- * bulk read/write operations across conversations, messages, and settings in a single
- * transaction — these data-layer utilities genuinely need raw DAO/DataStore access.
+ * NOTE: [chatDao] and [settingsManager] are retained here (not replaced by repos) because the
+ * importer performs bulk database writes and both import/export own portable settings transfer.
+ * Export conversation reads use a dedicated snapshot database and never borrow these foreground
+ * Room dependencies.
  * All other managers use repositories uniformly.
  */
 class ImportExportManager(
@@ -170,8 +170,6 @@ class ImportExportManager(
             try {
                 val exporter = DataExporter(
                     app,
-                    database,
-                    chatDao,
                     settingsManager,
                     memoryManager,
                     skillManager,

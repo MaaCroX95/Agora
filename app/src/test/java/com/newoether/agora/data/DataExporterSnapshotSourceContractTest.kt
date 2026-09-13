@@ -7,23 +7,33 @@ import org.junit.Test
 
 class DataExporterSnapshotSourceContractTest {
     @Test
-    fun roomTransactionCapturesTheCompleteConversationGraphWithPagedMessages() {
+    fun independentDeferredReaderCapturesTheCompleteConversationGraphWithPagedMessages() {
         val exporter = sourceFile(
             "app/src/main/java/com/newoether/agora/data/DataExporter.kt",
+        )
+        val reader = sourceFile(
+            "app/src/main/java/com/newoether/agora/data/ConversationExportSnapshotReader.kt",
         )
         val capture = section(
             exporter,
             "private suspend fun captureConversationSnapshot(",
             "private suspend fun forEachSnapshotRecord(",
         )
-        val transaction = capture.indexOf("database.withTransaction {")
-        val conversations = capture.indexOf("chatDao.getAllConversationsList()")
-        val runs = capture.indexOf("chatDao.getRunsForConversationSnapshot(conversation.id)")
-        val messages = capture.indexOf("forEachMessagePage { page ->")
-        val tasks = capture.indexOf("chatDao.getAllTasksList()")
-        val loops = capture.indexOf("chatDao.getAllLoopsList()")
+        val transaction = reader.indexOf(
+            "connection.withTransaction(Transactor.SQLiteTransactionType.DEFERRED)",
+        )
+        val conversations = reader.indexOf("snapshotDao.getAllConversationsList()")
+        val runs = reader.indexOf("snapshotDao.getRunsForConversationSnapshot(conversation.id)")
+        val messages = reader.indexOf("snapshotDao.getMessagesPage(afterMessageId, MESSAGE_PAGE_SIZE)")
+        val tasks = reader.indexOf("snapshotDao.getAllTasksList()")
+        val loops = reader.indexOf("snapshotDao.getAllLoopsList()")
 
         assertTrue(transaction >= 0)
+        assertTrue(reader.contains("queryExecutor = snapshotExecutor"))
+        assertTrue(reader.contains("transactionExecutor = snapshotExecutor"))
+        assertTrue(reader.contains("snapshotDatabase.useReaderConnection"))
+        assertTrue(reader.contains("finally {\n            snapshotDatabase.close()"))
+        assertTrue(reader.contains("snapshotExecutor.shutdown()"))
         assertTrue(conversations > transaction)
         assertTrue(runs > conversations)
         assertTrue(messages > runs)
@@ -35,14 +45,11 @@ class DataExporterSnapshotSourceContractTest {
         assertTrue(capture.contains("toolCallJson = message.toolCallJson"))
         assertTrue(capture.contains("attachmentMeta = message.attachmentMeta"))
 
-        val paging = section(
-            exporter,
-            "private suspend fun forEachMessagePage(",
-            "private fun BufferedWriter.writeSnapshotRecord(",
-        )
-        assertTrue(paging.contains("chatDao.getMessagesPage(afterId, MESSAGE_PAGE_SIZE)"))
-        assertTrue(paging.contains("afterId = page.last().id"))
-        assertTrue(paging.contains("if (page.size < MESSAGE_PAGE_SIZE) break"))
+        assertTrue(reader.contains("afterMessageId = page.last().id"))
+        assertTrue(reader.contains("if (page.size < MESSAGE_PAGE_SIZE) break"))
+        assertFalse(exporter.contains("database.withTransaction"))
+        assertFalse(exporter.contains("private val database: ChatDatabase"))
+        assertFalse(exporter.contains("private val chatDao: ChatDao"))
     }
 
     @Test
@@ -78,6 +85,9 @@ class DataExporterSnapshotSourceContractTest {
         val exporter = sourceFile(
             "app/src/main/java/com/newoether/agora/data/DataExporter.kt",
         )
+        val reader = sourceFile(
+            "app/src/main/java/com/newoether/agora/data/ConversationExportSnapshotReader.kt",
+        )
         val mediaPlan = section(
             exporter,
             "private suspend fun buildMediaExportPlan(",
@@ -107,13 +117,13 @@ class DataExporterSnapshotSourceContractTest {
         assertTrue(exporter.contains("finally {\n            conversationSpool?.delete()"))
         assertTrue(
             Regex("currentCoroutineContext\\(\\)\\.ensureActive\\(\\)")
-                .findAll(exporter)
+                .findAll(exporter + reader)
                 .count() >= 5,
         )
     }
 
     @Test
-    fun manualAndAutomaticExportsReceiveTheProcessDatabase() {
+    fun manualAndAutomaticExportsDoNotReceiveTheProcessDatabase() {
         val exporter = sourceFile(
             "app/src/main/java/com/newoether/agora/data/DataExporter.kt",
         )
@@ -127,13 +137,15 @@ class DataExporterSnapshotSourceContractTest {
             "app/src/main/java/com/newoether/agora/di/AppContainer.kt",
         )
 
-        assertTrue(exporter.contains("private val database: ChatDatabase"))
-        assertTrue(Regex("DataExporter\\(\\s*app,\\s*database,\\s*chatDao,").containsMatchIn(manager))
-        assertTrue(backup.contains("private val database: ChatDatabase"))
-        assertTrue(Regex("DataExporter\\(\\s*context,\\s*database,\\s*chatDao,").containsMatchIn(backup))
+        assertFalse(exporter.contains("private val database: ChatDatabase"))
+        assertFalse(exporter.contains("private val chatDao: ChatDao"))
+        assertTrue(Regex("DataExporter\\(\\s*app,\\s*settingsManager,").containsMatchIn(manager))
+        assertFalse(backup.contains("private val database: ChatDatabase"))
+        assertFalse(backup.contains("private val chatDao: ChatDao"))
+        assertTrue(Regex("DataExporter\\(\\s*context,\\s*settingsManager,").containsMatchIn(backup))
         assertTrue(
             container.contains(
-                "AutoBackupManager(appContext, database, settingsManager, chatDao, memoryManager, skillManager)",
+                "AutoBackupManager(appContext, settingsManager, memoryManager, skillManager)",
             ),
         )
     }
@@ -143,8 +155,13 @@ class DataExporterSnapshotSourceContractTest {
         val contract = sourceFile("development/import-export.md")
 
         assertTrue(contract.contains("temporary typed JSONL spool"))
-        assertTrue(contract.contains("inside one `ChatDatabase` transaction"))
-        assertTrue(contract.contains("The transaction performs no destination, ZIP, or media I/O."))
+        assertTrue(contract.contains("independent `ChatDatabase` instance"))
+        assertTrue(Regex("one DEFERRED read\\s+transaction").containsMatchIn(contract))
+        assertTrue(
+            Regex("never\\s+occupies the process Room transaction executor")
+                .containsMatchIn(contract),
+        )
+        assertTrue(contract.contains("The read transaction performs no destination, ZIP, or media I/O."))
         assertTrue(contract.contains("The spool is deleted on success, failure, and coroutine cancellation."))
     }
 

@@ -9,8 +9,6 @@ import android.net.Uri
 import android.os.Environment
 import com.newoether.agora.MainActivity
 import com.newoether.agora.R
-import com.newoether.agora.data.local.ChatDao
-import com.newoether.agora.data.local.ChatDatabase
 import com.newoether.agora.util.DebugLog
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
@@ -31,9 +29,7 @@ enum class BackupResult { NOT_DUE, SUCCESS, FAILED }
 
 class AutoBackupManager(
     private val context: Context,
-    private val database: ChatDatabase,
     private val settingsManager: SettingsManager,
-    private val chatDao: ChatDao,
     private val memoryManager: MemoryManager,
     private val skillManager: SkillManager,
 ) {
@@ -119,8 +115,6 @@ class AutoBackupManager(
 
             val exporter = DataExporter(
                 context,
-                database,
-                chatDao,
                 settingsManager,
                 memoryManager,
                 skillManager,
