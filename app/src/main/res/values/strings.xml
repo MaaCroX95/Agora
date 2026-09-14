@@ -16,7 +16,8 @@
     <string name="tools">Tools</string>
     <string name="code_execution">Code Execution</string>
     <string name="google_search">Google Search</string>
-    <string name="openai_search">OpenAI Search</string>\n    <string name="openai_search_global_desc">Allow provider-hosted OpenAI Search for OpenAI-compatible Responses conversations. Off by default; individual conversations can turn it off when enabled globally.</string>
+    <string name="openai_search">OpenAI Search</string>
+    <string name="openai_search_global_desc">Allow provider-hosted OpenAI Search for OpenAI-compatible Responses conversations. Off by default; individual conversations can turn it off when enabled globally.</string>
     <string name="thinking">Thinking</string>
     <string name="web_search">Web Search</string>
     <string name="ask_agora">Ask Agora anything...</string>
@@ -426,7 +427,8 @@
 
     <string name="export_failed">Export failed: %1$s</string>
     <string name="import_preview_title">Import Data</string>
-    <string name="import_from">Exported on %1$s\nFrom Agora v%2$s</string>
+    <string name="import_from">Exported on %1$s
+From Agora v%2$s</string>
     <string name="import_unsupported_backup_version">Backup format v%1$d is not supported. This app supports up to v%2$d.</string>
     <string name="import_strategy_merge">Merge</string>
     <string name="import_strategy_replace">Replace</string>
