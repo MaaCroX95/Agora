@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [master]
+    branches: [master, sync/upstream-2026-09-14]
   pull_request:
     branches: [master]
   workflow_dispatch:
