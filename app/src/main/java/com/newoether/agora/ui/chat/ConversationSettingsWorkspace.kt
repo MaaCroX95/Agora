@@ -77,6 +77,7 @@ internal fun effectiveConversationControls(
     val globalLocalLowContextModeEnabled by
         viewModel.settings.localLowContextModeEnabled.collectAsState()
     val openAiResponsesApiEnabled by viewModel.settings.openAiResponsesApiEnabled.collectAsState()
+    val globalOpenAiWebSearch by viewModel.settings.openAiWebSearchEnabled.collectAsState()
     val globalWebSearch by viewModel.settings.webSearchEnabled.collectAsState()
     val globalShell by viewModel.settings.shellEnabled.collectAsState()
     val maxContextWindow by viewModel.settings.maxContextWindow.collectAsState()
@@ -94,6 +95,7 @@ internal fun effectiveConversationControls(
             openAiServiceTierEnabled = globalTierEnabled, openAiServiceTier = globalTier,
         ),
         selectedProviderName, openAiResponsesApiEnabled, customProviders,
+        globalOpenAiWebSearch = globalOpenAiWebSearch,
     )
 }
 
@@ -105,6 +107,7 @@ internal fun resolveEffectiveConversationControls(
     selectedProviderName: String,
     openAiResponsesApiEnabled: Boolean,
     customProviders: List<CustomProviderConfig>,
+    globalOpenAiWebSearch: Boolean = true,
 ): EffectiveConversationControls {
     val isEmbeddedLocalModel = selectedProviderName == Constants.PROVIDER_LOCAL
 
@@ -118,12 +121,14 @@ internal fun resolveEffectiveConversationControls(
             conversationOverride?.thinkingBudgetEnabled ?: requireNotNull(global.thinkingBudgetEnabled),
         thinkingBudgetTokens =
             conversationOverride?.thinkingBudgetTokens ?: requireNotNull(global.thinkingBudgetTokens),
-        openAiWebSearchAvailable = resolveOpenAiNativeSearchAvailability(
+        openAiWebSearchAvailable = globalOpenAiWebSearch && resolveOpenAiNativeSearchAvailability(
             selectedProviderName,
             openAiResponsesApiEnabled,
             customProviders,
         ),
-        openAiWebSearchEnabled = conversationOverride?.openAiWebSearchEnabled ?: true,
+        openAiWebSearchEnabled = globalOpenAiWebSearch &&
+            resolveOpenAiNativeSearchAvailability(selectedProviderName, openAiResponsesApiEnabled, customProviders) &&
+            (conversationOverride?.openAiWebSearchEnabled ?: true),
         openAiServiceTierState = resolveOpenAiConversationServiceTier(
             requireNotNull(global.openAiServiceTierEnabled),
             requireNotNull(global.openAiServiceTier),

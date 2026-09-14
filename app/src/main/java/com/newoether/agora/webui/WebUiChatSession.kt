@@ -225,6 +225,7 @@ internal class WebUiChatSession(
         ),
         selectedProvider(id),
         settings.openAiResponsesApiEnabled.value, settings.customProviders.value,
+        globalOpenAiWebSearch = settings.openAiWebSearchEnabled.value,
     )
 
     private val submission = ConversationComposerSubmissionController(
