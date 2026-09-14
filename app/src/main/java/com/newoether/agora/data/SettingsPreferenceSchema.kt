@@ -35,7 +35,7 @@ internal val THINKING_BUDGET_ENABLED = booleanPreferencesKey("thinking_budget_en
 internal val THINKING_BUDGET_TOKENS = intPreferencesKey("thinking_budget_tokens")
 internal val OPENAI_SERVICE_TIER_ENABLED = booleanPreferencesKey("openai_service_tier_enabled")
 internal val OPENAI_SERVICE_TIER = stringPreferencesKey("openai_service_tier")
-internal val OPENAI_RESPONSES_API_ENABLED = booleanPreferencesKey("openai_responses_api_enabled")
+internal val OPENAI_RESPONSES_API_ENABLED = booleanPreferencesKey("openai_responses_api_enabled")\ninternal val OPENAI_WEB_SEARCH_ENABLED = booleanPreferencesKey("openai_web_search_enabled")
 internal val ANTHROPIC_CACHE_ENABLED = booleanPreferencesKey("anthropic_cache_enabled")
 internal val ANTHROPIC_CACHE_TTL = stringPreferencesKey("anthropic_cache_ttl")
 internal val PROVIDER_BASE_URLS = stringPreferencesKey("provider_base_urls")
