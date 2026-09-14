@@ -97,6 +97,8 @@ class SettingsManager(private val context: Context) {
     }
     val openAiResponsesApiEnabled: Flow<Boolean> =
         context.dataStore.data.map { it[OPENAI_RESPONSES_API_ENABLED] ?: false }
+    val openAiWebSearchEnabled: Flow<Boolean> =
+        context.dataStore.data.map { it[OPENAI_WEB_SEARCH_ENABLED] ?: false }
     val titleGenerationEnabled: Flow<Boolean> = context.dataStore.data.map { it[TITLE_GENERATION_ENABLED] ?: true }
     val titleGenerationModel: Flow<String?> = context.dataStore.data.map { it[TITLE_GENERATION_MODEL] }
     val titleGenerationPrompt: Flow<String> = context.dataStore.data.map { pref ->
@@ -392,6 +394,9 @@ class SettingsManager(private val context: Context) {
     }
     suspend fun saveOpenAiResponsesApiEnabled(enabled: Boolean) {
         context.dataStore.edit { it[OPENAI_RESPONSES_API_ENABLED] = enabled }
+    }
+    suspend fun saveOpenAiWebSearchEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[OPENAI_WEB_SEARCH_ENABLED] = enabled }
     }
     suspend fun saveTitleGenerationEnabled(enabled: Boolean) {
         context.dataStore.edit { it[TITLE_GENERATION_ENABLED] = enabled }
