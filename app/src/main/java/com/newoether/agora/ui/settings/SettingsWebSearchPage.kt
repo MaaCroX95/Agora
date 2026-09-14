@@ -34,6 +34,7 @@ import com.newoether.agora.ui.components.secretVisualTransformation
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsWebSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
+    val openAiWebSearchEnabled by viewModel.settings.openAiWebSearchEnabled.collectAsState()
     val webSearchEnabled by viewModel.settings.webSearchEnabled.collectAsState()
     val webSearchProvider by viewModel.settings.webSearchProvider.collectAsState()
     val webSearchApiKeys by viewModel.settings.webSearchApiKeys.collectAsState()
@@ -192,6 +193,25 @@ fun SettingsWebSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                 }
                             }
                         }
+                    }
+                })
+
+                SettingsGroup(title = stringResource(R.string.openai_search), items = buildList {
+                    add {
+                        SettingsItem(
+                            headlineContent = { Text(stringResource(R.string.openai_search)) },
+                            supportingContent = { Text(stringResource(R.string.openai_search_global_desc)) },
+                            leadingContent = { Icon(Icons.Default.Cloud, null, tint = MaterialTheme.colorScheme.primary) },
+                            trailingContent = {
+                                Switch(
+                                    checked = openAiWebSearchEnabled,
+                                    onCheckedChange = { viewModel.settings.setOpenAiWebSearchEnabled(it) },
+                                )
+                            },
+                            modifier = Modifier.clickable {
+                                viewModel.settings.setOpenAiWebSearchEnabled(!openAiWebSearchEnabled)
+                            },
+                        )
                     }
                 })
 
