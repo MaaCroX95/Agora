@@ -533,7 +533,9 @@ class GenerationRequestBuilder(
             responsesApiEnabled = responsesApiEnabled,
             openAiWebSearchEnabled =
                 !lowContextModeEnabled &&
-                    effectiveSettings.openAiWebSearchEnabled == true && responsesApiEnabled,
+                    settings.openAiWebSearchEnabled.value &&
+                    effectiveSettings.openAiWebSearchEnabled == true &&
+                    responsesApiEnabled,
             baseUrl = providerRegistry.getEffectiveBaseUrl(providerName),
             userPrepend = resolvedUserPrepend,
             userPostpend = resolvedUserPostpend,
