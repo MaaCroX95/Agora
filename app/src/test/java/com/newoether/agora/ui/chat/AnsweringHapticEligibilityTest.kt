@@ -37,10 +37,16 @@ class AnsweringHapticEligibilityTest {
         val snapshot = mutableStateOf(activeSnapshot())
         val page = mutableStateOf(TopLevelPresentation.CHAT)
         val enabled = mutableStateOf(true)
+        val windowAvailable = mutableStateOf(true)
+        val viewModel = mockk<com.newoether.agora.viewmodel.ChatViewModel>(relaxed = true)
+        var accepted: ((String, String) -> Unit)? = null
+        every { viewModel.onSendAccepted = any() } answers { accepted = firstArg() }
+        var confirmations = 0
         var active = false
         val haptics = mockk<AgoraHaptics>()
         every { haptics.startAnsweringTexture() } answers { active = true }
         every { haptics.stopAnsweringTexture() } answers { active = false }
+        every { haptics.confirm() } answers { confirmations++ }
         val clock = BroadcastFrameClock()
         val recomposer = Recomposer(backgroundScope.coroutineContext + clock)
         val composition = Composition(object : AbstractApplier<Unit>(Unit) {
@@ -64,9 +70,23 @@ class AnsweringHapticEligibilityTest {
         AppForegroundTracker.setInForeground(true)
         try {
             composition.setContent {
-                AnsweringHapticEffect(snapshot.value, page.value, enabled.value, haptics)
+                AnsweringHapticEffect(snapshot.value, page.value, enabled.value && windowAvailable.value, haptics)
+                SendAcceptedHapticBindingEffect(viewModel, haptics,
+                    windowAvailable.value && page.value == TopLevelPresentation.CHAT)
             }
             settle(true)
+            accepted!!.invoke("conversation", "before-overlay")
+            assertEquals(1, confirmations)
+            // A sheet/menu owns the window; background confirmations are consumed silently.
+            windowAvailable.value = false
+            settle(false)
+            accepted!!.invoke("conversation", "covered")
+            assertEquals(1, confirmations)
+            windowAvailable.value = true
+            settle(true)
+            assertEquals(1, confirmations)
+            accepted!!.invoke("conversation", "after-overlay")
+            assertEquals(2, confirmations)
             repeat(3) {
                 snapshot.value = ConversationGenerationSnapshot(conversationId = "other")
                 settle(false)
@@ -79,6 +99,9 @@ class AnsweringHapticEligibilityTest {
             TopLevelPresentation.entries.forEach { destination ->
                 page.value = destination
                 settle(destination == TopLevelPresentation.CHAT)
+                val before = confirmations
+                accepted!!.invoke("conversation", "accepted-on-$destination")
+                assertEquals(before + if (destination == TopLevelPresentation.CHAT) 1 else 0, confirmations)
             }
             page.value = TopLevelPresentation.CHAT
             settle(true)
@@ -101,6 +124,7 @@ class AnsweringHapticEligibilityTest {
         } finally {
             composition.dispose()
             assertFalse(active)
+            assertEquals(null, accepted)
             recomposer.close()
             AppForegroundTracker.setInForeground(false)
             unmockkStatic(Trace::class)

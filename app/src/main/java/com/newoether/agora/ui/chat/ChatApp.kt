@@ -2,29 +2,20 @@ package com.newoether.agora.ui.chat
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -36,13 +27,11 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
 import com.newoether.agora.TopLevelPresentation
@@ -55,8 +44,6 @@ import com.newoether.agora.ui.chat.bottombar.ChatBottomBar
 import com.newoether.agora.ui.chat.bottombar.LoopStatusBackdrop
 import com.newoether.agora.ui.components.AnimatedBlobBackground
 import com.newoether.agora.ui.components.clearFocusOnTap
-import com.newoether.agora.ui.components.TypewriterMode
-import com.newoether.agora.ui.components.TypewriterText
 import com.newoether.agora.ui.common.LocalAgoraHaptics
 import com.newoether.agora.ui.common.rememberAgoraHaptics
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
@@ -78,6 +65,7 @@ fun ChatApp(
     drawerEnabled: Boolean = true,
     onOpenSettings: () -> Unit,
     onOpenTasks: (String?) -> Unit = {},
+    onOpenRemote: () -> Unit = {},
     onMediaClick: (List<String>, Int) -> Unit,
     onFileContentClick: ((String, String) -> Unit)? = null,
     onPdfPagesClick: ((List<String>, Int) -> Unit)? = null,
@@ -102,7 +90,7 @@ fun ChatApp(
     val messagesState = viewModel.messages.collectAsState()
     val allMessagesState = viewModel.allMessages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val isCompacting by viewModel.isCompacting.collectAsState()
+    val isCompacting by viewModel.compactUi.isCompacting.collectAsState()
     val compactModel by viewModel.settings.contextCompactModel.collectAsState()
     val compactPrompt by viewModel.settings.contextCompactPrompt.collectAsState()
     val compactRetainCount by viewModel.settings.contextCompactRetainCount.collectAsState()
@@ -141,7 +129,7 @@ fun ChatApp(
     val isNewChatMode by viewModel.isNewChatMode.collectAsState()
     val newChatEntryId by viewModel.newChatEntryId.collectAsState()
     val isSwitching by viewModel.isSwitching.collectAsState()
-    val regenerationTransition by viewModel.regenerationTransition.collectAsState()
+    val regenerationTransition by viewModel.regenerationTransitions.request.collectAsState()
     val isTransitioningToNewChat by viewModel.isTransitioningToNewChat.collectAsState()
     val visualizeContextRollout by viewModel.settings.visualizeContextRollout.collectAsState()
     val customProviders by viewModel.settings.customProviders.collectAsState()
@@ -184,12 +172,15 @@ fun ChatApp(
     val stickToBottom by viewModel.settings.stickToBottom.collectAsState()
     val reduceMotion = motionPolicy.reduceMotion
     val hapticsEnabled by viewModel.settings.hapticsEnabled.collectAsState()
-    val haptics = rememberAgoraHaptics(hapticsEnabled)
+    val haptics = rememberAgoraHaptics(hapticsEnabled && topLevelPresentation == TopLevelPresentation.CHAT)
+    val chatWindow = LocalWindowInfo.current
+    val chatHapticActive = topLevelPresentation == TopLevelPresentation.CHAT &&
+        chatWindow.isWindowFocused && !drawerState.shouldHandleBack
     // The three send paths (manual Send, queue drain, loop cycle) converge in the Controller at
     // notifySendAccepted, the single choke point for Direct + Queued send acceptances. Wiring the
-    // haptics there gives every accepted send exactly one confirm(), independent of which path
-    // triggered it or which scroll policy applies.
-    SendAcceptedHapticBindingEffect(viewModel, haptics)
+    // haptics there gives each visible accepted send one confirm(), independent of its send path.
+    // Covered acceptances are consumed silently instead of replaying feedback after an overlay exits.
+    SendAcceptedHapticBindingEffect(viewModel, haptics, chatHapticActive)
 
     var isExpanded by remember { mutableStateOf(false) }
     // Composer-expand spacer collapse (44dp → 0). An Animatable driven from an effect replaces the
@@ -306,7 +297,7 @@ fun ChatApp(
         textFieldState = textFieldState,
     )
 
-    val animatedScrollRequest by viewModel.animatedScrollRequest.collectAsState()
+    val animatedScrollRequest by viewModel.scrollRequests.request.collectAsState()
     scrollCoordinator.BindRequestEffects(
         currentConversationId = currentConversationId,
         isNewChatMode = isNewChatMode,
@@ -322,7 +313,9 @@ fun ChatApp(
         motionPolicy = motionPolicy,
         bottomBarHeight = bottomBarHeight,
         shareSelectionBarSpace = shareSelectionBarSpace,
-        viewModel = viewModel,
+        onRegenerationScrollFinished = viewModel.regenerationTransitions::acknowledgeScroll,
+        onRegenerationTransitionFinished = viewModel.regenerationTransitions::complete,
+        onAnimatedScrollFinished = viewModel.scrollRequests::complete,
     )
 
     ChatNavigationEffects(
@@ -338,7 +331,7 @@ fun ChatApp(
     AnsweringHapticEffect(
         generationSnapshot = selectedConversationGenerationSnapshot,
         topLevelPresentation = topLevelPresentation,
-        hapticsEnabled = hapticsEnabled,
+        hapticsEnabled = hapticsEnabled && chatHapticActive,
         haptics = haptics,
     )
 
@@ -358,6 +351,7 @@ fun ChatApp(
                 onSettingsButtonTop = { settingsButtonTopDp = it },
                 onOpenSettings = onOpenSettings,
                 onOpenTasks = { onOpenTasks(null) },
+                onOpenRemote = onOpenRemote,
                 onRequestRename = dialogState::requestRename,
                 onRequestDelete = { conversationId ->
                     if (!viewModel.isConversationDeleteLocked(conversationId)) {
@@ -473,37 +467,7 @@ fun ChatApp(
                     AnimatedContent(
                         targetState = Pair(isNewChatMode, showLaunchContent),
                         transitionSpec = {
-                            val targetNewChat = targetState.first
-                            val targetShowLaunch = targetState.second
-                            val initialNewChat = initialState.first
-                            val initialShowLaunch = initialState.second
-
-                            if (targetNewChat && (targetShowLaunch != initialShowLaunch || targetNewChat != initialNewChat)) {
-                                val fadeInSpec = tween<Float>(500)
-                                val enter = if (motionPolicy.allowSpatialTransitions) {
-                                    val enterSpec = tween<Float>(
-                                        700,
-                                        easing = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1.0f),
-                                    )
-                                    fadeIn(animationSpec = fadeInSpec) +
-                                        scaleIn(
-                                            initialScale = 0.6f,
-                                            transformOrigin = TransformOrigin(0.5f, pivotY),
-                                            animationSpec = enterSpec,
-                                        )
-                                } else {
-                                    fadeIn(animationSpec = fadeInSpec)
-                                }
-                                enter
-                                    .togetherWith(fadeOut(animationSpec = tween(300)))
-                            } else if (!targetNewChat && !initialNewChat) {
-                                // Switching between existing conversations: no animation
-                                EnterTransition.None togetherWith ExitTransition.None
-                            } else {
-                                // Returning from new-chat to an existing conversation
-                                fadeIn(animationSpec = tween(300))
-                                    .togetherWith(fadeOut(animationSpec = tween(300)))
-                            }
+                            chatMainContentTransition(motionPolicy, pivotY)
                         },
                         label = "MainContentTransition",
                         modifier = Modifier.fillMaxSize()
@@ -544,7 +508,7 @@ fun ChatApp(
                                 // conversation generates — background conversations don't affect it.
                                 isLoading = isLoading,
                                 isCompacting = isCompacting,
-                                compactPreview = viewModel.compactPreview,
+                                compactPreview = viewModel.compactUi.compactPreview,
                                 isStopping = isStopping,
                                 isSwitching = isSwitching,
                                 streamingMessage = generationSnapshot.streamingMessage?.forDisplay(customProviders),
@@ -560,7 +524,7 @@ fun ChatApp(
                                 streamingTailController = streamingTailController,
                                 regenerationTransition = regenerationTransition,
                                 onRegenerationFadeOutFinished =
-                                    viewModel::acknowledgeRegenerationFade,
+                                    viewModel.regenerationTransitions::acknowledgeFade,
                                 visualizeContextRollout = visualizeContextRollout && contextProjectionReady,
                                 toolCallDisplayMode = toolCallDisplayMode,
                                 thinkingSegmentDisplayMode = thinkingSegmentDisplayMode,
@@ -597,7 +561,7 @@ fun ChatApp(
                                     viewModel.shareGeneration(id)
                                 },
                                 onRecompact = { id ->
-                                    viewModel.startContextRecompact(id)
+                                    viewModel.compactUi.startRecompact(id)
                                 },
                                 onDelete = { id, result ->
                                     viewModel.deleteMessage(id, result) > 0
@@ -644,40 +608,9 @@ fun ChatApp(
                             )
                             }
                         } else if (targetShowLaunch) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(bottom = bottomBarHeight),
-                                contentAlignment = Alignment.TopCenter
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .verticalScroll(rememberScrollState()),
-                                    contentAlignment = Alignment.TopCenter
-                                ) {
-                                    val welcomeText = stringResource(R.string.welcome_to_agora)
-                                    val availableWelcomeHeight =
-                                        windowHeightDp +
-                                            topBarH.value / 2f -
-                                            bottomBarHeight.value
-                                    val welcomeTopPadding =
-                                        (availableWelcomeHeight / 2f).coerceAtLeast(0f).dp
-                                    val welcomeModifier =
-                                        Modifier.padding(top = welcomeTopPadding)
-                                    TypewriterText(
-                                        text = welcomeText,
-                                        animationKey = newChatEntryId,
-                                        style = MaterialTheme.typography.headlineMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onBackground,
-                                        typeSpeedMs = 100,
-                                        animate = newChatMotion.animateWelcomeText,
-                                        mode = TypewriterMode.TEXT_GRADIENT,
-                                        modifier = welcomeModifier,
-                                    )
-                                }
-                            }
+                            ChatWelcomeContent(
+                                bottomBarHeight, windowHeightDp, topBarH, newChatEntryId, newChatMotion,
+                            )
                         } else {
                             Box(modifier = Modifier.fillMaxSize())
                         }
@@ -721,169 +654,34 @@ fun ChatApp(
                             )
                         }
                     }
-                    val fabElevation by animateDpAsState(
-                        targetValue = if (showButton) 4.dp else 0.dp,
-                        animationSpec = if (motionPolicy.allowSpatialTransitions) {
-                            tween(400)
-                        } else {
-                            snap()
-                        }
+                    ChatBottomScrollButton(showButton, bottomBarHeight) {
+                        scrollCoordinator.requestAbsoluteBottomScroll()
+                    }
+
+                    ChatSelectionOverlay(
+                        shareSelectionActive, motionPolicy, bottomBarHeight,
+                        selectableShareMessageIds, selectedShareMessageIds,
+                        conversationInteraction, haptics,
+                        onShareMessages = { viewModel.shareMessages(it) },
                     )
-                    AnimatedVisibility(
-                        visible = showButton,
-                        enter = if (motionPolicy.allowSpatialTransitions) {
-                            fadeIn(tween(400)) +
-                                scaleIn(initialScale = 0.6f, animationSpec = tween(400))
-                        } else {
-                            fadeIn(tween(400))
-                        },
-                        exit = if (motionPolicy.allowSpatialTransitions) {
-                            fadeOut(tween(400)) +
-                                scaleOut(targetScale = 0.6f, animationSpec = tween(400))
-                        } else {
-                            fadeOut(tween(400))
-                        },
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = bottomBarHeight + 8.dp)
-                    ) {
-                        Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                            FloatingActionButton(onClick = {
-                                scrollCoordinator.requestAbsoluteBottomScroll()
-                            }, containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp), contentColor = MaterialTheme.colorScheme.onSurface, shape = CircleShape, elevation = FloatingActionButtonDefaults.elevation(fabElevation), modifier = Modifier.size(40.dp)) {
-                                Icon(Icons.Default.KeyboardArrowDown, stringResource(R.string.scroll_to_bottom), modifier = Modifier.size(24.dp))
-                            }
-                        }
-                    }
 
-                    AnimatedVisibility(
-                        visible = shareSelectionActive,
-                        enter = if (motionPolicy.allowSpatialTransitions) {
-                            fadeIn(tween(220)) + scaleIn(
-                                initialScale = 0.86f,
-                                animationSpec = tween(220),
-                            )
-                        } else {
-                            fadeIn(tween(220))
-                        },
-                        exit = if (motionPolicy.allowSpatialTransitions) {
-                            fadeOut(tween(180)) + scaleOut(
-                                targetScale = 0.86f,
-                                animationSpec = tween(180),
-                            )
-                        } else {
-                            fadeOut(tween(180))
-                        },
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = bottomBarHeight + 10.dp),
-                    ) {
-                        ShareSelectionFab(
-                            allSelected = selectableShareMessageIds.isNotEmpty() &&
-                                selectedShareMessageIds.containsAll(selectableShareMessageIds),
-                            hasSelection = selectedShareMessageIds.isNotEmpty(),
-                            onDismiss = {
-                                conversationInteraction.dismissShareSelection()
-                            },
-                            onToggleAll = {
-                                haptics.selection()
-                                conversationInteraction.toggleAllShareMessages()
-                            },
-                            onConfirm = {
-                                val selection = conversationInteraction.takeShareSelection()
-                                if (selection.isNotEmpty()) {
-                                    viewModel.shareMessages(selection)
-                                }
-                            },
-                        )
-                    }
-
-                    AnimatedVisibility(
-                        visible = isSwitching && !isTransitioningToNewChat,
-                        enter = fadeIn(animationSpec = tween(200)),
-                        exit = fadeOut(animationSpec = tween(200))
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.background),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(48.dp),
-                                strokeWidth = 5.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
+                    ChatSwitchingOverlay(isSwitching, isTransitioningToNewChat)
                 }
             }
 
-            val expandedGradientTopPaddingPx = with(density) { 20.dp.toPx() }
-            val gradientWidthPx = with(density) { 40.dp.toPx() }
-            val bgColor = MaterialTheme.colorScheme.background
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .then(if (isExpanded) Modifier.fillMaxHeight().statusBarsPadding() else Modifier)
-                    .drawBehind {
-                        val totalH = size.height
-                        if (isExpanded && totalH > 0f) {
-                            val h = expandedGradientTopPaddingPx.coerceAtMost(totalH * 0.12f)
-                            val w = gradientWidthPx.coerceAtMost(totalH * 0.24f)
-                            val transparentEnd = h / totalH
-                            val fadeEnd = (h + w) / totalH
-                            drawRect(
-                                brush = Brush.verticalGradient(
-                                    colorStops = arrayOf(
-                                        0.0f to bgColor.copy(alpha = 0f),
-                                        transparentEnd to bgColor.copy(alpha = 0f),
-                                        fadeEnd to bgColor,
-                                    ),
-                                    startY = 0f,
-                                    endY = totalH
-                                )
-                            )
-                        }
-                    },
-                color = Color.Transparent
+            com.newoether.agora.ui.chat.bottombar.ChatComposerSurface(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                isExpanded = isExpanded,
+                outerSpacerHeightPx = outerSpacerHeightPx,
+                onBarHeightChanged = { bottomBarHeightPx = it },
+                backdrop = {
+                    LoopStatusBackdrop(
+                        loop = currentLoop,
+                        isRunning = currentConversationId in runningLoopIds,
+                        onStop = { viewModel.stopCurrentLoop() },
+                    )
+                },
             ) {
-                Column {
-                    if (!isExpanded) Spacer(modifier = Modifier.height(12.dp))
-                    if (outerSpacerHeightPx > 0f) {
-                        Spacer(modifier = Modifier.height(with(density) { outerSpacerHeightPx.toDp() }))
-                    }
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .then(if (isExpanded) Modifier.fillMaxHeight() else Modifier)
-                            .onSizeChanged {
-                                if (!isExpanded) bottomBarHeightPx = it.height.toFloat()
-                            }
-                            .navigationBarsPadding()
-                            .imePadding()
-                            .padding(8.dp),
-                    ) {
-                        // This is a sibling behind the complete outer bar, not a child of the
-                        // composer. Its lower overflow is therefore occluded by the 28dp Surface
-                        // and shadow below.
-                        LoopStatusBackdrop(
-                            loop = currentLoop,
-                            isRunning = currentConversationId in runningLoopIds,
-                            onStop = { viewModel.stopCurrentLoop() },
-                        )
-
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .then(if (isExpanded) Modifier.weight(1f) else Modifier),
-                            color = MaterialTheme.colorScheme.surface,
-                            tonalElevation = 2.dp,
-                            shadowElevation = 8.dp,
-                            shape = CHAT_BOTTOM_BAR_OUTER_SHAPE,
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.BottomCenter,
-                            ) {
                                 ChatBottomBar(
                         submissionController = viewModel.conversationComposerSubmission,
                         composerOwnerId = composerOwnerId,
@@ -937,7 +735,7 @@ fun ChatApp(
                         // previous double buzz for one physical tap.
                         onModelSelect = { viewModel.setActiveModel(it) },
                         onAllMediaClick = { urls, idx -> onMediaClick(urls, idx) },
-                        onFileContentClick = { name, content -> viewModel.showFilePreview(name, content) },
+                        onFileContentClick = { name, content -> viewModel.mediaPreview.showFile(name, content) },
                         modifier = Modifier,
                         textFieldState = textFieldState,
                         composerState = composer,
@@ -972,10 +770,6 @@ fun ChatApp(
                         onRemoveQueuedSend = viewModel::removeQueuedSend,
                         isStopping = isStopping,
                     )
-                            }
-                        }
-                    }
-                }
             }
             }
         }

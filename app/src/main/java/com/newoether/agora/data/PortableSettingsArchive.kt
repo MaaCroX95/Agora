@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -65,6 +66,8 @@ internal object PortableSettingsArchive {
         put("openAiServiceTier", JsonPrimitive(sm.openAiServiceTier.first()))
         put("openAiResponsesApiEnabled", JsonPrimitive(sm.openAiResponsesApiEnabled.first()))
         put("openAiWebSearchEnabled", JsonPrimitive(sm.openAiWebSearchEnabled.first()))
+        put("anthropicCacheEnabled", JsonPrimitive(sm.anthropicCacheEnabled.first()))
+        put("anthropicCacheTtl", JsonPrimitive(sm.anthropicCacheTtl.first()))
         putEncoded("providerBaseUrls", sm.providerBaseUrls.first())
         put("titleGenerationEnabled", JsonPrimitive(sm.titleGenerationEnabled.first()))
         putNullableString("titleGenerationModel", sm.titleGenerationModel.first())
@@ -187,6 +190,21 @@ internal object PortableSettingsArchive {
         val previousFontPath = sm.customFontPath.first()
         val previousFontName = sm.customFontName.first()
         val previousCustomProviders = sm.customProviders.first()
+        val cacheRecords = listOf(obj) + (obj["customProviders"] as? JsonArray)
+            .orEmpty().mapNotNull { it as? JsonObject }
+        cacheRecords.forEach { record ->
+            record["anthropicCacheTtl"]?.let { value ->
+                require(value is JsonPrimitive && value.isString && value.content in setOf("5m", "1h")) {
+                    "Invalid Anthropic cache duration"
+                }
+            }
+            record["anthropicCacheEnabled"]?.let { value ->
+                require(value is JsonPrimitive && !value.isString && value.booleanOrNull != null) {
+                    "Invalid Anthropic cache switch"
+                }
+            }
+        }
+        val importedCacheTtl = obj.string("anthropicCacheTtl")
         val importedProviderIdentities = prepareImportedCustomProviders(
             raw = obj.decode<List<CustomProviderConfig>>("customProviders").orEmpty(),
             existing = previousCustomProviders,
@@ -201,6 +219,8 @@ internal object PortableSettingsArchive {
         )
 
         if (replace) sm.resetPortableSettingsForImport()
+        obj.boolean("anthropicCacheEnabled")?.let { sm.saveAnthropicCacheEnabled(it) }
+        importedCacheTtl?.let { sm.saveAnthropicCacheTtl(it) }
 
         obj.string("selectedModel")?.let { sm.saveSelectedModel(remapModel(it)) }
 
@@ -576,6 +596,9 @@ internal object PortableSettingsArchive {
         replace: Boolean,
     ): ImportedCustomProviderIdentities {
         val sanitization = CustomProviderNamePolicy.sanitize(raw)
+        require(raw.all { it.anthropicCacheTtl == "5m" || it.anthropicCacheTtl == "1h" }) {
+            "Invalid Anthropic cache duration"
+        }
         val occupied = if (replace) linkedSetOf() else existing
             .mapTo(linkedSetOf(), CustomProviderConfig::providerId)
         val normalized = mutableListOf<CustomProviderConfig>()

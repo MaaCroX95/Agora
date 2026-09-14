@@ -149,3 +149,11 @@ internal fun nearestVisibleConversationSearchMatchIndex(
 ): Int? = matches.indices
     .filter { index -> matches[index].key in distanceByMatchKey }
     .minByOrNull { index -> distanceByMatchKey.getValue(matches[index].key) }
+
+internal fun retainedConversationSearchMatchIndex(
+    previous: List<ConversationSearchMatch>,
+    current: List<ConversationSearchMatch>,
+    previousIndex: Int,
+): Int? = previous.getOrNull(previousIndex)?.key?.let { key ->
+    current.indexOfFirst { it.key == key }.takeIf { it >= 0 }
+}

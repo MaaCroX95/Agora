@@ -1,6 +1,10 @@
 *.iml
 .gradle
 /local.properties
+
+# Signing material must never be committed.
+*.jks
+*.keystore
 /.idea/
 .DS_Store
 /build
@@ -8,10 +12,6 @@
 .externalNativeBuild
 .cxx
 local.properties
-
-# Signing material must never be committed.
-*.jks
-*.keystore
 
 # Kotlin/Tooling logs
 .kotlin/

@@ -53,10 +53,12 @@ class GenerationTranscriptionStageTest {
                 null,
                 "assistant",
                 10L,
+                false,
+                "5m",
                 any(),
             )
         } coAnswers {
-            val progress = arg<suspend (ChatMessage) -> Unit>(12)
+            val progress = arg<suspend (ChatMessage) -> Unit>(14)
             progress(snapshot)
             listOf(transcriptionSegment) to null
         }
@@ -95,10 +97,12 @@ class GenerationTranscriptionStageTest {
                 null,
                 "assistant",
                 10L,
+                false,
+                "5m",
                 any(),
             )
         } coAnswers {
-            arg<suspend (ChatMessage) -> Unit>(12)(snapshot)
+            arg<suspend (ChatMessage) -> Unit>(14)(snapshot)
             throw expected
         }
         val execution = GenerationTranscriptionStage(manager).newExecution()
@@ -131,6 +135,8 @@ class GenerationTranscriptionStageTest {
         transcriptionModelId = "model",
         transcriptionApiKey = "key",
         imageTranscriptionPrompt = "prompt",
+        transcriptionAnthropicCacheEnabled = false,
+        transcriptionAnthropicCacheTtl = "5m",
     )
 
     private fun snapshot(text: String) = ChatMessage(

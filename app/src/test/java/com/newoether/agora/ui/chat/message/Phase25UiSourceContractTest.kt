@@ -22,8 +22,9 @@ class Phase25UiSourceContractTest {
         assertFalse(list.contains("InlineActivityDotFollower"))
         assertFalse(list.contains("dotOverlayState"))
         assertFalse(list.contains("StreamingTailIndicator("))
-        val assistantActivity = assistant
-            .substringAfter("private fun AssistantInlineActivity(")
+        val activity = source("AssistantInlineActivity.kt")
+        val assistantActivity = activity
+            .substringAfter("internal fun AssistantInlineActivity(")
             .substringBefore("/**")
         assertTrue(assistantActivity.contains("retainExitLayout: Boolean"))
         assertTrue(assistantActivity.contains(
@@ -36,7 +37,7 @@ class Phase25UiSourceContractTest {
         assertTrue(assistantActivity.contains(
             "alpha = if (terminalText == null) activityOpacity else 1f"
         ))
-        assertTrue(assistant.contains(".heightIn(min = AssistantInlineActivityHeight)"))
+        assertTrue(activity.contains(".heightIn(min = AssistantInlineActivityHeight)"))
         assertTrue(assistantActivity.contains("clip = false"))
         assertTrue(assistantActivity.contains("GenerationActivityDot()"))
         assertTrue(assistantActivity.contains("Crossfade("))
@@ -62,7 +63,8 @@ class Phase25UiSourceContractTest {
 
     @Test
     fun `Timeline info entrances have one card owned unbounded appearance layer`() {
-        val timeline = source("MessageItemTimeline.kt")
+        val timeline = source("MessageItemTimeline.kt") +
+            source("TimelineSegmentsContent.kt")
 
         assertEquals(
             2,
@@ -103,7 +105,8 @@ class Phase25UiSourceContractTest {
 
     @Test
     fun `Thinking sheet uses twenty five percent neutral cards gray arrows and local back chrome`() {
-        val timeline = source("MessageItemTimeline.kt")
+        val timeline = source("MessageItemTimeline.kt") +
+            source("TimelineSegmentsContent.kt")
         val detail = source("SegmentDetailSheet.kt")
         val back = componentSource("CircularBackButton.kt")
 

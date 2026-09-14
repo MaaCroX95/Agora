@@ -83,6 +83,9 @@ internal fun ChatDeleteConfirmDialog(
     phase: ChatDeleteDialogPhase,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    title: String? = null,
+    message: String? = null,
+    confirmLabel: String? = null,
 ) {
     val pending = phase == ChatDeleteDialogPhase.PENDING
     AlertDialog(
@@ -92,10 +95,10 @@ internal fun ChatDeleteConfirmDialog(
             dismissOnBackPress = !pending,
             dismissOnClickOutside = !pending,
         ),
-        title = { Text(stringResource(R.string.delete_chat), fontWeight = FontWeight.Bold) },
+        title = { Text(title ?: stringResource(R.string.delete_chat), fontWeight = FontWeight.Bold) },
         text = {
             Column {
-                Text(stringResource(R.string.delete_chat_confirm))
+                Text(message ?: stringResource(R.string.delete_chat_confirm))
                 if (phase == ChatDeleteDialogPhase.FAILED) {
                     Text(
                         text = stringResource(R.string.tool_state_failed),
@@ -120,7 +123,7 @@ internal fun ChatDeleteConfirmDialog(
                     )
                 } else {
                     Text(
-                        stringResource(
+                        confirmLabel ?: stringResource(
                             if (phase == ChatDeleteDialogPhase.FAILED) {
                                 R.string.retry
                             } else {

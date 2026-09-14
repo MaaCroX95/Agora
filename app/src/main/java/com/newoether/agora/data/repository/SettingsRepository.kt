@@ -38,10 +38,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -70,18 +67,7 @@ class SettingsRepository(
         val loaded = CompletableDeferred<Unit>()
         initialLoadSignals += loaded
         val state = MutableStateFlow(initial)
-        flow
-            .onEach { value ->
-                // Publish first: an awaiter must never resume while `.value` still exposes the
-                // eager default for this particular setting.
-                state.value = value
-                loaded.complete(Unit)
-            }
-            .catch { error ->
-                loaded.completeExceptionally(error)
-                throw error
-            }
-            .launchIn(scope)
+        flow.publishSetting(scope, loaded) { state.value = it }
         return state.asStateFlow()
     }
 
@@ -91,16 +77,9 @@ class SettingsRepository(
     private fun hotConversationSettings(): StateFlow<Map<String, ConversationSettings>> {
         val loaded = CompletableDeferred<Unit>()
         initialLoadSignals += loaded
-        settingsManager.conversationSettings
-            .onEach { value ->
-                conversationSettingsState.acceptPersisted(value)
-                loaded.complete(Unit)
-            }
-            .catch { error ->
-                loaded.completeExceptionally(error)
-                throw error
-            }
-            .launchIn(scope)
+        settingsManager.conversationSettings.publishSetting(scope, loaded) { value ->
+            conversationSettingsState.acceptPersisted(value)
+        }
         return conversationSettingsState.state
     }
 
@@ -117,6 +96,16 @@ class SettingsRepository(
     // ── Read StateFlows (eagerly shared) ──────────────────────
 
     val selectedModel: StateFlow<String> = hot(settingsManager.selectedModel, Constants.EXAMPLE_MODEL_ID)
+    val anthropicCacheEnabled: StateFlow<Boolean> = hot(settingsManager.anthropicCacheEnabled, true)
+    val anthropicCacheTtl: StateFlow<String> = hot(settingsManager.anthropicCacheTtl, "1h")
+    fun setAnthropicCacheEnabled(providerId: String, enabled: Boolean) = scope.launch {
+        if (providerId == Constants.PROVIDER_ANTHROPIC) settingsManager.saveAnthropicCacheEnabled(enabled)
+        else settingsManager.updateCustomProviderCache(providerId, enabled = enabled)
+    }
+    fun setAnthropicCacheTtl(providerId: String, ttl: String) = scope.launch {
+        if (providerId == Constants.PROVIDER_ANTHROPIC) settingsManager.saveAnthropicCacheTtl(ttl)
+        else settingsManager.updateCustomProviderCache(providerId, ttl = ttl)
+    }
     val availableModels: StateFlow<Map<String, List<String>>> = hot(settingsManager.availableModels, emptyMap())
     val customModels: StateFlow<Set<String>> = hot(settingsManager.customModels, emptySet())
     val enabledModels: StateFlow<Set<String>> = hot(settingsManager.enabledModels, emptySet())
@@ -301,13 +290,6 @@ class SettingsRepository(
         val modelId = ModelId(normalizedProvider, normalizedName).prefixed
         scope.launch {
             settingsManager.addCustomModel(modelId, alias, showProviderName)
-        }
-    }
-
-    fun removeCustomModel(modelId: String) {
-        if (modelId !in customModels.value) return
-        scope.launch {
-            settingsManager.replaceCustomModel(modelId, null, "")
         }
     }
 
@@ -765,9 +747,6 @@ class SettingsRepository(
     suspend fun getAutoCacheEnabled(): Boolean = settingsManager.autoCacheEnabled.first()
     suspend fun getShowUncachedNotification(): Boolean = settingsManager.showUncachedNotification.first()
     suspend fun getLastUpdateCheckTime(): Long = settingsManager.lastUpdateCheckTime.first()
-    suspend fun getEmbeddingModels(): List<EmbeddingModelConfig> = settingsManager.embeddingModels.first()
-    suspend fun getActiveEmbeddingModelId(): String = settingsManager.activeEmbeddingModelId.first()
-    suspend fun getModelAliases(): Map<String, String> = settingsManager.modelAliases.first()
     suspend fun getProviderBaseUrls(): Map<String, String> = settingsManager.providerBaseUrls.first()
     suspend fun saveCustomEndpointResolution(
         provider: String,

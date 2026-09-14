@@ -8,6 +8,28 @@ import com.newoether.agora.model.isContextCompact
 import com.newoether.agora.util.Constants
 import kotlin.math.roundToInt
 
+/** Page fragments keep their content origin fixed when an older page is prepended.
+ * Put the original adjacent-message spacing after its predecessor, with no gap inside
+ * a native assistant turn split only for paging. Ordinary ChatApp messages opt out.
+ */
+internal fun messageListPageLeadingSpacing(message: ChatMessage?): Int = when (message?.participant) {
+    null -> 0
+    Participant.USER -> 8
+    else -> 14
+}
+
+internal fun messageListPageTrailingSpacing(messages: List<ChatMessage>): Map<String, Int> = buildMap {
+    messages.forEachIndexed { index, message ->
+        if (message.displayPageId == null) return@forEachIndexed
+        val next = messages.getOrNull(index + 1)
+        val continues = next?.displayPageId != null && next.displayPageId != message.displayPageId &&
+            message.participant == Participant.MODEL && next.participant == Participant.MODEL &&
+            !message.runId.isNullOrBlank() && message.runId == next.runId
+        put(message.id, if (continues) 0 else
+            (if (message.participant == Participant.USER) 8 else 24) + messageListPageLeadingSpacing(next))
+    }
+}
+
 internal enum class MessageListLayoutMode {
     STABLE,
     ACTIVE_SCROLL,
@@ -17,9 +39,10 @@ internal enum class MessageListLayoutMode {
 internal fun messageListLayoutMode(
     isSwitching: Boolean,
     isScrollInProgress: Boolean,
+    isUserDragging: Boolean = false,
 ): MessageListLayoutMode = when {
     isSwitching -> MessageListLayoutMode.COVERED_TRANSITION
-    isScrollInProgress -> MessageListLayoutMode.ACTIVE_SCROLL
+    isScrollInProgress || isUserDragging -> MessageListLayoutMode.ACTIVE_SCROLL
     else -> MessageListLayoutMode.STABLE
 }
 
@@ -186,6 +209,9 @@ internal fun buildMessageListTurns(messages: List<ChatMessage>): List<MessageLis
     }
 
     messages.forEach { message ->
+        if (activeTurn.isNotEmpty() && message.displayPageId != activeTurn.first().displayPageId) {
+            flushActiveTurn()
+        }
         if (message.isContextCompact()) {
             flushActiveTurn()
             turns += MessageListTurn(message.id, listOf(message))
@@ -210,7 +236,9 @@ internal fun buildMessageListTurns(messages: List<ChatMessage>): List<MessageLis
 internal fun messageListTailAnchorKey(turns: List<MessageListTurn>): String? = turns
     .lastOrNull { turn ->
         turn.messages.firstOrNull()?.let { message ->
-            MessageGenerationBoundaryResolver.isRealUser(message) || message.isContextCompact()
+            (turns.lastOrNull()?.messages?.lastOrNull()?.displayPageId == null ||
+                message.displayPageId == turns.last().messages.last().displayPageId) &&
+                (MessageGenerationBoundaryResolver.isRealUser(message) || message.isContextCompact())
         } == true
     }
     ?.key
@@ -285,16 +313,14 @@ internal data class MessageListViewportAnchor(
 
 internal fun LazyListState.captureMessageListViewportAnchor(
     turns: List<MessageListTurn>,
-): MessageListViewportAnchor? = turns
-    .getOrNull(firstVisibleItemIndex)
-    ?.messages
-    ?.firstOrNull()
-    ?.let { message ->
-        MessageListViewportAnchor(
-            messageId = message.id,
-            scrollOffsetPx = firstVisibleItemScrollOffset,
-        )
-    }
+    visualKey: (String) -> String = { it },
+): MessageListViewportAnchor? {
+    // The measured index belongs to the old list until prepend's next measure pass.
+    val measuredKey = layoutInfo.visibleItemsInfo
+        .firstOrNull { it.index == firstVisibleItemIndex }?.key ?: return null
+    val message = turns.firstOrNull { visualKey(it.key) == measuredKey }?.messages?.firstOrNull() ?: return null
+    return MessageListViewportAnchor(message.id, firstVisibleItemScrollOffset)
+}
 
 internal fun LazyListState.restoreMessageListViewportAnchor(
     turns: List<MessageListTurn>,

@@ -2,11 +2,7 @@ package com.newoether.agora.data
 
 import android.content.Context
 import android.net.Uri
-import androidx.room.withTransaction
 import com.newoether.agora.automation.LoopPolicy
-import com.newoether.agora.data.local.ChatDao
-import com.newoether.agora.data.local.ChatDatabase
-import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.model.AttachmentMeta
 import com.newoether.agora.model.SelectedAttachment
 import kotlinx.coroutines.Dispatchers
@@ -34,15 +30,11 @@ import java.util.zip.ZipOutputStream
 
 class DataExporter(
     private val context: Context,
-    private val database: ChatDatabase,
-    private val chatDao: ChatDao,
     private val settingsManager: SettingsManager,
     private val memoryManager: MemoryManager,
     private val skillManager: SkillManager,
 ) {
     companion object {
-        /** Bounds entity/string expansion while exporting databases with large chat histories. */
-        private const val MESSAGE_PAGE_SIZE = 64
         private const val SNAPSHOT_PREFIX = "agora-export-snapshot-"
         private const val SNAPSHOT_SUFFIX = ".jsonl"
         private const val SNAPSHOT_CONVERSATION = "C"
@@ -146,6 +138,7 @@ class DataExporter(
         val uncachedInputTokenCount: Int? = null,
         val outputTokenCount: Int? = null,
         val reasoningTokenCount: Int? = null,
+        val generationDurationMs: Long? = null,
         val status: String = "SUCCESS",
         val participant: String = "MODEL",
         val timestamp: Long,
@@ -211,20 +204,6 @@ class DataExporter(
         }
     }
 
-    private suspend fun forEachMessagePage(
-        block: suspend (List<MessageEntity>) -> Unit,
-    ) {
-        var afterId: String? = null
-        while (true) {
-            currentCoroutineContext().ensureActive()
-            val page = chatDao.getMessagesPage(afterId, MESSAGE_PAGE_SIZE)
-            if (page.isEmpty()) break
-            block(page)
-            afterId = page.last().id
-            if (page.size < MESSAGE_PAGE_SIZE) break
-        }
-    }
-
     private fun BufferedWriter.writeSnapshotRecord(type: String, json: String) {
         write(type)
         write('\t'.code)
@@ -237,11 +216,9 @@ class DataExporter(
     ): File {
         val spool = File.createTempFile(SNAPSHOT_PREFIX, SNAPSHOT_SUFFIX, context.cacheDir)
         try {
-            database.withTransaction {
-                spool.bufferedWriter(Charsets.UTF_8).use { writer ->
-                    val conversations = chatDao.getAllConversationsList()
-                    for (conversation in conversations) {
-                        currentCoroutineContext().ensureActive()
+            spool.bufferedWriter(Charsets.UTF_8).use { writer ->
+                ConversationExportSnapshotReader(context).readSnapshot(
+                    onConversation = { conversation ->
                         writer.writeSnapshotRecord(
                             SNAPSHOT_CONVERSATION,
                             Json.encodeToString(
@@ -262,68 +239,62 @@ class DataExporter(
                                 ),
                             ),
                         )
-                        for (run in chatDao.getRunsForConversationSnapshot(conversation.id)) {
-                            currentCoroutineContext().ensureActive()
-                            writer.writeSnapshotRecord(
-                                SNAPSHOT_RUN,
-                                Json.encodeToString(
-                                    ExportRunEntity(
-                                        id = run.id,
-                                        conversationId = run.conversationId,
-                                        parentRunId = run.parentRunId,
-                                        status = run.status.name,
-                                        startedAt = run.startedAt,
-                                        lastCheckpointAt = run.lastCheckpointAt,
-                                        stopRequestedAt = run.stopRequestedAt,
-                                        endedAt = run.endedAt,
-                                        endReason = run.endReason?.name,
-                                        currentPass = run.currentPass,
-                                        legacyAmbiguous = run.legacyAmbiguous,
-                                    ),
+                    },
+                    onRun = { run ->
+                        writer.writeSnapshotRecord(
+                            SNAPSHOT_RUN,
+                            Json.encodeToString(
+                                ExportRunEntity(
+                                    id = run.id,
+                                    conversationId = run.conversationId,
+                                    parentRunId = run.parentRunId,
+                                    status = run.status.name,
+                                    startedAt = run.startedAt,
+                                    lastCheckpointAt = run.lastCheckpointAt,
+                                    stopRequestedAt = run.stopRequestedAt,
+                                    endedAt = run.endedAt,
+                                    endReason = run.endReason?.name,
+                                    currentPass = run.currentPass,
+                                    legacyAmbiguous = run.legacyAmbiguous,
                                 ),
-                            )
-                        }
-                    }
-
-                    forEachMessagePage { page ->
-                        for (message in page) {
-                            currentCoroutineContext().ensureActive()
-                            writer.writeSnapshotRecord(
-                                SNAPSHOT_MESSAGE,
-                                Json.encodeToString(
-                                    ExportMessageEntity(
-                                        id = message.id,
-                                        conversationId = message.conversationId,
-                                        parentId = message.parentId,
-                                        text = message.text,
-                                        images = message.images,
-                                        thoughts = message.thoughts,
-                                        thoughtTitle = message.thoughtTitle,
-                                        tokenCount = message.tokenCount,
-                                        inputTokenCount = message.inputTokenCount,
-                                        cachedInputTokenCount = message.cachedInputTokenCount,
-                                        cacheWriteInputTokenCount = message.cacheWriteInputTokenCount,
-                                        uncachedInputTokenCount = message.uncachedInputTokenCount,
-                                        outputTokenCount = message.outputTokenCount,
-                                        reasoningTokenCount = message.reasoningTokenCount,
-                                        status = message.status.name,
-                                        participant = message.participant.name,
-                                        timestamp = message.timestamp,
-                                        thoughtTimeMs = message.thoughtTimeMs,
-                                        modelName = message.modelName,
-                                        toolCallJson = message.toolCallJson,
-                                        attachmentMeta = message.attachmentMeta,
-                                        runId = message.runId,
-                                        runSequence = message.runSequence,
-                                        consumedAtPass = message.consumedAtPass,
-                                    ),
+                            ),
+                        )
+                    },
+                    onMessage = { message ->
+                        writer.writeSnapshotRecord(
+                            SNAPSHOT_MESSAGE,
+                            Json.encodeToString(
+                                ExportMessageEntity(
+                                    id = message.id,
+                                    conversationId = message.conversationId,
+                                    parentId = message.parentId,
+                                    text = message.text,
+                                    images = message.images,
+                                    thoughts = message.thoughts,
+                                    thoughtTitle = message.thoughtTitle,
+                                    tokenCount = message.tokenCount,
+                                    inputTokenCount = message.inputTokenCount,
+                                    cachedInputTokenCount = message.cachedInputTokenCount,
+                                    cacheWriteInputTokenCount = message.cacheWriteInputTokenCount,
+                                    uncachedInputTokenCount = message.uncachedInputTokenCount,
+                                    outputTokenCount = message.outputTokenCount,
+                                    reasoningTokenCount = message.reasoningTokenCount,
+                                    generationDurationMs = message.generationDurationMs,
+                                    status = message.status.name,
+                                    participant = message.participant.name,
+                                    timestamp = message.timestamp,
+                                    thoughtTimeMs = message.thoughtTimeMs,
+                                    modelName = message.modelName,
+                                    toolCallJson = message.toolCallJson,
+                                    attachmentMeta = message.attachmentMeta,
+                                    runId = message.runId,
+                                    runSequence = message.runSequence,
+                                    consumedAtPass = message.consumedAtPass,
                                 ),
-                            )
-                        }
-                    }
-
-                    for (task in chatDao.getAllTasksList()) {
-                        currentCoroutineContext().ensureActive()
+                            ),
+                        )
+                    },
+                    onTask = { task ->
                         writer.writeSnapshotRecord(
                             SNAPSHOT_TASK,
                             Json.encodeToString(
@@ -340,10 +311,8 @@ class DataExporter(
                                 ),
                             ),
                         )
-                    }
-
-                    for (loop in chatDao.getAllLoopsList()) {
-                        currentCoroutineContext().ensureActive()
+                    },
+                    onLoop = { loop ->
                         val sanitized = sanitizeImportedLoop(loop)
                         writer.writeSnapshotRecord(
                             SNAPSHOT_LOOP,
@@ -357,8 +326,8 @@ class DataExporter(
                                 ),
                             ),
                         )
-                    }
-                }
+                    },
+                )
             }
             return spool
         } catch (error: Throwable) {

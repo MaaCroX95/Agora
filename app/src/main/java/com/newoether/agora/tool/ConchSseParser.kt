@@ -41,6 +41,7 @@ internal suspend fun parseConchSseLines(
     var outputTruncationReported = false
     var currentEvent: String? = null
     var terminalSeen = false
+    var expectedSequence = 0L
 
     fun fail(reason: String): Nothing =
         throw IllegalStateException("Invalid Conch SSE stream: $reason")
@@ -98,6 +99,15 @@ internal suspend fun parseConchSseLines(
                     Json.parseToJsonElement(dataText).jsonObject
                 } catch (_: Exception) {
                     fail("event $event contains invalid JSON")
+                }
+                if (encrypted) {
+                    val sequence = data["_conch_sequence"] as? JsonPrimitive
+                    if (data.requiredString("_conch_event", event) != event ||
+                        sequence == null || sequence.isString ||
+                        sequence.content.toLongOrNull() != expectedSequence ||
+                        expectedSequence == Long.MAX_VALUE
+                    ) fail("event authentication or sequence mismatch")
+                    expectedSequence += 1
                 }
                 when (event) {
                     "line" -> {

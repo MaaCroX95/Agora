@@ -33,6 +33,8 @@ data class GenerationConfig(
     val thinkingBudgetTokens: Int = 4096,
     val openAiServiceTier: String? = null,
     val responsesApiEnabled: Boolean = false,
+    val anthropicCacheEnabled: Boolean = true,
+    val anthropicCacheTtl: String = "1h",
     val openAiWebSearchEnabled: Boolean = false,
     val baseUrl: String?,
     val userPrepend: String? = null,
@@ -90,6 +92,8 @@ data class GenerationContext(
     val transcriptionModelId: String = "",
     val transcriptionApiKey: String = "",
     val transcriptionBaseUrl: String? = null,
+    val transcriptionAnthropicCacheEnabled: Boolean = true,
+    val transcriptionAnthropicCacheTtl: String = "1h",
     /** Wall-clock budget for a single tool execution; downgrades a blocking tool from a
      *  permanent generation hang to a recoverable tool error (#49). */
     val toolTimeoutMs: Long = Constants.TOOL_EXECUTION_TIMEOUT_MS

@@ -1,11 +1,7 @@
 package com.newoether.agora.ui.settings
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,16 +12,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
@@ -35,7 +27,6 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
-import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -59,7 +50,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
@@ -85,12 +75,6 @@ private data class McpHeaderDraft(
     val name: String = "",
     val value: String = "",
     val revealValue: Boolean = false,
-)
-
-private data class McpStatusUiState(
-    val status: McpConnectionStatus,
-    val enabledToolCount: Int,
-    val error: String?,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -575,34 +559,6 @@ private fun McpServerEditor(
 }
 
 @Composable
-private fun McpStatusDot(status: McpConnectionStatus) {
-    val description = stringResource(
-        when (status) {
-            McpConnectionStatus.IDLE -> R.string.mcp_status_idle
-            McpConnectionStatus.CONNECTING -> R.string.mcp_status_connecting
-            McpConnectionStatus.CONNECTED -> R.string.mcp_status_connected
-            McpConnectionStatus.ERROR -> R.string.mcp_status_error
-        },
-    )
-    val color = when (status) {
-        McpConnectionStatus.IDLE -> {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-        }
-        McpConnectionStatus.CONNECTING -> {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
-        }
-        McpConnectionStatus.CONNECTED -> MaterialTheme.colorScheme.primary
-        McpConnectionStatus.ERROR -> MaterialTheme.colorScheme.error
-    }
-    Box(
-        modifier = Modifier
-            .size(8.dp)
-            .background(color = color, shape = CircleShape)
-            .semantics { contentDescription = description },
-    )
-}
-
-@Composable
 private fun McpHeaderItem(
     header: McpHeaderDraft,
     onHeaderChange: (McpHeaderDraft) -> Unit,
@@ -690,92 +646,7 @@ private fun McpHeaderField(
 }
 
 @Composable
-private fun McpStatusText(
-    snapshot: McpServerSnapshot?,
-    includeError: Boolean = false,
-) {
-    val tools = snapshot?.tools
-    val enabledToolCount = remember(tools) {
-        tools?.count { it.enabled } ?: 0
-    }
-    val state = McpStatusUiState(
-        status = snapshot?.status ?: McpConnectionStatus.IDLE,
-        enabledToolCount = enabledToolCount,
-        error = snapshot?.error?.takeIf(String::isNotBlank),
-    )
-    Crossfade(
-        targetState = state,
-        animationSpec = tween(durationMillis = 250),
-        label = "mcpStatusText",
-    ) { current ->
-        val color = when (current.status) {
-            McpConnectionStatus.CONNECTED -> MaterialTheme.colorScheme.primary
-            McpConnectionStatus.ERROR -> MaterialTheme.colorScheme.error
-            else -> MaterialTheme.colorScheme.onSurfaceVariant
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(
-                text = when (current.status) {
-                    McpConnectionStatus.IDLE -> stringResource(R.string.mcp_status_idle)
-                    McpConnectionStatus.CONNECTING -> stringResource(R.string.mcp_status_connecting)
-                    McpConnectionStatus.CONNECTED -> stringResource(R.string.mcp_status_connected)
-                    McpConnectionStatus.ERROR -> stringResource(R.string.mcp_status_error)
-                },
-                color = color,
-            )
-            when {
-                current.status == McpConnectionStatus.CONNECTED -> Text(
-                    text = stringResource(
-                        R.string.mcp_tools_enabled,
-                        current.enabledToolCount,
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                includeError && current.error != null -> Text(
-                    text = current.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun McpStatusIcon(status: McpConnectionStatus) {
-    Crossfade(
-        targetState = status,
-        animationSpec = tween(durationMillis = 250),
-        label = "mcpStatusIcon",
-    ) { current ->
-        Box(
-            modifier = Modifier.size(24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            when (current) {
-                McpConnectionStatus.IDLE -> Icon(Icons.Default.CloudOff, null)
-                McpConnectionStatus.CONNECTING -> CircularProgressIndicator(
-                    modifier = Modifier.size(22.dp),
-                    strokeWidth = 2.dp,
-                )
-                McpConnectionStatus.CONNECTED -> Icon(
-                    Icons.Default.CheckCircle,
-                    null,
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                McpConnectionStatus.ERROR -> Icon(
-                    Icons.Default.Error,
-                    null,
-                    tint = MaterialTheme.colorScheme.error,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun McpLabeledField(
+internal fun McpLabeledField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
@@ -785,6 +656,7 @@ private fun McpLabeledField(
     keyboardType: KeyboardType = KeyboardType.Text,
     password: Boolean = false,
     trailingContent: (@Composable () -> Unit)? = null,
+    placeholder: String? = null,
 ) {
     Column(modifier) {
         Text(
@@ -800,6 +672,9 @@ private fun McpLabeledField(
                 singleLine = true,
                 isError = isError,
                 supportingText = supportingText?.let { text -> { Text(text) } },
+                placeholder = placeholder?.let { text -> {
+                    Text(text)
+                } },
                 keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
                 visualTransformation = if (password) {
                     PasswordVisualTransformation()

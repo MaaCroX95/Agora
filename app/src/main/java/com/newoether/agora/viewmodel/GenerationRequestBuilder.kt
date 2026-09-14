@@ -13,7 +13,8 @@ import com.newoether.agora.data.PredefinedVariables
 import com.newoether.agora.data.SystemPromptEntry
 import com.newoether.agora.data.providerDisplayName
 import com.newoether.agora.data.isResponsesApiEnabledForProvider
-import com.newoether.agora.data.resolveOpenAiWebSearchEnabled
+import com.newoether.agora.data.isAnthropicCacheEnabledForProvider
+import com.newoether.agora.data.anthropicCacheTtlForProvider
 import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.SettingsRepository
@@ -156,10 +157,7 @@ class GenerationRequestBuilder(
             presencePenalty = overrides.presencePenalty ?: settings.defaultPresencePenalty.value,
             codeExecutionEnabled = overrides.codeExecutionEnabled ?: settings.codeExecutionEnabled.value,
             googleSearchEnabled = overrides.googleSearchEnabled ?: settings.googleSearchEnabled.value,
-            openAiWebSearchEnabled = resolveOpenAiWebSearchEnabled(
-                globalEnabled = settings.openAiWebSearchEnabled.value,
-                conversationOverride = overrides.openAiWebSearchEnabled,
-            ),
+            openAiWebSearchEnabled = overrides.openAiWebSearchEnabled ?: true,
             thinkingEnabled = overrides.thinkingEnabled ?: settings.thinkingEnabled.value,
             thinkingLevel = overrides.thinkingLevel ?: settings.thinkingLevel.value,
             thinkingBudgetEnabled = overrides.thinkingBudgetEnabled ?: settings.thinkingBudgetEnabled.value,
@@ -399,6 +397,10 @@ class GenerationRequestBuilder(
                 effectiveSettings.lowContextModeEnabled == true
         val imageGenModel = settings.imageGenModel.value
         val transcriptionModel = settings.imageTranscriptionModel.value
+        val cacheProviders = settings.customProviders.value
+        val cacheEnabled = settings.anthropicCacheEnabled.value
+        val cacheTtl = settings.anthropicCacheTtl.value
+        val transcriptionProviderName = resolveTranscriptionProviderName(transcriptionModel)
         val configuredSkillReadAccess = settings.accessSkills.value
         val skillReadAccess = configuredSkillReadAccess && includeSkillCatalog
         val skillModifyAccess = skillReadAccess && settings.accessSkillsModify.value
@@ -409,6 +411,8 @@ class GenerationRequestBuilder(
             customProviders = settings.customProviders.value,
         )
         val config = GenerationConfig(
+            anthropicCacheEnabled = isAnthropicCacheEnabledForProvider(providerName, cacheEnabled, cacheProviders),
+            anthropicCacheTtl = anthropicCacheTtlForProvider(providerName, cacheTtl, cacheProviders),
             providerName = providerName,
             modelId = ModelId.parse(providerRegistry.canonicalModelId(modelId)).modelName,
             apiKey = activeKey,
@@ -432,7 +436,9 @@ class GenerationRequestBuilder(
             responsesApiEnabled = responsesApiEnabled,
             openAiWebSearchEnabled =
                 !lowContextModeEnabled &&
-                    effectiveSettings.openAiWebSearchEnabled == true && responsesApiEnabled,
+                    settings.openAiWebSearchEnabled.value &&
+                    effectiveSettings.openAiWebSearchEnabled == true &&
+                    responsesApiEnabled,
             baseUrl = providerRegistry.getEffectiveBaseUrl(providerName),
             userPrepend = resolvedUserPrepend,
             userPostpend = resolvedUserPostpend,
@@ -480,7 +486,13 @@ class GenerationRequestBuilder(
             imageTranscriptionModel = transcriptionModel,
             imageTranscriptionBatchSize = settings.imageTranscriptionBatchSize.value,
             imageTranscriptionPrompt = settings.imageTranscriptionPrompt.value,
-            transcriptionProviderName = resolveTranscriptionProviderName(transcriptionModel),
+            transcriptionProviderName = transcriptionProviderName,
+            transcriptionAnthropicCacheEnabled = isAnthropicCacheEnabledForProvider(
+                transcriptionProviderName, cacheEnabled, cacheProviders,
+            ),
+            transcriptionAnthropicCacheTtl = anthropicCacheTtlForProvider(
+                transcriptionProviderName, cacheTtl, cacheProviders,
+            ),
             transcriptionModelId = resolveTranscriptionModelId(transcriptionModel),
             transcriptionApiKey = resolveTranscriptionApiKey(transcriptionModel),
             transcriptionBaseUrl = resolveTranscriptionBaseUrl(transcriptionModel)

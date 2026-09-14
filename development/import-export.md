@@ -60,11 +60,18 @@ destination capacity, checks space again while streaming, and deletes partial fi
 custom-font owner retains its separate 64 MiB limit. Sandbox and proot payloads remain excluded rather
 than becoming resources.
 
-A conversation export reads conversation settings before entering Room, then captures Conversations,
-Runs, paged Messages, Tasks, Loops, and every raw media reference into a temporary typed JSONL spool
-inside one `ChatDatabase` transaction. The transaction performs no destination, ZIP, or media I/O.
-Only after it returns may export open the destination, read media, rewrite archive paths, and emit
-`conversations.json`. The spool is deleted on success, failure, and coroutine cancellation.
+A conversation export reads conversation settings before entering the database, then opens an
+independent `ChatDatabase` instance and captures Conversations, Runs, paged Messages, Tasks, Loops,
+and every raw media reference into a temporary typed JSONL spool inside one DEFERRED read
+transaction. The independent instance uses dedicated background-priority executors and never
+occupies the process Room transaction executor, connection pool, or executors. Under WAL, foreground
+generation may continue committing atomic checkpoints: a checkpoint committed before the export
+snapshot is established is included, later checkpoints are excluded, and no partial transaction is
+visible. The read transaction performs no destination, ZIP, or media I/O. Only after it returns may
+export open the destination, read media, rewrite archive paths, and emit `conversations.json`. The
+snapshot database and its executors are released on success, failure, and coroutine cancellation.
+The spool is deleted on success, failure, and coroutine cancellation. Import terminalizes an
+archived active Run as recovered STOPPED while retaining its last committed message checkpoint.
 
 ## 3. Portable `settings.json` allowlist
 
@@ -74,7 +81,7 @@ The following JSON field names are the complete current portable allowlist.
 | --- | --- |
 | Model selection | `selectedModel`, `customModels`, `enabledModels`, `modelAliases`, `modelProviderNames` |
 | Context | `contextTokenBudget`, `visualizeContextRollout`, `contextCompactEnabled`, `contextCompactModel`, `contextCompactPrompt`, `contextCompactRetainCount`, `contextCompactThresholdPercent` |
-| Provider and reasoning | `codeExecutionEnabled`, `googleSearchEnabled`, `thinkingEnabled`, `thinkingLevel`, `thinkingBudgetEnabled`, `thinkingBudgetTokens`, `openAiServiceTierEnabled`, `openAiServiceTier`, `openAiResponsesApiEnabled`, `providerBaseUrls` |
+| Provider and reasoning | `codeExecutionEnabled`, `googleSearchEnabled`, `thinkingEnabled`, `thinkingLevel`, `thinkingBudgetEnabled`, `thinkingBudgetTokens`, `openAiServiceTierEnabled`, `openAiServiceTier`, `openAiResponsesApiEnabled`, `anthropicCacheEnabled`, `anthropicCacheTtl`, `providerBaseUrls` |
 | Title generation | `titleGenerationEnabled`, `titleGenerationModel`, `titleGenerationPrompt`, `titleGenerationNotificationsEnabled` |
 | Tool access | `accessPastConversations`, `accessSavedMemories`, `accessActiveMemory`, `accessSkills` |
 | Search and embedding | `ragSearchEnabled`, `modelSearchMethod`, `manualSearchMethod`, `remoteEmbeddingModels`, `activeRemoteEmbeddingModelId`, `searchContextWindow`, `searchMatchLimit`, `ragThreshold`, `autoCacheEnabled`, `showUncachedNotification` |
@@ -89,6 +96,13 @@ The following JSON field names are the complete current portable allowlist.
 
 Nullable fields are deliberately emitted as JSON null when unset. Their presence distinguishes
 "clear this portable value" from an older archive that has no opinion about the field.
+`anthropicCacheEnabled` and `anthropicCacheTtl` carry the built-in Anthropic Provider's boolean and
+5m/1h string. MERGE preserves absent fields; REPLACE clears both keys so an older archive restores
+the on/1h defaults. Custom Providers carry the same fields in their composite records and retain
+the existing record replacement and stable-identity remapping rules. Missing custom fields use
+on/1h defaults, including when an imported record replaces a matching local record. Explicit invalid
+cache values are rejected before any Settings reset or restore write. These fields contain no
+secrets; their request and UI semantics are owned by `settings-ui-ux.md`.
 
 `modelProviderNames` maps complete model IDs to booleans independently of aliases. False explicitly
 hides the Provider suffix; absent model IDs default to true. Export preserves both values. Import

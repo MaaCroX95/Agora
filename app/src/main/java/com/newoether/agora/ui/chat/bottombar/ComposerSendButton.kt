@@ -1,9 +1,11 @@
 package com.newoether.agora.ui.chat.bottombar
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -17,6 +19,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -77,12 +81,49 @@ internal fun ComposerSendButton(
         showStop = showStop,
         canSend = canSend,
     )
+    ComposerSendButton(
+        isActionable = isActionable,
+        isBusy = isStopping || submission.isFrozen,
+        showStop = showStop,
+        onClick = {
+            if (!isActionable) return@ComposerSendButton
+            when {
+                submission.isWaiting -> {
+                    haptics.selection()
+                    submissionController.cancelWaiting(ownerId)
+                }
+                showStop -> onStopGeneration()
+                canSend -> submissionController.submit(
+                    ownerId = ownerId,
+                    text = textFieldState.text.toString(),
+                    attachmentIds = snapshot.attachments.map(SelectedAttachment::localId),
+                )
+            }
+        },
+    )
+}
+
+@Composable
+@OptIn(ExperimentalAnimationApi::class)
+internal fun ComposerSendButton(
+    isActionable: Boolean,
+    isBusy: Boolean,
+    showStop: Boolean = false,
+    onBusyShown: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     val icon = when {
-        isStopping || submission.isSubmitting || submission.isAcceptedPendingClear ->
-            ComposerActionIcon.BUSY
-        submission.isWaiting -> ComposerActionIcon.BUSY
+        isBusy -> ComposerActionIcon.BUSY
         showStop -> ComposerActionIcon.STOP
         else -> ComposerActionIcon.SEND
+    }
+    val transition = updateTransition(targetState = icon, label = "composerActionIcon")
+    val latestBusyShown by rememberUpdatedState(onBusyShown)
+    LaunchedEffect(isBusy, transition.currentState, transition.isRunning) {
+        if (isBusy && transition.currentState == ComposerActionIcon.BUSY && !transition.isRunning && latestBusyShown != null) {
+            withFrameNanos { }
+            latestBusyShown?.invoke()
+        }
     }
     val containerColor by animateColorAsState(
         targetValue = if (isActionable) {
@@ -104,21 +145,7 @@ internal fun ComposerSendButton(
     )
 
     Surface(
-        onClick = {
-            if (!isActionable) return@Surface
-            when {
-                submission.isWaiting -> {
-                    haptics.selection()
-                    submissionController.cancelWaiting(ownerId)
-                }
-                showStop -> onStopGeneration()
-                canSend -> submissionController.submit(
-                    ownerId = ownerId,
-                    text = textFieldState.text.toString(),
-                    attachmentIds = snapshot.attachments.map(SelectedAttachment::localId),
-                )
-            }
-        },
+        onClick = onClick,
         enabled = isActionable,
         modifier = Modifier.size(46.dp),
         shape = CircleShape,
@@ -127,13 +154,11 @@ internal fun ComposerSendButton(
         shadowElevation = 0.dp,
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Crossfade(
-                targetState = icon,
+            transition.Crossfade(
                 animationSpec = tween(
                     durationMillis = COMPOSER_ICON_CROSSFADE_DURATION_MS,
                     easing = LinearEasing,
                 ),
-                label = "composerActionIcon",
             ) { renderedIcon ->
                 when (renderedIcon) {
                     ComposerActionIcon.BUSY -> CircularProgressIndicator(

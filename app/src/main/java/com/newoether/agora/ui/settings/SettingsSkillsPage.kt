@@ -1,7 +1,5 @@
 package com.newoether.agora.ui.settings
 
-import android.content.Context
-import android.net.Uri
 import com.newoether.agora.ui.components.DialogWindowEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -52,20 +50,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
 import com.newoether.agora.data.SkillManager
+import com.newoether.agora.data.readSkillMarkdown
 import com.newoether.agora.ui.components.clearFocusOnTap
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import com.newoether.agora.ui.motion.MotionAwareModalBottomSheet as ModalBottomSheet
 import com.newoether.agora.util.DebugLog
-import com.newoether.agora.util.FileValidator
 import com.newoether.agora.viewmodel.ChatViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
-import java.nio.charset.CodingErrorAction
-
-private const val MAX_SKILL_IMPORT_BYTES = 1_048_576
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -762,44 +755,4 @@ fun SettingsSkillsPage(
             },
         )
     }
-}
-
-private fun readSkillMarkdown(
-    context: Context,
-    uri: Uri,
-): Pair<String, String> {
-    val reportedSize = FileValidator.resolveFileSize(context, uri)
-    require(reportedSize == null || reportedSize <= MAX_SKILL_IMPORT_BYTES) {
-        "Skill file must be 1 MB or smaller"
-    }
-    val sourceFileName = FileValidator.resolveFileName(context, uri)
-        ?.takeIf(String::isNotBlank)
-        ?: "skill-${System.currentTimeMillis()}.md"
-    require(sourceFileName.endsWith(".md", ignoreCase = true)) {
-        "Select a Markdown (.md) file"
-    }
-    val fileName = sourceFileName.dropLast(3) + ".md"
-    val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
-        val output = ByteArrayOutputStream(
-            minOf(reportedSize?.toInt() ?: 8_192, MAX_SKILL_IMPORT_BYTES),
-        )
-        val buffer = ByteArray(8_192)
-        var total = 0
-        while (true) {
-            val read = input.read(buffer)
-            if (read < 0) break
-            total += read
-            require(total <= MAX_SKILL_IMPORT_BYTES) {
-                "Skill file must be 1 MB or smaller"
-            }
-            output.write(buffer, 0, read)
-        }
-        output.toByteArray()
-    } ?: error("Unable to open skill file")
-    val content = Charsets.UTF_8.newDecoder()
-        .onMalformedInput(CodingErrorAction.REPORT)
-        .onUnmappableCharacter(CodingErrorAction.REPORT)
-        .decode(ByteBuffer.wrap(bytes))
-        .toString()
-    return fileName to content
 }

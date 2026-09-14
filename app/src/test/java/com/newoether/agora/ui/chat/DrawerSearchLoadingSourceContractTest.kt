@@ -9,8 +9,8 @@ import org.junit.Test
 class DrawerSearchLoadingSourceContractTest {
     @Test
     fun `keyword search uses a single SQLite LIKE escape character`() {
-        val dao = source("data/local/ChatDao.kt")
-        val repository = source("data/repository/ConversationRepository.kt")
+        val dao = source("data/local/ChatSearchDao.kt")
+        val repository = source("data/repository/ConversationMessageSearch.kt")
         val globalSearchQuery = dao
             .substringBefore("suspend fun searchMessages")
             .substringAfterLast("@Query(")
@@ -112,7 +112,7 @@ class DrawerSearchLoadingSourceContractTest {
         assertTrue(
             normalizedViewModel.contains(
                 "onConversationCreatedBySend = { conversationId ->\n" +
-                    "                suppressNextOpenScroll = true\n" +
+                    "                scrollRequests.suppressNextOpenScroll = true\n" +
                     "                _firstMessageCommitted.tryEmit(conversationId)",
             ),
         )

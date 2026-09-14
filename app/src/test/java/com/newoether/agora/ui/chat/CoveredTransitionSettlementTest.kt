@@ -115,7 +115,7 @@ class CoveredTransitionSettlementTest {
             "com/newoether/agora/ui/chat/ChatScrollCoordinator.kt",
         ).readText()
         val settleStart = source.indexOf("private suspend fun settleCoveredTransition(")
-        val settleEnd = source.indexOf("@Composable", settleStart)
+        val settleEnd = source.lastIndexOf("\n}")
         val settle = source.substring(settleStart, settleEnd)
         val bottomBranch = settle.indexOf("if (scrollToAbsoluteBottom)")
 

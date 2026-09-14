@@ -99,6 +99,8 @@ internal fun MessageItem(
     segmentAppearanceRegistry: SegmentAppearanceRegistry,
     modifier: Modifier = Modifier,
     animateEntrance: Boolean = false,
+    outerPadding: PaddingValues = PaddingValues(vertical = 8.dp),
+    includeAssistantOuterSpacing: Boolean = true,
     isStreaming: Boolean = false,
     liveCompactPreview: StateFlow<String>? = null,
     isLoading: Boolean = false,
@@ -123,6 +125,7 @@ internal fun MessageItem(
     onStartEdit: () -> Unit = {},
     onCancelEdit: () -> Unit = {},
     showActions: Boolean = true,
+    readOnlyActions: Boolean = false,
     actionCopyText: String? = message.text,
     showBranchSelector: Boolean = true,
     branchIndex: Int = 0,
@@ -284,6 +287,9 @@ internal fun MessageItem(
     val markdownAssets = rememberChatMarkdownAssets(
         textColor,
         parseInlineDollarMath,
+        message.markdownImages,
+        onMediaClick,
+        message.preparedMarkdown,
     )
     val markdownRenderContext = markdownAssets.renderContext
     val thoughtMarkdownRenderContext = markdownAssets.thoughtRenderContext
@@ -301,7 +307,7 @@ internal fun MessageItem(
             .onSizeChanged {
                 onHeightChanged(it.height)
             }
-            .padding(vertical = 8.dp)
+            .padding(outerPadding)
             .then(entranceModifier),
         verticalAlignment = Alignment.Top,
     ) {
@@ -361,7 +367,8 @@ internal fun MessageItem(
                         sizeAnimationReady = userBubbleSizeAnimationReady,
                         isLoading = isLoading,
                         isEditingAllowed = isEditingAllowed,
-                        showActions = showActions,
+                        showActions = showActions || readOnlyActions,
+                        allowMutations = !readOnlyActions,
                         actionCopyText = displayActionCopyText,
                         showBranchSelector = showBranchSelector,
                         branchIndex = branchIndex,
@@ -381,6 +388,7 @@ internal fun MessageItem(
                 } else {
                     AssistantMessageContent(
                         message = displayMessage,
+                        includeOuterSpacing = includeAssistantOuterSpacing,
                         segmentAppearanceRegistry = segmentAppearanceRegistry,
                         contextAlpha = contextAlpha,
                         isStreaming = isStreaming,

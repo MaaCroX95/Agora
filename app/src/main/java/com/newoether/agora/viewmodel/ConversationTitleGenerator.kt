@@ -4,6 +4,8 @@ import com.newoether.agora.api.HttpClient
 import com.newoether.agora.api.ProviderConfig
 import com.newoether.agora.api.StreamEvent
 import com.newoether.agora.data.BuiltInPrompts
+import com.newoether.agora.data.isAnthropicCacheEnabledForProvider
+import com.newoether.agora.data.anthropicCacheTtlForProvider
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.SettingsRepository
 import com.newoether.agora.diagnostics.DeveloperDiagnostics
@@ -135,6 +137,12 @@ class ConversationTitleGenerator(
         val provider = providers.getInstanceOrNull(providerName)
             ?: return Result.Failure("Provider not registered: $providerName")
         val config = ProviderConfig(
+            anthropicCacheEnabled = isAnthropicCacheEnabledForProvider(
+                providerName, settings.anthropicCacheEnabled.value, settings.customProviders.value,
+            ),
+            anthropicCacheTtl = anthropicCacheTtlForProvider(
+                providerName, settings.anthropicCacheTtl.value, settings.customProviders.value,
+            ),
             apiKey = activeKey,
             modelId = modelId,
             systemPrompt = settings.titleGenerationPrompt.value.ifBlank {

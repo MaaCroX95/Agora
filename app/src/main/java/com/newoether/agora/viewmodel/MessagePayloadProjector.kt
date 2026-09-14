@@ -21,7 +21,7 @@ internal class MessagePayloadProjector(
         require(maxParallelism > 0)
     }
 
-    suspend fun <T> project(block: () -> T): T =
+    suspend fun <T> project(block: suspend () -> T): T =
         permits.withPermit { withContext(dispatcher) { block() } }
 
     suspend fun <I, O> projectAll(

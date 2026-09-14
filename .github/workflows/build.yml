@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [master]
+    branches: [master, sync/upstream-2026-09-14]
   pull_request:
     branches: [master]
   workflow_dispatch:
@@ -35,19 +35,9 @@ jobs:
 
       - name: Run application and build-logic tests
         run: |
-          set -o pipefail
           chmod +x ./gradlew
-          ./gradlew -p build-logic test --stacktrace 2>&1 | tee gradle-ci.log
-          ./gradlew :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest verifyKotlinFileSize -Pkotlin.daemon.jvmargs=-Xmx3584m --stacktrace --info 2>&1 | tee -a gradle-ci.log
-
-      - name: Upload Gradle CI log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-ci-log
-          path: gradle-ci.log
-          if-no-files-found: warn
-          retention-days: 14
+          ./gradlew -p build-logic test --stacktrace
+          ./gradlew :app:testFdroidDebugUnitTest :app:testPlayDebugUnitTest verifyKotlinFileSize --no-daemon --max-workers=1 --stacktrace
 
       - name: Upload test reports
         if: failure()
@@ -121,7 +111,6 @@ jobs:
             echo "::error::Configured signing certificate does not match the permanent Agora Dev certificate."
             exit 1
           fi
-          echo "Configured signing certificate SHA-256: $actual_sha256"
 
           cat >> local.properties <<EOF
           storeFile=${{ github.workspace }}/release.jks

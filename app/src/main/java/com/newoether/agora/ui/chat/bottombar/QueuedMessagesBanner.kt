@@ -32,6 +32,16 @@ internal fun QueuedMessageRow(
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    QueuedMessageRow(queued.text, queued.attachments.size, onRemove, modifier)
+}
+
+@Composable
+internal fun QueuedMessageRow(
+    text: String,
+    attachmentCount: Int = 0,
+    onRemove: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -47,13 +57,13 @@ internal fun QueuedMessageRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = queued.text,
+                text = text,
                 style = MaterialTheme.typography.labelLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            if (queued.attachments.isNotEmpty()) {
+            if (attachmentCount > 0) {
                 Icon(
                     Icons.Default.AttachFile,
                     contentDescription = null,
@@ -61,12 +71,12 @@ internal fun QueuedMessageRow(
                 )
                 Spacer(Modifier.width(2.dp))
                 Text(
-                    text = queued.attachments.size.toString(),
+                    text = attachmentCount.toString(),
                     style = MaterialTheme.typography.labelSmall,
                 )
                 Spacer(Modifier.width(4.dp))
             }
-            IconButton(onClick = onRemove, modifier = Modifier.size(36.dp)) {
+            if (onRemove != null) IconButton(onClick = onRemove, modifier = Modifier.size(36.dp)) {
                 Icon(
                     Icons.Default.Close,
                     contentDescription = stringResource(R.string.remove),

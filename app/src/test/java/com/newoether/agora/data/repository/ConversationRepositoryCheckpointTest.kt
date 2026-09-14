@@ -62,6 +62,7 @@ class ConversationRepositoryCheckpointTest {
                     uncachedInputTokenCount = 20,
                     outputTokenCount = 12,
                     reasoningTokenCount = 4,
+                    generationDurationMs = 1500,
                 ),
                 status = MessageStatus.THINKING,
                 participant = Participant.MODEL,
@@ -85,6 +86,7 @@ class ConversationRepositoryCheckpointTest {
         assertEquals(20, captured.captured.uncachedInputTokenCount)
         assertEquals(12, captured.captured.outputTokenCount)
         assertEquals(4, captured.captured.reasoningTokenCount)
+        assertEquals(1500L, captured.captured.generationDurationMs)
         assertEquals(MessageStatus.THINKING, captured.captured.status)
         assertEquals(987L, captured.captured.thoughtTimeMs)
         assertEquals(

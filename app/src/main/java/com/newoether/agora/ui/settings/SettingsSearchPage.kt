@@ -22,11 +22,15 @@ import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as Cir
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.DpSize
 import com.newoether.agora.R
 import com.newoether.agora.api.ProviderDefaults
 import com.newoether.agora.viewmodel.EmbeddingCacheRowPhase
@@ -64,6 +68,32 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
 
     val embeddingModelIds = remember(embeddingModels) {
         embeddingModels.map(com.newoether.agora.data.EmbeddingModelConfig::id)
+    }
+    val actionTextMeasurer = rememberTextMeasurer()
+    val actionLabelSizes = listOf(
+        stringResource(R.string.retry),
+        stringResource(R.string.recache_action),
+        stringResource(R.string.cache_action),
+    ).map { label ->
+        actionTextMeasurer.measure(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            softWrap = false,
+        ).size
+    }
+    val actionPadding = ButtonDefaults.TextButtonContentPadding
+    val layoutDirection = LocalLayoutDirection.current
+    // Reserve every action before loading resolves, including localized text and font scaling.
+    val cacheActionSize = with(LocalDensity.current) {
+        DpSize(
+            width = (actionLabelSizes.maxOf { it.width }.toDp() +
+                actionPadding.calculateLeftPadding(layoutDirection) +
+                actionPadding.calculateRightPadding(layoutDirection)).coerceAtLeast(76.dp),
+            height = (actionLabelSizes.maxOf { it.height }.toDp() +
+                actionPadding.calculateTopPadding() +
+                actionPadding.calculateBottomPadding()).coerceAtLeast(48.dp),
+        )
     }
     LaunchedEffect(embeddingModelIds) { viewModel.ragManager.loadCacheCounts() }
     var showRemoteDialog by remember { mutableStateOf(false) }
@@ -345,69 +375,75 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                     trailingContent = {
                                         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                             Box(
-                                                modifier = Modifier.widthIn(min = 76.dp),
+                                                modifier = Modifier.size(cacheActionSize),
                                                 contentAlignment = androidx.compose.ui.Alignment.Center,
                                             ) {
                                                 Crossfade(
                                                     targetState = visualPhase,
+                                                    modifier = Modifier.fillMaxSize(),
                                                     animationSpec = tween(250),
                                                     label = "embeddingCacheAction-${model.id}",
                                                 ) { phase ->
-                                                    when (phase) {
-                                                        EmbeddingCacheRowPhase.CACHING,
-                                                        EmbeddingCacheRowPhase.FINALIZING -> {
-                                                            val progress = cacheRow.progress
-                                                            if (progress == null) {
+                                                    Box(
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentAlignment = androidx.compose.ui.Alignment.Center,
+                                                    ) {
+                                                        when (phase) {
+                                                            EmbeddingCacheRowPhase.CACHING,
+                                                            EmbeddingCacheRowPhase.FINALIZING -> {
+                                                                val progress = cacheRow.progress
+                                                                if (progress == null) {
+                                                                    CircularProgressIndicator(
+                                                                        modifier = Modifier.size(24.dp),
+                                                                        strokeWidth = 3.dp,
+                                                                    )
+                                                                } else {
+                                                                    CircularProgressIndicator(
+                                                                        progress = { progress.fraction },
+                                                                        modifier = Modifier.size(24.dp),
+                                                                        strokeWidth = 3.dp,
+                                                                    )
+                                                                }
+                                                            }
+                                                            EmbeddingCacheRowPhase.LOADING,
+                                                            EmbeddingCacheRowPhase.QUEUED ->
                                                                 CircularProgressIndicator(
                                                                     modifier = Modifier.size(24.dp),
                                                                     strokeWidth = 3.dp,
                                                                 )
-                                                            } else {
-                                                                CircularProgressIndicator(
-                                                                    progress = { progress.fraction },
-                                                                    modifier = Modifier.size(24.dp),
-                                                                    strokeWidth = 3.dp,
+                                                            EmbeddingCacheRowPhase.FAILED -> TextButton(
+                                                                onClick = {
+                                                                    viewModel.ragManager.retryCacheRow(model.id)
+                                                                },
+                                                            ) {
+                                                                Text(
+                                                                    stringResource(R.string.retry),
+                                                                    maxLines = 1,
+                                                                    softWrap = false,
                                                                 )
                                                             }
-                                                        }
-                                                        EmbeddingCacheRowPhase.LOADING,
-                                                        EmbeddingCacheRowPhase.QUEUED ->
-                                                            CircularProgressIndicator(
-                                                                modifier = Modifier.size(24.dp),
-                                                                strokeWidth = 3.dp,
-                                                            )
-                                                        EmbeddingCacheRowPhase.FAILED -> TextButton(
-                                                            onClick = {
-                                                                viewModel.ragManager.retryCacheRow(model.id)
-                                                            },
-                                                        ) {
-                                                            Text(
-                                                                stringResource(R.string.retry),
-                                                                maxLines = 1,
-                                                                softWrap = false,
-                                                            )
-                                                        }
-                                                        EmbeddingCacheRowPhase.RECACHE -> TextButton(
-                                                            onClick = { showRecacheConfirm = model.id },
-                                                        ) {
-                                                            Text(
-                                                                stringResource(R.string.recache_action),
-                                                                maxLines = 1,
-                                                                softWrap = false,
-                                                            )
-                                                        }
-                                                        EmbeddingCacheRowPhase.CACHE -> TextButton(
-                                                            onClick = {
-                                                                viewModel.ragManager.cacheMessagesForModel(
-                                                                    model.id,
+                                                            EmbeddingCacheRowPhase.RECACHE -> TextButton(
+                                                                onClick = { showRecacheConfirm = model.id },
+                                                            ) {
+                                                                Text(
+                                                                    stringResource(R.string.recache_action),
+                                                                    maxLines = 1,
+                                                                    softWrap = false,
                                                                 )
-                                                            },
-                                                        ) {
-                                                            Text(
-                                                                stringResource(R.string.cache_action),
-                                                                maxLines = 1,
-                                                                softWrap = false,
-                                                            )
+                                                            }
+                                                            EmbeddingCacheRowPhase.CACHE -> TextButton(
+                                                                onClick = {
+                                                                    viewModel.ragManager.cacheMessagesForModel(
+                                                                        model.id,
+                                                                    )
+                                                                },
+                                                            ) {
+                                                                Text(
+                                                                    stringResource(R.string.cache_action),
+                                                                    maxLines = 1,
+                                                                    softWrap = false,
+                                                                )
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -472,178 +508,16 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                 }
             )
 
-            SettingsGroup(
-                title = stringResource(R.string.advanced_title),
-                items = listOf(
-                    {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 16.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = androidx.compose.ui.Alignment.Top
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.text_compare_24),
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = stringResource(R.string.search_context_label),
-                                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = stringResource(
-                                            R.string.search_context_desc,
-                                            searchContextGate.displayed.toInt(),
-                                        ),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(top = 4.dp)
-                                    )
-                                    Slider(
-                                        value = searchContextGate.displayed,
-                                        onValueChange = searchContextGate::updateFromGesture,
-                                        onValueChangeFinished = {
-                                            val committed = searchContextGate.displayed.toInt()
-                                            if (committed == searchContextWindow) {
-                                                searchContextGate.settleWithoutWrite(
-                                                    searchContextWindow,
-                                                    committed.toFloat(),
-                                                )
-                                            } else {
-                                                searchContextGate.expectPersisted(
-                                                    committed,
-                                                    committed.toFloat(),
-                                                )
-                                                viewModel.settings.setSearchContextWindow(committed)
-                                            }
-                                        },
-                                        valueRange = 4f..32f,
-                                        steps = 6,
-                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                                    )
-                                }
-                            }
-                        }
-                    },
-                    {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 16.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = androidx.compose.ui.Alignment.Top
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.text_compare_24),
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = stringResource(R.string.search_match_label),
-                                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = stringResource(
-                                            R.string.search_match_desc,
-                                            searchMatchGate.displayed.toInt(),
-                                        ),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(top = 4.dp)
-                                    )
-                                    Slider(
-                                        value = searchMatchGate.displayed,
-                                        onValueChange = searchMatchGate::updateFromGesture,
-                                        onValueChangeFinished = {
-                                            val committed = searchMatchGate.displayed.toInt()
-                                            if (committed == searchMatchLimit) {
-                                                searchMatchGate.settleWithoutWrite(
-                                                    searchMatchLimit,
-                                                    committed.toFloat(),
-                                                )
-                                            } else {
-                                                searchMatchGate.expectPersisted(
-                                                    committed,
-                                                    committed.toFloat(),
-                                                )
-                                                viewModel.settings.setSearchMatchLimit(committed)
-                                            }
-                                        },
-                                        valueRange = 5f..30f,
-                                        steps = 4,
-                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                                    )
-                                }
-                            }
-                        }
-                    },
-                    {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 16.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = androidx.compose.ui.Alignment.Top
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.text_compare_24),
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = stringResource(R.string.rag_threshold_label),
-                                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "≥ ${"%.2f".format(ragThresholdGate.displayed)}",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(top = 4.dp)
-                                    )
-                                    Slider(
-                                        value = ragThresholdGate.displayed,
-                                        onValueChange = ragThresholdGate::updateFromGesture,
-                                        onValueChangeFinished = {
-                                            val committed = ragThresholdGate.displayed
-                                            if (kotlin.math.abs(committed - ragThreshold) < 0.0001f) {
-                                                ragThresholdGate.settleWithoutWrite(
-                                                    ragThreshold,
-                                                    committed,
-                                                )
-                                            } else {
-                                                ragThresholdGate.expectPersisted(committed, committed)
-                                                viewModel.settings.setRagThreshold(committed)
-                                            }
-                                        },
-                                        valueRange = 0f..1f,
-                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                }
-                            }
-                        }
-                    }
-                )
+            SearchAdvancedSettings(
+                searchContextWindow = searchContextWindow,
+                searchMatchLimit = searchMatchLimit,
+                ragThreshold = ragThreshold,
+                searchContextGate = searchContextGate,
+                searchMatchGate = searchMatchGate,
+                ragThresholdGate = ragThresholdGate,
+                onSearchContextWindowChange = viewModel.settings::setSearchContextWindow,
+                onSearchMatchLimitChange = viewModel.settings::setSearchMatchLimit,
+                onRagThresholdChange = viewModel.settings::setRagThreshold,
             )
             }
             if (showDocFab) { Spacer(modifier = Modifier.height(80.dp)) }

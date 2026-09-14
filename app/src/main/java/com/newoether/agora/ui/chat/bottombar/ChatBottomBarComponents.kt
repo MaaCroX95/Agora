@@ -1,6 +1,21 @@
 package com.newoether.agora.ui.chat.bottombar
 
 import androidx.compose.foundation.ScrollState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+import com.newoether.agora.model.ContextBudget
+import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
+import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
@@ -9,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
@@ -32,6 +48,136 @@ import com.newoether.agora.R
 import com.newoether.agora.ui.theme.ChatType
 
 internal const val CHAT_DROPDOWN_MENU_ICON_SIZE_DP = 24
+
+/** The same controls capsule is used by ordinary and externally owned conversations. */
+@Composable
+internal fun ComposerControlGroup(content: @Composable RowScope.() -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.height(48.dp)
+            .background(MaterialTheme.colorScheme.surfaceColorAtElevation(10.dp), RoundedCornerShape(100))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        content = content,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ComposerModelSelector(
+    displayText: String,
+    isModelValid: Boolean,
+    expanded: Boolean,
+    onClick: () -> Unit,
+    onDismissRequest: () -> Unit,
+    enabled: Boolean = true,
+    menuContent: @Composable ColumnScope.() -> Unit,
+) {
+    ExposedDropdownMenuBox(expanded = expanded && enabled, onExpandedChange = {}) {
+        TextButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier.height(38.dp).widthIn(max = 160.dp)
+                .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = enabled),
+            contentPadding = PaddingValues(8.dp),
+        ) {
+            Text(
+                text = displayText,
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = if (isModelValid) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            )
+        }
+        ExposedDropdownMenu(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            expanded = expanded && enabled,
+            onDismissRequest = onDismissRequest,
+            matchTextFieldWidth = false,
+            shape = CHAT_DROPDOWN_MENU_SHAPE,
+            content = menuContent,
+        )
+    }
+}
+
+@Composable
+internal fun ComposerModelMenuItem(displayText: String, selected: Boolean, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(displayText) },
+        leadingIcon = {
+            if (selected) Icon(Icons.Default.Check, null, Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp))
+            else Spacer(Modifier.size(CHAT_DROPDOWN_MENU_ICON_SIZE_DP.dp))
+        },
+        onClick = onClick,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ComposerContextIndicator(
+    estimatedTokens: Int?,
+    tokenBudget: Int?,
+    compactThresholdPercent: Int = 90,
+    expanded: Boolean,
+    onClick: () -> Unit,
+    onDismissRequest: () -> Unit,
+) {
+    val motionPolicy = LocalAgoraMotionPolicy.current
+    val available = estimatedTokens != null && tokenBudget != null
+    val contextProgressColor = if (estimatedTokens != null && tokenBudget != null && contextUsageExceedsCompactThreshold(
+        estimatedTokens, tokenBudget, compactThresholdPercent,
+    )) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    val contextProgressTarget = if (estimatedTokens == null || tokenBudget == null || tokenBudget <= 0) 0f
+        else (estimatedTokens.toFloat() / tokenBudget).coerceIn(0f, 1f)
+    val contextProgress by animateFloatAsState(
+        targetValue = contextProgressTarget,
+        animationSpec = if (motionPolicy.allowContinuousMotion) tween(durationMillis = 400) else snap(),
+        label = "contextProgress",
+    )
+    val title = stringResource(R.string.context_title)
+    val usage = if (estimatedTokens != null && tokenBudget != null) stringResource(
+        R.string.context_usage_messages,
+        ContextBudget.compactLabel(estimatedTokens),
+        ContextBudget.compactLabel(tokenBudget),
+    ) else stringResource(R.string.unknown)
+    ExposedDropdownMenuBox(expanded = expanded && available, onExpandedChange = {}) {
+        IconButton(
+            onClick = onClick,
+            enabled = available,
+            modifier = Modifier.size(32.dp)
+                .semantics { contentDescription = title; stateDescription = usage }
+                .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = available),
+        ) {
+            CircularProgressIndicator(
+                progress = { if (available) contextProgress else 0f },
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.5.dp,
+                color = contextProgressColor,
+            )
+        }
+        ExposedDropdownMenu(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            expanded = expanded && available,
+            onDismissRequest = onDismissRequest,
+            matchTextFieldWidth = false,
+            shape = CHAT_DROPDOWN_MENU_SHAPE,
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(text = title, style = MaterialTheme.typography.titleSmall)
+                CircularProgressIndicator(
+                    progress = { contextProgress },
+                    modifier = Modifier.size(36.dp).align(Alignment.CenterHorizontally),
+                    strokeWidth = 4.dp,
+                    color = contextProgressColor,
+                )
+                Text(text = usage, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+}
 
 fun Modifier.verticalScrollbar(
     scrollState: ScrollState,

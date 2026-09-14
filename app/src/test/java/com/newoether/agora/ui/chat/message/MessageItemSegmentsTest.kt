@@ -536,15 +536,11 @@ class MessageItemSegmentsTest {
         val controller = GroupedSegmentAutoExpansionController()
         val key = "message:group:0"
 
-        val activeContent = compactSegmentHasActiveContent(
-            segs = segments,
-            message = active,
-            useLiveStatus = true,
+        val activeContent = compactSegmentShowsLoading(
+            generationActive = active.status == MessageStatus.TOOL_CALLING, isCurrentCard = true,
         )
-        val stoppedContent = compactSegmentHasActiveContent(
-            segs = segments,
-            message = stopped,
-            useLiveStatus = true,
+        val stoppedContent = compactSegmentShowsLoading(
+            generationActive = stopped.status == MessageStatus.TOOL_CALLING, isCurrentCard = true,
         )
         assertTrue(activeContent)
         assertFalse(stoppedContent)
@@ -563,7 +559,7 @@ class MessageItemSegmentsTest {
     }
 
     @Test
-    fun historicalGroupedSegmentNeverAutoExpands() {
+    fun historicalGroupStaysCollapsedUntilAuthoritativeGenerationArrives() {
         val controller = GroupedSegmentAutoExpansionController()
         val key = "message:group:0"
 
@@ -579,7 +575,7 @@ class MessageItemSegmentsTest {
             ),
         )
         assertEquals(
-            GroupedSegmentAutoExpansionAction.NONE,
+            GroupedSegmentAutoExpansionAction.EXPAND,
             controller.update(key, isActive = true, enabled = true),
         )
     }

@@ -12,17 +12,18 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Cached
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import com.newoether.agora.ui.motion.MotionAwareCircularProgressIndicator as CircularProgressIndicator
@@ -33,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -42,9 +44,10 @@ import com.newoether.agora.R
 import com.newoether.agora.data.ApiKeyEntry
 import com.newoether.agora.data.CustomEndpointProtocol
 import com.newoether.agora.data.CustomProviderNamePolicy
+import com.newoether.agora.data.isAnthropicProtocolProvider
+import com.newoether.agora.data.isAnthropicCacheEnabledForProvider
+import com.newoether.agora.data.anthropicCacheTtlForProvider
 import com.newoether.agora.data.LocalChatModelConfig
-import com.newoether.agora.data.LOCAL_MODEL_IDLE_RETENTION_PRESETS
-import com.newoether.agora.ui.common.PersistedSliderFeedbackGate
 import com.newoether.agora.ui.components.CustomEndpointProtocolSelector
 import com.newoether.agora.ui.components.clearFocusOnTap
 import com.newoether.agora.util.Constants
@@ -54,8 +57,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,6 +70,8 @@ fun SettingsProviderDetailPage(
     val providerBaseUrls by viewModel.settings.providerBaseUrls.collectAsState()
     val customProviders by viewModel.settings.customProviders.collectAsState()
     val openAiResponsesApiEnabled by viewModel.settings.openAiResponsesApiEnabled.collectAsState()
+    val anthropicCacheEnabled by viewModel.settings.anthropicCacheEnabled.collectAsState()
+    val anthropicCacheTtl by viewModel.settings.anthropicCacheTtl.collectAsState()
     val localChatModels by viewModel.settings.localChatModels.collectAsState()
     val localModelIdleRetentionMinutes by
         viewModel.settings.localModelIdleRetentionMinutes.collectAsState()
@@ -266,7 +269,7 @@ fun SettingsProviderDetailPage(
                                         selected = config.protocol,
                                         onSelected = { protocol ->
                                             if (protocol != config.protocol) {
-                                                viewModel.updateCustomProviderProtocol(currentName, protocol)
+                                                viewModel.customModelConfiguration.updateProviderProtocol(currentName, protocol)
                                             }
                                         },
                                     )
@@ -478,71 +481,102 @@ fun SettingsProviderDetailPage(
 
             // API Keys (non-Local)
             if (!isLocal) {
-                val providerKeys = apiKeys.filter { it.provider == currentName }
-                if (providerKeys.isEmpty()) {
+                ProviderApiKeysSettings(
+                    apiKeys = apiKeys,
+                    currentName = currentName,
+                    activeApiKeyIds = activeApiKeyIds,
+                    onActivateKey = viewModel.settings::setActiveApiKey,
+                    onEditKey = { showKeyDialog = it },
+                    onDeleteKey = { showDeleteKeyConfirm = it },
+                )
+                if (isAnthropicProtocolProvider(currentName, customProviders)) {
+                    val providerId = customConfig?.providerId ?: currentName
+                    val cacheEnabled = isAnthropicCacheEnabledForProvider(
+                        providerId, anthropicCacheEnabled, customProviders,
+                    )
+                    val cacheTtl = anthropicCacheTtlForProvider(
+                        providerId, anthropicCacheTtl, customProviders,
+                    )
                     SettingsGroup(
-                        title = stringResource(R.string.provider_api_keys),
+                        title = stringResource(R.string.advanced_title),
                         items = buildList {
                             add {
                                 SettingsItem(
-                                    headlineContent = { Text(stringResource(R.string.provider_no_keys, currentName), color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                                    leadingContent = { Icon(Icons.Default.Key, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)) },
-                                    modifier = Modifier.heightIn(min = 64.dp)
-                                )
-                            }
-                            add {
-                                SettingsAddItem(
-                                    label = stringResource(R.string.provider_add_key),
-                                    onClick = {
-                                        showKeyDialog = ApiKeyEntry(
-                                            name = "",
-                                            key = "",
-                                            provider = currentName,
+                                    headlineContent = { Text(stringResource(R.string.provider_cache)) },
+                                    supportingContent = { Text(stringResource(R.string.provider_cache_desc)) },
+                                    leadingContent = {
+                                        Icon(
+                                            Icons.Default.Cached,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(24.dp),
                                         )
                                     },
+                                    trailingContent = {
+                                        Switch(checked = cacheEnabled, onCheckedChange = null)
+                                    },
+                                    modifier = Modifier.toggleable(
+                                        value = cacheEnabled,
+                                        role = Role.Switch,
+                                        onValueChange = { viewModel.settings.setAnthropicCacheEnabled(providerId, it) },
+                                    ),
                                 )
                             }
-                        }
-                    )
-                } else {
-                    SettingsGroup(
-                        title = stringResource(R.string.provider_api_keys),
-                        items = buildList {
-                            providerKeys.forEach { entry ->
-                                var showMenu by remember { mutableStateOf(false) }
-                                val isCurrentActive = entry.id == activeApiKeyIds[currentName]
+                            if (cacheEnabled) {
                                 add {
+                                    var expanded by remember(providerId) { mutableStateOf(false) }
                                     SettingsItem(
-                                        headlineContent = { Text(entry.name, fontWeight = FontWeight.Medium) },
-                                        supportingContent = { Text(entry.key.take(4) + "••••••••" + entry.key.takeLast(4)) },
-                                        leadingContent = { Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) { RadioButton(selected = isCurrentActive, onClick = { viewModel.settings.setActiveApiKey(currentName, entry.id) }, modifier = Modifier.size(20.dp)) } },
+                                        headlineContent = { Text(stringResource(R.string.provider_cache_duration)) },
+                                        supportingContent = { Text(stringResource(R.string.provider_cache_duration_desc)) },
+                                        leadingContent = {
+                                            Icon(
+                                                Icons.Default.Schedule,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(24.dp),
+                                            )
+                                        },
                                         trailingContent = {
                                             Box {
-                                                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.MoreVert, stringResource(R.string.options), modifier = Modifier.size(18.dp)) }
-                                                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 16.dp, shape = RoundedCornerShape(12.dp)) {
-                                                    DropdownMenuItem(text = { Text(stringResource(R.string.provider_edit)) }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { showMenu = false; showKeyDialog = entry })
-                                                    DropdownMenuItem(text = { Text(stringResource(R.string.provider_delete), color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }, onClick = { showMenu = false; showDeleteKeyConfirm = entry })
+                                                Text(
+                                                    cacheTtl,
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.padding(end = 4.dp),
+                                                )
+                                                DropdownMenu(
+                                                    expanded = expanded,
+                                                    onDismissRequest = { expanded = false },
+                                                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                                    tonalElevation = 16.dp,
+                                                    shape = RoundedCornerShape(12.dp),
+                                                ) {
+                                                    listOf("5m", "1h").forEach { ttl ->
+                                                        DropdownMenuItem(
+                                                            text = { Text(ttl) },
+                                                            leadingIcon = {
+                                                                if (cacheTtl == ttl) {
+                                                                    Icon(
+                                                                        Icons.Default.Check,
+                                                                        contentDescription = null,
+                                                                        tint = MaterialTheme.colorScheme.primary,
+                                                                    )
+                                                                }
+                                                            },
+                                                            onClick = {
+                                                                viewModel.settings.setAnthropicCacheTtl(providerId, ttl)
+                                                                expanded = false
+                                                            },
+                                                        )
+                                                    }
                                                 }
                                             }
                                         },
-                                        modifier = Modifier
-                                            .clickable { viewModel.settings.setActiveApiKey(currentName, entry.id) }
+                                        modifier = Modifier.clickable { expanded = true },
                                     )
                                 }
                             }
-                            add {
-                                SettingsAddItem(
-                                    label = stringResource(R.string.provider_add_key),
-                                    onClick = {
-                                        showKeyDialog = ApiKeyEntry(
-                                            name = "",
-                                            key = "",
-                                            provider = currentName,
-                                        )
-                                    },
-                                )
-                            }
-                        }
+                        },
                     )
                 }
             }
@@ -733,7 +767,7 @@ fun SettingsProviderDetailPage(
                 currentName = currentName,
             )
             if (!renameError) {
-                viewModel.renameCustomProvider(currentName, trimmed)
+                viewModel.customModelConfiguration.renameProvider(currentName, trimmed)
                 showRenameProvider = false
                 if (trimmed != currentName) currentName = trimmed
             }
@@ -742,101 +776,6 @@ fun SettingsProviderDetailPage(
 
     // Delete custom provider
     if (showDeleteProvider) {
-        AlertDialog(containerColor = MaterialTheme.colorScheme.surfaceContainer, onDismissRequest = { showDeleteProvider = false }, title = { Text(stringResource(R.string.custom_provider_delete_title), fontWeight = FontWeight.Bold) }, text = { Text(stringResource(R.string.custom_provider_delete_text, currentName)) }, confirmButton = { TextButton(onClick = { viewModel.deleteCustomProvider(currentName); showDeleteProvider = false; onBack() }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text(stringResource(R.string.provider_delete)) } }, dismissButton = { TextButton(onClick = { showDeleteProvider = false }) { Text(stringResource(R.string.cancel)) } })
-    }
-}
-
-@Composable
-private fun LocalModelIdleRetentionSlider(
-    value: Int,
-    onValueChange: (Int) -> Unit,
-) {
-    val presets = LOCAL_MODEL_IDLE_RETENTION_PRESETS
-    fun indexOfNearest(candidate: Int): Int = presets.indices.minByOrNull {
-        abs(presets[it] - candidate)
-    } ?: 0
-
-    val sliderGate = remember {
-        PersistedSliderFeedbackGate(
-            initialPersisted = value,
-            toDisplay = { indexOfNearest(it).toFloat() },
-        )
-    }
-    LaunchedEffect(value) {
-        sliderGate.reconcile(value)
-    }
-    val sliderPosition = sliderGate.displayed
-    val selectedIndex = sliderPosition.roundToInt().coerceIn(presets.indices)
-    val selectedMinutes = presets[selectedIndex]
-    val valueLabel = if (selectedMinutes == 0) {
-        stringResource(R.string.local_model_idle_retention_immediate)
-    } else {
-        stringResource(R.string.local_model_idle_retention_minutes, selectedMinutes)
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Icon(
-                Icons.Default.Tune,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = stringResource(R.string.local_model_idle_retention),
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontWeight = FontWeight.Medium,
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        text = valueLabel,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                Text(
-                    text = stringResource(R.string.local_model_idle_retention_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-                Slider(
-                    value = sliderPosition,
-                    onValueChange = sliderGate::updateFromGesture,
-                    onValueChangeFinished = {
-                        val committedIndex = sliderPosition.roundToInt()
-                            .coerceIn(presets.indices)
-                        val committedValue = presets[committedIndex]
-                        if (committedValue != value) {
-                            sliderGate.expectPersisted(
-                                committedValue,
-                                committedIndex.toFloat(),
-                            )
-                            onValueChange(committedValue)
-                        } else {
-                            sliderGate.settleWithoutWrite(value, committedIndex.toFloat())
-                        }
-                    },
-                    valueRange = 0f..presets.lastIndex.toFloat(),
-                    steps = presets.size - 2,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                )
-            }
-        }
+        AlertDialog(containerColor = MaterialTheme.colorScheme.surfaceContainer, onDismissRequest = { showDeleteProvider = false }, title = { Text(stringResource(R.string.custom_provider_delete_title), fontWeight = FontWeight.Bold) }, text = { Text(stringResource(R.string.custom_provider_delete_text, currentName)) }, confirmButton = { TextButton(onClick = { viewModel.customModelConfiguration.deleteProvider(currentName); showDeleteProvider = false; onBack() }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text(stringResource(R.string.provider_delete)) } }, dismissButton = { TextButton(onClick = { showDeleteProvider = false }) { Text(stringResource(R.string.cancel)) } })
     }
 }

@@ -11,18 +11,19 @@ class ExperimentalGenerationUiSourceContractTest {
     fun `terminal states use retry text tokens without active animation or shell`() {
         val root = locateMainSourceRoot()
         val assistant = source(root, "message/AssistantMessageContent.kt")
+        val activity = source(root, "message/AssistantInlineActivity.kt")
         val terminalBar = source(root, "message/GenerationErrorBar.kt")
         val retry = source(root, "message/RetryActivityIndicator.kt")
         val tail = source(root, "StreamingTailIndicator.kt")
 
-        assertFalse(assistant.contains("AssistantStatusRow("))
-        assertFalse(assistant.contains("AssistantStatusKind"))
+        assertFalse((assistant + activity).contains("AssistantStatusRow("))
+        assertFalse((assistant + activity).contains("AssistantStatusKind"))
         assertTrue(assistant.contains("private val FormerAssistantStatusSpacerHeight = 6.dp"))
         assertTrue(assistant.contains(
             "Spacer(modifier = Modifier.height(FormerAssistantStatusSpacerHeight))"
         ))
         assertTrue(assistant.contains("AssistantInlineActivity("))
-        assertTrue(assistant.contains("RetryActivityIndicator("))
+        assertTrue(activity.contains("RetryActivityIndicator("))
         assertTrue(assistant.contains("StoppedGenerationBar("))
         assertTrue(assistant.contains("AnimatedVisibility("))
         assertTrue(assistant.contains("fadeIn(tween(durationMillis = 180"))
@@ -33,17 +34,17 @@ class ExperimentalGenerationUiSourceContractTest {
         assertTrue(terminalBar.contains("precededByCard: Boolean = false"))
         assertTrue(terminalBar.contains("if (precededByCard) 12.dp else 8.dp"))
         assertTrue(terminalBar.contains("if (precededByCard) 12.dp"))
-        assertFalse(assistant.contains("if (mode == AssistantInlineActivityMode.NONE) return"))
-        assertTrue(assistant.contains("var retainedMode by remember"))
-        assertTrue(assistant.contains("visibilityTransition.targetState ||"))
-        assertTrue(assistant.contains(
+        assertFalse((assistant + activity).contains("if (mode == AssistantInlineActivityMode.NONE) return"))
+        assertTrue(activity.contains("var retainedMode by remember"))
+        assertTrue(activity.contains("visibilityTransition.targetState ||"))
+        assertTrue(activity.contains(
             "visibilityTransition.targetState || retainExitLayout"
         ))
-        assertTrue(assistant.contains(
+        assertTrue(activity.contains(
             "alpha = if (terminalText == null) activityOpacity else 1f"
         ))
         assertTrue(assistant.contains("retainExitLayout = inlineActivityPresentation.retainLayout"))
-        assertTrue(assistant.contains("clip = false"))
+        assertTrue(activity.contains("clip = false"))
         assertTrue(assistant.contains("GenerationActivityDot()"))
         val messageContent = assistant.substringAfter("internal fun AssistantMessageContent(")
         val fixedSpacerIndex = messageContent.indexOf(
@@ -100,13 +101,13 @@ class ExperimentalGenerationUiSourceContractTest {
     @Test
     fun `Thinking card uses compact chrome one trailing rotating arrow and synchronized motion`() {
         val root = locateMainSourceRoot()
-        val timeline = source(root, "message/MessageItemTimeline.kt")
+        val timeline = source(root, "message/MessageItemTimeline.kt") +
+            source(root, "message/TimelineSegmentsContent.kt")
         val assistant = source(root, "message/AssistantMessageContent.kt")
         val presentation = source(root, "message/ThinkingSegmentPresentation.kt")
         val mutedText = source(root, "message/StreamingMutedText.kt")
 
         assertTrue(timeline.contains("CompactSegmentIcon.LOADING"))
-        assertTrue(timeline.contains("compactSegmentHasActiveContent("))
         assertTrue(timeline.contains("compactSegmentShowsLoading("))
         assertTrue(timeline.contains("generationActive: Boolean"))
         assertTrue(timeline.contains("isCurrentCard: Boolean"))
@@ -173,7 +174,8 @@ class ExperimentalGenerationUiSourceContractTest {
     @Test
     fun `Timeline and Thinking sheet rows reuse grouping while keeping their own outer insets`() {
         val root = locateMainSourceRoot()
-        val timeline = source(root, "message/MessageItemTimeline.kt")
+        val timeline = source(root, "message/MessageItemTimeline.kt") +
+            source(root, "message/TimelineSegmentsContent.kt")
         val detail = source(root, "message/SegmentDetailSheet.kt")
         val segments = source(root, "message/MessageItemSegments.kt")
 
@@ -205,7 +207,8 @@ class ExperimentalGenerationUiSourceContractTest {
     @Test
     fun `Thinking sheet matches Settings chrome and uses primary card icons`() {
         val root = locateMainSourceRoot()
-        val timeline = source(root, "message/MessageItemTimeline.kt")
+        val timeline = source(root, "message/MessageItemTimeline.kt") +
+            source(root, "message/TimelineSegmentsContent.kt")
         val detail = source(root, "message/SegmentDetailSheet.kt")
         val presentation = source(root, "message/ThinkingSegmentPresentation.kt")
         val sharedBackButton = File(

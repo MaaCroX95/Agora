@@ -419,21 +419,27 @@ class GenerationStreamingSegmentsTest {
             locateMainSourceRoot(),
             "com/newoether/agora/viewmodel/GenerationManager.kt",
         ).readText()
+        val accumulator = File(
+            locateMainSourceRoot(),
+            "com/newoether/agora/viewmodel/GenerationOutputAccumulator.kt",
+        ).readText()
 
-        assertEquals(1, Regex("""val totalText = StringBuilder\(\)""").findAll(source).count())
+        assertTrue(source.contains("val output = GenerationOutputAccumulator(toolExecutor, config.providerName)"))
+        assertTrue(source.contains("output.handleStreamEvent("))
+        assertEquals(1, Regex("""val totalText = StringBuilder\(\)""").findAll(accumulator).count())
         assertTrue(
-            Regex("""totalText\.clear\(\)\s+totalText\.append\(snapshot\.text\)""")
+            Regex("""output\.totalText\.clear\(\)\s+output\.totalText\.append\(snapshot\.text\)""")
                 .containsMatchIn(source),
         )
-        assertTrue(source.contains("totalText.append(answerText)"))
-        assertFalse(source.contains("totalText += answerText"))
-        assertTrue(source.contains("text = totalText.toString(), thoughts ="))
-        assertTrue(source.contains("finalAnswer = totalText.toString()"))
+        assertTrue(accumulator.contains("totalText.append(answerText)"))
+        assertFalse((source + accumulator).contains("totalText += answerText"))
+        assertTrue(source.contains("text = output.totalText.toString(), thoughts ="))
+        assertTrue(accumulator.contains("finalAnswer = totalText.toString()"))
         assertTrue(
-            Regex("""text = totalText\.toString\(\),\s+images =""")
+            Regex("""text = output\.totalText\.toString\(\),\s+images =""")
                 .containsMatchIn(source),
         )
-        assertTrue(source.contains("val providerAnswerStart = totalText.length"))
+        assertTrue(source.contains("val providerAnswerStart = output.totalText.length"))
     }
 
     private fun locateMainSourceRoot(): File {

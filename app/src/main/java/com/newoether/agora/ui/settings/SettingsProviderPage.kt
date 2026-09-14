@@ -197,7 +197,7 @@ fun SettingsProviderPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                 )
                                 urlError = tu.isBlank()
                                 if (!nameError && !urlError) {
-                                    viewModel.addCustomProvider(tn, tu, customProtocol)
+                                    viewModel.customModelConfiguration.addProvider(tn, tu, customProtocol)
                                     showAddCustomDialog = false
                                 }
                             }) {

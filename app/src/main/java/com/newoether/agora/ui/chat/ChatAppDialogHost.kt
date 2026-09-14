@@ -269,7 +269,7 @@ internal fun ChatAppDialogHost(
             isCompacting = isCompacting,
             onCompact = { model, prompt, retainCount ->
                 state.dismissManualCompact()
-                viewModel.startContextCompactManual(model, prompt, retainCount)
+                viewModel.compactUi.startManual(model, prompt, retainCount)
             },
             onDismiss = state::dismissManualCompact,
         )

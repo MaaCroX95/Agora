@@ -188,6 +188,10 @@ Chat-template verification must cover explicit-template enforcement, official Ji
 request-level thinking control, UTF-8-safe prompt transfer, and absence of generic fallbacks.
 Native-streaming verification must cover both generation loops, exact batch bounds, UTF-8 boundary
 safety, terminal flushing, callback rejection, per-token cancellation, and content-free telemetry.
+Java-to-native Chat and Embedding strings use standard UTF-8 with explicit byte lengths, including
+supplementary Unicode and embedded NUL in text. Filesystem paths reject NUL instead of truncating.
+Run the host test with "python scripts/test-native-utf8.py" and a JDK/C++ compiler when this boundary
+changes; the actual production JNI helper is compared with Java's UTF-8 encoder under JNI checks.
 Text-cache verification must cover same-identity reuse, token LCP divergence, exact-match one-token
 replay, prompt-capacity validation before mutation, failed truncation, decode failure, cancellation
 between successful batches, generated-token ledger ordering, and multimodal invalidation. Android
@@ -199,3 +203,16 @@ Settings tests must cover the exact presets/default/normalization, DataStore rea
 AppContainer binding, Local Advanced placement and slider commit behavior, locale key/placeholder
 parity, portable-export absence, and Settings Replace preservation. The project full build remains
 required; build success alone does not prove real-device memory release or model reload latency.
+
+## 10. Native module boundaries
+
+`llama_chat_jni.cpp` owns the existing model lifetime, cancellation entry, text generation and
+multimodal generation entry points. `llama_chat_handle.h` declares their shared per-model state;
+moving that declaration does not create another runtime owner. Template request/result conversion
+and get/apply entry points live in `llama_chat_template.cpp`.
+
+Both generation paths use `llama_chat_generation.cpp` for token conversion, proven-prefix cache
+operations and sampler setup. `llama_chat_parser.h` retains per-request typed stream parsing;
+`llama_chat_callbacks.cpp` retains JNI output conversion and callback dispatch. These modules add
+no global model state, queue, timer or lifecycle. Keep their batching, cancellation and failure
+ordering equivalent when changing module boundaries.

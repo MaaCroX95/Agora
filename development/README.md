@@ -24,6 +24,10 @@ override an explicit contract.
 
 ## 2. Mandatory core contracts
 
+These generation and Room invariants govern Agora-owned conversations. Externally owned
+Remote sessions follow [remote-sessions.md](remote-sessions.md), as explicitly requested
+by the owner; they reuse the presentation while leaving execution and durable truth in Codex.
+
 - Reuse the ordinary pipeline, state owners, durable transactions, concepts, and objects to the
   maximum practical extent.
 - All software behavior must match its core contracts in normal, concurrent, cancelled, failed,
@@ -139,7 +143,11 @@ Never:
 
 | Scope | Required module contract |
 |---|---|
+| External agent devices, existing sessions, independent Remote transport and shared chat presentation | [remote-sessions.md](remote-sessions.md) |
+| Conch/Filo encrypted network requests and client read limits | [encrypted-agent-transport.md](encrypted-agent-transport.md) |
 | Message generation, Run lifecycle, queue, tools, Compact, Regenerate, message actions/status, or Provider context | [message-generation.md](message-generation.md) |
+| Shared streaming Markdown, timeline/detail rendering, selection, media loading, and generation motion | [streaming-markdown.md](streaming-markdown.md) |
+| Provider-hosted output, OpenAI-compatible request controls, thinking, service tier, and hosted tools | [provider-output.md](provider-output.md) |
 | Embedded llama.cpp FIFO admission, Chat/Embedding residency, identity switching, Stop, or idle offload | [local-model-runtime.md](local-model-runtime.md) |
 | Provider structured citations, citation persistence, marker cleanup, answer/source projection, citation copy/search/import/export, or citation accessibility | [citations.md](citations.md) |
 | Embedding-cache reads, semantic conversation search, RAG ranking, or search eligibility | [semantic-search.md](semantic-search.md) |
@@ -148,7 +156,6 @@ Never:
 | Application-level onboarding motion, settings category copy, or other non-message global UI behavior | [application-ui.md](application-ui.md) |
 | Native `.agora` archive categories, settings portability, import strategies, secrets, or backup compatibility | [import-export.md](import-export.md) |
 | Shared Settings page structure, interaction, copy, localization, or documentation entry points | [settings-ui-ux.md](settings-ui-ux.md) |
-| Release APK signing, signing-key handling, CI version codes, or update compatibility | [release-signing.md](release-signing.md) |
 
 Add a module document when a user defines durable behavior for another subsystem. Each module
 document must describe current code ownership, allowed and forbidden responsibilities, concrete
@@ -159,6 +166,20 @@ Documents under [`baselines/`](baselines/) are explicitly historical and non-aut
 preserve migration or audit evidence only and never override the module contracts in this registry.
 
 ## 8. Development completion gate
+
+The 2026-09-11 owner requirement prohibits TypeScript in Agora, Filo and Conch.
+Agora remains Kotlin; Filo moves fully to Go with no Node.js runtime dependency.
+The current delivery includes merging Remote into the original Agora branch after
+qualification, preserving its existing commits and unrelated uncommitted changes.
+
+The owner requires a sustainable Filo and Agora baseline (2026-09-10). Split maintained
+source, tests, resources and contracts by responsibility before files approach 999 lines;
+target 700–800 lines or less. Never compress statements or remove useful formatting to
+evade this limit. Preserve established behavior throughout structural cleanup. Baseline
+equivalence checks and the full regression suite are mandatory after implementation;
+every discovered regression blocks delivery until repaired or the change is reverted.
+Compiler/cache success, artifact creation, deployment and owner phone UI acceptance
+remain separate evidence. Keep the active goal open until its authorized work is complete.
 
 Before completion:
 

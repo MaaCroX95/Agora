@@ -6,6 +6,11 @@ import android.graphics.Canvas
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
+import com.newoether.agora.model.MarkdownImage
+import com.newoether.agora.ui.chat.message.MarkdownImageThumbnail
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -557,9 +562,45 @@ private fun estimateLatexPlaceholderSize(latex: String, textSize: Float, display
 class LatexImageTransformer(
     private val textSize: Float = 40f,
     private val color: Int = 0xFF000000.toInt(),
+    private val inlineImages: Map<String, MarkdownImage> = emptyMap(),
+    private val onMediaClick: (List<String>, Int) -> Unit = { _, _ -> },
 ) : ImageTransformer {
+    private fun inlineImage(link: String): MarkdownImage? {
+        fun decoded(value: String) = android.net.Uri.decode(value.removeSurrounding("<", ">"))
+        return inlineImages[link] ?: inlineImages.entries.firstOrNull { decoded(it.key) == decoded(link) }?.value
+    }
+    @Composable
+    fun renderInlineImage(link: String): Boolean {
+        val image = inlineImage(link) ?: return false
+        val paths = remember(inlineImages) {
+            inlineImages.values.mapNotNull { it.attachment?.path }.distinct()
+        }
+        Box(Modifier.padding(vertical = 8.dp)) {
+            MarkdownImageThumbnail(link, image) {
+                val index = paths.indexOf(image.attachment?.path)
+                if (index >= 0) onMediaClick(paths, index)
+            }
+        }
+        return true
+    }
+
     @Composable
     override fun transform(link: String): ImageData? {
+        // Markdown measures the slot here; both image components render the shared viewport.
+        if (inlineImage(link) != null) {
+            val side = with(LocalDensity.current) { 300.dp.toPx() }
+            val verticalSpace = with(LocalDensity.current) { 16.dp.toPx() }
+            val viewport = remember(side, verticalSpace) {
+                object : Painter() {
+                    override val intrinsicSize = Size(side, side + verticalSpace)
+                    override fun DrawScope.onDraw() = Unit
+                }
+            }
+            // A known size promotes the image to a measured block before decoding.
+            // An unspecified transparent painter leaves it in the text line, whose
+            // height can be smaller than the actual thumbnail on Android.
+            return ImageData(painter = viewport)
+        }
         val request = decodeLatexLink(link) ?: return null
         val key = LatexRenderKey(request.latex, textSize, color)
         var bitmap by remember(key) { mutableStateOf(LatexBitmapCache.get(key)) }
@@ -615,6 +656,12 @@ class LatexImageTransformer(
         imageSize: Size,
         imageSizeChanged: ((link: String, Size) -> Unit)?,
     ): PlaceholderConfig {
+        if (inlineImage(link) != null) {
+            val side = with(density) {
+                if (containerSize.isUnspecified) 300f else containerSize.width.toDp().value.coerceIn(1f, 300f)
+            }
+            return PlaceholderConfig(Size(side, side + 16f))
+        }
         val request = decodeLatexLink(link) ?: return super.placeholderConfig(
             link, density, containerSize, imageWidth, imageSize, imageSizeChanged
         )

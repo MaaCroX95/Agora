@@ -15,7 +15,6 @@ import com.newoether.agora.data.local.MaintenanceDebtEntity
 import com.newoether.agora.data.local.MessageAttachmentReference
 import com.newoether.agora.data.local.MessageContextTopology
 import com.newoether.agora.data.local.MessageEntity
-import com.newoether.agora.data.local.MessageStreamCheckpoint
 import com.newoether.agora.data.local.NewChatPersistEntity
 import com.newoether.agora.data.local.ProviderContextTopologySnapshot
 import com.newoether.agora.data.local.RunEntity
@@ -30,66 +29,20 @@ import com.newoether.agora.data.local.semanticModelSnapshot
 import com.newoether.agora.data.local.withSemanticEligibilityMutation
 import com.newoether.agora.data.local.withSemanticGraphMutation
 import com.newoether.agora.data.local.withSemanticSourceMutation
-import com.newoether.agora.model.AttachmentMeta
-import com.newoether.agora.model.AttachmentStorage
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.ChatConversation
-import com.newoether.agora.model.MessagePersistenceGuard
-import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.model.RunEndReason
 import com.newoether.agora.model.RunStatus
 import com.newoether.agora.model.SelectedAttachment
-import com.newoether.agora.model.citationRecords
-import com.newoether.agora.model.matchesCitationTitle
 import com.newoether.agora.service.MaintenanceDebtWorker
 import com.newoether.agora.util.AttachmentFiles
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-internal fun MessageEntity.matchesCitationTitle(query: String): Boolean {
-    val segments = toolCallJson?.let { raw ->
-        runCatching { Json.decodeFromString<List<MessageSegment>>(raw) }.getOrNull()
-    }.orEmpty()
-    return segments.citationRecords(text).matchesCitationTitle(query)
-}
-private val citationSearchNewestFirst =
-    compareByDescending<MessageEntity>(MessageEntity::timestamp).thenByDescending(MessageEntity::id)
-
-internal suspend fun boundedCitationTitleMatches(
-    query: String,
-    limit: Int,
-    pageSize: Int = 128,
-    loadPage: suspend (afterId: String, pageSize: Int) -> List<MessageEntity>,
-): List<MessageEntity> {
-    if (query.isBlank() || limit <= 0) return emptyList()
-    val boundedPageSize = pageSize.coerceIn(1, 256)
-    val newestMatches = mutableListOf<MessageEntity>()
-    var afterId = ""
-    while (true) {
-        val page = loadPage(afterId, boundedPageSize)
-        if (page.isEmpty()) break
-        page.asSequence()
-            .filter { it.id > afterId && it.matchesCitationTitle(query) }
-            .forEach { candidate ->
-                if (newestMatches.none { it.id == candidate.id }) {
-                    newestMatches += candidate
-                    newestMatches.sortWith(citationSearchNewestFirst)
-                    if (newestMatches.size > limit) newestMatches.removeAt(newestMatches.lastIndex)
-                }
-            }
-        val nextAfterId = page.maxOf(MessageEntity::id)
-        if (nextAfterId <= afterId) break
-        afterId = nextAfterId
-        if (page.size < boundedPageSize) break
-    }
-    return newestMatches
-}
 class ConversationRepository(
     private val chatDao: ChatDao,
     /** Non-null in production; null is an explicit DAO-isolated unit-test seam. */
@@ -100,14 +53,9 @@ class ConversationRepository(
         semanticModelSnapshot("", emptyList())
     },
 ) {
-    // ── Conversations ─────────────────────────────────────────
+    private val branchSelections = ConversationBranchSelections(chatDao)
 
-    private fun ChatEntity.toConversation() = ChatConversation(
-        id = id, title = title, systemPromptId = systemPromptId, modelId = modelId,
-        taskId = taskId, origin = origin, graduated = graduated,
-        hasUnreadGeneration = hasUnreadGeneration,
-        selectedBranchesJson = selectedBranchesJson,
-    )
+    // ── Conversations ─────────────────────────────────────────
 
     fun getAllConversations(): Flow<List<ChatConversation>> = chatDao.getAllConversations()
 
@@ -517,40 +465,6 @@ class ConversationRepository(
         return runId == null || chatDao.getRun(runId)?.status?.isTerminal != false
     }
 
-    private fun ChatMessage.toStreamCheckpoint(): MessageStreamCheckpoint {
-        val persistedSegments = segments?.takeIf { it.isNotEmpty() } ?: toolCall?.let {
-            listOf(
-                MessageSegment(
-                    type = "tool",
-                    toolName = it.toolName,
-                    toolArgs = it.arguments,
-                    toolResult = it.result,
-                    signature = it.signature,
-                    toolCallId = it.toolCallId,
-                    responseOutputItems = it.responseOutputItems,
-                    responseOutputItemProvider = it.responseOutputItemProvider,
-                )
-            )
-        }
-        return MessageStreamCheckpoint(
-            id = id,
-            text = MessagePersistenceGuard.clipText(text),
-            images = images,
-            thoughts = thoughts?.let(MessagePersistenceGuard::clipText),
-            thoughtTitle = thoughtTitle,
-            tokenCount = tokenCount,
-            inputTokenCount = tokenUsage?.inputTokenCount,
-            cachedInputTokenCount = tokenUsage?.cachedInputTokenCount,
-            cacheWriteInputTokenCount = tokenUsage?.cacheWriteInputTokenCount,
-            uncachedInputTokenCount = tokenUsage?.uncachedInputTokenCount,
-            outputTokenCount = tokenUsage?.outputTokenCount,
-            reasoningTokenCount = tokenUsage?.reasoningTokenCount,
-            status = status,
-            thoughtTimeMs = thoughtTimeMs,
-            toolCallJson = MessagePersistenceGuard.encodeSegmentsBounded(persistedSegments),
-        )
-    }
-
     suspend fun deleteMessagesByIds(ids: List<String>) =
         withSemanticTransaction(ids) { chatDao.deleteMessagesByIds(ids) }
 
@@ -606,70 +520,24 @@ class ConversationRepository(
     suspend fun saveBranchSelections(
         conversationId: String,
         selections: Map<String?, String>,
-    ) = withContext(Dispatchers.Default) {
-        val conversation = chatDao.getConversation(conversationId) ?: return@withContext
-        val stringKeyMap = selections.mapKeys { it.key ?: "null" }
-        val json = Json.encodeToString(stringKeyMap)
-        if (conversation.selectedBranchesJson != json) {
-            check(
-                chatDao.updateMessageBranchSelections(
-                    conversationId = conversationId,
-                    selectedBranchesJson = json,
-                ) == 1
-            ) { "Conversation $conversationId disappeared during message branch selection" }
-        }
-    }
+    ) = branchSelections.saveBranchSelections(conversationId, selections)
 
-    suspend fun restoreBranchSelections(
-        conversationId: String,
-    ): Map<String?, String> = withContext(Dispatchers.Default) {
-        val conversation = chatDao.getConversation(conversationId)
-            ?: return@withContext emptyMap()
-        val raw = conversation.selectedBranchesJson ?: return@withContext emptyMap()
-        try {
-            val map = Json.decodeFromString<Map<String, String>>(raw)
-            map.mapKeys { if (it.key == "null") null else it.key }
-        } catch (_: Exception) {
-            emptyMap()
-        }
-    }
+    suspend fun restoreBranchSelections(conversationId: String): Map<String?, String> =
+        branchSelections.restoreBranchSelections(conversationId)
 
     suspend fun saveRunBranchSelections(
         conversationId: String,
         selections: Map<String?, String>,
-    ) = withContext(Dispatchers.Default) {
-        val conversation = chatDao.getConversation(conversationId) ?: return@withContext
-        val stored = Json.encodeToString(selections.mapKeys { it.key ?: "null" })
-        if (conversation.selectedRunBranchesJson != stored) {
-            check(
-                chatDao.updateRunBranchSelections(
-                    conversationId = conversationId,
-                    selectedRunBranchesJson = stored,
-                ) == 1
-            ) { "Conversation $conversationId disappeared during Run branch selection" }
-        }
-    }
+    ) = branchSelections.saveRunBranchSelections(conversationId, selections)
 
-    suspend fun restoreRunBranchSelections(
-        conversationId: String,
-    ): Map<String?, String> = withContext(Dispatchers.Default) {
-        val raw = chatDao.getConversation(conversationId)?.selectedRunBranchesJson
-            ?: return@withContext emptyMap()
-        runCatching {
-            Json.decodeFromString<Map<String, String>>(raw)
-                .mapKeys { if (it.key == "null") null else it.key }
-        }.getOrDefault(emptyMap())
-    }
+    suspend fun restoreRunBranchSelections(conversationId: String): Map<String?, String> =
+        branchSelections.restoreRunBranchSelections(conversationId)
 
     suspend fun selectRunBranch(
         conversationId: String,
         parentRunId: String?,
         runId: String,
-    ) {
-        val selections = restoreRunBranchSelections(conversationId).toMutableMap()
-        selections[parentRunId] = runId
-        saveRunBranchSelections(conversationId, selections)
-    }
+    ) = branchSelections.selectRunBranch(conversationId, parentRunId, runId)
 
     /** Persists Run and legacy message selection maps in the same row update. */
     suspend fun selectRunBranch(
@@ -677,17 +545,7 @@ class ConversationRepository(
         parentRunId: String?,
         runId: String,
         messageSelections: Map<String?, String>,
-    ) = withContext(Dispatchers.Default) {
-        val runSelections = restoreRunBranchSelections(conversationId).toMutableMap()
-        runSelections[parentRunId] = runId
-        check(
-            chatDao.updateBranchSelections(
-                conversationId = conversationId,
-                selectedBranchesJson = Json.encodeToString(messageSelections.mapKeys { it.key ?: "null" }),
-                selectedRunBranchesJson = Json.encodeToString(runSelections.mapKeys { it.key ?: "null" }),
-            ) == 1
-        ) { "Conversation $conversationId disappeared during branch selection" }
-    }
+    ) = branchSelections.selectRunBranch(conversationId, parentRunId, runId, messageSelections)
 
     // ── Embeddings ────────────────────────────────────────────
 
@@ -751,22 +609,8 @@ class ConversationRepository(
 
     // ── Search ────────────────────────────────────────────────
 
-    suspend fun searchMessages(query: String, limit: Int = 10): List<MessageEntity> {
-        if (limit <= 0) return emptyList()
-        val directMatches = chatDao.searchMessages(escapeLikePattern(query), limit)
-        val citationMatches = boundedCitationTitleMatches(query, limit) { afterId, pageSize ->
-            chatDao.getMessagesWithCitationSegmentsPage(afterId, pageSize)
-        }
-        return (directMatches + citationMatches)
-            .distinctBy(MessageEntity::id)
-            .sortedWith(citationSearchNewestFirst)
-            .take(limit)
-    }
-
-    /** Escapes LIKE wildcards so a literal "%"/"_" in the user's query matches itself
-     *  instead of matching everything (paired with ESCAPE '\' in the DAO query). */
-    private fun escapeLikePattern(query: String): String =
-        query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    suspend fun searchMessages(query: String, limit: Int = 10): List<MessageEntity> =
+        searchConversationMessages(chatDao, query, limit)
 
     suspend fun getAllConversationsList(): List<ChatEntity> =
         chatDao.getAllConversationsList()
@@ -893,86 +737,6 @@ class ConversationRepository(
         val at = System.currentTimeMillis()
         exact.forEach { identity -> dao.enqueue(kind, identity, at) }
         return true
-    }
-
-    private fun String?.decodeSelectedAttachments(): List<SelectedAttachment>? =
-        this?.let { raw ->
-            runCatching { Json.decodeFromString<List<SelectedAttachment>>(raw) }.getOrNull()
-        }
-
-    private fun List<SelectedAttachment>.removedReclaimablePaths(
-        replacement: List<SelectedAttachment>?,
-    ): Set<String> {
-        val retainedPaths = replacement.orEmpty().reclaimablePaths()
-        return reclaimablePaths() - retainedPaths
-    }
-
-    private fun List<SelectedAttachment>.appPrivatePaths(): Set<String> =
-        filter { it.storage == AttachmentStorage.APP_PRIVATE }.reclaimablePaths()
-
-    private fun List<SelectedAttachment>.reclaimablePaths(): Set<String> =
-        asSequence()
-            .filter { it.storage.reclaimWhenAbandoned }
-            .flatMap { attachment ->
-                sequence {
-                    attachment.localPath?.let { yield(normalizeAttachmentPath(it)) }
-                    attachment.processedFrames.orEmpty().forEach {
-                        yield(normalizeAttachmentPath(it))
-                    }
-                    attachment.preRenderedPaths.orEmpty().forEach {
-                        yield(normalizeAttachmentPath(it))
-                    }
-                }
-            }
-            .toSet()
-
-    private fun MessageEntity.toAttachmentReference() = MessageAttachmentReference(
-        id = id,
-        images = images,
-        attachmentMeta = attachmentMeta,
-    )
-
-    private fun List<MessageAttachmentReference>.messageReclaimablePaths(): Set<String> =
-        flatMapTo(linkedSetOf()) { reference ->
-            attachmentFilePaths(reference.images, reference.attachmentMeta.decodeAttachmentMeta())
-        }
-
-    private fun String?.decodeAttachmentMeta(): AttachmentMeta? =
-        this?.let { raw -> runCatching { Json.decodeFromString<AttachmentMeta>(raw) }.getOrNull() }
-
-    private fun attachmentFilePaths(
-        images: List<String>,
-        meta: AttachmentMeta?,
-    ): List<String> {
-        val retainedImageIndices = meta?.items.orEmpty()
-            .asSequence()
-            .filterNot { it.storage.reclaimWhenAbandoned }
-            .flatMap { item ->
-                val start = item.imageIndex ?: return@flatMap emptySequence()
-                val count = (item.pageCount ?: 1).coerceAtLeast(0)
-                (start until start + count).asSequence()
-            }
-            .toSet()
-        return buildList {
-            images.forEachIndexed { index, path ->
-                if (index !in retainedImageIndices) add(normalizeAttachmentPath(path))
-            }
-            meta?.items.orEmpty()
-                .asSequence()
-                .filter { it.storage.reclaimWhenAbandoned }
-                .mapNotNull { item ->
-                    item.originalUri
-                        ?.takeIf { it.startsWith("file://") }
-                        ?.let(::normalizeAttachmentPath)
-                }
-                .forEach(::add)
-        }
-    }
-
-    private fun normalizeAttachmentPath(path: String): String {
-        val raw = path.removePrefix("file://")
-        return runCatching { java.io.File(raw).canonicalPath }
-            .getOrElse { java.io.File(raw).absolutePath }
     }
 
     private companion object {

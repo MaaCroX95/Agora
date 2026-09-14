@@ -1,5 +1,6 @@
 package com.newoether.agora.ui.settings
 
+import com.newoether.agora.readLocaleStringResourceSources
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -11,6 +12,8 @@ class DataControlImportStrategySourceContractTest {
     fun unifiedImportPageUsesSharedStrategyControls() {
         val page = sourceFile(
             "app/src/main/java/com/newoether/agora/ui/settings/datacontrol/SettingsDataControlPage.kt",
+        ).readText().normalizeLines() + sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/settings/datacontrol/NativeDataSelectionDialogs.kt",
         ).readText().normalizeLines()
 
         assertEquals(3, Regex("""\bPillTabSwitcher\(""").findAll(page).count())
@@ -77,13 +80,13 @@ class DataControlImportStrategySourceContractTest {
         )
 
         directories.forEach { directory ->
-            val strings = sourceFile("app/src/main/res/$directory/strings.xml").readText()
+            val strings = sourceFile("app/src/main/res/$directory/strings.xml").readLocaleStringResourceSources()
             keys.forEach { key ->
                 assertTrue("Missing $key in $directory", strings.contains("name=\"$key\""))
             }
         }
 
-        val defaults = sourceFile("app/src/main/res/values/strings.xml").readText()
+        val defaults = sourceFile("app/src/main/res/values/strings.xml").readLocaleStringResourceSources()
         assertTrue(
             defaults.contains(
                 "<string name=\"external_import_replace_confirm_title\">" +
@@ -182,7 +185,7 @@ class DataControlImportStrategySourceContractTest {
         )
 
         directories.forEach { directory ->
-            val strings = sourceFile("app/src/main/res/$directory/strings.xml").readText()
+            val strings = sourceFile("app/src/main/res/$directory/strings.xml").readLocaleStringResourceSources()
             assertEquals(
                 "$directory must contain exactly one loading_label",
                 1,
@@ -190,14 +193,14 @@ class DataControlImportStrategySourceContractTest {
             )
         }
 
-        val defaults = sourceFile("app/src/main/res/values/strings.xml").readText()
+        val defaults = sourceFile("app/src/main/res/values/strings.xml").readLocaleStringResourceSources()
         assertTrue(defaults.contains("<string name=\"loading_label\">Loading…</string>"))
     }
 
     @Test
     fun nativePreviewSeparatesCategoryBlocksWithoutChangingInternalGap() {
         val page = sourceFile(
-            "app/src/main/java/com/newoether/agora/ui/settings/datacontrol/SettingsDataControlPage.kt",
+            "app/src/main/java/com/newoether/agora/ui/settings/datacontrol/NativeDataSelectionDialogs.kt",
         ).readText().normalizeLines()
 
         assertTrue(page.contains("Column(verticalArrangement = Arrangement.spacedBy(16.dp))"))
@@ -254,7 +257,7 @@ class DataControlImportStrategySourceContractTest {
         )
 
         directories.forEach { directory ->
-            val strings = sourceFile("app/src/main/res/$directory/strings.xml").readText()
+            val strings = sourceFile("app/src/main/res/$directory/strings.xml").readLocaleStringResourceSources()
             keys.forEach { key ->
                 assertEquals(
                     "$directory must contain exactly one $key",

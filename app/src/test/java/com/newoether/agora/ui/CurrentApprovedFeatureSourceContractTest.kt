@@ -1,5 +1,6 @@
 package com.newoether.agora.ui
 
+import com.newoether.agora.readLocaleStringResourceSources
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -41,8 +42,12 @@ class CurrentApprovedFeatureSourceContractTest {
         assertTrue(skillSheet.contains("R.string.skills_add_from_markdown_desc"))
         assertTrue(skillSheet.contains("R.string.skills_add_manually_desc"))
         assertTrue(skillSheet.contains("Icons.Default.Description"))
-        assertTrue(skills.contains("MAX_SKILL_IMPORT_BYTES"))
-        assertTrue(skills.contains("CodingErrorAction.REPORT"))
+        val markdownImport = sourceFile(
+            "app/src/main/java/com/newoether/agora/data/SkillMarkdownImport.kt",
+        )
+        assertTrue(skills.contains("readSkillMarkdown(context, uri)"))
+        assertTrue(markdownImport.contains("MAX_SKILL_IMPORT_BYTES"))
+        assertTrue(markdownImport.contains("CodingErrorAction.REPORT"))
         assertTrue(skills.contains("description = \"\""))
         assertTrue(skills.contains("markdownPicker.launch("))
         assertTrue(skills.contains("showNewFileDialog = true"))
@@ -91,7 +96,11 @@ class CurrentApprovedFeatureSourceContractTest {
         assertTrue(registry.contains("Semaphore(permits = MAX_CONCURRENT_CONNECTIONS)"))
         assertTrue(registry.contains("connectionPermits.withPermit"))
         assertTrue(registry.contains("internal const val MAX_CONCURRENT_CONNECTIONS = 2"))
-        assertTrue(page.contains("val enabledToolCount = remember(tools)"))
+        val status = sourceFile(
+            "app/src/main/java/com/newoether/agora/ui/settings/McpStatusPresentation.kt",
+        )
+        assertTrue(page.contains("McpStatusText("))
+        assertTrue(status.contains("val enabledToolCount = remember(tools)"))
     }
 
     @Test
@@ -101,6 +110,8 @@ class CurrentApprovedFeatureSourceContractTest {
         )
         val manager = sourceFile(
             "app/src/main/java/com/newoether/agora/data/SettingsManager.kt",
+        ) + sourceFile(
+            "app/src/main/java/com/newoether/agora/data/PortableSettingsReset.kt",
         )
         val repository = sourceFile(
             "app/src/main/java/com/newoether/agora/data/repository/SettingsRepository.kt",
@@ -172,7 +183,7 @@ class CurrentApprovedFeatureSourceContractTest {
             "automation_battery_optimization_active_desc",
         )
         localeDirectories().forEach { directory ->
-            val fileName = if (directory == "values-zh") "strings.xml" else "automation_strings.xml"
+            val fileName = "automation_strings.xml"
             val strings = sourceFile("app/src/main/res/$directory/$fileName")
             keys.forEach { key ->
                 assertTrue("$directory $key", strings.contains("name=\"$key\""))
@@ -199,7 +210,11 @@ class CurrentApprovedFeatureSourceContractTest {
         var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
         repeat(8) {
             val candidate = File(directory, relativePath)
-            if (candidate.isFile) return candidate.readText()
+            if (candidate.isFile) {
+                return if (candidate.name == "strings.xml") {
+                    candidate.readLocaleStringResourceSources()
+                } else candidate.readText()
+            }
             directory = directory.parentFile ?: error("Reached filesystem root")
         }
         error("Unable to locate $relativePath")

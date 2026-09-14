@@ -4,6 +4,7 @@ import android.content.Context
 import com.newoether.agora.R
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.CustomProviderConfig
+import com.newoether.agora.data.CustomEndpointProtocol
 import com.newoether.agora.data.MemoryManager
 import com.newoether.agora.data.PredefinedVariables
 import com.newoether.agora.data.PromptItemType
@@ -33,6 +34,46 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class GenerationRequestBuilderProviderDisplayTest {
     @Test
+    fun selectedCompactAndTranscriptionProvidersHaveIndependentFrozenCacheFields() = runTest {
+        val fixture = RequestBuilderFixture(Constants.PROVIDER_OPENAI, false)
+        val custom = CustomProviderConfig(
+            "Relay", CustomEndpointProtocol.ANTHROPIC,
+            id = "custom-provider-00000000-0000-4000-8000-000000000001",
+            anthropicCacheEnabled = false, anthropicCacheTtl = "5m",
+        )
+        val providers = MutableStateFlow(listOf(custom))
+        every { fixture.settings.customProviders } returns providers
+        every { fixture.settings.contextCompactModel } returns MutableStateFlow("${custom.providerId}:model")
+        every { fixture.settings.imageTranscriptionModel } returns MutableStateFlow("${custom.providerId}:vision")
+        every { fixture.providerRegistry.providerForModel(any()) } answers { firstArg<String>().substringBefore(':') }
+        val snapshot = fixture.builder.captureAdmissionSnapshot("conversation", "run", fixture.modelId)
+        providers.value = listOf(custom.copy(anthropicCacheEnabled = true, anthropicCacheTtl = "1h"))
+        assertFalse(snapshot.config.anthropicCacheEnabled)
+        assertEquals("1h", snapshot.config.anthropicCacheTtl)
+        assertFalse(snapshot.automaticCompact.generationConfig.anthropicCacheEnabled)
+        assertEquals("5m", snapshot.automaticCompact.generationConfig.anthropicCacheTtl)
+        assertFalse(snapshot.context.transcriptionAnthropicCacheEnabled)
+        assertEquals("5m", snapshot.context.transcriptionAnthropicCacheTtl)
+    }
+    @Test
+    fun cacheChoiceIsFrozenForGenerationCompactAndTranscription() = runTest {
+        val fixture = RequestBuilderFixture(providerName = Constants.PROVIDER_ANTHROPIC, lowContextModeEnabled = false)
+        val enabled = MutableStateFlow(false)
+        val ttl = MutableStateFlow("5m")
+        every { fixture.settings.anthropicCacheEnabled } returns enabled
+        every { fixture.settings.anthropicCacheTtl } returns ttl
+        every { fixture.settings.imageTranscriptionModel } returns MutableStateFlow(fixture.modelId)
+        val snapshot = fixture.builder.captureAdmissionSnapshot("conversation", "run", fixture.modelId)
+        enabled.value = true
+        ttl.value = "1h"
+        assertFalse(snapshot.config.anthropicCacheEnabled)
+        assertEquals("5m", snapshot.config.anthropicCacheTtl)
+        assertFalse(snapshot.automaticCompact.generationConfig.anthropicCacheEnabled)
+        assertEquals("5m", snapshot.automaticCompact.generationConfig.anthropicCacheTtl)
+        assertFalse(snapshot.context.transcriptionAnthropicCacheEnabled)
+        assertEquals("5m", snapshot.context.transcriptionAnthropicCacheTtl)
+    }
+    @Test
     fun `conversation tool overrides are reflected immediately in effective settings`() {
         val settings = mockk<SettingsRepository>()
         every { settings.conversationSettings } returns MutableStateFlow(
@@ -53,7 +94,6 @@ class GenerationRequestBuilderProviderDisplayTest {
         every { settings.defaultPresencePenalty } returns MutableStateFlow(null)
         every { settings.codeExecutionEnabled } returns MutableStateFlow(false)
         every { settings.googleSearchEnabled } returns MutableStateFlow(false)
-        every { settings.openAiWebSearchEnabled } returns MutableStateFlow(true)
         every { settings.thinkingEnabled } returns MutableStateFlow(true)
         every { settings.thinkingLevel } returns MutableStateFlow("medium")
         every { settings.thinkingBudgetEnabled } returns MutableStateFlow(false)
@@ -284,7 +324,7 @@ private class RequestBuilderFixture(
     val conversations = mockk<ConversationRepository>()
     val memoryManager = mockk<MemoryManager>()
     val skillManager = mockk<SkillManager>()
-    private val providerRegistry = mockk<ProviderRegistry>()
+    val providerRegistry = mockk<ProviderRegistry>()
     private val ragManager = mockk<RagManager>()
     private val provider = mockk<com.newoether.agora.api.LlmProvider>()
 
@@ -351,6 +391,8 @@ private class RequestBuilderFixture(
         every { settings.contextCompactThresholdPercent } returns MutableStateFlow(80)
         every { settings.contextCompactRetainCount } returns MutableStateFlow(8)
         every { settings.openAiResponsesApiEnabled } returns MutableStateFlow(false)
+        every { settings.anthropicCacheEnabled } returns MutableStateFlow(true)
+        every { settings.anthropicCacheTtl } returns MutableStateFlow("1h")
         every { settings.customProviders } returns MutableStateFlow(emptyList())
         every { settings.titleGenerationEnabled } returns MutableStateFlow(true)
         every { settings.imageGenModel } returns MutableStateFlow(null)

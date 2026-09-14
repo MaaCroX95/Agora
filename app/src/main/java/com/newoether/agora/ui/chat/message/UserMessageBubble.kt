@@ -109,6 +109,7 @@ internal fun UserMessageBubble(
     onShowInfo: () -> Unit,
     onShowDelete: () -> Unit,
     searchHighlight: SearchHighlightSpec?,
+    allowMutations: Boolean = true,
 ) {
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
@@ -294,7 +295,7 @@ internal fun UserMessageBubble(
                         leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
                     )
                 }
-                DropdownMenuItem(
+                if (allowMutations) DropdownMenuItem(
                     text = { Text(stringResource(R.string.edit)) },
                     onClick = {
                         showMenu = false
@@ -321,7 +322,7 @@ internal fun UserMessageBubble(
                     },
                     leadingIcon = { Icon(Icons.Default.Info, null) },
                 )
-                DropdownMenuItem(
+                if (allowMutations) DropdownMenuItem(
                     text = {
                         Text(
                             stringResource(R.string.delete),

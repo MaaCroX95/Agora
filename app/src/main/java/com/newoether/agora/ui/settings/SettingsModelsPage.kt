@@ -11,12 +11,10 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.offset
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.rememberTextFieldState
@@ -45,12 +43,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
 import com.newoether.agora.data.CustomProviderConfig
-import com.newoether.agora.data.inferModelAlias
 import com.newoether.agora.data.modelAliasDisplayName
 import com.newoether.agora.data.modelApiDisplayName
 import com.newoether.agora.data.providerDisplayName
 import com.newoether.agora.model.ModelId
-import com.newoether.agora.model.apiModelName
 import com.newoether.agora.ui.components.clearFocusOnTap
 import com.newoether.agora.ui.components.providerIcon
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
@@ -78,73 +74,6 @@ private val RemoteModelProviders = listOf(
     Constants.PROVIDER_OLLAMA,
     Constants.PROVIDER_OPEN_ROUTER,
 )
-
-internal data class ModelProviderGroup(
-    val providerName: String,
-    val models: List<String>,
-)
-
-internal fun customModelGroups(
-    customModels: Set<String>,
-    providerOrder: List<String>,
-): List<ModelProviderGroup> {
-    val providerPositions = providerOrder.withIndex().associate { (index, name) -> name to index }
-    return customModels
-        .groupBy { ModelId.parse(it).providerName }
-        .map { (providerName, models) ->
-            ModelProviderGroup(
-                providerName = providerName,
-                models = models.sortedBy { ModelId.parse(it).apiModelName.lowercase() },
-            )
-        }
-        .sortedWith(
-            compareBy<ModelProviderGroup>(
-                { providerPositions[it.providerName] ?: Int.MAX_VALUE },
-                { it.providerName.lowercase() },
-            )
-        )
-}
-
-internal fun fetchedModelGroups(
-    availableModels: Map<String, List<String>>,
-    customModels: Set<String>,
-    modelAliases: Map<String, String>,
-    query: String,
-): List<ModelProviderGroup> {
-    val normalizedQuery = query.trim()
-    return availableModels.mapNotNull { (providerName, models) ->
-        val providerMatches =
-            normalizedQuery.isNotEmpty() &&
-                providerName.contains(normalizedQuery, ignoreCase = true)
-        val filteredModels = models
-            .asSequence()
-            .filterNot { it in customModels }
-            .distinct()
-            .filter { model ->
-                val apiModelName = ModelId.parse(model).apiModelName
-                normalizedQuery.isEmpty() ||
-                    providerMatches ||
-                    model.contains(normalizedQuery, ignoreCase = true) ||
-                    apiModelName.contains(normalizedQuery, ignoreCase = true) ||
-                    modelAliases[model]?.contains(normalizedQuery, ignoreCase = true) == true ||
-                    inferModelAlias(apiModelName).contains(normalizedQuery, ignoreCase = true)
-            }
-            .toList()
-        filteredModels.takeIf { it.isNotEmpty() }?.let {
-            ModelProviderGroup(providerName = providerName, models = it)
-        }
-    }
-}
-
-internal fun modelAliasToPersist(
-    rawAlias: String,
-    initialDisplayAlias: String,
-    editedAlias: String,
-): String = if (editedAlias.trim() == initialDisplayAlias.trim()) {
-    rawAlias.trim()
-} else {
-    editedAlias.trim()
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -636,75 +565,13 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
             },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    ExposedDropdownMenuBox(
-                        expanded = customModelProviderMenuExpanded,
+                    CustomModelProviderPicker(
+                        customModelProvider = customModelProvider,
+                        customModelProviderMenuExpanded = customModelProviderMenuExpanded,
+                        providerChoices = providerChoices,
                         onExpandedChange = { customModelProviderMenuExpanded = it },
-                    ) {
-                        OutlinedTextField(
-                            value = customModelProvider,
-                            onValueChange = {},
-                            readOnly = true,
-                            singleLine = true,
-                            label = { Text(stringResource(R.string.embedding_provider_label)) },
-                            leadingIcon = {
-                                val iconRes = providerIcon(customModelProvider)
-                                if (iconRes != 0) {
-                                    Icon(
-                                        painterResource(iconRes),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                } else {
-                                    Icon(Icons.Default.Cloud, contentDescription = null)
-                                }
-                            },
-                            trailingIcon = {
-                                ExposedDropdownMenuDefaults.TrailingIcon(
-                                    expanded = customModelProviderMenuExpanded
-                                )
-                            },
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier
-                                .menuAnchor(
-                                    type = ExposedDropdownMenuAnchorType.PrimaryNotEditable,
-                                    enabled = true,
-                                )
-                                .fillMaxWidth(),
-                        )
-                        ExposedDropdownMenu(
-                            expanded = customModelProviderMenuExpanded,
-                            onDismissRequest = {
-                                customModelProviderMenuExpanded = false
-                            },
-                            matchTextFieldWidth = false,
-                            shape = RoundedCornerShape(16.dp),
-                        ) {
-                            providerChoices.forEach { providerName ->
-                                DropdownMenuItem(
-                                    text = { Text(providerName) },
-                                    onClick = {
-                                        customModelProvider = providerName
-                                        customModelProviderMenuExpanded = false
-                                    },
-                                    leadingIcon = {
-                                        val iconRes = providerIcon(providerName)
-                                        if (iconRes != 0) {
-                                            Icon(
-                                                painterResource(iconRes),
-                                                contentDescription = null,
-                                                modifier = Modifier.size(20.dp),
-                                            )
-                                        } else {
-                                            Icon(
-                                                Icons.Default.Cloud,
-                                                contentDescription = null,
-                                            )
-                                        }
-                                    },
-                                )
-                            }
-                        }
-                    }
+                        onProviderChange = { customModelProvider = it },
+                    )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -782,7 +649,7 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                     showProviderName = showProviderName,
                                 )
                             } else {
-                                viewModel.updateCustomModel(
+                                viewModel.customModelConfiguration.updateModel(
                                     oldModelId = originalModelId,
                                     provider = normalizedProvider,
                                     modelId = normalizedModelId,
@@ -834,7 +701,7 @@ fun SettingsModelsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                         contentColor = MaterialTheme.colorScheme.error,
                     ),
                     onClick = {
-                        viewModel.deleteCustomModel(model)
+                        viewModel.customModelConfiguration.deleteModel(model)
                         deletingCustomModel = null
                     },
                 ) {

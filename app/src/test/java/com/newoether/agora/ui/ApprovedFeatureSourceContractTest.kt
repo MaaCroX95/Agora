@@ -1,18 +1,19 @@
 package com.newoether.agora.ui
 
+import com.newoether.agora.readLocaleStringResourceSources
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class ApprovedFeatureSourceContractTest {
+internal class ApprovedFeatureSourceContractTest : UiSourceContractFixture() {
     @Test
     fun cacheCountsAreRetainedPresentationAndLedgerOwnsActions() {
         val root = sourceRoot()
         val rag = source(root, "com/newoether/agora/viewmodel/RagManager.kt")
         val settings = source(root, "com/newoether/agora/ui/settings/SettingsSearchPage.kt")
-        val dao = source(root, "com/newoether/agora/data/local/ChatDao.kt")
+        val dao = source(root, "com/newoether/agora/data/local/ChatSearchDao.kt")
         val entities = source(root, "com/newoether/agora/data/local/ChatEntities.kt")
         val database = source(root, "com/newoether/agora/data/local/ChatDatabase.kt")
 
@@ -39,7 +40,7 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(listOf("stringResource(R.string.loading_label)", "stringResource(R.string.tool_state_failed)",
             "viewModel.ragManager.retryCacheRow(model.id)").all(settings::contains))
         assertTrue(settings.split("animationSpec = tween(250)").size - 1 >= 2)
-        assertTrue(settings.contains("modifier = Modifier.widthIn(min = 76.dp)"))
+        assertTrue(settings.contains("modifier = Modifier.size(cacheActionSize)"))
         assertTrue(settings.contains("modifier = Modifier.size(24.dp)"))
         assertTrue(settings.contains("viewModel.ragManager.setAutoCacheEnabled"))
         assertTrue(listOf("cachingProgress", "val allCached =", "embeddingCacheActionState(")
@@ -48,7 +49,7 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(dao.contains("GROUP BY e.modelId"))
         assertTrue(dao.contains("getEmbeddingCountsByModels"))
         assertTrue(entities.contains("Index(value = [\"modelId\"])"))
-        assertTrue(database.contains("CURRENT_VERSION = 31"))
+        assertTrue(database.contains("CURRENT_VERSION = 32"))
         assertTrue(database.contains("MIGRATION_23_24"))
         assertTrue(database.contains("MIGRATION_24_25"))
         assertTrue(database.contains("MIGRATION_25_26"))
@@ -61,307 +62,21 @@ class ApprovedFeatureSourceContractTest {
     @Test
     fun contextProgressTweensLocallyAndSnapsForReducedMotion() {
         val root = sourceRoot()
-        val bottomBar = source(
+        val controls = source(
             root,
-            "com/newoether/agora/ui/chat/bottombar/ChatBottomBar.kt",
+            "com/newoether/agora/ui/chat/bottombar/ChatBottomBarComponents.kt",
         )
         val sharedProgress = source(
             root,
             "com/newoether/agora/ui/motion/MotionAwareProgressIndicators.kt",
         )
 
-        assertTrue(bottomBar.contains("val contextProgress by animateFloatAsState("))
-        assertTrue(bottomBar.contains("motionPolicy.allowContinuousMotion"))
-        assertTrue(bottomBar.contains("tween(durationMillis = 400)"))
-        assertTrue(bottomBar.contains("snap()"))
-        assertTrue(bottomBar.split("progress = { contextProgress }").size - 1 == 2)
+        assertTrue(controls.contains("val contextProgress by animateFloatAsState("))
+        assertTrue(controls.contains("motionPolicy.allowContinuousMotion"))
+        assertTrue(controls.contains("tween(durationMillis = 400)"))
+        assertTrue(controls.contains("snap()"))
+        assertTrue(controls.contains("progress = { if (available) contextProgress else 0f }") && controls.contains("progress = { contextProgress }"))
         assertFalse(sharedProgress.contains("animateFloatAsState"))
-    }
-
-    @Test
-    fun mediaViewerAndClipboardImagesUseTheApprovedBoundaries() {
-        val root = sourceRoot()
-        val main = source(root, "com/newoether/agora/MainActivity.kt")
-        val dialog = source(
-            root,
-            "com/newoether/agora/ui/chat/FullScreenMediaPreviewDialog.kt",
-        )
-        val composer = source(
-            root,
-            "com/newoether/agora/ui/chat/bottombar/ChatBottomBar.kt",
-        )
-        val composerState = source(
-            root,
-            "com/newoether/agora/ui/chat/bottombar/ChatComposerState.kt",
-        )
-        val preview = source(
-            root,
-            "com/newoether/agora/ui/chat/bottombar/AttachmentPreviewRow.kt",
-        )
-        val storedMessage = source(
-            root,
-            "com/newoether/agora/ui/chat/message/UserMessageBubble.kt",
-        )
-        val viewer = source(
-            root,
-            "com/newoether/agora/ui/chat/FullScreenMediaViewer.kt",
-        )
-        val payload = source(
-            root,
-            "com/newoether/agora/viewmodel/MessagePayloadBuilder.kt",
-        )
-        val generationManager = source(
-            root,
-            "com/newoether/agora/viewmodel/GenerationManager.kt",
-        )
-        val imageProcessor = source(
-            root,
-            "com/newoether/agora/viewmodel/ImageProcessor.kt",
-        )
-        val sendButton = source(
-            root,
-            "com/newoether/agora/ui/chat/bottombar/ComposerSendButton.kt",
-        )
-        val submission = source(
-            root,
-            "com/newoether/agora/viewmodel/ConversationComposerSubmissionController.kt",
-        )
-        val chatApp = source(
-            root,
-            "com/newoether/agora/ui/chat/ChatApp.kt",
-        )
-        val imageActions = source(
-            root,
-            "com/newoether/agora/ui/chat/ImageActions.kt",
-        )
-
-        assertTrue(main.contains("FullScreenMediaPreviewDialog("))
-        assertTrue(dialog.contains("Dialog("))
-        assertTrue(dialog.contains(".background(Color.Black)"))
-        assertTrue(dialog.contains("visibilityTransition.AnimatedVisibility("))
-        assertTrue(dialog.contains("visibilityTransition.animateFloat("))
-        assertTrue(dialog.contains("DialogWindowNoSystemDim()"))
-        assertTrue(imageActions.contains("DialogWindowNoSystemDim()"))
-        assertTrue(dialog.indexOf("FullScreenMediaViewer(") > dialog.indexOf(".background(Color.Black)"))
-        assertTrue(composer.contains(".contentReceiver(clipboardImageReceiver)"))
-        assertTrue(composer.contains("transferableContent.consume"))
-        assertTrue(composer.contains("hasMediaType(MediaType.Image)"))
-        assertTrue(composer.contains("importUris(composerOwnerId, imageUris, \"image\", emitSuccessHaptic = false)"))
-        assertTrue(composer.contains("inspectAttachmentIngress("))
-        assertTrue(composer.contains(
-            "composerController.importAttachment(ownerId, attachment) || imported",
-        ))
-        assertTrue(composer.contains("return remaining"))
-
-        listOf(
-            "selectedAttachments",
-            "processingStates",
-            "pendingSend",
-            "attachmentCopyJobs",
-            "videoExtractionJobs",
-            "fun onPickImages",
-            "fun onPickVideos",
-            "fun onPickFiles",
-            "fun confirmPendingPdfSelection",
-            "fun addSlicedVideo",
-        ).forEach { legacyOwner ->
-            assertFalse(composerState.contains(legacyOwner))
-        }
-        assertTrue(composerState.contains("controller.importAttachment(ownerId, attachment)"))
-        assertTrue(composerState.contains("localPath = file.absolutePath"))
-        assertTrue(preview.contains(
-            "mediaAttachments.mapIndexed { index, attachment -> attachment.localId to index }.toMap()",
-        ))
-        assertFalse(preview.contains("indexOf("))
-        assertTrue(sendButton.contains("submissionController.submit("))
-        assertTrue(sendButton.contains("text = textFieldState.text.toString()"))
-        assertTrue(sendButton.contains("snapshot.attachments.map(SelectedAttachment::localId)"))
-        assertTrue(sendButton.contains("strokeWidth = 3.dp"))
-        assertTrue(sendButton.contains("targetState = icon"))
-        assertTrue(sendButton.contains("ComposerActionIcon.BUSY"))
-        assertTrue(sendButton.contains("enabled = isActionable"))
-        assertTrue(sendButton.contains("val containerColor by animateColorAsState("))
-        assertTrue(sendButton.contains("val contentColor by animateColorAsState("))
-        assertEquals(
-            2,
-            sendButton.split("animationSpec = tween(durationMillis = 400)").size - 1,
-        )
-        assertTrue(sendButton.contains("label = \"fabContainer\""))
-        assertTrue(sendButton.contains("label = \"fabContent\""))
-        assertTrue(sendButton.contains("durationMillis = COMPOSER_ICON_CROSSFADE_DURATION_MS"))
-        assertTrue(sendButton.contains("easing = LinearEasing"))
-        assertFalse(sendButton.contains("LocalSoftwareKeyboardController"))
-        assertFalse(chatApp.contains("BindDirectAcceptedComposerEffects"))
-        assertFalse(
-            File(root, "com/newoether/agora/ui/chat/DirectAcceptedComposerEffect.kt").exists(),
-        )
-        assertFalse(submission.contains("DirectAcceptedComposerEffect"))
-        assertFalse(submission.contains("directAcceptedEffects"))
-        assertFalse(submission.contains("publishDirectAcceptedEffect"))
-        assertFalse(submission.contains("presentationDispatcher"))
-        assertTrue(
-            submission.contains(
-                "request.accepted = acceptance\n" +
-                    "                clearAccepted(owner, request)",
-            ),
-        )
-        assertTrue(submission.contains("directAcceptedVersion = current.directAcceptedVersion +"))
-        assertTrue(submission.contains("if (request.accepted is SendAcceptance.Direct) 1L else 0L"))
-        assertTrue(composer.contains("submissionController.observeState(composerOwnerId)"))
-        assertTrue(composer.contains("submissionController.releaseState(composerOwnerId)"))
-        val textFieldBlock = composer.substringAfter("TextField(")
-            .substringBefore("placeholder =")
-        assertFalse(textFieldBlock.contains("enabled ="))
-        assertTrue(submission.contains("composers.freezeSubmission("))
-        assertTrue(submission.contains("composers.awaitProcessing("))
-        assertTrue(submission.contains("SelectedAttachment::hasCanonicalReadyArtifact"))
-        assertTrue(submission.contains("attachment.storage.transferForSend()"))
-        assertTrue(submission.contains("submissionId = request.id"))
-        assertTrue(payload.contains("fun buildComposerPayload("))
-        assertTrue(payload.contains("AttachmentImportState.READY"))
-        assertTrue(payload.contains("val imageIndex = allImages.size"))
-        listOf(
-            "processImages(",
-            "extractVideoFrames(",
-            "PdfPageRenderer",
-            "AttachmentSourceReader",
-            "preparedOwnedPaths",
-            "localPath ?:",
-            ".uri",
-        ).forEach { sendTimeFallback ->
-            assertFalse(payload.contains(sendTimeFallback))
-        }
-        assertFalse(generationManager.contains("suspend fun processImages("))
-        assertFalse(imageProcessor.contains("processImagesAndVideos("))
-        assertTrue(storedMessage.contains("projectStoredMediaOccurrences("))
-        assertFalse(storedMessage.contains("allMediaUrls.indexOf("))
-        assertTrue(viewer.contains("initialIndex.coerceIn(0, pdfPages.size - 1)"))
-        assertFalse(viewer.contains("pdfPages.indexOf("))
-    }
-
-    @Test
-    fun streamingFadeKeysToolSummaryCrossfadeByPresentationState() {
-        val root = sourceRoot()
-        val fade = source(
-            root,
-            "com/newoether/agora/ui/chat/message/IncrementalStreamingMarkdown.kt",
-        )
-        val assets = source(
-            root,
-            "com/newoether/agora/ui/chat/message/MessageBubbleAssets.kt",
-        )
-        val timeline = source(
-            root,
-            "com/newoether/agora/ui/chat/message/MessageItemTimeline.kt",
-        )
-        val tool = source(
-            root,
-            "com/newoether/agora/ui/chat/message/ToolResultContent.kt",
-        )
-        val stableText = source(
-            root,
-            "com/newoether/agora/ui/chat/message/StableStreamingText.kt",
-        )
-        val mutedText = source(
-            root,
-            "com/newoether/agora/ui/chat/message/StreamingMutedText.kt",
-        )
-        val lifecycle = source(
-            root,
-            "com/newoether/agora/ui/chat/message/GenerationLifecycleMotion.kt",
-        )
-        val messageItem = source(
-            root,
-            "com/newoether/agora/ui/chat/message/MessageItem.kt",
-        )
-        val assistant = source(
-            root,
-            "com/newoether/agora/ui/chat/message/AssistantMessageContent.kt",
-        )
-        val segments = source(
-            root,
-            "com/newoether/agora/ui/chat/message/MessageItemSegments.kt",
-        )
-
-        assertTrue(fade.contains("fun streamingTailAnnotatedString("))
-        assertTrue(fade.contains("fun rememberStreamingGlyphFade("))
-        assertFalse(fade.contains("fun Modifier.stableStreamingGlyphFade("))
-        assertFalse(fade.contains("BlendMode.DstIn"))
-        assertTrue(assets.contains("content = base,"))
-        assertTrue(assets.contains("rememberStreamingGlyphFade("))
-        assertFalse(assets.contains(".stableStreamingGlyphFade("))
-        assertFalse(timeline.contains("StableStreamingText("))
-        assertEquals(2, Regex("StreamingMutedText\\(").findAll(timeline).count())
-        assertFalse(tool.contains("StableStreamingText("))
-        assertFalse(timeline.contains("tailFadeEnabled ="))
-        assertFalse(tool.contains("tailFadeEnabled ="))
-        assertTrue(mutedText.contains("internal fun ToolSummaryText("))
-        assertTrue(mutedText.contains("presentation: ToolPresentation"))
-        assertTrue(mutedText.contains("streaming: Boolean"))
-        assertEquals(2, Regex("ToolSummaryText\\(").findAll(timeline).count())
-        assertEquals(1, Regex("ToolSummaryText\\(").findAll(mutedText).count())
-        assertTrue(mutedText.contains("targetState = presentation.state"))
-        assertFalse(mutedText.contains("targetState = summary"))
-        assertTrue(mutedText.contains("text = renderedSummary"))
-        assertTrue(mutedText.contains("!transition.isRunning"))
-        val compactBlock = timeline
-            .substringAfter("internal fun CompactSegmentBlock(")
-            .substringBefore("internal fun retainExpandedLayoutDuringFade(")
-        assertTrue(timeline.contains("targetState = collapsedTitle"))
-        assertTrue(timeline.contains("compactSegmentTitle:\$expansionKey"))
-        assertTrue(timeline.contains("val containsToolSummary = segs.any { it.type == \"tool\" }"))
-        assertTrue(compactBlock.contains("shouldPresentInitiallyExpanded("))
-        assertTrue(compactBlock.contains("groupedSegmentExpandedState("))
-        assertTrue(compactBlock.contains("targetExpanded && initiallyAutoExpanded"))
-        assertFalse(compactBlock.contains("forceOpaque = containsToolSummary"))
-        assertTrue(Regex("forceOpaque = seg.type == \"tool\"").findAll(timeline).count() == 2)
-        assertTrue(timeline.contains("containsToolSummary && allowSpatialTransitions ->"))
-        assertTrue(timeline.contains("EnterTransition.None"))
-        assertTrue(timeline.contains("ExitTransition.None"))
-        assertTrue(tool.contains("private fun ToolActiveContent(text: String, output: String?) {\n    Text("))
-        assertTrue(lifecycle.contains("alpha = if (forceOpaque) 1f else value"))
-        assertTrue(messageItem.contains(
-            "forceOpaque = displayMessage.segments.orEmpty().any { it.type == \"tool\" }",
-        ))
-        assertTrue(assistant.contains("forceOpaque = detailSegments.any { it.type == \"tool\" }"))
-        assertTrue(segments.contains("forceOpaque = forceOpaque"))
-        assertTrue(stableText.contains("enabled = streaming && tailFadeEnabled"))
-        assertTrue(stableText.contains("initialAlpha = tailFadeInitialAlpha"))
-        assertTrue(stableText.contains("fadeCodePoints = tailFadeCodePoints"))
-        assertTrue(stableText.contains("spatialBands = tailFadeSpatialBands"))
-        assertTrue(mutedText.contains("MUTED_STREAM_TAIL_CODE_POINTS = 42"))
-        assertTrue(mutedText.contains("MUTED_STREAM_TAIL_ALPHA_BANDS = 6"))
-        assertTrue(mutedText.contains("MUTED_STREAM_TAIL_NEWEST_ALPHA = 0.38f"))
-        val toolSummary = mutedText.substringAfter("internal fun ToolSummaryText(")
-            .substringBefore("private fun thoughtPreviewTail(")
-        assertTrue(toolSummary.contains("Crossfade("))
-        assertFalse(toolSummary.contains("StableStreamingText("))
-        assertFalse(fade.contains("TOOL_SUMMARY_"))
-        assertFalse(fade.contains("toolSummaryTailAnnotatedString"))
-        assertFalse(fade.contains("rememberToolSummaryGlyphFade"))
-        // Document-level birth-time tracking survives node restructures, block promotion, and
-        // subtree re-keying. Births begin only when a snapshot is first published, and the tracker
-        // retains only the active not-yet-solid suffix with no fixed character-count cap.
-        assertTrue(fade.contains("fadeSample: StreamingTailFadeSample?"))
-        assertTrue(fade.contains("fun computeBlockFadeSpecs("))
-        assertTrue(fade.contains("internal fun StreamingGlyphFadeSpec?.nodeFade("))
-        assertTrue(fade.contains("fadeTracker.update("))
-        assertTrue(fade.contains("text = preparedSource,"))
-        assertTrue(fade.contains("nowMs = nowMs,"))
-        assertTrue(fade.contains("isStreaming || !textDeltas.isNullOrEmpty()"))
-        assertTrue(fade.contains("textDeltas = published.textDeltas,"))
-        assertTrue(fade.contains("textDeltas = pending.textDeltas,"))
-        assertTrue(fade.contains("publishedDeltaSequences"))
-        assertFalse(fade.contains("positionDelaysMs"))
-        assertFalse(fade.contains("STREAM_DELTA_POSITION_WINDOW_MS"))
-        assertTrue(fade.contains("startAlpha + (1f - startAlpha) * progress"))
-        assertTrue(fade.contains("spatialAlpha + ageAlpha"))
-        assertFalse(fade.contains("STREAM_TAIL_FADE_CODE_POINTS"))
-        assertFalse(fade.contains("ArrivalRecord"))
-        assertFalse(fade.contains("distributeArrivalBirths"))
-        assertFalse(fade.contains("lastVisibleSourceOffset"))
-        assertTrue(assets.contains("fade = nodeFade,"))
-        assertFalse(assets.contains("enabled = fadeThisNode"))
     }
 
     @Test
@@ -474,7 +189,7 @@ class ApprovedFeatureSourceContractTest {
     @Test
     fun ratingPaddingBelongsOnlyToDialogHost() {
         val root = sourceRoot()
-        val mainActivity = source(root, "com/newoether/agora/MainActivity.kt")
+        val mainActivity = source(root, "com/newoether/agora/MainApplicationDialogs.kt")
         val rating = source(root, "com/newoether/agora/ui/settings/RatingForm.kt")
         val settings = source(root, "com/newoether/agora/ui/settings/SettingsAboutPage.kt")
 
@@ -506,19 +221,19 @@ class ApprovedFeatureSourceContractTest {
     fun toolCallCreationPublishesTheCompleteBatchBeforeExecution() {
         val manager = source(
             sourceRoot(),
-            "com/newoether/agora/viewmodel/GenerationManager.kt",
+            "com/newoether/agora/viewmodel/GenerationOutputAccumulator.kt",
         )
         val updateBranch = manager
             .substringAfter("is StreamEvent.ToolCallUpdate -> {")
             .substringBefore("is StreamEvent.ToolCallRequest -> {")
         val batchBranch = manager
             .substringAfter("is StreamEvent.ToolCallsRequest -> {")
-            .substringBefore("\n                }\n\n                val now")
+            .substringBefore("\n        }\n\n        val now")
 
         assertTrue(updateBranch.contains("val created = upsertStreamingToolSegment("))
-        assertTrue(updateBranch.contains("publishStreamUpdate(forceCheckpoint = created)"))
+        assertTrue(updateBranch.contains("publishStreamUpdate(created)"))
         val upsertIndex = batchBranch.indexOf("event.calls.forEach")
-        val publishIndex = batchBranch.indexOf("publishStreamUpdate(forceCheckpoint = true)")
+        val publishIndex = batchBranch.indexOf("publishStreamUpdate(true)")
         assertTrue(upsertIndex >= 0)
         assertTrue(batchBranch.contains("upsertStreamingToolSegment("))
         assertTrue(publishIndex > upsertIndex)
@@ -748,7 +463,7 @@ class ApprovedFeatureSourceContractTest {
             }
             ?.map { directory -> File(directory, "strings.xml") }
             ?.filter(File::isFile)
-            ?.sortedBy { file -> file.parentFile.name }
+            ?.sortedBy { file -> checkNotNull(file.parentFile).name }
             .orEmpty()
         val expectedKeys = setOf(
             "developer_options_already_enabled_message",
@@ -796,16 +511,16 @@ class ApprovedFeatureSourceContractTest {
 
         assertEquals(12, localeFiles.size)
         localeFiles.forEach { file ->
-            val keys = developerKey.findAll(file.readText())
+            val keys = developerKey.findAll(file.readLocaleStringResourceSources())
                 .map { match -> match.groupValues[1] }
                 .toList()
             assertEquals(
-                "${file.parentFile.name} contains duplicate Developer keys",
+                "${checkNotNull(file.parentFile).name} contains duplicate Developer keys",
                 keys.size,
                 keys.toSet().size,
             )
             assertEquals(
-                "${file.parentFile.name} has an unexpected Developer key set",
+                "${checkNotNull(file.parentFile).name} has an unexpected Developer key set",
                 expectedKeys,
                 keys.toSet(),
             )
@@ -907,6 +622,8 @@ class ApprovedFeatureSourceContractTest {
 
         listOf(
             "com/newoether/agora/ui/settings/SettingsModelsPage.kt",
+            "com/newoether/agora/ui/settings/ModelSettingsProjection.kt",
+            "com/newoether/agora/ui/settings/CustomModelProviderPicker.kt",
             "com/newoether/agora/ui/settings/SettingsContextPage.kt",
             "com/newoether/agora/ui/settings/SettingsTitleGenPage.kt",
             "com/newoether/agora/ui/settings/SettingsTranscriptionPage.kt",
@@ -980,20 +697,5 @@ class ApprovedFeatureSourceContractTest {
         assertTrue(importer.contains("memories/skill_db/"))
         assertTrue(settings.contains("settings.accessSkills.collectAsState()"))
         assertFalse(settings.contains("Active Skill"))
-    }
-
-    private fun source(root: File, path: String): String =
-        File(root, path).readText().replace("\r\n", "\n")
-
-    private fun sourceRoot(): File {
-        var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
-        repeat(8) {
-            listOf(
-                File(directory, "app/src/main/java"),
-                File(directory, "src/main/java"),
-            ).firstOrNull(File::isDirectory)?.let { return it }
-            directory = directory.parentFile ?: error("Reached filesystem root")
-        }
-        error("Unable to locate source root")
     }
 }

@@ -9,7 +9,7 @@ class Phase27UiSourceContractTest {
     @Test
     fun `direct sources own visuals with no clone or coordinate follower`() {
         val list = chatSource("MessageList.kt")
-        val assistant = source("AssistantMessageContent.kt")
+        val assistant = source("AssistantMessageContent.kt") + source("AssistantInlineActivity.kt")
         val retry = source("RetryActivityIndicator.kt")
         val tail = chatSource("StreamingTailIndicator.kt")
         val follower = File(
@@ -42,11 +42,12 @@ class Phase27UiSourceContractTest {
 
     @Test
     fun `terminal background tool cannot keep Thinking header loading`() {
-        val timeline = source("MessageItemTimeline.kt")
+        val timeline = source("MessageItemTimeline.kt") +
+            source("TimelineSegmentsContent.kt")
         val presentation = source("ToolPresentation.kt")
 
-        assertTrue(timeline.contains("generationActive: Boolean ="))
-        assertTrue(timeline.contains("if (!generationActive) return false"))
+        assertTrue(timeline.contains("): Boolean = generationActive && isCurrentCard"))
+        assertTrue(timeline.contains("cardUsesLiveStatus = generationActive && isCurrentCard && useLiveStatus"))
         assertTrue(timeline.contains("generationActive = generationActive"))
         // isActive drives the loading indicator and must exclude detached background jobs.
         assertFalse(presentation.contains(
@@ -59,7 +60,8 @@ class Phase27UiSourceContractTest {
 
     @Test
     fun `sheet chrome uses twenty five percent neutral surfaces`() {
-        val timeline = source("MessageItemTimeline.kt")
+        val timeline = source("MessageItemTimeline.kt") +
+            source("TimelineSegmentsContent.kt")
         val detail = source("SegmentDetailSheet.kt")
 
         assertTrue(timeline.contains(

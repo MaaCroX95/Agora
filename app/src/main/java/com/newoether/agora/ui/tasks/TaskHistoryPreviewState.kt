@@ -33,6 +33,13 @@ internal data class TaskHistoryPreviewState(
     val active: Boolean
         get() = phase != TaskHistoryPreviewPhase.IDLE
 
+    /** A retained preview cannot own Back on an ordinary or newly selected destination. */
+    fun backTaskId(currentConversationId: String?, isNewChatMode: Boolean): String? =
+        taskId?.takeIf {
+            phase == TaskHistoryPreviewPhase.VIEWING && !isNewChatMode &&
+                previewConversationId != null && currentConversationId == previewConversationId
+        }
+
     fun open(
         taskId: String,
         previewConversationId: String,

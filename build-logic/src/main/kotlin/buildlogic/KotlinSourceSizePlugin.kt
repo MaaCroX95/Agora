@@ -51,7 +51,7 @@ abstract class VerifyKotlinFileSizeTask : DefaultTask() {
         val violations = KotlinSourceSizePolicy.evaluate(
             currentLines = current,
             baselineLines = baseline,
-            allowedBaselineCaps = INITIAL_KOTLIN_SOURCE_BASELINE_CAPS,
+            allowedBaselineCaps = KOTLIN_SOURCE_BASELINE_CAPS,
         )
         if (violations.isNotEmpty()) {
             throw GradleException(

@@ -1,5 +1,6 @@
 package com.newoether.agora.ui.chat.message
 
+import com.newoether.agora.readLocaleStringResourceSources
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -42,6 +43,7 @@ class Phase24UiSourceContractTest {
             "thought_for_seconds_called_tools",
             "thought_for_minutes_called_tools",
             "thought_for_hours_called_tools",
+            "thought_for_a_while_called_tools",
         ).forEach { key -> assertTrue("Missing presentation key $key", presentation.contains(key)) }
         assertTrue(presentation.contains("seconds / 3_600"))
         assertTrue(presentation.contains("(seconds % 3_600) / 60"))
@@ -51,7 +53,7 @@ class Phase24UiSourceContractTest {
             .substringBefore("internal fun compactSegmentDisplayTitle(")
         assertTrue(terminalTitle.contains("val hasThought = segs.any { it.type == \"thought\" }"))
         assertTrue(terminalTitle.contains(
-            "hasThought -> thoughtDurationTitle(thoughtMs?.coerceAtLeast(0L) ?: 0L, toolCount)"
+            "hasThought -> thoughtDurationTitle(thoughtMs, toolCount)"
         ))
         assertTrue(terminalTitle.contains(
             "toolCount > 0 -> stringResource(R.string.called_n_tools, toolCount)"
@@ -76,6 +78,7 @@ class Phase24UiSourceContractTest {
             "thinking_for_hours_ellipsis" to setOf(1, 2, 3),
             "thought_for_hours" to setOf(1, 2, 3),
             "thought_for_hours_called_tools" to setOf(1, 2, 3, 4),
+            "thought_for_a_while_called_tools" to setOf(1),
         )
         resourceDirectories.forEach { directory ->
             val xml = resourceFile(directory)
@@ -151,7 +154,7 @@ class Phase24UiSourceContractTest {
             .orEmpty()
 
     private fun resourceFile(directory: String): String =
-        File(resourceRoot(), "$directory/strings.xml").readText()
+        File(resourceRoot(), "$directory/strings.xml").readLocaleStringResourceSources()
 
     private fun mainSourceRoot(): File = locate("app/src/main/java")
     private fun resourceRoot(): File = locate("app/src/main/res")

@@ -5,6 +5,10 @@
 #include <android/log.h>
 #include "llama.h"
 #include "ggml-backend.h"
+#include "jni_utf8.h"
+
+using agora::jni::read_java_path;
+using agora::jni::read_java_string;
 
 #define LOG_TAG "LlamaEngine"
 #ifndef NDEBUG
@@ -30,11 +34,10 @@ Java_com_newoether_agora_api_LlamaEngine_nativeInitializeBackends(
     JNIEnv * env, jclass /*clazz*/, jstring native_library_dir) {
 
     if (!native_library_dir) return JNI_FALSE;
-    const char * directory = env->GetStringUTFChars(native_library_dir, nullptr);
-    if (!directory) return JNI_FALSE;
+    std::string directory;
+    if (!read_java_path(env, native_library_dir, directory)) return JNI_FALSE;
 
-    ggml_backend_load_all_from_path(directory);
-    env->ReleaseStringUTFChars(native_library_dir, directory);
+    ggml_backend_load_all_from_path(directory.c_str());
 
     if (!ggml_backend_reg_by_name("CPU")) {
         LOGE("No compatible CPU backend was loaded");
@@ -48,19 +51,17 @@ JNIEXPORT jlong JNICALL
 Java_com_newoether_agora_api_LlamaEngine_nativeLoadModel(
     JNIEnv * env, jclass /*clazz*/, jstring path) {
 
-    const char * path_str = env->GetStringUTFChars(path, nullptr);
-    if (!path_str) return 0;
+    std::string path_str;
+    if (!read_java_path(env, path, path_str)) return 0;
 
     LlamaHandle * handle = new LlamaHandle();
     if (!handle) {
-        env->ReleaseStringUTFChars(path, path_str);
         return 0;
     }
 
     // Load model
     llama_model_params model_params = llama_model_default_params();
-    handle->model = llama_model_load_from_file(path_str, model_params);
-    env->ReleaseStringUTFChars(path, path_str);
+    handle->model = llama_model_load_from_file(path_str.c_str(), model_params);
 
     if (!handle->model) {
         delete handle;
@@ -114,11 +115,8 @@ Java_com_newoether_agora_api_LlamaEngine_nativeComputeEmbedding(
     LlamaHandle * handle = reinterpret_cast<LlamaHandle *>(handle_ptr);
     if (!handle->ctx || !handle->model) return nullptr;
 
-    const char * text_str = env->GetStringUTFChars(text, nullptr);
-    if (!text_str) return nullptr;
-
-    std::string input(text_str);
-    env->ReleaseStringUTFChars(text, text_str);
+    std::string input;
+    if (!read_java_string(env, text, input)) return nullptr;
 
     if (input.empty()) return nullptr;
 

@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.newoether.agora.R
 import com.newoether.agora.model.ChatMessage
-import com.newoether.agora.model.CitationRecord
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.MessageStatus
 import com.newoether.agora.ui.components.*
@@ -68,33 +67,10 @@ private enum class CompactSegmentIcon {
     IMAGE,
 }
 
-internal fun compactSegmentHasActiveContent(
-    segs: List<MessageSegment>,
-    message: ChatMessage,
-    useLiveStatus: Boolean,
-    generationActive: Boolean = message.status == MessageStatus.SENDING ||
-        message.status == MessageStatus.THINKING ||
-        message.status == MessageStatus.TOOL_CALLING ||
-        message.status == MessageStatus.TRANSCRIBING,
-): Boolean {
-    if (!generationActive) return false
-    return segs.any { segment ->
-        when (segment.type) {
-            "tool" -> ToolPresentationResolver.resolve(segment).isActive
-            "thought" -> useLiveStatus && message.status == MessageStatus.THINKING
-            "transcription" -> useLiveStatus &&
-                (message.status == MessageStatus.TRANSCRIBING ||
-                    message.status == MessageStatus.TOOL_CALLING)
-            else -> false
-        }
-    }
-}
-
 internal fun compactSegmentShowsLoading(
-    hasActiveContent: Boolean,
     generationActive: Boolean,
     isCurrentCard: Boolean,
-): Boolean = hasActiveContent || (generationActive && isCurrentCard)
+): Boolean = generationActive && isCurrentCard
 
 @Composable
 internal fun CompactSegmentBlock(
@@ -196,24 +172,19 @@ internal fun CompactSegmentBlock(
             expandedStates[expansionKey] = targetExpanded
         }
     }
-    val isThinking = useLiveStatus &&
+    val cardUsesLiveStatus = generationActive && isCurrentCard && useLiveStatus
+    val isThinking = cardUsesLiveStatus &&
         message.status == MessageStatus.THINKING &&
         segs.any { it.type == "thought" }
-    val isTranscribing = useLiveStatus && message.status == MessageStatus.TRANSCRIBING
+    val isTranscribing = cardUsesLiveStatus && message.status == MessageStatus.TRANSCRIBING
     val toolCount = segs.count { it.type == "tool" }
     val thoughtMs = thoughtDurationMs(segs, fallbackMs = message.thoughtTimeMs)
     val hasThought = thoughtMs != null && thoughtMs > 0
-    val cardHasActiveContent = compactSegmentHasActiveContent(
-        segs = segs,
-        message = message,
-        useLiveStatus = useLiveStatus,
-        generationActive = generationActive,
-    )
-    val showLoading = compactSegmentShowsLoading(cardHasActiveContent, generationActive, isCurrentCard)
+    val showLoading = compactSegmentShowsLoading(generationActive, isCurrentCard)
     val collapsedTitle = compactSegmentDisplayTitle(
         segs = segs,
         message = message,
-        useLiveStatus = useLiveStatus,
+        useLiveStatus = cardUsesLiveStatus,
     )
     val collapsedIcon = when {
         showLoading -> CompactSegmentIcon.LOADING
@@ -596,238 +567,6 @@ private fun segmentGroupBottomPadding(position: SegmentGroupPosition): Dp =
     } else {
         0.dp
     }
-
-@Composable
-internal fun TimelineSegmentsContent(
-    segments: List<MessageSegment>,
-    detailSegments: List<MessageSegment>,
-    message: ChatMessage,
-    isStreaming: Boolean,
-    generationActive: Boolean,
-    groupAdjacentBlocks: Boolean,
-    autoExpandActiveGroup: Boolean,
-    autoExpansionController: GroupedSegmentAutoExpansionController,
-    expandedStates: SnapshotStateMap<String, Boolean>,
-    renderContext: ChatMarkdownRenderContext,
-    searchHighlight: SearchHighlightSpec?,
-    citations: List<CitationRecord>,
-    onCitationActivate: (List<CitationRecord>) -> Unit,
-    segmentAppearanceRegistry: SegmentAppearanceRegistry,
-    onLayoutMutationStarted: (String) -> Unit,
-    onLayoutMutationSettled: (String) -> Unit,
-    onMediaClick: (List<String>, Int) -> Unit,
-    opensDetailSheet: Boolean = false,
-    preserveInitialCompactIdentity: Boolean = false,
-    onGroupHeaderClick: ((List<Int>) -> Unit)? = null,
-    onSegmentClick: (List<Int>) -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        var detailIndex = 0
-        var answerOffset = 0
-        var index = 0
-        var previousVisibleWasAnswer = false
-        val lastVisibleSegmentIndex = segments.indexOfLast { segment ->
-            segment.isVisibleAnswerSegment() || segment.isInfoSegment()
-        }
-        while (index < segments.size) {
-            val seg = segments[index]
-            when (seg.type) {
-                "answer" -> {
-                    if (seg.content.isNotBlank()) {
-                        val answerIsStreaming =
-                            isStreaming && index == lastVisibleSegmentIndex
-                        val citationProjection = citationMarkdownProjection(
-                            answerText = seg.content,
-                            citations = citationRecordsForAnswerSlice(
-                                citations = citations,
-                                sliceStart = answerOffset,
-                                sliceText = seg.content,
-                            ),
-                            isStreaming = answerIsStreaming,
-                        )
-                        val answerSearchHighlight = searchHighlight?.forSourceSlice(
-                            sliceStart = answerOffset,
-                            sliceLength = seg.content.length,
-                        )
-                        val answerAppearanceKey =
-                            "${segmentAppearanceKey(message.id, index, seg)}:timeline"
-                        val answerFadeTracker =
-                            segmentAppearanceRegistry.streamingFadeTracker("$answerAppearanceKey:fade")
-                        AnimatedTimelineBlockAppearance(
-                            animationKey = answerAppearanceKey,
-                            appearanceRegistry = segmentAppearanceRegistry,
-                            isStreaming = isStreaming,
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = if (index == 0) 0.dp else 6.dp)
-                            ) {
-                                CitationTerminalProjectionHost(
-                                    animationKey = answerAppearanceKey,
-                                    projection = citationProjection,
-                                    isStreaming = answerIsStreaming,
-                                    onLayoutMutationStarted = onLayoutMutationStarted,
-                                    onLayoutMutationSettled = onLayoutMutationSettled,
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) { presentedProjection, presentedIsStreaming ->
-                                    val presentedContent =
-                                        presentedProjection?.markdown ?: seg.content
-                                    CitationInlineContentHost(
-                                        projection = presentedProjection,
-                                        onActivate = onCitationActivate,
-                                    ) {
-                                        CompositionLocalProvider(
-                                            LocalSearchHighlightSpec provides answerSearchHighlight,
-                                        ) {
-                                            StreamingMarkdownMessage(
-                                                content = presentedContent,
-                                                isStreaming = presentedIsStreaming,
-                                                renderContext = renderContext,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .noOpBringIntoView(),
-                                                selectionEnabled = !presentedIsStreaming,
-                                                textDeltas = seg.streamingTextDeltas,
-                                                fadeTracker = answerFadeTracker,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        previousVisibleWasAnswer = true
-                    }
-                    answerOffset += seg.content.length
-                    index++
-                }
-                "thought", "tool", "transcription" -> {
-                    if (groupAdjacentBlocks) {
-                        val blockSegments = mutableListOf<MessageSegment>()
-                        val blockDetailIndices = mutableListOf<Int>()
-                        val blockEnd = groupedInfoBlockEndExclusive(segments, index)
-                        var blockCursor = index
-                        while (blockCursor < blockEnd) {
-                            val blockSeg = segments[blockCursor]
-                            if (blockSeg.isInfoSegment()) {
-                                blockSegments.add(blockSeg)
-                                blockDetailIndices.add(detailIndex)
-                                detailIndex++
-                            }
-                            blockCursor++
-                        }
-                        val imageBoundary =
-                            blockSegments.lastOrNull()?.takeIf { it.isImageGenerationSegment() }
-                        val imageDetailIndex =
-                            blockDetailIndices.lastOrNull().takeIf { imageBoundary != null }
-                        val firstDetailIndex = blockDetailIndices.firstOrNull() ?: index
-                        val useInitialCompactIdentity =
-                            preserveInitialCompactIdentity &&
-                                blockDetailIndices.firstOrNull() == 0
-                        val expansionKey = if (useInitialCompactIdentity) {
-                            message.id
-                        } else {
-                            groupedSegmentBlockAppearanceKey(message.id, firstDetailIndex)
-                        }
-                        val cardAppearanceKey = if (useInitialCompactIdentity) {
-                            "${compactSegmentBlockAppearanceKey(message.id)}:card"
-                        } else {
-                            "$expansionKey:card"
-                        }
-                        val blockTopPaddingExtra =
-                            timelineInfoTopPaddingExtra(previousVisibleWasAnswer)
-                        CompactSegmentBlock(
-                            segs = blockSegments,
-                            segmentIndices = blockDetailIndices,
-                            message = message,
-                            isStreaming = isStreaming,
-                            useLiveStatus =
-                                isStreaming &&
-                                    blockDetailIndices.lastOrNull() == detailSegments.lastIndex,
-                            generationActive = generationActive,
-                            isCurrentCard = blockEnd > lastVisibleSegmentIndex,
-                            expandedStates = expandedStates,
-                            expansionKey = expansionKey,
-                            cardAppearanceKey = cardAppearanceKey,
-                            segmentAppearanceRegistry = segmentAppearanceRegistry,
-                            autoExpansionController = autoExpansionController,
-                            autoExpansionEnabled = autoExpandActiveGroup,
-                            autoExpansionActive = isStreaming && blockEnd == segments.size,
-                            collapseForImageBoundary = imageBoundary != null,
-                            topPaddingExtra = blockTopPaddingExtra,
-                            bottomPaddingExtra = 0.dp,
-                            onExpansionStarted = onLayoutMutationStarted,
-                            onExpansionSettled = onLayoutMutationSettled,
-                            onSegmentClick = { selectedDetailIndex ->
-                                onSegmentClick(listOf(selectedDetailIndex))
-                            },
-                            onHeaderClick = if (opensDetailSheet) {
-                                {
-                                    (onGroupHeaderClick ?: onSegmentClick)(blockDetailIndices)
-                                }
-                            } else {
-                                null
-                            },
-                            opensDetailSheet = opensDetailSheet,
-                        )
-                        if (imageBoundary != null && imageDetailIndex != null) {
-                            GeneratedImageThumbnail(
-                                segment = imageBoundary,
-                                messageId = message.id,
-                                detailIndex = imageDetailIndex,
-                                isStreaming = isStreaming,
-                                segmentAppearanceRegistry = segmentAppearanceRegistry,
-                                onMediaClick = onMediaClick,
-                            )
-                        }
-                        previousVisibleWasAnswer = false
-                        index = blockEnd
-                    } else {
-                        val currentDetailIndex = detailIndex
-                        detailIndex++
-                        val cardTopPaddingExtra =
-                            timelineInfoTopPaddingExtra(previousVisibleWasAnswer)
-                        val timelineKey = detailSegmentAppearanceKey(
-                            message.id,
-                            currentDetailIndex,
-                            seg,
-                        )
-                        TimelineInfoSegmentCard(
-                            seg = seg,
-                            detailSegments = detailSegments,
-                            detailIndex = currentDetailIndex,
-                            isStreamingContent =
-                                isStreaming && index == lastVisibleSegmentIndex,
-                            animateAppearance = isStreaming,
-                            topPaddingExtra = cardTopPaddingExtra,
-                            groupPosition = timelineSegmentGroupPosition(segments, index),
-                            endsAtGeneratedImageBoundary = seg.isImageGenerationSegment(),
-                            extendIntoMessageInsets = true,
-                            cardAnimationKey = "$timelineKey:card",
-                            segmentAppearanceRegistry = segmentAppearanceRegistry,
-                            onClick = { onSegmentClick(listOf(currentDetailIndex)) },
-                        )
-                        if (seg.isImageGenerationSegment()) {
-                            GeneratedImageThumbnail(
-                                segment = seg,
-                                messageId = message.id,
-                                detailIndex = currentDetailIndex,
-                                isStreaming = isStreaming,
-                                segmentAppearanceRegistry = segmentAppearanceRegistry,
-                                onMediaClick = onMediaClick,
-                            )
-                        }
-                        previousVisibleWasAnswer = false
-                        index++
-                    }
-                }
-                else -> {
-                    index++
-                }
-            }
-        }
-    }
-}
 
 @Composable
 internal fun TimelineInfoSegmentCard(

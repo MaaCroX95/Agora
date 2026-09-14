@@ -30,6 +30,13 @@ and preserve locale key parity.
 
 ## 1. Motion ownership and accessibility
 
+Ordinary and Remote chat share the existing message presentation. `ChatComposerLayout`
+owns the original input field, sizing, expansion and layout; `ComposerSendButton`
+owns the original action drawing. Callers supply content slots and callbacks.
+Ordinary chat retains its existing draft/import/submission owners. Remote connection
+data and delivery never enter ordinary Room, Provider or generation lifecycle owners.
+Remote must not copy message bubbles, Markdown rendering, input drawing or scroll logic.
+
 Application UI motion consumes the shared Agora motion policy. Spatial press, size, and scale motion
 must snap to the stable resting presentation when Reduced Motion disables spatial transitions.
 Opacity-only transitions may remain only where their owning component contract allows them.
@@ -37,6 +44,14 @@ Opacity-only transitions may remain only where their owning component contract a
 A screen may reuse an established motion language directly without creating another global animation
 owner. Interaction state stays local to the interactive control and must not alter navigation,
 validation, persistence, or completion semantics.
+
+Every overlay blocks haptics originating from the chat beneath it, including a continuous answer
+texture and asynchronous send acknowledgements. Settings, Tasks, Remote, text/media previews,
+modal sheets, dialogs, and menus retain this exclusion until they finish covering the chat.
+The overlay's own interaction feedback remains available. Covered acknowledgements are consumed
+silently and are never replayed on return. Closing a nested preview restores the still-present
+underlying overlay; an already-exited surface must not regain ownership. A drawer covering Chat
+also suspends background chat feedback, while a side-by-side drawer leaves Chat visible.
 
 ## 2. Onboarding primary action
 

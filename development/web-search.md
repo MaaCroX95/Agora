@@ -1,6 +1,6 @@
 # Web Search Product Contract
 
-Status: authoritative, 2026-09-03.
+Status: authoritative, 2026-08-14.
 
 This contract owns Agora's generic Web Search provider settings and execution, plus the boundary
 between that feature and provider-hosted native web search.
@@ -48,40 +48,21 @@ this product boundary or provider order requires explicit user confirmation and 
 
 - `SettingsContracts.kt` owns supported-value normalization and the default.
 - `SettingsWebSearchPage.kt` owns generic provider presentation and exact visible order.
-- `WebSearchToolProvider.kt` owns generic provider execution, normalized result enrichment, and
-  explicit `agora_web_fetch` page reading.
+- `WebSearchToolProvider.kt` owns generic provider execution.
 - Provider configuration, OpenAI-native search availability, `BaseOpenAiProvider`, and
   `GeminiProvider` own their separate provider-hosted search paths.
 
 No owner may infer the other capability from a matching company name or legacy stored value.
 
-### Generic tool-name boundary
-
-- The canonical model-facing generic function names are `agora_web_search` and `agora_web_fetch`.
-  The `agora_` namespace is required so OpenAI-compatible relays cannot confuse Agora-local
-  functions with provider-hosted paid `web_search` / web-fetch capabilities.
-- Legacy persisted calls named exactly `web_search` or `web_fetch` remain accepted local execution
-  aliases, but OpenAI-compatible request projection must rewrite those legacy names to the
-  canonical `agora_*` names, including provider-scoped raw Responses `function_call` replay items.
-- Result payloads may continue to use `"type":"web_search"`; that result-schema label is not a
-  callable tool name. Native provider-hosted Responses `type: "web_search"` remains unchanged and
-  is included only when the independent OpenAI Search setting resolves ON.
-
 ## 5. Native provider-hosted availability, request, and presentation
 
-- Provider-hosted `OpenAI Search` has an independent global setting on the Web Search settings
-  page. That setting defaults OFF and is a hard master gate; it does not alter generic Web Search
-  provider selection, credentials, or execution.
-- When that global setting is enabled, an official OpenAI Provider or a custom Provider selected as
-  OpenAI-compatible, together with Responses API enabled for that Provider, is sufficient to show
-  `OpenAI Search` in the conversation UI. No model-name allowlist, capability probe, local capability
-  table, or extra relay declaration may hide it. The paired Service Tier availability and request
-  contract belongs to `message-generation.md`.
-- Conversations inherit the global OpenAI Search setting as ON when the master gate is enabled, but
-  may store an explicit per-conversation OFF/ON override. A global OFF always resolves the effective
-  value to OFF regardless of that override. The immutable generation snapshot freezes the resolved
-  value, and only an effective ON includes the native `web_search` tool in the existing
-  OpenAI-compatible Responses request. Do not create
+- An official OpenAI Provider or a custom Provider selected as OpenAI-compatible, together with
+  Responses API enabled, is sufficient to show `OpenAI Search` in the conversation UI. No
+  model-name allowlist, capability probe, local capability table, or extra relay declaration may
+  hide it. The paired Service Tier availability and request contract belongs to
+  `message-generation.md`.
+- When the user enables OpenAI Search, the immutable generation snapshot carries that choice and the
+  existing OpenAI-compatible Responses request includes the native `web_search` tool. Do not create
   another transport, tool Provider, or request adapter.
 - If the official service, model, or relay rejects the tool or request, persist its bounded ordinary
   generation error and display the shared neutral text-only generation terminal presentation. Do not
@@ -124,48 +105,7 @@ No owner may infer the other capability from a matching company name or legacy s
   STOPPED remain on the shared Thinking Tool terminal path and use the same neutral gray body text as
   ordinary message terminal content, with no error/stopped bar, card background, or rounded container.
 
-## 6. Generic search result enrichment and model guidance
-
-- A successful generic `web_search` keeps the selected provider's normalized result order and
-  existing metadata, then attempts to fill up to three useful light-read excerpts in that same order.
-  The common case reads the first three HTTP(S) results concurrently. If a candidate is missing,
-  unreadable, empty, too thin to be useful, timed out, or otherwise fails, later results may fill the
-  missing slot, examining at most the first six candidates. The response must still contain no more
-  than three automatic excerpts and must never reorder the provider results.
-- Each successful light read adds at most 3,000 characters of readable page text to that same result
-  as `page_excerpt`, together with `page_excerpt_start`, `page_excerpt_truncated`, and
-  `page_total_chars`. Existing title, URL, description/content, provider score, answer, and result
-  ordering must remain intact. On long pages, when at least two distinct search-query terms support a
-  more relevant passage, the bounded excerpt may come from that passage instead of mechanically from
-  character zero; a weak or single-term match falls back to the leading text.
-- Automatic reads may execute concurrently in bounded batches, but they remain one `web_search` tool
-  execution. They must not create additional visible tool calls, Provider passes, generation Runs,
-  or continuation paths.
-- A failed individual result page leaves that search result unchanged and allows a later candidate to
-  fill the automatic-read quota. One failed light read must not fail or discard an otherwise
-  successful search response. Cancellation still propagates through the ordinary tool/generation
-  lifecycle rather than being converted into a page-read miss.
-- The `agora_web_search` tool description must present search as a general factual-grounding and
-  verification capability, not as a feature reserved for recent news. It must explicitly cover
-  factual verification, current or niche/specific information, uncertainty resolution, and
-  source-backed details. For specific factual questions where the model is not highly confident,
-  it should prefer searching over relying on memory, prefer primary/authoritative evidence for
-  precise claims, and search/fetch again instead of inventing details when excerpts are insufficient
-  or sources conflict.
-- The stock default system prompt may softly prefer `web_search` before substantial reasoning for factual
-  or externally verifiable questions when that tool is available: ground facts first, then reason and
-  synthesize from retrieved evidence. This is model-facing guidance only, not a harness-level forced first
-  tool call. Existing stored stock prompts may receive this guidance only through an exact legacy stock
-  paragraph replacement; user-authored prompt content must not be replaced wholesale.
-- `agora_web_fetch` remains the explicit deeper-reading tool. It accepts an optional focus `query`; on long
-  pages that query may select a relevant bounded passage instead of only the leading text. The model
-  should use it after `web_search` for exact claims not directly supported by snippets/excerpts, and
-  the ordinary agent/tool continuation loop remains the sole owner of that follow-up.
-- Enrichment and stronger tool guidance do not imply a harness-level search-first gate. Enabling
-  generic Web Search exposes the ordinary tools; it does not force an `agora_web_search` call before the
-  model's first Provider pass.
-
-## 7. Failure and security behavior
+## 6. Failure and security behavior
 
 - API-backed generic providers fail with provider-specific missing-credential errors.
 - SearXNG validates and uses its configured URL; DuckDuckGo uses its existing public-search path.
@@ -175,15 +115,15 @@ No owner may infer the other capability from a matching company name or legacy s
 - Native search must use the selected conversation provider's established configuration and
   transport, not a hidden generic-search credential.
 
-## 8. Required verification
+## 7. Required verification
 
 Changes touching this subsystem must verify:
 
 1. the exact visible provider order and DuckDuckGo-first default;
 2. absence of a generic OpenAI provider, resources, settings branch, and transport branch;
 3. legacy `openai` and unknown-value fallback to DuckDuckGo;
-4. global OpenAI Search defaults OFF; when enabled, official and custom OpenAI-compatible Providers
-   show OpenAI Search whenever Responses is enabled, without a model capability lookup or extra relay declaration;
+4. official and custom OpenAI-compatible Providers show OpenAI Search whenever Responses is enabled,
+   without a model capability lookup or extra relay declaration;
 5. an enabled search serializes the native `web_search` tool in the actual Responses request;
 6. Provider rejection persists bounded error text and renders the shared neutral text-only message
    terminal presentation without silent fallback, auto-disablement, or a Snackbar-only path;
@@ -191,18 +131,6 @@ Changes touching this subsystem must verify:
    without local execution;
 8. Gemini grounding metadata renders one `Google Search` display-only block with normalized sources
    and retained full metadata, without generic-search execution or credentials;
-9. generic `web_search` preserves normalized result metadata/order while adding no more than three
-   light page excerpts of no more than 3,000 characters each, filling failed/thin early reads from
-   later candidates without examining beyond the first six results;
-10. the generic tool description encourages factual verification and uncertainty resolution beyond
-    only current events, while the stock default prompt softly prefers grounding factual/external claims
-    before substantial reasoning without introducing a forced search-first generation gate;
-11. a failed individual page read leaves that result unchanged and does not convert a successful
-    generic search into a search failure, while cancellation remains propagating;
-12. query-focused excerpt selection can reach relevant text beyond a long page's beginning while
-    weak query matches safely fall back to leading text;
-13. `web_fetch` remains available for deeper explicit reads, supports optional query-focused passage
-    selection, and no forced search-first generation path is introduced;
-14. relevant resource contracts, focused tests, the complete scoped diff, and the project full build.
+9. relevant resource contracts, focused tests, the complete scoped diff, and the project full build.
 
 Compilation alone is not proof of visible order or correct capability ownership.

@@ -76,6 +76,9 @@ internal fun ChatTopBar(
     currentConversationTitle: String? = null,
     totalTokens: Int,
     contextTokenBudget: Int,
+    contextAvailable: Boolean = totalTokens > 0,
+    subtitle: String? = null,
+    subtitleLeading: (@Composable () -> Unit)? = null,
     searchActive: Boolean = false,
     searchQuery: String = "",
     searchMatchIndex: Int = -1,
@@ -93,6 +96,10 @@ internal fun ChatTopBar(
     onForkConversation: () -> Unit = {},
     onShareConversation: () -> Unit = {},
     onNewChat: () -> Unit,
+    trailingActions: (@Composable RowScope.() -> Unit)? = null,
+    newChatEnabled: Boolean = true,
+    newChatDescription: String? = null,
+    moreMenuContent: (@Composable ColumnScope.(dismiss: () -> Unit) -> Unit)? = null,
 ) {
     var moreMenuOpen by remember { mutableStateOf(false) }
     val allowSpatialTransitions = LocalAgoraMotionPolicy.current.allowSpatialTransitions
@@ -270,9 +277,8 @@ internal fun ChatTopBar(
                 }
                 val textMeasurer = rememberTextMeasurer()
                 val density = LocalDensity.current
-                val conversationTitleStyle =
-                    if (totalTokens > 0) ChatType.conversationTitle else ChatType.conversationTitleSolo
-                val tokenSubtitle = if (!showBrandTitle && totalTokens > 0) {
+                val tokenSubtitle = if (!showBrandTitle && subtitle != null) subtitle
+                else if (!showBrandTitle && contextAvailable) {
                     stringResource(
                         R.string.context_usage_messages,
                         ContextBudget.compactLabel(totalTokens),
@@ -281,6 +287,8 @@ internal fun ChatTopBar(
                 } else {
                     null
                 }
+                val conversationTitleStyle =
+                    if (tokenSubtitle != null) ChatType.conversationTitle else ChatType.conversationTitleSolo
                 val targetTitleContentWidth = with(density) {
                     val primaryWidth = textMeasurer.measure(
                         text = AnnotatedString(if (showBrandTitle) appName else resolvedTitle.orEmpty()),
@@ -296,7 +304,8 @@ internal fun ChatTopBar(
                             softWrap = false,
                         ).size.width.toDp()
                     } ?: 0.dp
-                    minOf(maxOf(primaryWidth, subtitleWidth), 180.dp)
+                    val leadingWidth = if (subtitleLeading != null && tokenSubtitle != null) 14.dp else 0.dp
+                    minOf(maxOf(primaryWidth, subtitleWidth + leadingWidth), 180.dp)
                 }
                 val targetTitleCapsuleWidth = minOf(
                     5.dp + 44.dp + 5.dp + targetTitleContentWidth + 20.dp,
@@ -446,12 +455,16 @@ internal fun ChatTopBar(
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         if (tokenSubtitle != null) {
-                                            Text(
-                                                text = tokenSubtitle,
-                                                style = ChatType.micro,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                                maxLines = 1
-                                            )
+                                            Row(verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                subtitleLeading?.invoke()
+                                                Text(
+                                                    text = tokenSubtitle,
+                                                    style = ChatType.micro,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                    maxLines = 1
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -473,8 +486,9 @@ internal fun ChatTopBar(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Spacer(modifier = Modifier.width(5.dp))
-                        IconButton(onClick = onNewChat, modifier = Modifier.size(44.dp)) {
-                            Icon(Icons.Default.Add, contentDescription = stringResource(R.string.new_chat), modifier = Modifier.size(30.dp))
+                        if (trailingActions != null) trailingActions() else {
+                        IconButton(onClick = onNewChat, enabled = newChatEnabled, modifier = Modifier.size(44.dp)) {
+                            Icon(Icons.Default.Add, contentDescription = newChatDescription ?: stringResource(R.string.new_chat), modifier = Modifier.size(30.dp))
                         }
                         Box {
                             IconButton(
@@ -496,6 +510,7 @@ internal fun ChatTopBar(
                                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                                 tonalElevation = 16.dp,
                             ) {
+                                if (moreMenuContent != null) moreMenuContent { moreMenuOpen = false } else {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.conversation_search)) },
                                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
@@ -538,7 +553,9 @@ internal fun ChatTopBar(
                                         onShareConversation()
                                     },
                                 )
+                                }
                             }
+                        }
                         }
                         Spacer(modifier = Modifier.width(5.dp))
                     }

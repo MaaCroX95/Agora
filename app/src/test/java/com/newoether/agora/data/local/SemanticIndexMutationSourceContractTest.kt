@@ -89,7 +89,8 @@ class SemanticIndexMutationSourceContractTest {
         )
         val chatDao = source(
             "app/src/main/java/com/newoether/agora/data/local/ChatDao.kt",
-        )
+        ) + source("app/src/main/java/com/newoether/agora/data/local/ChatSearchDao.kt") +
+            source("app/src/main/java/com/newoether/agora/data/local/ChatMediaReferencesDao.kt")
 
         val commit = ledger.section(
             "internal suspend fun ChatDatabase.commitSemanticEmbedding(",

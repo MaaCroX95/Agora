@@ -51,6 +51,9 @@ internal fun MessageInfoDialog(
         )
         else -> stringResource(R.string.token_count, tokenUsage.input)
     }
+    val generationSpeed = tokenUsage.generationTokensPerSecond?.let {
+        String.format(Locale.getDefault(), "~%.1f token/s", it)
+    } ?: "—"
     val outputTokens = tokenUsage.output?.let {
         stringResource(R.string.token_count, it)
     } ?: "—"
@@ -86,6 +89,11 @@ internal fun MessageInfoDialog(
                             fontSize = 14.sp,
                             lineHeight = 20.sp,
                         ),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        stringResource(R.string.generation_speed_with_label, generationSpeed),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
                     )
                 }
             }

@@ -5,53 +5,35 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.newoether.agora.R
-import com.newoether.agora.api.*
-import com.newoether.agora.api.LlamaEngine
-import com.newoether.agora.api.anthropic.*
-import com.newoether.agora.api.gemini.*
-import com.newoether.agora.api.local.*
-import com.newoether.agora.api.ollama.*
-import com.newoether.agora.api.openai.*
+import com.newoether.agora.api.LlmProvider
+import com.newoether.agora.api.local.LocalProvider
 import com.newoether.agora.data.AutoBackupManager
-import com.newoether.agora.data.BuiltInPrompts
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.DataExporter
 import com.newoether.agora.data.DataImporter
 import com.newoether.agora.data.MemoryManager
 import com.newoether.agora.data.SkillManager
-import com.newoether.agora.data.PredefinedVariables
 import com.newoether.agora.data.forDisplay
 import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
 
-import com.newoether.agora.data.ShellDeviceConfig
 
-import com.newoether.agora.data.local.ChatEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.data.repository.ConversationSettingsTransferCoordinator
 import com.newoether.agora.data.repository.SettingsRepository
-import com.newoether.agora.model.AttachmentItem
 import com.newoether.agora.model.ChatConversation
 import com.newoether.agora.model.ChatMessage
-import com.newoether.agora.model.MessageStatus
-import com.newoether.agora.model.apiModelName
-import com.newoether.agora.model.SelectedAttachment
 import com.newoether.agora.sandbox.SandboxManager
 import com.newoether.agora.sandbox.SandboxManagerFactory
 import com.newoether.agora.service.AgoraForegroundService
 import com.newoether.agora.service.AppForegroundTracker
-import com.newoether.agora.util.DebugLog
-import com.newoether.agora.util.PdfPageRenderer
 import com.newoether.agora.util.SnackbarEvent
 import com.newoether.agora.util.UpdateChecker
 import com.newoether.agora.util.UpdateInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import java.io.File
-import java.util.UUID
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ChatViewModel(
@@ -82,7 +64,7 @@ class ChatViewModel(
     private val conversationExecutionCoordinator: com.newoether.agora.automation.ConversationExecutionCoordinator,
     private val automationExecutionGate: com.newoether.agora.automation.AutomationExecutionGate,
     private val generationRegistry: ConversationStateRegistry,
-    private val shellConfirmation: ShellConfirmationController,
+    internal val shellConfirmation: ShellConfirmationController,
     private val mcpRegistry: com.newoether.agora.mcp.McpRegistry,
     private val mcpToolProvider: com.newoether.agora.tool.McpToolProvider,
     private val taskExecutionEngine: com.newoether.agora.automation.TaskExecutionEngine,
@@ -210,7 +192,7 @@ class ChatViewModel(
 
     /** Local (on-device) chat-model configuration CRUD. */
     val modelManager = ModelManager(settings, viewModelScope)
-    private val customModelConfiguration = CustomModelConfigurationController(
+    internal val customModelConfiguration = CustomModelConfigurationController(
         providers = providerRegistry,
         conversations = convRepo,
         settings = settings,
@@ -311,7 +293,7 @@ class ChatViewModel(
      *  provider is deleted and must render gracefully instead of crashing. */
     fun getProviderInstanceOrNull(name: String): LlmProvider? = providerRegistry.getInstanceOrNull(name)
 
-    private val scrollRequests = ScrollRequestCoordinator()
+    internal val scrollRequests = ScrollRequestCoordinator()
     private val selectionController: ConversationSelectionController by lazy {
         ConversationSelectionController(
             scope = viewModelScope,
@@ -333,22 +315,6 @@ class ChatViewModel(
     /** Callback invoked when any send path (manual/queue/loop) accepts a message.
      *  ChatApp wires this to trigger a single haptics.confirm() for all three paths. */
     @Volatile var onSendAccepted: ((conversationId: String, messageId: String) -> Unit)? = null
-    val animatedScrollRequest: StateFlow<AnimatedScrollRequest?> =
-        scrollRequests.request
-
-    /** One-shot: set when sendMessage creates a new conversation so the conversation-open
-     *  auto-scroll skips once (the send's scroll-to-message already handles it), preventing
-     *  a double scroll on the first message of a new chat. Consumed by ChatApp. */
-    var suppressNextOpenScroll: Boolean
-        get() = scrollRequests.suppressNextOpenScroll
-        set(value) { scrollRequests.suppressNextOpenScroll = value }
-
-    /** When true, draft write-backs are suppressed to prevent feedback loops while
-     *  programmatically loading a stored draft into the composer field. */
-    var loadingDraft: Boolean
-        get() = scrollRequests.loadingDraft
-        set(value) { scrollRequests.loadingDraft = value }
-
     fun triggerScrollToMessage(messageId: String? = null) {
         scrollRequests.requestMessage(currentConversationId.value, messageId)
     }
@@ -365,29 +331,15 @@ class ChatViewModel(
         )
     }
 
-    fun completeAnimatedScroll(requestId: Long) = scrollRequests.complete(requestId)
-
     val currentActiveModel: StateFlow<String> get() = selectionController.currentActiveModel
 
     fun getProviderForModel(modelId: String): String = providerRegistry.providerForModel(modelId)
-
-    // ── Remote shell command confirmation gate ───────────────────────────
-    /** Shell-command confirmation policy + pending-prompt handshake (see [ShellConfirmationController]). */
-    val pendingShellCommand: StateFlow<ShellConfirmationController.PendingShellCommand?>
-        get() = shellConfirmation.pendingShellCommand
-
-    /** Called by the UI to resolve a pending confirmation. */
-    fun resolveShellConfirmation(allow: Boolean, alwaysAllowServer: Boolean = false) =
-        shellConfirmation.resolve(allow, alwaysAllowServer)
-
-    fun setShellConfirmEnabled(enabled: Boolean) = shellConfirmation.setEnabled(enabled)
 
     // ── Tasks (automation) ────────────────────────────────────
     /** Saved automation tasks; CRUD + run-now delegate to the app-scoped [taskManager]. */
     val tasks: StateFlow<List<com.newoether.agora.data.local.TaskEntity>> get() = taskManager.tasks
     val runningTaskIds: StateFlow<Set<String>> get() = taskManager.runningTaskIds
 
-    fun executionsForTask(taskId: String) = taskManager.executionsForTask(taskId)
     fun executionSummariesForTask(taskId: String) = taskManager.executionSummariesForTask(taskId)
     suspend fun getTask(taskId: String) = taskManager.getTask(taskId)
 
@@ -422,28 +374,8 @@ class ChatViewModel(
             AgoraForegroundService.cancelTerminalNotification(appContext, conversationId)
         },
     )
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val currentLoop: StateFlow<com.newoether.agora.data.local.LoopEntity?> = currentConversationId
-        .flatMapLatest { id ->
-            if (id == null) {
-                flowOf(null)
-            } else {
-                combine(
-                    loopManager.loopForConversation(id),
-                    loopManager.runningConversationIds,
-                ) { loop, _ ->
-                    // Visibility tracks the TIMER only. The card is a schedule indicator, so once
-                    // the schedule is inactive it must disappear at once, even mid-cycle.
-                    //
-                    // It deliberately does not stay up for a running worker: an in-flight
-                    // generation is already stoppable through the composer's Stop button, so
-                    // keeping the card alive for that would make one control appear to own two
-                    // unrelated lifetimes.
-                    loop?.takeIf { it.active }
-                }
-            }
-        }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val currentLoop: StateFlow<com.newoether.agora.data.local.LoopEntity?> =
+        loopManager.observeCurrentLoop(currentConversationId, viewModelScope)
     val runningLoopConversationIds: StateFlow<Set<String>> get() = loopManager.runningConversationIds
 
     fun stopCurrentLoop() {
@@ -472,20 +404,7 @@ class ChatViewModel(
     private val providerModelSyncUi by lazy {
         ProviderModelSyncUiAdapter(
             controller = providerModelSync,
-            text = ProviderModelSyncUiText(
-                failureLabels = ModelSyncFailureLabels(
-                    noModels = appContext.getString(R.string.sync_error_no_models),
-                    timeout = appContext.getString(R.string.sync_error_timeout),
-                    invalidResponse = appContext.getString(R.string.sync_error_invalid_response),
-                    unknown = appContext.getString(R.string.unknown_error),
-                ),
-                globalProviderName = appContext.getString(R.string.models_title),
-                successfulProviders = { count ->
-                    appContext.getString(R.string.sync_success_providers, count)
-                },
-                noProviders = appContext.getString(R.string.sync_no_providers),
-                completed = appContext.getString(R.string.sync_completed),
-            ),
+            text = appContext.providerModelSyncUiText(),
             publishMessage = { message -> _snackbarMessage.emit(SnackbarEvent(message)) },
         )
     }
@@ -527,16 +446,8 @@ class ChatViewModel(
     fun dismissUpdateDialog() { _updateDialogData.value = null }
     fun showUpdateDialog(info: UpdateInfo) { _updateDialogData.value = info }
 
-    /** PDF / text-file preview state (see [MediaPreviewState]). */
-    private val mediaPreview = MediaPreviewState()
-    val previewPdfPages: StateFlow<List<String>> get() = mediaPreview.pdfPages
-    val previewPdfIndex: StateFlow<Int> get() = mediaPreview.pdfIndex
-    val previewFileContent: StateFlow<String?> get() = mediaPreview.fileContent
-    val previewFileName: StateFlow<String?> get() = mediaPreview.fileName
-
-    fun showPdfPreview(pages: List<String>, startIndex: Int) = mediaPreview.showPdf(pages, startIndex)
-    fun showFilePreview(fileName: String, content: String) = mediaPreview.showFile(fileName, content)
-    fun clearPreviews() = mediaPreview.clear()
+    /** PDF / text-file preview state shared by the existing UI consumers. */
+    val mediaPreview = MediaPreviewState()
 
     val messages: StateFlow<List<ChatMessage>> = conversationUi.messages
     val isLoading: StateFlow<Boolean> = conversationUi.isLoading
@@ -544,12 +455,6 @@ class ChatViewModel(
         conversationUi.generatingInConversationId
     val generationSnapshot: StateFlow<ConversationGenerationSnapshot> =
         conversationUi.generationSnapshot
-
-    /** Content-free runtime history used only by the explicitly unlocked Developer inspector. */
-    internal fun developerRuntimeTraceSnapshot(
-        conversationId: String,
-    ): List<com.newoether.agora.model.ConversationRuntimeTraceEntry> =
-        generationRegistry.get(conversationId)?.runtimeTraceSnapshot().orEmpty()
 
     /** Per-conversation generation state registry. Each conversation owns an independent
      *  ConversationGenerationState; the global loading/render mirrors
@@ -609,22 +514,7 @@ class ChatViewModel(
 
     val isSwitching: StateFlow<Boolean> get() = selectionController.isSwitching
 
-    private val regenerationTransitions = BranchReplacementTransitionCoordinator()
-    internal val regenerationTransition: StateFlow<BranchReplacementTransitionRequest?> =
-        regenerationTransitions.request
-
-    fun acknowledgeRegenerationFade(requestId: Long) {
-        regenerationTransitions.acknowledgeFade(requestId)
-    }
-
-    fun acknowledgeRegenerationScroll(requestId: Long, success: Boolean) {
-        regenerationTransitions.acknowledgeScroll(requestId, success)
-    }
-
-    fun completeRegenerationTransition(requestId: Long) {
-        regenerationTransitions.complete(requestId)
-    }
-
+    internal val regenerationTransitions = BranchReplacementTransitionCoordinator()
     val isNewChatMode: StateFlow<Boolean> get() = selectionController.isNewChatMode
     val newChatEntryId: StateFlow<Long> get() = selectionController.newChatEntryId
     val isTransitioningToNewChat: StateFlow<Boolean>
@@ -639,7 +529,7 @@ class ChatViewModel(
 
     val pendingConversationSettings: StateFlow<ConversationSettings?> =
         conversationWorkspaces.newChatConversationSettings
-    private val compactUi = ConversationCompactUiCoordinator(
+    internal val compactUi = ConversationCompactUiCoordinator(
         currentConversationId = currentConversationId,
         registry = generationRegistry,
         scope = viewModelScope,
@@ -651,10 +541,6 @@ class ChatViewModel(
         failureMessage = { result -> compactFailureMessage(appContext, result) },
         onFailure = { message -> emitSnackbar(message) },
     )
-    val isCompacting: StateFlow<Boolean> get() = compactUi.isCompacting
-    val compactPreview: StateFlow<String> get() = compactUi.compactPreview
-    fun setPendingConversationSettings(value: ConversationSettings?) =
-        setConversationSettings(null, value)
     fun setConversationSettings(convId: String?, value: ConversationSettings?) =
         conversationWorkspaces.setConversationSettings(convId ?: NEW_CHAT_WORKSPACE_ID, value)
     private val payloadBuilder by lazy(::MessagePayloadBuilder)
@@ -740,7 +626,7 @@ class ChatViewModel(
             onSnackbar = { msg -> emitSnackbar(msg) },
             onSnackbarSuspend = { msg -> _snackbarMessage.emit(SnackbarEvent(msg)) },
             onConversationCreatedBySend = { conversationId ->
-                suppressNextOpenScroll = true
+                scrollRequests.suppressNextOpenScroll = true
                 _firstMessageCommitted.tryEmit(conversationId)
             },
             onConversationAcceptedBySend = { conversationId, modelId, entryId ->
@@ -806,37 +692,6 @@ class ChatViewModel(
         foregroundAutomationBridge.start()
     }
 
-    // ── Custom providers ──────────────────────────────────────
-    // Settings persistence lives in SettingsRepository; ChatViewModel only maintains
-    // the live in-memory provider instances (the `providers` map) via callbacks.
-    fun addCustomProvider(
-        name: String,
-        baseUrl: String,
-        protocol: com.newoether.agora.data.CustomEndpointProtocol =
-            com.newoether.agora.data.CustomEndpointProtocol.OPENAI,
-    ) = customModelConfiguration.addProvider(name, baseUrl, protocol)
-    fun renameCustomProvider(oldName: String, newName: String) =
-        customModelConfiguration.renameProvider(oldName, newName)
-    fun updateCustomProviderProtocol(
-        name: String,
-        protocol: com.newoether.agora.data.CustomEndpointProtocol,
-    ) = customModelConfiguration.updateProviderProtocol(name, protocol)
-    fun deleteCustomProvider(name: String) = customModelConfiguration.deleteProvider(name)
-
-    fun updateCustomModel(
-        oldModelId: String,
-        provider: String,
-        modelId: String,
-        alias: String,
-        showProviderName: Boolean? = null,
-    ) {
-        customModelConfiguration.updateModel(oldModelId, provider, modelId, alias, showProviderName)
-    }
-
-    fun deleteCustomModel(modelId: String) {
-        customModelConfiguration.deleteModel(modelId)
-    }
-
     fun getCurrentVersion(): String {
         return try { appContext.packageManager.getPackageInfo(appContext.packageName, 0).versionName ?: "?" } catch (_: Exception) { "?" }
     }
@@ -848,30 +703,13 @@ class ChatViewModel(
     suspend fun semanticSearch(query: String, limit: Int = 20) =
         semanticSearchService.search(query, limit)
     suspend fun searchMessages(query: String, limit: Int = 20) = convRepo.searchMessages(query, limit)
-    fun addShellDevice(device: ShellDeviceConfig) {
-        settings.addShellDevice(device)
-    }
-    fun updateShellDevice(device: ShellDeviceConfig) {
-        settings.updateShellDevice(device)
-    }
-
-    private val sshHostKeyVerifier = SshHostKeyVerifier()
-    private val remoteEmbeddingConnectionTester by lazy {
+    internal val sshHostKeyVerifier = SshHostKeyVerifier()
+    internal val remoteEmbeddingConnectionTester by lazy {
         RemoteEmbeddingConnectionTester(
             resolveApiKey = ragManager::resolveEmbeddingApiKey,
             resolveBaseUrl = ragManager::resolveEmbeddingBaseUrl,
         )
     }
-
-    suspend fun verifySshHostKey(
-        host: String, port: Int, user: String, password: String
-    ): Result<Pair<String, String>> = sshHostKeyVerifier.verify(host, port, user, password)
-
-    suspend fun testRemoteEmbedding(
-        modelName: String,
-        baseUrl: String,
-        apiKey: String = "",
-    ): String? = remoteEmbeddingConnectionTester.test(modelName, baseUrl, apiKey)
 
     fun createNewChat() = selectionController.createNewChat()
 
@@ -888,8 +726,6 @@ class ChatViewModel(
 
     fun forkConversationFrom(messageId: String? = null) =
         conversationForkShareController.fork(messageId)
-
-    fun shareConversation() = conversationForkShareController.shareConversation()
 
     fun shareGeneration(assistantMessageId: String) =
         conversationForkShareController.shareGeneration(assistantMessageId)
@@ -916,22 +752,6 @@ class ChatViewModel(
 
     fun isConversationDeleteLocked(id: String): Boolean =
         conversationComposerSubmission.isFrozen(id)
-
-    suspend fun compactContextManual(
-        model: String,
-        prompt: String,
-        retainLogicalMessages: Int,
-    ): CompactResult = compactUi.manual(model, prompt, retainLogicalMessages)
-
-    /** Owns manual Compact beyond the lifetime of the dialog/composition that initiated it. */
-    fun startContextCompactManual(
-        model: String,
-        prompt: String,
-        retainMessages: Int,
-    ) = compactUi.startManual(model, prompt, retainMessages)
-
-    /** Re-runs Compact for one terminal Compact pill while preserving its graph position. */
-    fun startContextRecompact(messageId: String) = compactUi.startRecompact(messageId)
 
     /**
      * Deletes a message and all its descendants (BFS cascade).
@@ -975,21 +795,4 @@ class ChatViewModel(
 
     fun fetchAvailableModels() = providerModelSyncUi.fetchAvailableModels()
 
-    // ── Per-conversation draft persistence ─────────────────────
-
-    suspend fun persistDraft(
-        conversationId: String,
-        expectedRevision: Long,
-        text: String,
-        attachments: List<SelectedAttachment>,
-        explicitlyRemovedAttachments: List<SelectedAttachment> = emptyList(),
-    ): DraftPersistResult = composerDrafts.persist(
-        conversationId = conversationId,
-        expectedRevision = expectedRevision,
-        text = text,
-        attachments = attachments,
-        explicitlyRemovedAttachments = explicitlyRemovedAttachments,
-    )
-
-    suspend fun loadDraft(conversationId: String): LoadedComposerDraft = composerDrafts.load(conversationId)
 }

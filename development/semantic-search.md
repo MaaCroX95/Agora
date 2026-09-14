@@ -38,7 +38,7 @@ count or total cached text.
 
 | Owner | Responsibility | Prohibited responsibility |
 |---|---|---|
-| ChatDao | Eligibility join, minimal projection, deterministic keyset page. | Full-corpus semantic list or score/ranking policy. |
+| ChatSearchDao inherited by the sole ChatDao | Eligibility join, minimal projection, deterministic keyset page. | Full-corpus semantic list or score/ranking policy. |
 | ConversationRepository | Pass through the bounded page contract. | Reassembling pages into one collection. |
 | BoundedSemanticEmbeddingSelector | Vector validation, page-by-page scoring, strict threshold, bounded top-K, stable ranking. | Room access, Provider calls, message visibility policy, or cache mutation. |
 | RagToolProvider | Query embedding, selector orchestration, final bounded message expansion, tool result projection. | Full-corpus materialization or a second ranking implementation. |

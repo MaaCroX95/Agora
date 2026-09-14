@@ -45,9 +45,14 @@ class DeveloperOptionsPersistenceContractTest {
             sourceRoot,
             "com/newoether/agora/data/SettingsManager.kt",
         ).readText()
-        val resetBody = managerSource
+        val resetEntry = managerSource
             .substringAfter("suspend fun resetPortableSettingsForImport()")
             .substringBefore("suspend fun invalidatePortableModelCaches")
+        assertTrue(resetEntry.contains("clearPortableSettings(prefs)"))
+        val resetBody = File(
+            sourceRoot,
+            "com/newoether/agora/data/PortableSettingsReset.kt",
+        ).readText()
         assertFalse(
             "Replacing portable settings must preserve this installation's Developer Options gate",
             resetBody.contains("DEVELOPER_OPTIONS_ENABLED"),

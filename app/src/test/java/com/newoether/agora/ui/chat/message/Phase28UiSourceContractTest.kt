@@ -9,7 +9,7 @@ class Phase28UiSourceContractTest {
     @Test
     fun `direct dots require no LazyColumn or window coordinate owner`() {
         val list = source("com/newoether/agora/ui/chat/MessageList.kt")
-        val assistant = messageSource("AssistantMessageContent.kt")
+        val assistant = messageSource("AssistantMessageContent.kt") + messageSource("AssistantInlineActivity.kt")
         val retry = messageSource("RetryActivityIndicator.kt")
         val follower = File(
             mainSourceRoot(),

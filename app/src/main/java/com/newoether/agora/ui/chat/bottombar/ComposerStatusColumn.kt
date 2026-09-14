@@ -37,14 +37,6 @@ private const val STATUS_FADE_IN_DURATION_MS = 180
 private const val STATUS_FADE_OUT_DURATION_MS = 140
 private const val STATUS_SIZE_DURATION_MS = 220
 
-private sealed interface ComposerStatusItem {
-    val stableKey: String
-
-    data class Queue(val value: QueuedSend) : ComposerStatusItem {
-        override val stableKey: String = "queue:${value.id}"
-    }
-}
-
 /**
  * Queued sends stay in chronological order above the composer. Loop state is deliberately not
  * part of this stack: [LoopStatusBackdrop] owns its separate back layer directly behind the
@@ -56,20 +48,27 @@ internal fun ComposerStatusColumn(
     onRemoveQueuedSend: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val allowSpatialTransitions = LocalAgoraMotionPolicy.current.allowSpatialTransitions
-    val statusItems = remember(queuedSends) {
-        queuedSends
-            .sortedBy(QueuedSend::createdAt)
-            .map { ComposerStatusItem.Queue(it) }
+    val ordered = remember(queuedSends) { queuedSends.sortedBy(QueuedSend::createdAt) }
+    ComposerStatusColumn(ordered, { "queue:${it.id}" }, modifier) { queued ->
+        QueuedMessageRow(queued, onRemove = { onRemoveQueuedSend(queued.id) })
     }
+}
 
+@Composable
+internal fun <T> ComposerStatusColumn(
+    queuedSends: List<T>,
+    itemKey: (T) -> String,
+    modifier: Modifier = Modifier,
+    itemContent: @Composable (T) -> Unit,
+) {
+    val allowSpatialTransitions = LocalAgoraMotionPolicy.current.allowSpatialTransitions
     AnimatedContent(
-        targetState = statusItems,
+        targetState = queuedSends,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = QUEUED_MESSAGE_HORIZONTAL_INSET),
         contentAlignment = Alignment.BottomCenter,
-        contentKey = { items -> items.map(ComposerStatusItem::stableKey) },
+        contentKey = { items -> items.map(itemKey) },
         transitionSpec = {
             val fade = fadeIn(
                 animationSpec = tween(
@@ -103,14 +102,7 @@ internal fun ComposerStatusColumn(
         Column(modifier = Modifier.fillMaxWidth()) {
             displayedItems.forEachIndexed { index, item ->
                 if (index > 0) Spacer(Modifier.height(STATUS_ROW_GAP))
-                key(item.stableKey) {
-                    when (item) {
-                        is ComposerStatusItem.Queue -> QueuedMessageRow(
-                            queued = item.value,
-                            onRemove = { onRemoveQueuedSend(item.value.id) },
-                        )
-                    }
-                }
+                key(itemKey(item)) { itemContent(item) }
             }
             if (displayedItems.isNotEmpty()) {
                 Spacer(Modifier.height(STATUS_ROW_GAP))

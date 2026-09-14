@@ -82,12 +82,16 @@ private fun thinkingDurationBreakdownTitle(
 }
 
 @Composable
-internal fun thoughtDurationTitle(thoughtMs: Long, toolCount: Int): String =
-    thinkingDurationBreakdownTitle(
+internal fun thoughtDurationTitle(thoughtMs: Long?, toolCount: Int): String {
+    if (thoughtMs == null) return if (toolCount > 0) {
+        stringResource(R.string.thought_for_a_while_called_tools, toolCount)
+    } else stringResource(R.string.thought_for_a_while)
+    return thinkingDurationBreakdownTitle(
         seconds = (thoughtMs / 1_000L).toInt(),
         live = false,
         toolCount = toolCount.takeIf { it > 0 },
     )
+}
 
 @Composable
 internal fun compactSegmentTitle(
@@ -97,7 +101,7 @@ internal fun compactSegmentTitle(
 ): String {
     val lastSeg = segs.lastOrNull() ?: return ""
     val isLastTool = lastSeg.type == "tool"
-    val isToolInProgress = isLastTool && ToolPresentationResolver.resolve(lastSeg).isActive
+    val isToolInProgress = useLiveStatus && isLastTool && ToolPresentationResolver.resolve(lastSeg).isActive
     val isThinking = useLiveStatus && message.status == MessageStatus.THINKING
     val isToolCalling = useLiveStatus && message.status == MessageStatus.TOOL_CALLING
     val isTranscribing = useLiveStatus && message.status == MessageStatus.TRANSCRIBING
@@ -119,7 +123,7 @@ internal fun compactSegmentTitle(
             } else {
                 toolDisplayName(lastSeg)
             }
-        hasThought -> thoughtDurationTitle(thoughtMs?.coerceAtLeast(0L) ?: 0L, toolCount)
+        hasThought -> thoughtDurationTitle(thoughtMs, toolCount)
         toolCount > 0 -> stringResource(R.string.called_n_tools, toolCount)
         segs.any { it.type == "transcription" } -> transcriptionLabel(
             segs,
@@ -139,15 +143,17 @@ internal fun compactSegmentDisplayTitle(
         message.status == MessageStatus.THINKING &&
         segs.any { it.type == "thought" }
     val thoughtMs = thoughtDurationMs(segs, fallbackMs = message.thoughtTimeMs)
+    // Unknown native duration is not zero and does not authorize a local elapsed-time claim.
+    if (thoughtMs == null) return compactSegmentTitle(segs, message, useLiveStatus)
     val thinkingPlaceholder = stringResource(R.string.thinking_ellipsis)
     val usesDefaultThinkingTitle =
         message.thoughtTitle.isNullOrBlank() || message.thoughtTitle == thinkingPlaceholder
     val liveThoughtMs by produceState(
-        initialValue = thoughtMs ?: 0L,
+        initialValue = thoughtMs,
         isThinking,
         thoughtMs,
     ) {
-        val baselineMs = thoughtMs ?: 0L
+        val baselineMs = thoughtMs
         value = baselineMs
         if (isThinking) {
             val baselineRealtimeMs = SystemClock.elapsedRealtime()
