@@ -57,11 +57,18 @@ internal fun effectiveConversationControls(
     val globalLocalLowContextModeEnabled by
         viewModel.settings.localLowContextModeEnabled.collectAsState()
     val openAiResponsesApiEnabled by viewModel.settings.openAiResponsesApiEnabled.collectAsState()
+    val globalOpenAiWebSearch by viewModel.settings.openAiWebSearchEnabled.collectAsState()
     val globalWebSearch by viewModel.settings.webSearchEnabled.collectAsState()
     val globalShell by viewModel.settings.shellEnabled.collectAsState()
     val maxContextWindow by viewModel.settings.maxContextWindow.collectAsState()
     val selectedProviderName = viewModel.getProviderForModel(selectedModel)
     val isEmbeddedLocalModel = selectedProviderName == Constants.PROVIDER_LOCAL
+    val openAiNativeSearchAvailable = resolveOpenAiNativeSearchAvailability(
+        selectedProviderName,
+        openAiResponsesApiEnabled,
+        customProviders,
+    )
+    val openAiWebSearchAvailable = globalOpenAiWebSearch && openAiNativeSearchAvailable
 
     return EffectiveConversationControls(
         settingsOwnerId = settingsOwnerId,
@@ -73,12 +80,9 @@ internal fun effectiveConversationControls(
             conversationOverride?.thinkingBudgetEnabled ?: globalThinkingBudgetEnabled,
         thinkingBudgetTokens =
             conversationOverride?.thinkingBudgetTokens ?: globalThinkingBudgetTokens,
-        openAiWebSearchAvailable = resolveOpenAiNativeSearchAvailability(
-            selectedProviderName,
-            openAiResponsesApiEnabled,
-            customProviders,
-        ),
-        openAiWebSearchEnabled = conversationOverride?.openAiWebSearchEnabled ?: true,
+        openAiWebSearchAvailable = openAiWebSearchAvailable,
+        openAiWebSearchEnabled =
+            openAiWebSearchAvailable && (conversationOverride?.openAiWebSearchEnabled ?: true),
         openAiServiceTierState = openAiConversationServiceTierState(
             viewModel,
             conversationOverride,
