@@ -69,6 +69,7 @@ internal object PortableSettingsArchive {
         put("openAiServiceTierEnabled", JsonPrimitive(sm.openAiServiceTierEnabled.first()))
         put("openAiServiceTier", JsonPrimitive(sm.openAiServiceTier.first()))
         put("openAiResponsesApiEnabled", JsonPrimitive(sm.openAiResponsesApiEnabled.first()))
+        put("openAiWebSearchEnabled", JsonPrimitive(sm.openAiWebSearchEnabled.first()))
         put("anthropicCacheEnabled", JsonPrimitive(sm.anthropicCacheEnabled.first()))
         put("anthropicCacheTtl", JsonPrimitive(sm.anthropicCacheTtl.first()))
         putEncoded("providerBaseUrls", sm.providerBaseUrls.first())
@@ -289,6 +290,9 @@ internal object PortableSettingsArchive {
         }
         obj.boolean("openAiResponsesApiEnabled")?.let {
             sm.saveOpenAiResponsesApiEnabled(it)
+        }
+        obj.boolean("openAiWebSearchEnabled")?.let {
+            sm.saveOpenAiWebSearchEnabled(it)
         }
 
         obj.decode<Map<String, String>>("providerBaseUrls")?.let { imported ->
