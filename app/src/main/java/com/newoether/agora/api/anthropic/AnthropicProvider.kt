@@ -5,6 +5,7 @@ import com.newoether.agora.api.*
 import com.newoether.agora.util.DebugLog
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageSegment
+import com.newoether.agora.model.ModelId
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.ThinkingProviderFamily
 import com.newoether.agora.api.util.Base64FileRegistry
@@ -177,18 +178,28 @@ internal data class AnthropicUsage(
  * provider reported an in-band error. The transport layer cannot answer any of those from socket
  * state alone.
  */
+/**
+ * A thinking signature is opaque state signed by the model that produced it, so only that exact
+ * model behind that exact provider entry can verify it. Anywhere else the replay is a hard request
+ * failure: Bedrock answers `Invalid `signature` in `thinking` block` for the whole request, which
+ * is what a model switch inside one conversation used to trigger. A changed model or provider
+ * entry therefore stops the replay, and [adaptToolRoundsForProvider] downgrades that round to inert
+ * archived context. Rows without a recorded model cannot be attributed, so they are not replayed
+ * either.
+ */
 private fun MessageSegment.signatureIsCompatibleWithAnthropic(
     sourceModel: String?,
     targetModel: String,
     targetProviderName: String,
 ): Boolean {
-    signatureProvider?.let {
-        return it.equals(Constants.PROVIDER_ANTHROPIC, ignoreCase = true) ||
-            it == targetProviderName
-    }
-    return sourceModel == null ||
-        sourceModel.equals(targetModel, ignoreCase = true) ||
-        sourceModel.contains("claude", ignoreCase = true)
+    val storedModel = sourceModel?.trim()?.takeIf(String::isNotEmpty)
+        ?.let(ModelId::parse)
+        ?: return false
+    val issuer = signatureProvider?.trim()?.takeIf(String::isNotEmpty)
+        ?: storedModel.providerName
+    if (!issuer.equals(targetProviderName, ignoreCase = true)) return false
+    return storedModel.modelName.removePrefix("models/")
+        .equals(targetModel.trim().removePrefix("models/"), ignoreCase = true)
 }
 
 private fun ChatMessage.isAnthropicToolRoundCompatible(
