@@ -372,6 +372,8 @@ data class OpenAiMessage(
     /** Provider-scoped raw Responses output items restored only by the Responses transport. */
     @Transient val responseOutputItems: List<JsonObject>? = null,
     @Transient val responseOutputItemProvider: String? = null,
+    /** Model that produced [responseOutputItems]; another model cannot read them back. */
+    @Transient val responseOutputItemModel: String? = null,
 )
 
 @Serializable
