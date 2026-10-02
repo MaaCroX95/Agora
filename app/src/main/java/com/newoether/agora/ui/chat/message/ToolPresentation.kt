@@ -1,5 +1,6 @@
 package com.newoether.agora.ui.chat.message
 
+import com.newoether.agora.api.util.MALFORMED_TOOL_CALL_NAME
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.ToolExecutionStates
 import kotlinx.serialization.json.Json
@@ -98,11 +99,37 @@ internal data class ToolPresentation(
 internal object ToolPresentationResolver {
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** What Agora's malformed-call stand-in carried: the tool name and arguments the model sent. */
+    internal data class MalformedCallOriginals(val name: String?, val arguments: String?)
+
+    /**
+     * Agora replaces a call it cannot execute with a stand-in under [MALFORMED_TOOL_CALL_NAME], and
+     * keeps what the model actually sent inside the argument envelope so the round stays pairable.
+     * That envelope is transport bookkeeping, not what the user asked to see: the card should show
+     * the tool the model named and the arguments it streamed.
+     */
+    internal fun malformedCallOriginals(
+        toolName: String,
+        rawArguments: String?,
+    ): MalformedCallOriginals? {
+        if (toolName != MALFORMED_TOOL_CALL_NAME) return null
+        val fields = runCatching { json.parseToJsonElement(rawArguments.orEmpty()) as? JsonObject }
+            .getOrNull()
+            ?: return null
+        fun text(key: String) = (fields[key] as? JsonPrimitive)?.contentOrNull
+        return MalformedCallOriginals(
+            name = text("original_name")?.takeIf { it.isNotBlank() },
+            arguments = text("original_arguments"),
+        )
+    }
+
     fun kindForToolName(toolName: String?): ToolKind = kindFor(toolName.orEmpty())
 
     fun resolve(segment: MessageSegment): ToolPresentation {
         val toolName = segment.toolName.orEmpty()
+        val malformed = malformedCallOriginals(toolName, segment.toolArgs)
         val kind = kindFor(toolName)
+        val displayArguments = malformed?.arguments ?: segment.toolArgs
         val resultElement = parseElement(
             segment.toolStructuredResult ?: segment.toolResult.takeUnless {
                 kind == ToolKind.MEMORY_READ || kind == ToolKind.SKILL_READ || kind == ToolKind.MCP
@@ -119,8 +146,8 @@ internal object ToolPresentationResolver {
         // remains available once the call has produced a result.
         val argumentsAwaitingResult =
             segment.toolResult == null && segment.toolStructuredResult == null
-        val args = if (argumentsAwaitingResult) null else parseObject(segment.toolArgs)
-        val streamingHints = StreamingToolArgumentHintResolver.resolve(kind, segment.toolArgs)
+        val args = if (argumentsAwaitingResult) null else parseObject(displayArguments)
+        val streamingHints = StreamingToolArgumentHintResolver.resolve(kind, displayArguments)
         val jobState = if (kind in setOf(ToolKind.SHELL_EXECUTE, ToolKind.SHELL_JOB_GET,
                 ToolKind.SHELL_JOB_WAIT, ToolKind.SHELL_JOB_STOP)) resultObject.string("state")?.lowercase() else null
         val background = resultEnvelope.boolean("background") == true ||
@@ -178,12 +205,12 @@ internal object ToolPresentationResolver {
             else -> explicitState ?: ToolPresentationState.COMPLETED
         }
         return ToolPresentation(
-            toolName = toolName,
+            toolName = malformed?.name ?: toolName,
             kind = kind,
             state = state,
             arguments = args,
             result = resultObject ?: resultElement,
-            rawArguments = segment.toolArgs,
+            rawArguments = displayArguments,
             rawResult = segment.toolResult,
             rawTextResult = segment.toolResultText,
             rawStructuredResult = segment.toolStructuredResult,

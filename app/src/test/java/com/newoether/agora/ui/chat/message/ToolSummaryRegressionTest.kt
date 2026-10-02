@@ -19,6 +19,22 @@ class ToolSummaryRegressionTest {
     private val resources get() = ApplicationProvider.getApplicationContext<Application>().resources
 
     @Test
+    fun malformedStandInCardIsLabelledWithTheToolTheModelNamed() {
+        val segment = MessageSegment(
+            type = "tool",
+            toolName = "agora_malformed_tool_call",
+            toolArgs = """{"error":"arguments were not a valid JSON object","original_name":"ask_user","original_arguments":"[{\"question\":\"Pick one\"}]"}""",
+            toolResult = "Error: the previous tool call was malformed and was not executed",
+            toolState = ToolExecutionStates.FAILED,
+        )
+        assertEquals("Ask User", resources.toolDisplayName(segment))
+        assertEquals(
+            "The previous tool call was malformed and was not executed",
+            resources.toolSummary(segment),
+        )
+    }
+
+    @Test
     fun everyFailureKindShowsItsConcreteReasonBeforeGenericActionText() {
         for (name in listOf("read_memory_file", "read_skill_file", "file_read", "execute_shell_command", "web_search", "mcp_test", "unknown")) {
             val segment = MessageSegment(type = "tool", toolName = name,

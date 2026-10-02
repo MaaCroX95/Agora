@@ -50,9 +50,15 @@ internal fun Resources.toolDisplayName(segment: MessageSegment): String {
             resolvedName = segment.toolDisplayName,
         ) ?: "MCP"
     }
+    // A malformed-call stand-in keeps the tool the model actually named. Label the card with that
+    // name and leave the kind UNKNOWN, so the summary stays the plain failure reason instead of
+    // inventing a shape for a call that never ran.
+    val sentName = ToolPresentationResolver
+        .malformedCallOriginals(toolName, segment.toolArgs)
+        ?.name
     return toolBaseDisplayName(
         kind = kind,
-        toolName = toolName,
+        toolName = sentName?.takeIf { it.isNotBlank() } ?: toolName,
     )
 }
 
