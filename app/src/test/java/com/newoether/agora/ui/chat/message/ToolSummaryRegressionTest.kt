@@ -19,6 +19,49 @@ class ToolSummaryRegressionTest {
     private val resources get() = ApplicationProvider.getApplicationContext<Application>().resources
 
     @Test
+    fun activeMemoryReaderKeepsItsTargetInEveryReadState() {
+        val call = MessageSegment(type = "tool", toolName = "read_active_memory", toolArgs = "{}")
+        assertEquals("Read Active Memory", resources.toolDisplayName(call))
+        assertEquals("Reading active memory\u2026", resources.toolSummary(call))
+        assertEquals("Reading active memory\u2026", resources.toolSummary(call.copy(toolState = ToolExecutionStates.RUNNING)))
+        for (text in listOf("body", "Error: an example", """{"error":"example"}""")) {
+            val completed = call.copy(toolResult = text, toolState = finalToolState(ToolExecutionResult(text), "read_active_memory"))
+            val presentation = ToolPresentationResolver.resolve(completed)
+            assertEquals(ToolPresentationState.COMPLETED, presentation.state)
+            assertEquals(text, presentation.rawResult)
+            assertEquals("{}", presentation.rawArguments)
+            assertEquals("Read active memory", resources.toolSummary(completed))
+        }
+        assertEquals("Active memory is empty", resources.toolSummary(call.copy(toolResult = "", toolState = ToolExecutionStates.SUCCEEDED)))
+        assertEquals("Failed to read active memory", resources.toolSummary(call.copy(toolResult = "", toolState = ToolExecutionStates.FAILED)))
+        assertEquals("Command timeout", resources.toolSummary(call.copy(toolResult = "Error: command timeout", toolState = ToolExecutionStates.FAILED)))
+        val file = call.copy(toolName = "read_memory_file", toolArgs = """{"name":"Notes.md"}""")
+        assertEquals("Read Memory", resources.toolDisplayName(file))
+        assertEquals("Reading Notes.md\u2026", resources.toolSummary(file))
+        assertEquals("Read Notes.md", resources.toolSummary(file.copy(toolResult = "body", toolState = ToolExecutionStates.SUCCEEDED)))
+    }
+
+    @Test
+    fun activeMemoryReaderHasLocalizedTitleAndStateSummaries() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        for ((language, expected) in listOf(
+            "zh" to listOf("读取活跃记忆", "正在读取活跃记忆…", "已读取活跃记忆", "活跃记忆为空", "读取活跃记忆失败"),
+            "zh-TW" to listOf("讀取活躍記憶", "正在讀取活躍記憶…", "已讀取活躍記憶", "活躍記憶為空", "讀取活躍記憶失敗"),
+        )) {
+            val (title, active, completed, empty, failed) = expected
+            val configuration = android.content.res.Configuration(app.resources.configuration)
+            configuration.setLocale(java.util.Locale.forLanguageTag(language))
+            val localized = app.createConfigurationContext(configuration).resources
+            val call = MessageSegment(type = "tool", toolName = "read_active_memory", toolArgs = "{}")
+            assertEquals(title, localized.toolDisplayName(call))
+            assertEquals(active, localized.toolSummary(call))
+            assertEquals(completed, localized.toolSummary(call.copy(toolResult = "body", toolState = ToolExecutionStates.SUCCEEDED)))
+            assertEquals(empty, localized.toolSummary(call.copy(toolResult = "", toolState = ToolExecutionStates.EMPTY)))
+            assertEquals(failed, localized.toolSummary(call.copy(toolResult = "", toolState = ToolExecutionStates.FAILED)))
+        }
+    }
+
+    @Test
     fun malformedStandInCardIsLabelledWithTheToolTheModelNamed() {
         val segment = MessageSegment(
             type = "tool",
@@ -48,7 +91,7 @@ class ToolSummaryRegressionTest {
 
     @Test
     fun successfulReadTextNeverDeclaresFailureByItsSpelling() {
-        for (name in listOf("read_memory_file", "read_skill_file", "mcp_test_read_abcdef")) {
+        for (name in listOf("read_memory_file", "read_active_memory", "read_skill_file", "mcp_test_read_abcdef")) {
             for (text in listOf("Error handling guidelines", "Errors are examples", "Error: an example", """{"error":"example"}""")) {
                 val state = finalToolState(ToolExecutionResult(text), name)
                 val presentation = ToolPresentationResolver.resolve(
@@ -196,14 +239,21 @@ class ToolSummaryRegressionTest {
 
     @Test
     fun declaredErrorRetainsRawResultAndProvidesTheReason() {
-        val text = "Error executing tool 'read_memory_file': command timeout"
-        val state = finalToolState(ToolExecutionResult(text, isError = true), "read_memory_file")
-        val presentation = ToolPresentationResolver.resolve(
-            MessageSegment(type = "tool", toolName = "read_memory_file", toolResult = text, toolState = state),
-        )
-        assertEquals(ToolPresentationState.FAILED, presentation.state)
-        assertEquals(text, presentation.rawResult)
-        assertEquals("Command timeout", toolFailureReasonSummary(presentation.errorMessage))
+        for (name in listOf("read_memory_file", "read_active_memory")) {
+            val text = "Error executing tool '$name': command timeout"
+            val state = finalToolState(ToolExecutionResult(text, isError = true), name)
+            val presentation = ToolPresentationResolver.resolve(
+                MessageSegment(type = "tool", toolName = name, toolResult = text, toolState = state),
+            )
+            assertEquals(ToolExecutionStates.FAILED, state)
+            assertEquals(ToolPresentationState.FAILED, presentation.state)
+            assertEquals(text, presentation.rawResult)
+            assertEquals("Command timeout", toolFailureReasonSummary(presentation.errorMessage))
+            assertEquals(
+                ToolExecutionStates.FAILED,
+                finalToolState(ToolExecutionResult("body", structuredContent = """{"error":"command timeout"}"""), name),
+            )
+        }
     }
 
     @Test

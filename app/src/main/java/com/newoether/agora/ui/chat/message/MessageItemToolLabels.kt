@@ -104,7 +104,10 @@ private fun Resources.toolBaseDisplayName(
     toolName: String,
 ): String = when (kind) {
     ToolKind.MEMORY_LIST -> getString(R.string.tool_look_up_memories)
-    ToolKind.MEMORY_READ -> getString(R.string.tool_read_memory)
+    ToolKind.MEMORY_READ -> getString(
+        if (toolName == "read_active_memory") R.string.tool_read_active_memory
+        else R.string.tool_read_memory,
+    )
     ToolKind.MEMORY_CREATE -> getString(R.string.tool_add_memory)
     ToolKind.MEMORY_EDIT -> getString(R.string.tool_edit_memory)
     ToolKind.MEMORY_DELETE -> getString(R.string.tool_delete_memory)
@@ -178,7 +181,9 @@ private fun Resources.runningSummary(
     subject: String?,
 ): String = when (presentation.kind) {
     ToolKind.MEMORY_LIST -> getString(R.string.tool_looking_up_memories)
-    ToolKind.MEMORY_READ -> presentation.count?.takeIf { it > 1 }?.let {
+    ToolKind.MEMORY_READ -> if (presentation.toolName == "read_active_memory") {
+        getString(R.string.tool_reading_active_memory)
+    } else presentation.count?.takeIf { it > 1 }?.let {
         getQuantityString(R.plurals.tool_reading_files_count, it, it)
     } ?: optionalSubjectSummary(
         subject,
@@ -451,7 +456,9 @@ private fun Resources.emptySummary(
     subject: String?,
 ): String = when (presentation.kind) {
     ToolKind.MEMORY_READ,
-    ToolKind.SKILL_READ -> optionalSubjectSummary(
+    ToolKind.SKILL_READ -> if (presentation.toolName == "read_active_memory") {
+        getString(R.string.tool_read_active_memory_empty)
+    } else optionalSubjectSummary(
         subject, R.string.tool_read_file_empty, R.string.tool_read_content_empty,
     )
     ToolKind.CONVERSATION_READ -> getString(R.string.tool_read_conversation_empty)
@@ -514,7 +521,9 @@ private fun Resources.completedSummary(
         R.string.tool_deleted_skill,
         R.string.tool_deleted_skill_default,
     )
-    ToolKind.MEMORY_READ -> presentation.count?.takeIf { it > 1 }?.let {
+    ToolKind.MEMORY_READ -> if (presentation.toolName == "read_active_memory") {
+        getString(R.string.tool_read_active_memory_success)
+    } else presentation.count?.takeIf { it > 1 }?.let {
         getQuantityString(R.plurals.tool_read_files_count, it, it)
     } ?: optionalSubjectSummary(
         subject,
@@ -647,7 +656,8 @@ private fun Resources.failedSummary(
     val target = subject?.takeIf { it.isNotBlank() }
     return when (presentation.kind) {
         ToolKind.MEMORY_READ, ToolKind.SKILL_READ, ToolKind.CONVERSATION_READ, ToolKind.FILE_READ ->
-            target?.let { getString(R.string.tool_failed_to_read, it) }
+            if (presentation.toolName == "read_active_memory") getString(R.string.tool_read_active_memory_failed)
+            else target?.let { getString(R.string.tool_failed_to_read, it) }
                 ?: getString(R.string.tool_read_failed_default)
         ToolKind.MEMORY_CREATE, ToolKind.SKILL_CREATE, ToolKind.TASK_CREATE ->
             target?.let { getString(R.string.tool_failed_to_create, it) }

@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="tool_read_active_memory">Aktiven Speicher lesen</string>
+    <string name="tool_reading_active_memory">Aktiver Speicher wird gelesen…</string>
+    <string name="tool_read_active_memory_success">Aktiven Speicher gelesen</string>
+    <string name="tool_read_active_memory_empty">Aktiver Speicher ist leer</string>
+    <string name="tool_read_active_memory_failed">Aktiver Speicher konnte nicht gelesen werden</string>
     <string name="tool_no_memories">Keine gespeicherten Erinnerungen gefunden</string>
     <string name="tool_no_skills">Keine Skills gefunden</string>
     <string name="tool_no_shells">Keine Shells gefunden</string>

@@ -272,7 +272,8 @@ internal fun appendBoundedToolOutput(
 
 internal fun finalToolState(result: ToolExecutionResult, toolName: String): String {
     val protocol = result.structuredContent ?: result.text.takeUnless {
-        toolName == "read_memory_file" || toolName == "read_skill_file" || toolName.startsWith("mcp_")
+        toolName == "read_memory_file" || toolName == "read_active_memory" ||
+            toolName == "read_skill_file" || toolName.startsWith("mcp_")
     }
     val resultObject = runCatching {
         Json.parseToJsonElement(protocol.orEmpty()).jsonObject

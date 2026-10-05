@@ -244,6 +244,10 @@ class ToolResultContentSourceContractTest {
             parseStrings(file)
         }
         val defaults = resources.getValue("values")
+        assertTrue(defaults.keys.containsAll(listOf(
+            "tool_read_active_memory", "tool_reading_active_memory", "tool_read_active_memory_success",
+            "tool_read_active_memory_empty", "tool_read_active_memory_failed",
+        )))
         resources.forEach { (directory, values) ->
             assertEquals("$directory keys", defaults.keys, values.keys)
             defaults.forEach { (key, defaultValue) ->
@@ -256,7 +260,7 @@ class ToolResultContentSourceContractTest {
             values.filterKeys { key ->
                 key.startsWith("tool_progress_") ||
                     key.endsWith("ing_skill_subject") ||
-                    key == "tool_listing_skills"
+                    key == "tool_listing_skills" || key == "tool_reading_active_memory"
             }.forEach { (key, value) ->
                 assertFalse("$directory $key uses ASCII ellipsis", value.contains("..."))
             }

@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="tool_read_active_memory">활성 메모리 읽기</string>
+    <string name="tool_reading_active_memory">활성 메모리 읽는 중…</string>
+    <string name="tool_read_active_memory_success">활성 메모리를 읽었습니다</string>
+    <string name="tool_read_active_memory_empty">활성 메모리가 비어 있습니다</string>
+    <string name="tool_read_active_memory_failed">활성 메모리 읽기 실패</string>
     <string name="tool_no_memories">저장된 메모리를 찾을 수 없음</string>
     <string name="tool_no_skills">스킬을 찾을 수 없음</string>
     <string name="tool_no_shells">셸을 찾을 수 없음</string>

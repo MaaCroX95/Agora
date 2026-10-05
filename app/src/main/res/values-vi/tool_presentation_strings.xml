@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="tool_read_active_memory">Đọc bộ nhớ hoạt động</string>
+    <string name="tool_reading_active_memory">Đang đọc bộ nhớ hoạt động…</string>
+    <string name="tool_read_active_memory_success">Đã đọc bộ nhớ hoạt động</string>
+    <string name="tool_read_active_memory_empty">Bộ nhớ hoạt động trống</string>
+    <string name="tool_read_active_memory_failed">Đọc bộ nhớ hoạt động thất bại</string>
     <string name="tool_no_memories">Không tìm thấy bộ nhớ đã lưu</string>
     <string name="tool_no_skills">Không tìm thấy kỹ năng</string>
     <string name="tool_no_shells">Không tìm thấy shell</string>

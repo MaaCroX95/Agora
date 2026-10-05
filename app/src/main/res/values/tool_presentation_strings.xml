@@ -1,4 +1,9 @@
 <resources>
+    <string name="tool_read_active_memory">Read Active Memory</string>
+    <string name="tool_reading_active_memory">Reading active memory…</string>
+    <string name="tool_read_active_memory_success">Read active memory</string>
+    <string name="tool_read_active_memory_empty">Active memory is empty</string>
+    <string name="tool_read_active_memory_failed">Failed to read active memory</string>
     <string name="tool_no_memories">No saved memories found</string>
     <string name="tool_no_skills">No skills found</string>
     <string name="tool_no_shells">No shells found</string>

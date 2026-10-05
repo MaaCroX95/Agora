@@ -1,4 +1,9 @@
 <resources>
+    <string name="tool_read_active_memory">读取活跃记忆</string>
+    <string name="tool_reading_active_memory">正在读取活跃记忆…</string>
+    <string name="tool_read_active_memory_success">已读取活跃记忆</string>
+    <string name="tool_read_active_memory_empty">活跃记忆为空</string>
+    <string name="tool_read_active_memory_failed">读取活跃记忆失败</string>
     <string name="tool_no_memories">未找到已保存的记忆</string>
     <string name="tool_no_skills">未找到技能</string>
     <string name="tool_no_shells">未找到 Shell</string>

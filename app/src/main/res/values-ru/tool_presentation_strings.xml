@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="tool_read_active_memory">Чтение активной памяти</string>
+    <string name="tool_reading_active_memory">Чтение активной памяти…</string>
+    <string name="tool_read_active_memory_success">Активная память прочитана</string>
+    <string name="tool_read_active_memory_empty">Активная память пуста</string>
+    <string name="tool_read_active_memory_failed">Не удалось прочитать активную память</string>
     <string name="tool_no_memories">Сохранённые воспоминания не найдены</string>
     <string name="tool_no_skills">Навыки не найдены</string>
     <string name="tool_no_shells">Оболочки не найдены</string>

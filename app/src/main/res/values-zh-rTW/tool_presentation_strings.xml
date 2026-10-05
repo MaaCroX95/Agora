@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="tool_read_active_memory">讀取活躍記憶</string>
+    <string name="tool_reading_active_memory">正在讀取活躍記憶…</string>
+    <string name="tool_read_active_memory_success">已讀取活躍記憶</string>
+    <string name="tool_read_active_memory_empty">活躍記憶為空</string>
+    <string name="tool_read_active_memory_failed">讀取活躍記憶失敗</string>
     <string name="tool_no_memories">找不到已儲存的記憶</string>
     <string name="tool_no_skills">找不到技能</string>
     <string name="tool_no_shells">找不到 Shell</string>

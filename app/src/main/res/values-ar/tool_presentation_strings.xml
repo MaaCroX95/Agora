@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="tool_read_active_memory">قراءة الذاكرة النشطة</string>
+    <string name="tool_reading_active_memory">جارٍ قراءة الذاكرة النشطة…</string>
+    <string name="tool_read_active_memory_success">تمت قراءة الذاكرة النشطة</string>
+    <string name="tool_read_active_memory_empty">الذاكرة النشطة فارغة</string>
+    <string name="tool_read_active_memory_failed">فشلت قراءة الذاكرة النشطة</string>
     <string name="tool_no_memories">لم يتم العثور على ذكريات محفوظة</string>
     <string name="tool_no_skills">لم يتم العثور على مهارات</string>
     <string name="tool_no_shells">لم يتم العثور على أغلفة أوامر</string>
