@@ -471,6 +471,14 @@ is introduced for this test model.
 
 ## 23. Conversation-owned attachment import and pre-acceptance Send
 
+The Android `VideoSliceDialog` frame-count input uses Material3 `OutlinedTextField` with
+explicit `16 dp` rounded corners, consistent with the existing dialog fields. Its localized
+frame-count label belongs to the field's floating `label` slot, and its localized between-frame
+interval hint belongs to `supportingText`; neither is duplicated as a sibling label. Material owns
+the outline, focus and error presentation. Digit filtering, defaults, minimum count, invalid-input
+Confirm disablement, the numeric keyboard, mode selection, extraction calculations and callbacks
+remain unchanged. This presentation rule does not change attachment-import ownership.
+
 Every Composer attachment enters one durable, conversation-owned import lifecycle at selection
 time. The attachment tile appears immediately, Agora copies the source into app-private staging,
 and all required image normalization, video frame extraction, PDF rendering, ordinary-file text
