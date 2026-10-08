@@ -29,27 +29,23 @@ jobs:
             git checkout --ours -- \
               app/src/main/java/com/newoether/agora/api/openai/OpenAiRequestValidator.kt \
               app/src/main/java/com/newoether/agora/tool/WebSearchToolProvider.kt
-
             python3 <<'PY'
           from pathlib import Path
-
           p = Path('app/src/main/java/com/newoether/agora/api/openai/OpenAiRequestValidator.kt')
           s = p.read_text()
           needle = 'import com.newoether.agora.api.ToolDefinition\n'
           assert needle in s
           s = s.replace(needle, needle + 'import com.newoether.agora.api.util.openAiCompatibleWireToolName\n', 1)
           marker = '/**\n * Raw Responses output items'
-          helper = '''private fun JsonObject.normalizeLegacyAgoraWebToolName(): JsonObject {\n    val type = (this["type"] as? JsonPrimitive)?.content\n    val name = (this["name"] as? JsonPrimitive)?.content\n    if (type != "function_call" || name == null) return this\n    val normalizedName = openAiCompatibleWireToolName(name)\n    if (normalizedName == name) return this\n    return JsonObject(toMutableMap().apply {\n        put("name", JsonPrimitive(normalizedName))\n    })\n}\n\n'''
+          helper = '''private fun JsonObject.normalizeLegacyAgoraWebToolName(): JsonObject {\n    val type = (this["type"] as? JsonPrimitive)?.content\n    val name = (this["name"] as? JsonPrimitive)?.content\n    if (type != "function_call" || name == null) return this\n    val normalizedName = openAiCompatibleWireToolName(name)\n    if (normalizedName == name) return this\n    return JsonObject(toMutableMap().apply { put("name", JsonPrimitive(normalizedName)) })\n}\n\n'''
           assert marker in s
           s = s.replace(marker, helper + marker, 1)
           old = '            message.responseOutputItems.orEmpty()\n'
-          new = '            message.responseOutputItems.orEmpty().map { it.normalizeLegacyAgoraWebToolName() }\n'
           assert old in s
-          s = s.replace(old, new, 1)
+          s = s.replace(old, '            message.responseOutputItems.orEmpty().map { it.normalizeLegacyAgoraWebToolName() }\n', 1)
           old = '                        name = call.function.name,\n'
-          new = '                        name = openAiCompatibleWireToolName(call.function.name),\n'
           assert old in s
-          s = s.replace(old, new, 1)
+          s = s.replace(old, '                        name = openAiCompatibleWireToolName(call.function.name),\n', 1)
           p.write_text(s)
 
           p = Path('app/src/main/java/com/newoether/agora/tool/WebSearchToolProvider.kt')
@@ -59,17 +55,13 @@ jobs:
           s = s.replace('name = "web_fetch"', 'name = "agora_web_fetch"', 1)
           assert '            "web_search" -> executeWebSearch(arguments, ctx)' in s
           assert '            "web_fetch" -> executeWebFetch(arguments, ctx)' in s
-          s = s.replace('            "web_search" -> executeWebSearch(arguments, ctx)',
-                        '            "agora_web_search", "web_search" -> executeWebSearch(arguments, ctx)', 1)
-          s = s.replace('            "web_fetch" -> executeWebFetch(arguments, ctx)',
-                        '            "agora_web_fetch", "web_fetch" -> executeWebFetch(arguments, ctx)', 1)
+          s = s.replace('            "web_search" -> executeWebSearch(arguments, ctx)', '            "agora_web_search", "web_search" -> executeWebSearch(arguments, ctx)', 1)
+          s = s.replace('            "web_fetch" -> executeWebFetch(arguments, ctx)', '            "agora_web_fetch", "web_fetch" -> executeWebFetch(arguments, ctx)', 1)
           old = 'override fun handles(name: String): Boolean = name in setOf("web_search", "web_fetch")'
-          new = 'override fun handles(name: String): Boolean = name in setOf("agora_web_search", "agora_web_fetch", "web_search", "web_fetch")'
           assert old in s
-          s = s.replace(old, new, 1)
+          s = s.replace(old, 'override fun handles(name: String): Boolean = name in setOf("agora_web_search", "agora_web_fetch", "web_search", "web_fetch")', 1)
           p.write_text(s)
           PY
-
             git add \
               app/src/main/java/com/newoether/agora/api/openai/OpenAiRequestValidator.kt \
               app/src/main/java/com/newoether/agora/tool/WebSearchToolProvider.kt
@@ -84,36 +76,72 @@ jobs:
             e7b101aae7c17a84b443a194926148f13e3e93ce \
             a84451fc36e02f78f53e89b98ea9e4ab9a1b6096
           do
-            echo "Reapplying $commit"
             git cherry-pick --empty=drop "$commit"
           done
 
           description_commit=8f7b7f90729087771bb0cc0f9c4eb0a8c5b46bc3
           if ! git cherry-pick --empty=drop "$description_commit"; then
-            # New upstream reorganized strings.xml. Keep it intact and add only the fork label.
             git checkout --ours -- app/src/main/res/values/strings.xml
             python3 <<'PY'
           from pathlib import Path
           p = Path('app/src/main/res/values/strings.xml')
-          s = p.read_text()
-          key = 'openai_search_global_desc'
-          if key not in s:
-              needle = '<string name="openai_search">OpenAI Search</string>'
-              assert needle in s
-              addition = needle + '\n    <string name="openai_search_global_desc">Allow provider-hosted OpenAI Search for OpenAI-compatible Responses conversations. Off by default; individual conversations can turn it off when enabled globally.</string>'
-              s = s.replace(needle, addition, 1)
-              p.write_text(s)
+          b = p.read_bytes()
+          key = b'openai_search_global_desc'
+          if key not in b:
+              needle = b'<string name="openai_search">OpenAI Search</string>'
+              assert needle in b
+              newline = b'\r\n' if b'\r\n' in b else b'\n'
+              addition = needle + newline + b'    <string name="openai_search_global_desc">Allow provider-hosted OpenAI Search for OpenAI-compatible Responses conversations. Off by default; individual conversations can turn it off when enabled globally.</string>'
+              b = b.replace(needle, addition, 1)
+              p.write_bytes(b)
           PY
             git add app/src/main/res/values/strings.xml
             git cherry-pick --continue
           fi
 
+          controls_commit=361204eefadb4969f69710cfe9da9fe3812c2e4d
+          if ! git cherry-pick --empty=drop "$controls_commit"; then
+            # Upstream now shares this projection with WebUI. Keep that architecture and thread
+            # the global gate through both Android Compose and WebUI callers.
+            git checkout --ours -- app/src/main/java/com/newoether/agora/ui/chat/ConversationSettingsWorkspace.kt
+            python3 <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/newoether/agora/ui/chat/ConversationSettingsWorkspace.kt')
+          s = p.read_text()
+          needle = '    val openAiResponsesApiEnabled by viewModel.settings.openAiResponsesApiEnabled.collectAsState()\n'
+          assert needle in s
+          s = s.replace(needle, needle + '    val globalOpenAiWebSearch by viewModel.settings.openAiWebSearchEnabled.collectAsState()\n', 1)
+          old = '''        selectedProviderName, openAiResponsesApiEnabled, customProviders,\n    )\n'''
+          new = '''        selectedProviderName, openAiResponsesApiEnabled, customProviders,\n        globalOpenAiWebSearch = globalOpenAiWebSearch,\n    )\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          old = '''    openAiResponsesApiEnabled: Boolean,\n    customProviders: List<CustomProviderConfig>,\n): EffectiveConversationControls {\n'''
+          new = '''    openAiResponsesApiEnabled: Boolean,\n    customProviders: List<CustomProviderConfig>,\n    globalOpenAiWebSearch: Boolean = true,\n): EffectiveConversationControls {\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          old = '''        openAiWebSearchAvailable = resolveOpenAiNativeSearchAvailability(\n            selectedProviderName,\n            openAiResponsesApiEnabled,\n            customProviders,\n        ),\n        openAiWebSearchEnabled = conversationOverride?.openAiWebSearchEnabled ?: true,\n'''
+          new = '''        openAiWebSearchAvailable = globalOpenAiWebSearch && resolveOpenAiNativeSearchAvailability(\n            selectedProviderName,\n            openAiResponsesApiEnabled,\n            customProviders,\n        ),\n        openAiWebSearchEnabled = globalOpenAiWebSearch &&\n            resolveOpenAiNativeSearchAvailability(selectedProviderName, openAiResponsesApiEnabled, customProviders) &&\n            (conversationOverride?.openAiWebSearchEnabled ?: true),\n'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path('app/src/main/java/com/newoether/agora/webui/WebUiChatSession.kt')
+          s = p.read_text()
+          old = '        settings.openAiResponsesApiEnabled.value, settings.customProviders.value,\n    )\n'
+          new = '        settings.openAiResponsesApiEnabled.value, settings.customProviders.value,\n        globalOpenAiWebSearch = settings.openAiWebSearchEnabled.value,\n    )\n'
+          assert old in s
+          p.write_text(s.replace(old, new, 1))
+          PY
+            git add \
+              app/src/main/java/com/newoether/agora/ui/chat/ConversationSettingsWorkspace.kt \
+              app/src/main/java/com/newoether/agora/webui/WebUiChatSession.kt
+            git cherry-pick --continue
+          fi
+
           for commit in \
-            361204eefadb4969f69710cfe9da9fe3812c2e4d \
             fd06e1f4e566bffef1fc158bcc04c283ddaf84c3 \
             34398b751e8a6aaa0aae7b29f550f15e9fa3d26c
           do
-            echo "Reapplying $commit"
             git cherry-pick --empty=drop "$commit"
           done
 
