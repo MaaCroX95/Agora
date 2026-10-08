@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
@@ -23,38 +23,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 0
-
-      - name: Apply final sync test-fixture fix and restore standard workflow
-        if: github.ref == 'refs/heads/sync/upstream-2026-10-08'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "Agora Sync Bot"
-          git config user.email "actions@users.noreply.github.com"
-          python3 <<'PY'
-          from pathlib import Path
-          p = Path('app/src/test/java/com/newoether/agora/webui/WebUiChatSessionTest.kt')
-          s = p.read_text()
-          old = '''        every { settings.enabledModels } returns MutableStateFlow(setOf(model))
-        every { settings.customProviders } returns custom
-        session.start()
-        withTimeout(TIMEOUT_MS) { session.composerState.first { it.modelValid && it.controls?.openAiWebSearchAvailable == true } }
-'''
-          new = '''        every { settings.enabledModels } returns MutableStateFlow(setOf(model))
-        every { settings.customProviders } returns custom
-        every { settings.openAiWebSearchEnabled } returns MutableStateFlow(true)
-        session.start()
-        withTimeout(TIMEOUT_MS) { session.composerState.first { it.modelValid && it.controls?.openAiWebSearchAvailable == true } }
-'''
-          assert s.count(old) == 1, f'expected one custom Responses test fixture, found {s.count(old)}'
-          p.write_text(s.replace(old, new, 1))
-          PY
-          git show HEAD^:.github/workflows/build.yml > .github/workflows/build.yml
-          git rm -f .github/workflows/fix-final-webui-test.yml
-          git add app/src/test/java/com/newoether/agora/webui/WebUiChatSessionTest.kt .github/workflows/build.yml
-          git commit -m "test: enable OpenAI Search gate in custom Responses WebUI test"
-          git push origin HEAD:sync/upstream-2026-10-08
 
       - uses: actions/setup-java@v4
         with:
