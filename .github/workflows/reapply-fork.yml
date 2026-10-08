@@ -23,8 +23,63 @@ jobs:
           set -euo pipefail
           git config user.name "Agora Sync Bot"
           git config user.email "actions@users.noreply.github.com"
+
+          first=f8afc0da18c2862863d2ef214256bd1bf2866e8e
+          if ! git cherry-pick --empty=drop "$first"; then
+            # Preserve the current upstream implementations in the two conflicted files, then
+            # reapply only the fork's web-tool naming contract. Non-conflicting files from the
+            # cherry-pick (MessageConverter, ToolPresentation, tests) stay staged as Git merged them.
+            git checkout --ours -- \
+              app/src/main/java/com/newoether/agora/api/openai/OpenAiRequestValidator.kt \
+              app/src/main/java/com/newoether/agora/tool/WebSearchToolProvider.kt
+
+            python3 <<'PY'
+          from pathlib import Path
+
+          p = Path('app/src/main/java/com/newoether/agora/api/openai/OpenAiRequestValidator.kt')
+          s = p.read_text()
+          needle = 'import com.newoether.agora.api.ToolDefinition\n'
+          assert needle in s
+          s = s.replace(needle, needle + 'import com.newoether.agora.api.util.openAiCompatibleWireToolName\n', 1)
+          marker = '/**\n * Raw Responses output items'
+          helper = '''private fun JsonObject.normalizeLegacyAgoraWebToolName(): JsonObject {\n    val type = (this["type"] as? JsonPrimitive)?.content\n    val name = (this["name"] as? JsonPrimitive)?.content\n    if (type != "function_call" || name == null) return this\n    val normalizedName = openAiCompatibleWireToolName(name)\n    if (normalizedName == name) return this\n    return JsonObject(toMutableMap().apply {\n        put("name", JsonPrimitive(normalizedName))\n    })\n}\n\n'''
+          assert marker in s
+          s = s.replace(marker, helper + marker, 1)
+          old = '            message.responseOutputItems.orEmpty()\n'
+          new = '            message.responseOutputItems.orEmpty().map { it.normalizeLegacyAgoraWebToolName() }\n'
+          assert old in s
+          s = s.replace(old, new, 1)
+          old = '                        name = call.function.name,\n'
+          new = '                        name = openAiCompatibleWireToolName(call.function.name),\n'
+          assert old in s
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path('app/src/main/java/com/newoether/agora/tool/WebSearchToolProvider.kt')
+          s = p.read_text()
+          assert 'name = "web_search"' in s and 'name = "web_fetch"' in s
+          s = s.replace('name = "web_search"', 'name = "agora_web_search"', 1)
+          s = s.replace('name = "web_fetch"', 'name = "agora_web_fetch"', 1)
+          assert '            "web_search" -> executeWebSearch(arguments, ctx)' in s
+          assert '            "web_fetch" -> executeWebFetch(arguments, ctx)' in s
+          s = s.replace('            "web_search" -> executeWebSearch(arguments, ctx)',
+                        '            "agora_web_search", "web_search" -> executeWebSearch(arguments, ctx)', 1)
+          s = s.replace('            "web_fetch" -> executeWebFetch(arguments, ctx)',
+                        '            "agora_web_fetch", "web_fetch" -> executeWebFetch(arguments, ctx)', 1)
+          old = 'override fun handles(name: String): Boolean = name in setOf("web_search", "web_fetch")'
+          new = 'override fun handles(name: String): Boolean = name in setOf("agora_web_search", "agora_web_fetch", "web_search", "web_fetch")'
+          assert old in s
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+
+            git add \
+              app/src/main/java/com/newoether/agora/api/openai/OpenAiRequestValidator.kt \
+              app/src/main/java/com/newoether/agora/tool/WebSearchToolProvider.kt
+            git cherry-pick --continue
+          fi
+
           commits=(
-            f8afc0da18c2862863d2ef214256bd1bf2866e8e
             58812230f1e505b98365f1a6b47ab0ee3ad1b499
             3f9f469cb76446fce41f43cfef7f39b7392e5902
             aaed5e30cca62988e0848832fa5ba9b6f3dfc14d
@@ -40,6 +95,7 @@ jobs:
             echo "Reapplying $commit"
             git cherry-pick --empty=drop "$commit"
           done
+
           git rm .github/workflows/reapply-fork.yml
           git commit -m "ci: remove one-shot fork reapply workflow"
           git push origin HEAD:sync/upstream-2026-10-08
