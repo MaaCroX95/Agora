@@ -1,0 +1,53 @@
+name: Reapply fork invariants
+
+on:
+  push:
+    branches: [sync/upstream-2026-10-08]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: reapply-fork-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  reapply:
+    if: ${{ github.event.head_commit.message == 'ci: reapply fork invariants with git three-way' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: sync/upstream-2026-10-08
+
+      - name: Reapply fork-specific commits
+        run: |
+          set -euo pipefail
+          git config user.name "Agora Sync Bot"
+          git config user.email "actions@users.noreply.github.com"
+
+          # Reapply only fork behavior. Signing/CI were already merged manually so that
+          # upstream R8 and current workflow improvements remain intact.
+          commits=(
+            f8afc0da18c2862863d2ef214256bd1bf2866e8e
+            58812230f1e505b98365f1a6b47ab0ee3ad1b499
+            3f9f469cb76446fce41f43cfef7f39b7392e5902
+            aaed5e30cca62988e0848832fa5ba9b6f3dfc14d
+            96b495afdfca1f4fef82589922155bd34b6e2e03
+            e7b101aae7c17a84b443a194926148f13e3e93ce
+            a84451fc36e02f78f53e89b98ea9e4ab9a1b6096
+            8f7b7f90729087771bb0cc0f9c4eb0a8c5b46bc3
+            361204eefadb4969f69710cfe9da9fe3812c2e4d
+            fd06e1f4e566bffef1fc158bcc04c283ddaf84c3
+            34398b751e8a6aaa0aae7b29f550f15e9fa3d26c
+          )
+
+          for commit in "${commits[@]}"; do
+            echo "Reapplying $commit"
+            git cherry-pick --empty=drop "$commit"
+          done
+
+          git rm .github/workflows/reapply-fork.yml
+          git commit -m "ci: remove one-shot fork reapply workflow"
+          git push origin HEAD:sync/upstream-2026-10-08
