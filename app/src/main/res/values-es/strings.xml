@@ -566,7 +566,8 @@
     <string name="shell_confirm_setting">Confirmar acciones de shell remoto</string>
     <string name="shell_confirm_setting_desc">Preguntar antes de que el asistente ejecute comandos o escriba archivos en servidores SSH/Conch remotos</string>
     <string name="shell_confirm_notification_channel">Aprobación de comandos</string>
-    <string name="shell_confirm_notification_desc">Pide permitir o denegar un comando remoto mientras Agora está en segundo plano</string>
+    <string name="shell_confirm_notification_desc">Pide permitir o denegar un comando remoto mientras Agora está en segundo plano</string>
+
     <string name="ask_user_title">El asistente pregunta</string>
     <string name="ask_user_send">Enviar</string>
     <string name="ask_user_next">Siguiente</string>
@@ -669,7 +670,8 @@
     <string name="thinking_segment_display_card">Tarjeta</string>
     <string name="thinking_segment_display_bottom_sheet">Hoja inferior</string>
     <string name="thinking_segments_title">Segmentos de razonamiento</string>
-    <string name="context_usage_messages">~%1$s / %2$s tokens</string>
+    <string name="context_usage_messages">~%1$s / %2$s tokens</string>
+
     <string name="context_part_system">Prompt del sistema</string>
     <string name="context_part_tools">Herramientas</string>
     <string name="context_part_messages">Mensajes</string>
@@ -813,4 +815,5 @@
     <string name="message_source_loop">Bucle</string>
     <string name="message_source_ask_user">Pregunta</string>
     <string name="message_source_unanswered">Sin respuesta</string>
+    <string name="openai_search_global_desc">Allow provider-hosted OpenAI Search for OpenAI-compatible Responses conversations. Off by default; individual conversations can turn it off when enabled globally.</string>
 </resources>

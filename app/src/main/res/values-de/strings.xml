@@ -566,7 +566,8 @@
     <string name="shell_confirm_setting">Remote-Shell-Aktionen bestätigen</string>
     <string name="shell_confirm_setting_desc">Nachfragen, bevor der Assistent Befehle ausführt oder Dateien auf Remote-SSH-/Conch-Servern schreibt</string>
     <string name="shell_confirm_notification_channel">Befehlsgenehmigung</string>
-    <string name="shell_confirm_notification_desc">Fragt an, einen Remote-Befehl zu erlauben oder abzulehnen, während Agora im Hintergrund ist</string>
+    <string name="shell_confirm_notification_desc">Fragt an, einen Remote-Befehl zu erlauben oder abzulehnen, während Agora im Hintergrund ist</string>
+
     <string name="ask_user_title">Der Assistent fragt</string>
     <string name="ask_user_send">Senden</string>
     <string name="ask_user_next">Weiter</string>
@@ -669,7 +670,8 @@
     <string name="thinking_segment_display_card">Karte</string>
     <string name="thinking_segment_display_bottom_sheet">Unteres Dialogfeld</string>
     <string name="thinking_segments_title">Denksegmente</string>
-    <string name="context_usage_messages">~%1$s / %2$s Tokens</string>
+    <string name="context_usage_messages">~%1$s / %2$s Tokens</string>
+
     <string name="context_part_system">System-Prompt</string>
     <string name="context_part_tools">Tools</string>
     <string name="context_part_messages">Nachrichten</string>
@@ -813,4 +815,5 @@
     <string name="message_source_loop">Schleife</string>
     <string name="message_source_ask_user">Rückfrage</string>
     <string name="message_source_unanswered">Nicht beantwortet</string>
+    <string name="openai_search_global_desc">Allow provider-hosted OpenAI Search for OpenAI-compatible Responses conversations. Off by default; individual conversations can turn it off when enabled globally.</string>
 </resources>

@@ -52,6 +52,7 @@ class WebUiChatSessionEditorsTest {
         every { openAiServiceTierEnabled } returns MutableStateFlow(false)
         every { openAiServiceTier } returns MutableStateFlow("auto")
         every { openAiResponsesApiEnabled } returns MutableStateFlow(false)
+        every { openAiWebSearchEnabled } returns MutableStateFlow(false)
         every { webSearchEnabled } returns MutableStateFlow(true)
         every { shellEnabled } returns MutableStateFlow(true)
         every { localLowContextModeEnabled } returns MutableStateFlow(false)

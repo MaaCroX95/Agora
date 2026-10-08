@@ -593,6 +593,7 @@ private class RequestBuilderFixture(
         every { settings.contextCompactPreserveSystemPrompt } returns
             MutableStateFlow(compactPreserveSystemPrompt)
         every { settings.openAiResponsesApiEnabled } returns MutableStateFlow(false)
+        every { settings.openAiWebSearchEnabled } returns MutableStateFlow(true)
         every { settings.anthropicCacheEnabled } returns MutableStateFlow(true)
         every { settings.anthropicCacheTtl } returns MutableStateFlow("1h")
         every { settings.customProviders } returns MutableStateFlow(emptyList())

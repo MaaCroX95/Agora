@@ -566,7 +566,8 @@
     <string name="shell_confirm_setting">リモートシェル操作を確認</string>
     <string name="shell_confirm_setting_desc">アシスタントがリモートの SSH/Conch サーバーでコマンドを実行したりファイルを書き込んだりする前に確認する</string>
     <string name="shell_confirm_notification_channel">コマンドの承認</string>
-    <string name="shell_confirm_notification_desc">Agora がバックグラウンドにある間に、リモートコマンドを許可または拒否するよう尋ねます</string>
+    <string name="shell_confirm_notification_desc">Agora がバックグラウンドにある間に、リモートコマンドを許可または拒否するよう尋ねます</string>
+
     <string name="ask_user_title">アシスタントからの質問</string>
     <string name="ask_user_send">送信</string>
     <string name="ask_user_next">次へ</string>
@@ -669,7 +670,8 @@
     <string name="thinking_segment_display_card">カード</string>
     <string name="thinking_segment_display_bottom_sheet">ボトムシート</string>
     <string name="thinking_segments_title">思考セグメント</string>
-    <string name="context_usage_messages">約 %1$s / %2$s tokens</string>
+    <string name="context_usage_messages">約 %1$s / %2$s tokens</string>
+
     <string name="context_part_system">システムプロンプト</string>
     <string name="context_part_tools">ツール</string>
     <string name="context_part_messages">メッセージ</string>
@@ -813,4 +815,5 @@
     <string name="message_source_loop">ループ</string>
     <string name="message_source_ask_user">質問</string>
     <string name="message_source_unanswered">未回答</string>
+    <string name="openai_search_global_desc">Allow provider-hosted OpenAI Search for OpenAI-compatible Responses conversations. Off by default; individual conversations can turn it off when enabled globally.</string>
 </resources>
