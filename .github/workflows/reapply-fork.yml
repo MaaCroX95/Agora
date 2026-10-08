@@ -26,9 +26,6 @@ jobs:
 
           first=f8afc0da18c2862863d2ef214256bd1bf2866e8e
           if ! git cherry-pick --empty=drop "$first"; then
-            # Preserve the current upstream implementations in the two conflicted files, then
-            # reapply only the fork's web-tool naming contract. Non-conflicting files from the
-            # cherry-pick (MessageConverter, ToolPresentation, tests) stay staged as Git merged them.
             git checkout --ours -- \
               app/src/main/java/com/newoether/agora/api/openai/OpenAiRequestValidator.kt \
               app/src/main/java/com/newoether/agora/tool/WebSearchToolProvider.kt
@@ -79,19 +76,43 @@ jobs:
             git cherry-pick --continue
           fi
 
-          commits=(
-            58812230f1e505b98365f1a6b47ab0ee3ad1b499
-            3f9f469cb76446fce41f43cfef7f39b7392e5902
-            aaed5e30cca62988e0848832fa5ba9b6f3dfc14d
-            96b495afdfca1f4fef82589922155bd34b6e2e03
-            e7b101aae7c17a84b443a194926148f13e3e93ce
+          for commit in \
+            58812230f1e505b98365f1a6b47ab0ee3ad1b499 \
+            3f9f469cb76446fce41f43cfef7f39b7392e5902 \
+            aaed5e30cca62988e0848832fa5ba9b6f3dfc14d \
+            96b495afdfca1f4fef82589922155bd34b6e2e03 \
+            e7b101aae7c17a84b443a194926148f13e3e93ce \
             a84451fc36e02f78f53e89b98ea9e4ab9a1b6096
-            8f7b7f90729087771bb0cc0f9c4eb0a8c5b46bc3
-            361204eefadb4969f69710cfe9da9fe3812c2e4d
-            fd06e1f4e566bffef1fc158bcc04c283ddaf84c3
+          do
+            echo "Reapplying $commit"
+            git cherry-pick --empty=drop "$commit"
+          done
+
+          description_commit=8f7b7f90729087771bb0cc0f9c4eb0a8c5b46bc3
+          if ! git cherry-pick --empty=drop "$description_commit"; then
+            # New upstream reorganized strings.xml. Keep it intact and add only the fork label.
+            git checkout --ours -- app/src/main/res/values/strings.xml
+            python3 <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/res/values/strings.xml')
+          s = p.read_text()
+          key = 'openai_search_global_desc'
+          if key not in s:
+              needle = '<string name="openai_search">OpenAI Search</string>'
+              assert needle in s
+              addition = needle + '\n    <string name="openai_search_global_desc">Allow provider-hosted OpenAI Search for OpenAI-compatible Responses conversations. Off by default; individual conversations can turn it off when enabled globally.</string>'
+              s = s.replace(needle, addition, 1)
+              p.write_text(s)
+          PY
+            git add app/src/main/res/values/strings.xml
+            git cherry-pick --continue
+          fi
+
+          for commit in \
+            361204eefadb4969f69710cfe9da9fe3812c2e4d \
+            fd06e1f4e566bffef1fc158bcc04c283ddaf84c3 \
             34398b751e8a6aaa0aae7b29f550f15e9fa3d26c
-          )
-          for commit in "${commits[@]}"; do
+          do
             echo "Reapplying $commit"
             git cherry-pick --empty=drop "$commit"
           done
