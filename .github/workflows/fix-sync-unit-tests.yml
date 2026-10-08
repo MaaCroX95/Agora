@@ -1,0 +1,117 @@
+name: Fix sync unit tests
+
+on:
+  push:
+    branches:
+      - sync/upstream-2026-10-08
+    paths:
+      - .github/workflows/fix-sync-unit-tests.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sync/upstream-2026-10-08
+          fetch-depth: 0
+      - name: Adapt fork tests and locale resources to current upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Agora Sync Bot"
+          git config user.email "actions@users.noreply.github.com"
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text()
+              count = s.count(old)
+              assert count == 1, f'{path}: expected exactly one match, found {count}'
+              p.write_text(s.replace(old, new, 1))
+
+          # GenerationRequestBuilder fixture: preserve the global gate while teaching strict mocks
+          # about the newly-restored repository StateFlow.
+          replace_once(
+              'app/src/test/java/com/newoether/agora/viewmodel/GenerationRequestBuilderProviderDisplayTest.kt',
+              '        every { settings.openAiResponsesApiEnabled } returns MutableStateFlow(false)\n        every { settings.anthropicCacheEnabled } returns MutableStateFlow(true)\n',
+              '        every { settings.openAiResponsesApiEnabled } returns MutableStateFlow(false)\n        every { settings.openAiWebSearchEnabled } returns MutableStateFlow(true)\n        every { settings.anthropicCacheEnabled } returns MutableStateFlow(true)\n',
+          )
+
+          # WebUI fixtures use the real default (master gate off), so adding this mock does not
+          # change their existing behavior expectations.
+          for path in [
+              'app/src/test/java/com/newoether/agora/webui/WebUiChatSessionTest.kt',
+              'app/src/test/java/com/newoether/agora/webui/WebUiChatSessionEditorsTest.kt',
+          ]:
+              replace_once(
+                  path,
+                  '        every { openAiResponsesApiEnabled } returns MutableStateFlow(false)\n        every { webSearchEnabled } returns MutableStateFlow(true)\n',
+                  '        every { openAiResponsesApiEnabled } returns MutableStateFlow(false)\n        every { openAiWebSearchEnabled } returns MutableStateFlow(false)\n        every { webSearchEnabled } returns MutableStateFlow(true)\n',
+              )
+
+          # Upstream now replays opaque Responses items only when both provider and model match.
+          p = Path('app/src/test/java/com/newoether/agora/api/openai/OpenAiWebToolNameCompatibilityTest.kt')
+          s = p.read_text()
+          provider_line = '            responseOutputItemProvider = "NanoGPT",\n'
+          assert s.count(provider_line) == 2
+          s = s.replace(
+              provider_line,
+              provider_line + '            responseOutputItemModel = "test-model",\n',
+          )
+          call = 'toResponsesInput(providerName = "NanoGPT")'
+          assert s.count(call) == 2
+          s = s.replace(call, 'toResponsesInput(providerName = "NanoGPT", targetModel = "test-model")')
+          p.write_text(s)
+
+          # The fork adds a global gate before the per-conversation gate; make the source-contract
+          # test assert both layers instead of the pre-sync combined expression.
+          replace_once(
+              'app/src/test/java/com/newoether/agora/ui/chat/OpenAiNativeSearchWiringTest.kt',
+              '            "effectiveSettings.openAiWebSearchEnabled == true && responsesApiEnabled",\n',
+              '            "settings.openAiWebSearchEnabled.value &&",\n            "effectiveSettings.openAiWebSearchEnabled == true &&",\n',
+          )
+
+          # SettingsResourceContractTest requires every ordinary locale to carry every default key.
+          # Keep translations functional with the English fallback until locale-specific wording is
+          # supplied upstream/fork-side.
+          resource_root = Path('app/src/main/res')
+          locale_pattern = re.compile(r'values-[a-z]{2,3}(?:-r[A-Z]{2})?')
+          key = 'openai_search_global_desc'
+          fallback = (
+              '    <string name="openai_search_global_desc">Allow provider-hosted OpenAI Search for '
+              'OpenAI-compatible Responses conversations. Off by default; individual conversations '
+              'can turn it off when enabled globally.</string>\n'
+          )
+          patched = []
+          for directory in sorted(resource_root.iterdir()):
+              if not directory.is_dir() or not locale_pattern.fullmatch(directory.name):
+                  continue
+              strings = directory / 'strings.xml'
+              if not strings.is_file():
+                  continue
+              text = strings.read_text()
+              if f'name="{key}"' in text:
+                  continue
+              assert '</resources>' in text, f'{strings}: missing resources close tag'
+              strings.write_text(text.replace('</resources>', fallback + '</resources>', 1))
+              patched.append(directory.name)
+          assert patched, 'expected at least one locale to require the OpenAI Search description key'
+          print('Patched locales:', ', '.join(patched))
+          PY
+
+          git add \
+            app/src/test/java/com/newoether/agora/viewmodel/GenerationRequestBuilderProviderDisplayTest.kt \
+            app/src/test/java/com/newoether/agora/webui/WebUiChatSessionTest.kt \
+            app/src/test/java/com/newoether/agora/webui/WebUiChatSessionEditorsTest.kt \
+            app/src/test/java/com/newoether/agora/api/openai/OpenAiWebToolNameCompatibilityTest.kt \
+            app/src/test/java/com/newoether/agora/ui/chat/OpenAiNativeSearchWiringTest.kt \
+            app/src/main/res/values-*/strings.xml
+          git rm .github/workflows/fix-sync-unit-tests.yml
+          git commit -m "test: adapt preserved fork contracts to current upstream"
+          git push origin HEAD:sync/upstream-2026-10-08
