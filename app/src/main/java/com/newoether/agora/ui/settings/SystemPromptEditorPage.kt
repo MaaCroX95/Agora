@@ -53,6 +53,9 @@ import com.newoether.agora.data.PromptTemplateItem
 import com.newoether.agora.data.SystemPromptEntry
 import com.newoether.agora.ui.motion.LocalAgoraMotionPolicy
 import com.newoether.agora.ui.motion.MotionAwareModalBottomSheet as ModalBottomSheet
+import com.newoether.agora.ui.components.AgoraDropdownMenu
+import com.newoether.agora.ui.components.AgoraDropdownMenuItem
+import com.newoether.agora.ui.components.sheetOptionClickable
 
 private fun variableDisplayName(key: String): String = when (key) {
     PredefinedVariables.TIME -> "Current Time"
@@ -354,7 +357,6 @@ fun SystemPromptEditorPage(
         val targetIndex = insertAtIndex
         ModalBottomSheet(
             onDismissRequest = { showVariablePicker = false; insertAtIndex = -1 },
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         ) {
             DialogWindowEdgeToEdge()
@@ -373,7 +375,9 @@ fun SystemPromptEditorPage(
                     leadingContent = {
                         Icon(variableIcon(key), contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     },
-                    modifier = Modifier.fillMaxWidth().clickable {
+                    startPadding = SETTINGS_ITEM_SHEET_PADDING,
+                    endPadding = SETTINGS_ITEM_SHEET_PADDING,
+                    modifier = Modifier.fillMaxWidth().sheetOptionClickable {
                         val item = PromptTemplateItem(type = PromptItemType.PREDEFINED, value = key)
                         if (targetIndex >= 0 && targetIndex <= currentItems.size) {
                             currentItems.add(targetIndex, item)
@@ -417,19 +421,18 @@ private fun InsertBetweenButton(
                     modifier = Modifier.size(12.dp)
                 )
             }
-            DropdownMenu(
+            AgoraDropdownMenu(
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 tonalElevation = 16.dp,
                 expanded = expanded,
-                onDismissRequest = { expanded = false },
-                shape = RoundedCornerShape(12.dp)
+                onDismissRequest = { expanded = false }
             ) {
-                DropdownMenuItem(
+                AgoraDropdownMenuItem(
                     text = { Text(stringResource(R.string.template_add_text)) },
                     leadingIcon = { Icon(Icons.Default.TextFields, null) },
                     onClick = { expanded = false; onInsertText() }
                 )
-                DropdownMenuItem(
+                AgoraDropdownMenuItem(
                     text = { Text(stringResource(R.string.template_add_variable)) },
                     leadingIcon = { Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, null) },
                     onClick = { expanded = false; onInsertVariable() }

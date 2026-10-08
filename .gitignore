@@ -5,6 +5,7 @@
 # Signing material must never be committed.
 *.jks
 *.keystore
+
 /.idea/
 .DS_Store
 /build

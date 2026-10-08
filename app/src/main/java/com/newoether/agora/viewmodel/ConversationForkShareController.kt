@@ -1,54 +1,71 @@
 package com.newoether.agora.viewmodel
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-/** Adapts current-conversation fork/share UI intents to typed service outcomes. */
+/**
+ * Adapts a client's fork/share intents for the conversation it shows to typed service outcomes.
+ * Every outcome (the forked conversation to open, share text, failure) goes to that origin only.
+ */
 internal class ConversationForkShareController(
-    private val currentConversationId: StateFlow<String?>,
     private val service: ConversationForkShareService,
     private val scope: CoroutineScope,
-    private val onConversationForked: (String) -> Unit,
-    private val onShareReady: suspend (String) -> Unit,
     private val forkFailureText: (String) -> String,
     private val shareFailureText: (String) -> String,
-    private val onFailure: suspend (String) -> Unit,
 ) {
-    fun fork(messageId: String? = null) {
-        val conversationId = currentConversationId.value ?: return
+    /**
+     * Returns false when nothing was started. Otherwise [onResult] runs exactly once, after the
+     * fork is opened (true) or its failure is reported (false), so the origin can hold its
+     * confirmation until then. [onResult] may run off the main thread.
+     */
+    fun fork(
+        origin: ChatClient,
+        messageId: String? = null,
+        onResult: (Boolean) -> Unit = {},
+    ): Boolean {
+        val conversationId = origin.openConversationId ?: return false
         scope.launch {
-            when (val result = service.fork(conversationId, messageId)) {
-                is ConversationForkShareService.ForkResult.Success ->
-                    onConversationForked(result.conversationId)
-                is ConversationForkShareService.ForkResult.Failure ->
-                    onFailure(forkFailureText(result.reason))
+            var forked = false
+            try {
+                when (val result = service.fork(conversationId, messageId)) {
+                    is ConversationForkShareService.ForkResult.Success -> {
+                        origin.openConversation(result.conversationId)
+                        forked = true
+                    }
+                    is ConversationForkShareService.ForkResult.Failure ->
+                        origin.showSnackbar(forkFailureText(result.reason))
+                }
+            } finally {
+                onResult(forked)
             }
         }
+        return true
     }
 
-    fun shareConversation() {
-        share { conversationId -> service.shareAll(conversationId) }
+    fun shareConversation(origin: ChatClient) {
+        share(origin) { conversationId -> service.shareAll(conversationId) }
     }
 
-    fun shareGeneration(assistantMessageId: String) {
-        share { conversationId -> service.shareRun(conversationId, assistantMessageId) }
+    fun shareGeneration(origin: ChatClient, assistantMessageId: String) {
+        share(origin) { conversationId -> service.shareRun(conversationId, assistantMessageId) }
     }
 
-    fun shareMessages(messageIds: Set<String>) {
+    fun shareMessages(origin: ChatClient, messageIds: Set<String>) {
         if (messageIds.isEmpty()) return
-        share { conversationId -> service.shareMessages(conversationId, messageIds) }
+        share(origin) { conversationId -> service.shareMessages(conversationId, messageIds) }
     }
 
     private fun share(
+        origin: ChatClient,
         load: suspend (conversationId: String) -> ConversationForkShareService.ShareResult,
     ) {
-        val conversationId = currentConversationId.value ?: return
+        val conversationId = origin.openConversationId ?: return
         scope.launch {
             when (val result = load(conversationId)) {
-                is ConversationForkShareService.ShareResult.Success -> onShareReady(result.text)
+                is ConversationForkShareService.ShareResult.Success ->
+                    origin.showShareText(result.text)
                 is ConversationForkShareService.ShareResult.Failure ->
-                    onFailure(shareFailureText(result.reason))
+                    origin.showSnackbar(shareFailureText(result.reason))
             }
         }
     }

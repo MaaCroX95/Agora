@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.DpSize
 import com.newoether.agora.R
 import com.newoether.agora.api.ProviderDefaults
 import com.newoether.agora.viewmodel.EmbeddingCacheRowPhase
-import com.newoether.agora.viewmodel.EmbeddingCacheRowSnapshot
+import com.newoether.agora.viewmodel.rowPhase
 import com.newoether.agora.ui.common.PersistedSliderFeedbackGate
 import com.newoether.agora.ui.components.clearFocusOnTap
 import com.newoether.agora.util.Constants
@@ -43,6 +43,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import com.newoether.agora.ui.components.AgoraDropdownMenu
+import com.newoether.agora.ui.components.AgoraDropdownMenuItem
 
 private data class SearchMethodOption(val key: String, @androidx.annotation.StringRes val labelRes: Int)
 
@@ -71,7 +73,6 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
     }
     val actionTextMeasurer = rememberTextMeasurer()
     val actionLabelSizes = listOf(
-        stringResource(R.string.retry),
         stringResource(R.string.recache_action),
         stringResource(R.string.cache_action),
     ).map { label ->
@@ -153,6 +154,12 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
         floatingActionButton = { if (showDocFab) DocumentationFab("search.md") }
     ) {
             SettingsGroupColumn {
+                if (cacheRows.values.any { it.countFailed && it.cached == null && !it.workActive }) {
+                    Text(
+                        text = "${stringResource(R.string.search_title)}: ${stringResource(R.string.tool_state_failed)}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 SettingsGroup(
                     title = stringResource(R.string.memory_access_title),
                     items = listOf(
@@ -225,17 +232,16 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                         modifier = Modifier.width(80.dp),
                                         textAlign = TextAlign.Center
                                     )
-                                    DropdownMenu(
+                                    AgoraDropdownMenu(
                                         containerColor = MaterialTheme.colorScheme.surfaceContainer,
                                         tonalElevation = 16.dp,
                                         expanded = expanded,
-                                        onDismissRequest = { expanded = false },
-                                        shape = RoundedCornerShape(12.dp)
+                                        onDismissRequest = { expanded = false }
                                     ) {
                                         val noEmbedding = embeddingModels.isEmpty()
                                         searchMethods.forEach { method ->
                                             val ragDisabled = method.key == Constants.SEARCH_METHOD_RAG && noEmbedding
-                                            DropdownMenuItem(
+                                            AgoraDropdownMenuItem(
                                                 text = { Text(stringResource(method.labelRes), color = if (ragDisabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurface) },
                                                 leadingIcon = {
                                                     if (modelSearchMethod == method.key)
@@ -270,17 +276,16 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                         modifier = Modifier.width(80.dp),
                                         textAlign = TextAlign.Center
                                     )
-                                    DropdownMenu(
+                                    AgoraDropdownMenu(
                                         containerColor = MaterialTheme.colorScheme.surfaceContainer,
                                         tonalElevation = 16.dp,
                                         expanded = expanded,
-                                        onDismissRequest = { expanded = false },
-                                        shape = RoundedCornerShape(12.dp)
+                                        onDismissRequest = { expanded = false }
                                     ) {
                                         val noEmbedding = embeddingModels.isEmpty()
                                         searchMethods.forEach { method ->
                                             val ragDisabled = method.key == Constants.SEARCH_METHOD_RAG && noEmbedding
-                                            DropdownMenuItem(
+                                            AgoraDropdownMenuItem(
                                                 text = { Text(stringResource(method.labelRes), color = if (ragDisabled) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurface) },
                                                 leadingIcon = {
                                                     if (manualSearchMethod == method.key)
@@ -318,52 +323,52 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                         embeddingModels.forEach { model ->
                             add {
                                 val isActive = model.id == activeEmbeddingModelId
-                                val cacheRow =
-                                    cacheRows[model.id] ?: EmbeddingCacheRowSnapshot.Loading
-                                val visualPhase = cacheRow.visualPhase
+                                val cacheRow = cacheRows[model.id]
+                                val visualPhase = cacheRow.rowPhase()
                                 SettingsItem(
                                     headlineContent = { Text(model.name) },
                                     supportingContent = {
                                         val typeLabel = if (model.type == com.newoether.agora.data.EmbeddingModelType.REMOTE)
                                             stringResource(R.string.embedding_type_remote)
                                         else stringResource(R.string.embedding_type_local)
-                                        val progressLabel = cacheRow.progress?.let {
-                                            stringResource(
-                                                R.string.cache_work_remaining,
-                                                it.remaining,
-                                                it.processed,
-                                                it.total,
-                                            )
+                                        val countLabel = cacheRow?.cached?.let { cached ->
+                                            "$cached/${cacheRow.indexableTotal}"
+                                        }
+                                        val cacheLabel = when (visualPhase) {
+                                            EmbeddingCacheRowPhase.LOADING ->
+                                                stringResource(R.string.loading_label)
+                                            // Caching states its own progress as a percentage of
+                                            // the same pair the indicator draws.
+                                            EmbeddingCacheRowPhase.CACHING ->
+                                                cacheRow?.cachingCached?.let { shown ->
+                                                    val total =
+                                                        requireNotNull(cacheRow.indexableTotal)
+                                                    val percent = ((cacheRow.cachingFraction ?: 0f) *
+                                                        100).toInt()
+                                                    "$shown/$total ($percent%)"
+                                                }
+                                                    // A run that started before its counts arrived
+                                                    // has no progress to state yet. It still has to
+                                                    // say it is working, or the row would show only
+                                                    // the model type next to a spinning indicator.
+                                                    ?: stringResource(R.string.loading_label)
+                                            EmbeddingCacheRowPhase.CACHE -> {
+                                                val cached = requireNotNull(cacheRow?.cached)
+                                                val total = requireNotNull(cacheRow.indexableTotal)
+                                                "${total - cached} " +
+                                                    "${stringResource(R.string.not_cached)} " +
+                                                    "($cached/$total)"
+                                            }
+                                            EmbeddingCacheRowPhase.RECACHE ->
+                                                "${stringResource(R.string.cached)} ($countLabel)"
+                                            null -> null
                                         }
                                         Crossfade(
-                                            targetState = visualPhase,
+                                            targetState = listOfNotNull(typeLabel, cacheLabel).joinToString(" · "),
                                             animationSpec = tween(250),
                                             label = "embeddingCacheStatus-${model.id}",
-                                        ) { phase ->
-                                            val cacheLabel = when (phase) {
-                                                EmbeddingCacheRowPhase.LOADING,
-                                                EmbeddingCacheRowPhase.QUEUED ->
-                                                    stringResource(R.string.loading_label)
-                                                EmbeddingCacheRowPhase.CACHING,
-                                                EmbeddingCacheRowPhase.FINALIZING ->
-                                                    progressLabel
-                                                        ?: stringResource(R.string.loading_label)
-                                                EmbeddingCacheRowPhase.FAILED ->
-                                                    listOfNotNull(
-                                                        stringResource(R.string.tool_state_failed),
-                                                        progressLabel,
-                                                    ).joinToString(" · ")
-                                                EmbeddingCacheRowPhase.CACHE -> {
-                                                    val cached = cacheRow.cached ?: 0
-                                                    val total = cacheRow.indexableTotal ?: 0
-                                                    "${(total - cached).coerceAtLeast(0)} " +
-                                                        "${stringResource(R.string.not_cached)} " +
-                                                        "($cached/$total)"
-                                                }
-                                                EmbeddingCacheRowPhase.RECACHE ->
-                                                    stringResource(R.string.cached)
-                                            }
-                                            Text("$typeLabel · $cacheLabel")
+                                        ) { status ->
+                                            Text(status)
                                         }
                                     },
                                     leadingContent = {
@@ -389,40 +394,33 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                                         contentAlignment = androidx.compose.ui.Alignment.Center,
                                                     ) {
                                                         when (phase) {
-                                                            EmbeddingCacheRowPhase.CACHING,
-                                                            EmbeddingCacheRowPhase.FINALIZING -> {
-                                                                val progress = cacheRow.progress
-                                                                if (progress == null) {
+                                                            EmbeddingCacheRowPhase.CACHING -> {
+                                                                // Determinate only when the row has
+                                                                // real counts to divide; otherwise
+                                                                // the fraction would be invented.
+                                                                val fraction =
+                                                                    cacheRow?.cachingFraction
+                                                                if (fraction == null) {
                                                                     CircularProgressIndicator(
                                                                         modifier = Modifier.size(24.dp),
                                                                         strokeWidth = 3.dp,
                                                                     )
                                                                 } else {
                                                                     CircularProgressIndicator(
-                                                                        progress = { progress.fraction },
+                                                                        progress = { fraction },
                                                                         modifier = Modifier.size(24.dp),
                                                                         strokeWidth = 3.dp,
                                                                     )
                                                                 }
                                                             }
-                                                            EmbeddingCacheRowPhase.LOADING,
-                                                            EmbeddingCacheRowPhase.QUEUED ->
+                                                            EmbeddingCacheRowPhase.LOADING ->
                                                                 CircularProgressIndicator(
                                                                     modifier = Modifier.size(24.dp),
                                                                     strokeWidth = 3.dp,
                                                                 )
-                                                            EmbeddingCacheRowPhase.FAILED -> TextButton(
-                                                                onClick = {
-                                                                    viewModel.ragManager.retryCacheRow(model.id)
-                                                                },
-                                                            ) {
-                                                                Text(
-                                                                    stringResource(R.string.retry),
-                                                                    maxLines = 1,
-                                                                    softWrap = false,
-                                                                )
-                                                            }
+                                                            null -> Unit
                                                             EmbeddingCacheRowPhase.RECACHE -> TextButton(
+                                                                enabled = visualPhase == phase,
                                                                 onClick = { showRecacheConfirm = model.id },
                                                             ) {
                                                                 Text(
@@ -432,6 +430,7 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                                                 )
                                                             }
                                                             EmbeddingCacheRowPhase.CACHE -> TextButton(
+                                                                enabled = visualPhase == phase,
                                                                 onClick = {
                                                                     viewModel.ragManager.cacheMessagesForModel(
                                                                         model.id,
@@ -452,14 +451,13 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                                 IconButton(onClick = { showMenuForModel = model.id }) {
                                                     Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.options))
                                                 }
-                                                DropdownMenu(
+                                                AgoraDropdownMenu(
                                                     containerColor = MaterialTheme.colorScheme.surfaceContainer,
                                                     tonalElevation = 16.dp,
                                                     expanded = showMenuForModel == model.id,
-                                                    onDismissRequest = { showMenuForModel = null },
-                                                    shape = RoundedCornerShape(12.dp)
+                                                    onDismissRequest = { showMenuForModel = null }
                                                 ) {
-                                                    DropdownMenuItem(
+                                                    AgoraDropdownMenuItem(
                                                         text = { Text(stringResource(R.string.edit)) },
                                                         leadingIcon = { Icon(Icons.Default.Edit, null) },
                                                         onClick = {
@@ -468,7 +466,7 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                                             showRenameDialog = model.id
                                                         }
                                                     )
-                                                    DropdownMenuItem(
+                                                    AgoraDropdownMenuItem(
                                                         text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
                                                         leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
                                                         onClick = {

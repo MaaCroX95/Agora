@@ -5,6 +5,7 @@ import com.newoether.agora.model.AttachmentMeta
 import com.newoether.agora.model.AttachmentItem
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageSegment
+import com.newoether.agora.model.MessageSource
 import com.newoether.agora.model.TokenUsage
 import com.newoether.agora.model.ToolCallData
 import com.newoether.agora.util.Constants
@@ -115,6 +116,7 @@ internal fun projectProviderMessages(
             runId = entity.runId,
             runSequence = entity.runSequence,
             consumedAtPass = entity.consumedAtPass,
+            source = MessageSource.decode(entity.sourceJson),
         )
     }
 }

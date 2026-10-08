@@ -13,6 +13,7 @@ import com.newoether.agora.api.util.requireValidRequestFormat
 import com.newoether.agora.api.util.safeWireToolCallId
 import com.newoether.agora.api.util.safeWireToolName
 import com.newoether.agora.api.util.validateToolDefinitions
+import com.newoether.agora.model.ModelId
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -132,13 +133,19 @@ private fun JsonObject.normalizeLegacyAgoraWebToolName(): JsonObject {
     if (type != "function_call" || name == null) return this
     val normalizedName = openAiCompatibleWireToolName(name)
     if (normalizedName == name) return this
-    return JsonObject(toMutableMap().apply {
-        put("name", JsonPrimitive(normalizedName))
-    })
+    return JsonObject(toMutableMap().apply { put("name", JsonPrimitive(normalizedName)) })
 }
 
+/**
+ * Raw Responses output items, opaque `reasoning` state included, belong to the model that produced
+ * them. Replaying them through another model is wasted context at best and a rejected request at
+ * worst, so the provider entry and the model both have to match, and items whose model is not
+ * recorded are not replayed at all. Dropping them is safe: the fallback below rebuilds plain
+ * `function_call` items from the stored tool calls.
+ */
 internal fun List<OpenAiMessage>.toResponsesInput(
     providerName: String? = null,
+    targetModel: String? = null,
 ): List<JsonObject> = buildList {
     this@toResponsesInput.forEach { message ->
         if (message.role == "tool") {
@@ -176,13 +183,17 @@ internal fun List<OpenAiMessage>.toResponsesInput(
                 ).toResponseInputJson(),
             )
         }
+        val storedItemModel = message.responseOutputItemModel?.trim()?.takeIf(String::isNotEmpty)
+        val wantedModel = targetModel?.trim()?.takeIf(String::isNotEmpty)
         val replayedResponseItems = if (
             providerName != null &&
-            message.responseOutputItemProvider == providerName
+            message.responseOutputItemProvider == providerName &&
+            storedItemModel != null &&
+            wantedModel != null &&
+            ModelId.parse(storedItemModel).modelName.removePrefix("models/")
+                .equals(wantedModel.removePrefix("models/"), ignoreCase = true)
         ) {
-            message.responseOutputItems.orEmpty().map {
-                it.normalizeLegacyAgoraWebToolName()
-            }
+            message.responseOutputItems.orEmpty().map { it.normalizeLegacyAgoraWebToolName() }
         } else {
             emptyList()
         }

@@ -211,7 +211,8 @@ class SemanticIndexMutationSourceContractTest {
         assertFalse(rag.contains("commitSemanticEmbedding("))
         assertFalse(rag.contains("indexMessageForRagNow("))
         assertFalse(rag.contains("runCacheLoop("))
-        assertTrue(rag.contains("if (takePendingRefresh(refreshJob) != null)"))
+        assertTrue(rag.contains("val pending = takePendingRefresh(refreshJob)"))
+        assertTrue(rag.contains("if (pending != null && active)"))
         assertTrue(locks.contains("EmbeddingCacheWorker] is the only embedding generator"))
         assertFalse(locks.contains("Two runners exist"))
         assertFalse(locks.contains("fun remove("))
@@ -232,7 +233,7 @@ class SemanticIndexMutationSourceContractTest {
         assertOrdered(
             manualCache,
             "EmbeddingCacheLocks.forModel(modelId).withLock",
-            "settings.embeddingModels.value.find { it.id == modelId }",
+            "settings.embeddingModels.value.none { it.id == modelId }",
             "conversations.getOrAdmitSemanticLedgerState(modelId)",
             "scheduleCacheWork(modelId)",
         )
@@ -299,16 +300,17 @@ class SemanticIndexMutationSourceContractTest {
         )
         assertOrdered(
             reconcile,
-            "semanticDao.getReconcileMessageCount(",
-            "publishProgress(",
-            "while (processed < workTotal)",
+            "while (true)",
+            "semanticDao.getLedger(model.id)?.reconcileRevision",
             "semanticDao.getReconcileMessagesPage(",
             "semanticSourceFingerprint(row.text)",
             "!embedCandidates(",
-            "processed += page.size",
+            "yield()",
         )
+        assertFalse(reconcile.contains("getReconcileMessageCount"))
+        assertFalse(reconcile.contains("publishProgress("))
         assertTrue(
-            reconcile.substringAfter("while (processed < workTotal)")
+            reconcile.substringAfter("while (true)")
                 .contains("return semanticDao.completeReconcile("),
         )
         val commit = worker.section(

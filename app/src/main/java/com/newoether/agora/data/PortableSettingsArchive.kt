@@ -55,6 +55,10 @@ internal object PortableSettingsArchive {
         putNullableString("contextCompactModel", sm.contextCompactModel.first())
         put("contextCompactPrompt", JsonPrimitive(sm.contextCompactPrompt.first()))
         put("contextCompactRetainCount", JsonPrimitive(sm.contextCompactRetainCount.first()))
+        put(
+            "contextCompactPreserveSystemPrompt",
+            JsonPrimitive(sm.contextCompactPreserveSystemPrompt.first()),
+        )
         put("contextCompactThresholdPercent", JsonPrimitive(sm.contextCompactThresholdPercent.first()))
         put("codeExecutionEnabled", JsonPrimitive(sm.codeExecutionEnabled.first()))
         put("googleSearchEnabled", JsonPrimitive(sm.googleSearchEnabled.first()))
@@ -117,6 +121,7 @@ internal object PortableSettingsArchive {
 
         put("shellEnabled", JsonPrimitive(sm.shellEnabled.first()))
         put("shellConfirmEnabled", JsonPrimitive(sm.shellConfirmEnabled.first()))
+        put("askUserEnabled", JsonPrimitive(sm.askUserEnabled.first()))
         putEncoded("shellDevices", sm.shellDevices.first().map(ShellDeviceConfig::withoutSecrets))
         put("automationToolsEnabled", JsonPrimitive(sm.automationToolsEnabled.first()))
         put("exactExecutionEnabled", JsonPrimitive(sm.exactExecutionEnabled.first()))
@@ -140,6 +145,7 @@ internal object PortableSettingsArchive {
         put("reduceMotion", JsonPrimitive(sm.reduceMotion.first()))
         put("stickToBottom", JsonPrimitive(sm.stickToBottom.first()))
         put("parseInlineDollarMath", JsonPrimitive(sm.parseInlineDollarMath.first()))
+        put("autoWrapCodeBlocks", JsonPrimitive(sm.autoWrapCodeBlocks.first()))
         put("hapticsEnabled", JsonPrimitive(sm.hapticsEnabled.first()))
         put("detailedTokenUsage", JsonPrimitive(sm.detailedTokenUsage.first()))
         put("toolCallDisplayMode", JsonPrimitive(sm.toolCallDisplayMode.first()))
@@ -257,6 +263,9 @@ internal object PortableSettingsArchive {
         }
         obj.string("contextCompactPrompt")?.let { sm.saveContextCompactPrompt(it) }
         obj.int("contextCompactRetainCount")?.takeIf { it >= 0 }?.let { sm.saveContextCompactRetainCount(it) }
+        obj.boolean("contextCompactPreserveSystemPrompt")?.let {
+            sm.saveContextCompactPreserveSystemPrompt(it)
+        }
         importedContextCompactThresholdPercent(
             obj.int("contextCompactThresholdPercent"),
         )?.let { sm.saveContextCompactThresholdPercent(it) }
@@ -397,6 +406,7 @@ internal object PortableSettingsArchive {
 
         obj.boolean("shellEnabled")?.let { sm.saveShellEnabled(it) }
         obj.boolean("shellConfirmEnabled")?.let { sm.saveShellConfirmEnabled(it) }
+        obj.boolean("askUserEnabled")?.let { sm.saveAskUserEnabled(it) }
         val shellElement = obj["shellDevices"]
         if (shellElement != null || replace) {
             val decoded = shellElement
@@ -469,6 +479,7 @@ internal object PortableSettingsArchive {
         obj.boolean("reduceMotion")?.let { sm.saveReduceMotion(it) }
         obj.boolean("stickToBottom")?.let { sm.saveStickToBottom(it) }
         obj.boolean("parseInlineDollarMath")?.let { sm.saveParseInlineDollarMath(it) }
+        obj.boolean("autoWrapCodeBlocks")?.let { sm.saveAutoWrapCodeBlocks(it) }
         obj.boolean("hapticsEnabled")?.let { sm.saveHapticsEnabled(it) }
         obj.boolean("detailedTokenUsage")?.let { sm.saveDetailedTokenUsage(it) }
         obj.string("toolCallDisplayMode")?.let { sm.saveToolCallDisplayMode(it) }

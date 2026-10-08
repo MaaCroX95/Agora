@@ -15,11 +15,14 @@ import com.newoether.agora.util.Constants
 import com.newoether.agora.util.DebugLog
 import com.newoether.agora.util.SnackbarEvent
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -65,6 +68,8 @@ class RagManager(
 
     @Volatile private var cacheCountRefreshJob: Job? = null
     @Volatile private var pendingRefreshModels: List<EmbeddingModelConfig>? = null
+    private var refreshingModelIds: Set<String> = emptySet()
+    private var pendingRetryFailed = false
     @Volatile private var cacheWorkObservationJob: Job? = null
     @Volatile private var observedModelIds: Set<String> = emptySet()
     @Volatile private var pendingReminderModelId: String? = null
@@ -88,11 +93,12 @@ class RagManager(
             settings.awaitInitialLoad()
             val models = settings.embeddingModels.value
             observeCacheWork(models.mapTo(linkedSetOf(), EmbeddingModelConfig::id))
-            requestCacheCountRefresh(models = models)
+            requestCacheCountRefresh(models = models, dataChanged = false, retryFailed = true)
             models.forEach { model ->
                 runCatching {
                     EmbeddingCacheWorker.repairLegacyChain(model.id, workManager)
                 }.onFailure { error ->
+                    if (error is CancellationException) throw error
                     DebugLog.e(
                         "RagManager",
                         "Failed to repair legacy cache work for ${model.id}",
@@ -107,36 +113,71 @@ class RagManager(
     private fun requestCacheCountRefresh(
         reminderModelId: String? = null,
         models: List<EmbeddingModelConfig> = settings.embeddingModels.value,
+        dataChanged: Boolean = true,
+        retryFailed: Boolean = false,
     ) {
         if (reminderModelId != null) pendingReminderModelId = reminderModelId
-        val modelIds = models.mapTo(linkedSetOf(), EmbeddingModelConfig::id)
-        pruneRemovedModels(modelIds)
-        if (models.isEmpty()) {
+        val configuredIds = settings.embeddingModels.value.mapTo(linkedSetOf(), EmbeddingModelConfig::id)
+        pruneRemovedModels(configuredIds)
+        if (configuredIds.isEmpty()) {
             pendingReminderModelId = null
+            pendingRefreshModels = null
+            pendingRetryFailed = false
             return
         }
-        _cacheRows.update { rows ->
-            modelIds.fold(rows) { current, modelId ->
-                current + (modelId to EmbeddingCacheRowReducer.refreshRequested(current[modelId]))
+        val eligibleModels = models.filter { model ->
+            val row = _cacheRows.value[model.id]
+            model.id in configuredIds && (retryFailed || row?.countFailed != true || row.cached != null)
+        }
+        if (eligibleModels.isEmpty()) return
+        val modelIds = eligibleModels.mapTo(linkedSetOf(), EmbeddingModelConfig::id)
+        if (cacheCountRefreshJob != null) {
+            if (dataChanged || modelIds != refreshingModelIds ||
+                retryFailed && modelIds.any { _cacheRows.value[it]?.countFailed == true }) {
+                pendingRefreshModels = models
+                pendingRetryFailed = pendingRetryFailed || retryFailed
             }
-        }
-        if (cacheCountRefreshJob?.isActive == true) {
-            pendingRefreshModels = models
             return
         }
+        refreshingModelIds = modelIds
         lateinit var refreshJob: Job
         refreshJob = scope.launch(
             context = Dispatchers.IO,
             start = CoroutineStart.LAZY,
         ) {
+            _cacheRows.update { rows ->
+                modelIds.fold(rows) { current, modelId ->
+                    current + (modelId to EmbeddingCacheRowReducer.refreshRequested(current[modelId]))
+                }
+            }
             try {
-                refreshCachePresentation(models)
-            } catch (error: Exception) {
-                markCacheCountFailure(modelIds)
-                clearPendingReminder(modelIds)
-                DebugLog.e("RagManager", "Failed to refresh semantic cache presentation", error)
+                repeat(2) { attempt ->
+                    try {
+                        refreshCachePresentation(eligibleModels)
+                        return@launch
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        val unknown = modelIds.any { _cacheRows.value[it]?.cached == null }
+                        if (attempt == 1 || !unknown) {
+                            markCacheCountFailure(modelIds)
+                            clearPendingReminder(modelIds)
+                            DebugLog.e("RagManager", "Failed to refresh semantic cache presentation", error)
+                            return@launch
+                        }
+                    }
+                }
             } finally {
-                if (takePendingRefresh(refreshJob) != null) requestCacheCountRefresh()
+                _cacheRows.update { rows -> rows.mapValues { (id, row) ->
+                    if (id in modelIds) row.copy(countLoading = false) else row
+                } }
+                val active = currentCoroutineContext().isActive
+                synchronized(this@RagManager) {
+                    val retryPending = pendingRetryFailed
+                    val pending = takePendingRefresh(refreshJob)
+                    pendingRetryFailed = false
+                    if (pending != null && active) requestCacheCountRefresh(retryFailed = retryPending)
+                }
             }
         }
         cacheCountRefreshJob = refreshJob
@@ -169,8 +210,9 @@ class RagManager(
             .mapTo(linkedSetOf(), EmbeddingModelConfig::id)
             .intersect(configuredIds)
         val counts = stillConfigured.associateWith { modelId ->
-            (cachedByModel[modelId] ?: 0).coerceAtMost(total) to total
+            (cachedByModel[modelId] ?: 0) to total
         }
+        check(total >= 0 && counts.values.all { it.first in 0..total })
         _cacheRows.update { current ->
             stillConfigured.fold(current - requestedModelIds) { rows, modelId ->
                 val count = checkNotNull(counts[modelId])
@@ -179,8 +221,6 @@ class RagManager(
                         previous = current[modelId],
                         cached = count.first,
                         total = count.second,
-                        ledgerCurrent =
-                            ledgers[modelId] == SemanticIndexLedgerEntity.STATE_CURRENT,
                     )
                 )
             }
@@ -204,6 +244,7 @@ class RagManager(
     private fun takePendingRefresh(completedJob: Job): List<EmbeddingModelConfig>? {
         if (cacheCountRefreshJob !== completedJob) return null
         cacheCountRefreshJob = null
+        refreshingModelIds = emptySet()
         return pendingRefreshModels.also { pendingRefreshModels = null }
     }
 
@@ -246,45 +287,30 @@ class RagManager(
                             }
                             val unfinished = infos.filter { !it.state.isFinished }
                             val activeIds = unfinished.mapTo(linkedSetOf()) { it.id }
-                            if (unfinished.isNotEmpty()) {
-                                val reportingWork = unfinished.firstOrNull {
-                                    it.state == androidx.work.WorkInfo.State.RUNNING
-                                } ?: unfinished.first()
-                                val progress = reportingWork.cacheProgressOrNull()
-                                _cacheRows.update { rows ->
-                                    rows + (
-                                        modelId to EmbeddingCacheRowReducer.workActive(
-                                            rows[modelId],
-                                            progress,
-                                        )
+                            val running = unfinished.firstOrNull {
+                                it.state == androidx.work.WorkInfo.State.RUNNING
+                            }
+                            val wasActive = _cacheRows.value[modelId]?.workActive == true
+                            // Enqueued counts as caching. Waiting for WorkManager to start the
+                            // worker is part of caching, and reporting "not cached" in that window
+                            // made pressing Cache look like it did nothing.
+                            _cacheRows.update { rows ->
+                                rows + (
+                                    modelId to EmbeddingCacheRowReducer.workChanged(
+                                        rows[modelId],
+                                        unfinished.isNotEmpty(),
+                                        running?.cacheProgressOrNull(),
                                     )
-                                }
-                            } else {
-                                val scheduledId = scheduledCacheWorkIds[modelId]
-                                val scheduledFinished = scheduledId != null && infos.any {
-                                    it.id == scheduledId && it.state.isFinished
-                                }
-                                if (previousActiveIds.isNotEmpty() || scheduledFinished) {
-                                    val completedIds = previousActiveIds + listOfNotNull(scheduledId)
-                                    val failed = infos.any {
-                                        it.id in completedIds &&
-                                            it.state != androidx.work.WorkInfo.State.SUCCEEDED
-                                    }
-                                    scheduledId?.let { scheduledCacheWorkIds.remove(modelId, it) }
-                                    _cacheRows.update { rows ->
-                                        rows + (
-                                            modelId to if (failed) {
-                                                EmbeddingCacheRowReducer.failed(
-                                                    rows[modelId],
-                                                    EmbeddingCacheFailureKind.WORK,
-                                                )
-                                            } else {
-                                                EmbeddingCacheRowReducer.finalizing(rows[modelId])
-                                            }
-                                        )
-                                    }
-                                    requestCacheCountRefresh()
-                                }
+                                )
+                            }
+                            val scheduledId = scheduledCacheWorkIds[modelId]
+                            val scheduledFinished = scheduledId != null && infos.any {
+                                it.id == scheduledId && it.state.isFinished
+                            }
+                            if (scheduledFinished) scheduledCacheWorkIds.remove(modelId, scheduledId)
+                            if (wasActive && unfinished.isEmpty() || scheduledFinished ||
+                                previousActiveIds.any { it !in activeIds }) {
+                                requestCacheCountRefresh()
                             }
                             previousActiveIds = activeIds
                         }
@@ -296,6 +322,7 @@ class RagManager(
 
     private fun androidx.work.WorkInfo.cacheProgressOrNull(): EmbeddingCacheWorkSnapshot? {
         val data = progress
+        if (data.getString(EmbeddingCacheWorker.KEY_GENERATION_KIND) != "EXACT") return null
         return embeddingCacheWorkSnapshotOrNull(
             generationRevision = data.getLong(EmbeddingCacheWorker.KEY_GENERATION_REVISION, -1L),
             kind = data.getString(EmbeddingCacheWorker.KEY_GENERATION_KIND),
@@ -423,39 +450,24 @@ class RagManager(
 
     // -- Semantic ledger and durable cache work --------------------------------------------
 
-    fun cacheMessagesForModel(modelId: String, recache: Boolean = false, silent: Boolean = false) {
+    /**
+     * Schedules the cache work for one model. No snackbar: the row's own CACHING state is the
+     * feedback, and a message repeating it can only drift from what the row shows.
+     */
+    fun cacheMessagesForModel(modelId: String, recache: Boolean = false) {
         scope.launch(Dispatchers.IO) {
             settings.awaitInitialLoad()
-            var model: EmbeddingModelConfig? = null
-            var state: String? = null
-            var workRequested = false
-            EmbeddingCacheLocks.forModel(modelId).withLock {
-                val current = settings.embeddingModels.value.find { it.id == modelId }
-                    ?: return@withLock
-                model = current
-                state = if (recache) {
-                    conversations.invalidateSemanticModel(modelId)
-                    conversations.getOrAdmitSemanticLedgerState(modelId)
-                } else {
-                    conversations.getOrAdmitSemanticLedgerState(modelId)
-                }
-                if (recache || state != SemanticIndexLedgerEntity.STATE_CURRENT) {
-                    workRequested = scheduleCacheWork(modelId)
-                }
+            val needsWork = EmbeddingCacheLocks.forModel(modelId).withLock {
+                if (settings.embeddingModels.value.none { it.id == modelId }) return@withLock false
+                if (recache) conversations.invalidateSemanticModel(modelId)
+                val state = conversations.getOrAdmitSemanticLedgerState(modelId)
+                recache || state != SemanticIndexLedgerEntity.STATE_CURRENT
             }
-            val configuredModel = model ?: return@launch
-            if (!recache && state == SemanticIndexLedgerEntity.STATE_CURRENT) return@launch
-            if (!workRequested) return@launch
+            if (!needsWork) return@launch
+            if (!scheduleCacheWork(modelId)) return@launch
             val models = settings.embeddingModels.value
             observeCacheWork(models.mapTo(linkedSetOf(), EmbeddingModelConfig::id))
             requestCacheCountRefresh(models = models)
-            if (!silent) {
-                emitSnackbar(
-                    SnackbarEvent(
-                        appContext.getString(R.string.embedding_model_caching, configuredModel.name),
-                    ),
-                )
-            }
         }
     }
 
@@ -463,60 +475,47 @@ class RagManager(
         modelId: String,
         autoCacheOverride: Boolean? = null,
     ) {
-        EmbeddingCacheLocks.forModel(modelId).withLock {
-            if (settings.embeddingModels.value.none { it.id == modelId }) return@withLock
+        val shouldSchedule = EmbeddingCacheLocks.forModel(modelId).withLock {
+            if (settings.embeddingModels.value.none { it.id == modelId }) return@withLock false
             val state = conversations.getOrAdmitSemanticLedgerState(modelId)
-            if (state == SemanticIndexLedgerEntity.STATE_CURRENT) return@withLock
+            if (state == SemanticIndexLedgerEntity.STATE_CURRENT) return@withLock false
             if (autoCacheOverride ?: settings.getAutoCacheEnabled()) {
-                scheduleCacheWork(modelId)
-            } else if (settings.getShowUncachedNotification()) {
-                requestCacheCountRefresh(
-                    reminderModelId = modelId,
-                    models = settings.embeddingModels.value,
-                )
+                true
+            } else {
+                if (settings.getShowUncachedNotification()) {
+                    requestCacheCountRefresh(
+                        reminderModelId = modelId,
+                        models = settings.embeddingModels.value,
+                    )
+                }
+                false
             }
         }
+        if (shouldSchedule) scheduleCacheWork(modelId)
     }
 
     private suspend fun scheduleCacheWork(modelId: String): Boolean {
-        val alreadyActive = _cacheRows.value[modelId]?.workActive == true
-        if (!alreadyActive) {
-            _cacheRows.update { rows ->
-                rows + (
-                    modelId to EmbeddingCacheRowReducer.workActive(rows[modelId], progress = null)
-                )
-            }
-        }
         return runCatching {
+            if (settings.embeddingModels.value.none { it.id == modelId }) return false
+            if (conversations.getSemanticLedgers(listOf(modelId)).none { it.modelId == modelId }) return false
+            if (settings.embeddingModels.value.none { it.id == modelId }) return false
             EmbeddingCacheWorker.schedule(modelId, workManager) {
-                scheduledCacheWorkIds[modelId] = it
+                if (settings.embeddingModels.value.any { model -> model.id == modelId }) {
+                    scheduledCacheWorkIds[modelId] = it
+                }
+            }
+            if (settings.embeddingModels.value.none { it.id == modelId }) {
+                scheduledCacheWorkIds.remove(modelId)
+                return false
             }
             true
         }.getOrElse { error ->
+            if (error is CancellationException) throw error
             scheduledCacheWorkIds.remove(modelId)
-            if (!alreadyActive) {
-                _cacheRows.update { rows ->
-                    rows + (
-                        modelId to EmbeddingCacheRowReducer.failed(
-                            rows[modelId],
-                            EmbeddingCacheFailureKind.WORK,
-                        )
-                    )
-                }
-            }
             DebugLog.e("RagManager", "Failed to schedule semantic cache work for $modelId", error)
             false
         }
     }
-
-    fun retryCacheRow(modelId: String) {
-        if (_cacheRows.value[modelId]?.failure == EmbeddingCacheFailureKind.WORK) {
-            cacheMessagesForModel(modelId)
-        } else {
-            loadCacheCounts()
-        }
-    }
-
     /**
      * Searchable message persistence already enqueues exact ledger work transactionally.
      * This callback only wakes the one durable consumer when Auto Cache is enabled.

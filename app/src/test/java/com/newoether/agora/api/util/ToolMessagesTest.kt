@@ -88,7 +88,11 @@ class ToolMessagesTest {
         assertEquals(listOf("/private/tool-result.png"), visualTurn.images)
         assertEquals("result_image", visualTurn.parentId)
 
-        val wire = convertToOpenAiMessages(projected, includeImages = true)
+        val wire = convertToOpenAiMessages(
+            projected,
+            includeImages = true,
+            base64Files = Base64FileRegistry(),
+        )
         val wireUser = wire.single { message ->
             message.role == "user" &&
                 message.content?.any { part ->

@@ -5,7 +5,10 @@ import com.newoether.agora.api.*
 import com.newoether.agora.util.DebugLog
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageSegment
-import com.newoether.agora.model.ThinkingLevels
+import com.newoether.agora.model.ModelId
+import com.newoether.agora.model.ThinkingProviderFamily
+import com.newoether.agora.api.util.Base64FileRegistry
+import com.newoether.agora.api.util.resolvedThinking
 import com.newoether.agora.api.util.adaptToolRoundsForProvider
 import com.newoether.agora.api.util.RequestFormatException
 import com.newoether.agora.api.util.requireValidSerializedRequest
@@ -16,6 +19,7 @@ import com.newoether.agora.api.util.asRetryableTransportError
 import com.newoether.agora.api.util.carriesModelOutput
 import com.newoether.agora.api.util.safeWireToolName
 import com.newoether.agora.api.util.safeWireToolCallId
+import com.newoether.agora.api.util.malformedToolCallRequest
 import com.newoether.agora.model.Participant
 import com.newoether.agora.util.Constants
 import kotlinx.coroutines.delay
@@ -29,9 +33,9 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import com.newoether.agora.api.util.ToolSchemaJson
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import java.io.File
 import java.util.UUID
 
 // Gemini thought summaries carry their headline as **bold** or a markdown heading.
@@ -44,7 +48,15 @@ private fun extractThoughtTitle(content: String): String? =
     THOUGHT_TITLE_BOLD.find(content)?.groupValues?.get(1)
         ?: THOUGHT_TITLE_HEADING.find(content)?.groupValues?.get(1)
 
-private fun ChatMessage.isGeminiToolRoundCompatible(
+/**
+ * A Gemini thought signature is opaque state signed by the model that produced it, so only that
+ * exact model behind that exact provider entry can read it back. The previous rule let any signature
+ * whose provider was Google through and otherwise fell back to a name match on "gemini", so a model
+ * switch inside one conversation replayed a foreign signature. The issuing provider entry and the
+ * issuing model must both match now, and a round whose model is not recorded is not replayed
+ * either. [adaptToolRoundsForProvider] turns a rejected round into inert archived context.
+ */
+internal fun ChatMessage.isGeminiToolRoundCompatible(
     targetModel: String,
     targetProviderName: String,
     signatureRequired: Boolean,
@@ -66,16 +78,15 @@ private fun ChatMessage.isGeminiToolRoundCompatible(
             }.orEmpty()
         }
     if (calls.isEmpty()) return false
+    val storedModel = modelName?.trim()?.takeIf(String::isNotEmpty)?.let(ModelId::parse)
+    val target = targetModel.trim().removePrefix("models/")
     return calls.all { call ->
         if (signatureRequired && call.signature.isNullOrBlank()) return@all false
         if (call.signature.isNullOrBlank()) return@all true
-        call.signatureProvider?.let { provider ->
-            return@all provider.equals(Constants.PROVIDER_GOOGLE, ignoreCase = true) ||
-                provider == targetProviderName
-        }
-        modelName == null ||
-            modelName.equals(targetModel, ignoreCase = true) ||
-            modelName.contains("gemini", ignoreCase = true)
+        val model = storedModel ?: return@all false
+        val issuer = call.signatureProvider?.trim()?.takeIf(String::isNotEmpty) ?: model.providerName
+        issuer.equals(targetProviderName, ignoreCase = true) &&
+            model.modelName.removePrefix("models/").equals(target, ignoreCase = true)
     }
 }
 
@@ -242,7 +253,10 @@ class GeminiProvider(
             cleanModelName.contains("gemini-3", ignoreCase = true) ||
                 cleanModelName.contains("gemini-3.5", ignoreCase = true)
 
-        fun buildApiContents(resolvedMessages: List<ChatMessage>): List<ApiRequestContent> {
+        fun buildApiContents(
+            resolvedMessages: List<ChatMessage>,
+            base64Files: Base64FileRegistry,
+        ): List<ApiRequestContent> {
             val validatedPath = adaptToolRoundsForProvider(
                 messages = resolvedMessages,
                 providerName = name,
@@ -331,18 +345,16 @@ class GeminiProvider(
                     if (msg.text.isNotEmpty()) add(ApiRequestPart(text = msg.text))
                 }
             }
-            if (config.includeImages && msg.participant == Participant.USER) for (imagePath in msg.images) {
-                try {
-                    val file = File(imagePath)
-                    if (file.exists()) {
-                        val bytes = file.readBytes()
-                        val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-                        parts.add(ApiRequestPart(inlineData = ApiInlineData(mimeType = com.newoether.agora.api.util.imageMimeType(imagePath), data = base64)))
-                    }
-                } catch (e: Exception) {
-                    DebugLog.e(
-                        "AgoraAPI",
-                        "[$name] failed to encode image exception=${e.javaClass.simpleName}",
+            if (config.includeImages && msg.participant == Participant.USER) {
+                for (imagePath in msg.images) {
+                    val placeholder = base64Files.register(imagePath) ?: continue
+                    parts.add(
+                        ApiRequestPart(
+                            inlineData = ApiInlineData(
+                                mimeType = com.newoether.agora.api.util.imageMimeType(imagePath),
+                                data = placeholder,
+                            ),
+                        ),
                     )
                 }
             }
@@ -362,55 +374,39 @@ class GeminiProvider(
 
         // Add memory function declarations as a separate tool entry
         val functionDeclarations = config.tools?.map { td ->
+            val externalSchema = td.function.parameters.schema
             GeminiFunctionDeclaration(
                 name = td.function.name,
                 description = td.function.description,
-                parameters = JsonObject(
-                    mapOf(
-                        "type" to JsonPrimitive(td.function.parameters.type),
-                        "properties" to JsonObject(
-                            td.function.parameters.properties.mapValues { (_, prop) ->
-                                val propMap = mutableMapOf<String, kotlinx.serialization.json.JsonElement>(
-                                    "type" to JsonPrimitive(prop.type),
-                                    "description" to JsonPrimitive(prop.description)
-                                )
-                                if (prop.items != null) {
-                                    propMap["items"] = JsonObject(
-                                        mapOf(
-                                            "type" to JsonPrimitive(prop.items.type),
-                                            "description" to JsonPrimitive(prop.items.description)
-                                        )
-                                    )
-                                }
-                                JsonObject(propMap)
-                            }
-                        ),
-                        "required" to kotlinx.serialization.json.JsonArray(
-                            td.function.parameters.required.map { JsonPrimitive(it) }
-                        )
-                    )
-                )
+                // `parameters` takes Gemini's OpenAPI subset and rejects JSON Schema keywords such
+                // as additionalProperties, so an external (MCP) schema goes through
+                // parametersJsonSchema, which accepts JSON Schema.
+                parameters = if (externalSchema == null) ToolSchemaJson.of(td.function.parameters) else null,
+                parametersJsonSchema = externalSchema,
             )
         }
         if (!functionDeclarations.isNullOrEmpty()) {
             tools.add(ApiTool(functionDeclarations = functionDeclarations))
         }
 
-        val thinkingConfig = if (!config.thinkingEnabled) {
-            null
-        } else when {
-            cleanModelName.contains("gemini-3", ignoreCase = true) || cleanModelName.contains("gemini-3.5", ignoreCase = true) -> {
-                ApiThinkingConfig(includeThoughts = true, thinkingLevel = ThinkingLevels.geminiLevel(config.thinkingLevel))
-            }
-            cleanModelName.contains("gemini-2.5", ignoreCase = true) -> {
-                ApiThinkingConfig(
-                    includeThoughts = true,
-                    thinkingBudget = config.thinkingBudgetTokens.takeIf { config.thinkingBudgetEnabled }
-                )
-            }
-            cleanModelName.contains("thinking-exp", ignoreCase = true) ->
-                ApiThinkingConfig(includeThoughts = true)
-            else -> null
+        // Thinking parameters come from the selected model's documented capability instead of a
+        // model-name guess. thinkingConfig.thinkingLevel accepts MINIMAL/LOW/MEDIUM/HIGH only,
+        // thinkingBudget is the token form, and thinkingBudget = 0 disables thinking.
+        val resolvedThinking = config.resolvedThinking(ThinkingProviderFamily.GEMINI)
+        val thinkingConfig = when {
+            resolvedThinking.disabled -> ApiThinkingConfig(
+                includeThoughts = false,
+                thinkingBudget = 0.takeIf { resolvedThinking.capability.supportsThinkingBudget },
+            )
+            resolvedThinking.budgetTokens != null -> ApiThinkingConfig(
+                includeThoughts = true,
+                thinkingBudget = resolvedThinking.budgetTokens,
+            )
+            resolvedThinking.effort != null -> ApiThinkingConfig(
+                includeThoughts = true,
+                thinkingLevel = resolvedThinking.effort.uppercase(),
+            )
+            else -> ApiThinkingConfig(includeThoughts = true)
         }
 
         val hasBuiltInTools = tools.any { it.codeExecution != null || it.googleSearch != null }
@@ -419,19 +415,21 @@ class GeminiProvider(
             ApiToolConfig(includeServerSideToolInvocations = true)
         } else null
 
-        val hasGenParams = config.temperature != null || config.maxTokens != null || config.topP != null
-                || config.frequencyPenalty != null || config.presencePenalty != null
-        val genConfig = if (thinkingConfig != null || hasGenParams) ApiGenerationConfig(
+        // thinkingConfig is always present now, so generationConfig is always sent.
+        val genConfig = ApiGenerationConfig(
             thinkingConfig = thinkingConfig,
             temperature = config.temperature,
             maxOutputTokens = config.maxTokens,
             topP = config.topP,
             frequencyPenalty = config.frequencyPenalty,
             presencePenalty = config.presencePenalty
-        ) else null
+        )
 
-        fun buildRequestBody(resolvedRequest: ProviderRequestInput) = ApiGenerateContentRequest(
-            contents = buildApiContents(resolvedRequest.messages),
+        fun buildRequestBody(
+            resolvedRequest: ProviderRequestInput,
+            base64Files: Base64FileRegistry,
+        ) = ApiGenerateContentRequest(
+            contents = buildApiContents(resolvedRequest.messages, base64Files),
             systemInstruction = resolvedRequest.systemPrompt
                 ?.takeIf(String::isNotBlank)
                 ?.let { ApiRequestContent(parts = listOf(ApiRequestPart(text = it))) },
@@ -459,9 +457,14 @@ class GeminiProvider(
 
             while (attempt < maxAttempts && !done) {
                 attempt++
-                val requestBody = buildRequestBody(config.resolveRequest(messages))
+                val base64Files = Base64FileRegistry()
+                val requestBody = buildRequestBody(
+                    config.resolveRequest(messages),
+                    base64Files,
+                )
                 requestBody.requireValidWireFormat(cleanModelName)
                 val requestJson = json.encodeToString(ApiGenerateContentRequest.serializer(), requestBody)
+                val streamingRequest = base64Files.prepare(requestJson)
                 requireValidSerializedRequest(
                     provider = name,
                     body = requestJson,
@@ -473,7 +476,16 @@ class GeminiProvider(
                         "thinking=${config.thinkingEnabled} tools=${tools.size}",
                 )
                 val handle = try {
-                    HttpClient.streamPost(finalUrlString, requestJson, headers)
+                    if (streamingRequest != null) {
+                        HttpClient.streamPostBody(
+                            finalUrlString,
+                            streamingRequest.body,
+                            headers,
+                            streamingRequest.diagnosticJson,
+                        )
+                    } else {
+                        HttpClient.streamPost(finalUrlString, requestJson, headers)
+                    }
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -572,7 +584,7 @@ class GeminiProvider(
                                         if (thoughtElement is JsonPrimitive) {
                                             if (thoughtElement.isString) {
                                                 val content = thoughtElement.content
-                                                content.takeIf(String::isNotBlank)?.let {
+                                                content.takeIf(String::isNotEmpty)?.let {
                                                     emitTracked(
                                                         StreamEvent.ThoughtChunk(
                                                             it,
@@ -589,12 +601,12 @@ class GeminiProvider(
                                             }
                                         }
                                     }
-                                    part.reasoningContent?.takeIf(String::isNotBlank)?.let {
+                                    part.reasoningContent?.takeIf(String::isNotEmpty)?.let {
                                         emitTracked(StreamEvent.ThoughtChunk(it, extractThoughtTitle(it), currentThoughtSignature))
                                         isPartOfThought = true
                                         inThoughtBlock = true
                                     }
-                                    part.text?.takeIf(String::isNotBlank)?.let {
+                                    part.text?.takeIf(String::isNotEmpty)?.let {
                                         if (isPartOfThought || inThoughtBlock) {
                                             emitTracked(
                                                 StreamEvent.ThoughtChunk(
@@ -630,29 +642,35 @@ class GeminiProvider(
                                     part.functionCall?.let { fc ->
                                         val callId = fc.id?.takeIf(String::isNotBlank)
                                             ?: "call_${UUID.randomUUID()}"
+                                        val argsJson = fc.args?.let {
+                                            Json.encodeToString(JsonObject.serializer(), it)
+                                        } ?: "{}"
+                                        val signature = partThoughtSignature
+                                            ?: fc.thoughtSignature?.takeIf(String::isNotBlank)
+                                            ?: currentThoughtSignature
+                                        val streamKey = "call_stream_${UUID.randomUUID()}"
                                         if (
-                                            !fc.name.matches(safeWireToolName) ||
-                                            !callId.matches(safeWireToolCallId) ||
-                                            !completedToolCallIds.add(callId)
+                                            fc.name.matches(safeWireToolName) &&
+                                            callId.matches(safeWireToolCallId) &&
+                                            completedToolCallIds.add(callId)
                                         ) {
-                                            toolCallInFlight = true
-                                            streamError = GenerationError.SseParse(
-                                                rawLine = "functionCall",
-                                                cause = "Gemini returned invalid or duplicate tool metadata",
-                                            )
-                                        } else {
-                                            val argsJson = fc.args?.let {
-                                                Json.encodeToString(JsonObject.serializer(), it)
-                                            } ?: "{}"
-                                            val signature = partThoughtSignature
-                                                ?: fc.thoughtSignature?.takeIf(String::isNotBlank)
-                                                ?: currentThoughtSignature
-                                            val streamKey = "call_stream_${UUID.randomUUID()}"
                                             emitTracked(StreamEvent.ToolCallUpdate(streamKey, callId, fc.name, argsJson, signature))
                                             emitTracked(StreamEvent.ToolCallRequest(callId, fc.name, argsJson, signature, streamKey))
-                                            currentThoughtSignature = null
-                                            inThoughtBlock = false
+                                        } else {
+                                            // Answered with an error result so the model can re-issue it.
+                                            // The signature stays because Gemini replay requires it.
+                                            emitTracked(
+                                                malformedToolCallRequest(
+                                                    cause = "Gemini returned invalid or duplicate tool metadata",
+                                                    originalName = fc.name,
+                                                    originalArguments = argsJson,
+                                                    streamKey = streamKey,
+                                                    signature = signature,
+                                                ),
+                                            )
                                         }
+                                        currentThoughtSignature = null
+                                        inThoughtBlock = false
                                     }
                                 }
                                 candidate?.groundingMetadata

@@ -1,6 +1,6 @@
 # Semantic Search Architecture Contract
 
-Status: authoritative development contract, 2026-08-14.
+Status: authoritative development contract, 2026-09-15.
 
 This document is required context for changes to embedding-cache reads, semantic conversation search,
 RAG ranking, or the search eligibility query. Semantic search must remain bounded by one database
@@ -56,25 +56,58 @@ count or total cached text.
 
 ## 5. Cache-count presentation
 
-Conversation Search cache counts are retained asynchronous presentation data. `RagManager` must not
-start an aggregate refresh from its constructor. A refresh begins only after the conversation list
-has been published or the Settings page explicitly requests it, and it must never delay list
-publication. Overlapping requests are coalesced; if the configured model set changes during an
-active refresh, one refresh for the latest set runs afterward. One bounded DAO aggregate returns
-cached counts grouped by configured model id while the indexable-message total is read independently.
-No query returns message text or embedding blobs, and page entry must not issue N+1 model counts.
+Each configured Embedding-model row in Conversation Search exposes exactly four and only four
+user-visible states. The presentation is a direct projection of whether the aggregate count snapshot
+is known, whether the count-loading operation is running, whether the cache worker is running, and,
+when counts are known, whether any eligible message still requires an embedding:
 
-Each model keeps the last complete count snapshot. Before the first snapshot, an active request shows
-loading and an initial failure shows failure plus Retry; neither state may fabricate zero, uncached,
-or an available Cache/Re-cache action. A refresh failure after a successful snapshot retains that
-snapshot and the ledger-owned action. The presentation read never acquires the model write mutex, so
-an active or failed worker cannot strand Conversation Search in Loading. Status and action changes use
-fixed slots with a 250 ms crossfade. Aggregate counts may supply exact numeric status and
-uncached-reminder copy, but they never establish freshness or choose Cache versus Re-cache. Those
-decisions use only the semantic ledger.
+| State | Required facts | Visible result |
+|---|---|---|
+| Loading | No aggregate count snapshot is known, the count-loading operation is running, and no cache worker is running. | Indeterminate loading indicator; no Cache or Re-cache action. |
+| Cache | Counts are known, at least one eligible message still requires an embedding, and no cache worker is running. | Exact count status and Cache action. |
+| Progress | The cache worker is running. | Cache progress indicator; no Cache or Re-cache action. |
+| Re-cache | Counts are known, every eligible message has its required embedding, and no cache worker is running. | Exact count status and Re-cache action. |
+
+Cache-worker activity has priority over count loading: a running cache worker always projects Cache
+progress. Every visible row must satisfy exactly one state. `FAILED`, Retry, `QUEUED`, `FINALIZING`,
+or any other phase may exist only as internal diagnostic or scheduling detail; none is a fifth
+Conversation Search state, label, or action. A count failure retains the last complete snapshot when
+one exists. Before the first successful snapshot, the owner must run a replacement bounded count
+load rather than expose an undefined or fabricated row state. Loading may be shown only while that
+count-loading operation is actually running. If the initial load and one bounded replacement both
+fail without a previous snapshot, report a page-level error and suspend the affected cache status
+and action projection while no cache worker runs. An explicit page entry may load again; there is
+no automatic polling, fabricated Loading, or model-row Failed/Retry action in this case.
+
+`RagManager` must not start an aggregate refresh from its constructor. A refresh begins only after
+the conversation list has been published or the Settings page explicitly requests it, and it must
+never delay list publication. Duplicate page requests share an active refresh; worker completion or
+a configured-model-set change during counting requests at most one successor for the latest set.
+A failed initial snapshot is not automatically retried by background work observations; explicit
+page entry owns restarting that load. One bounded DAO aggregate
+returns cached counts grouped by configured model id while the indexable-message total is read
+independently. No query returns message text or embedding blobs, and page entry must not issue N+1
+model counts.
+
+Each model keeps its last complete count snapshot. Here `cached` is the exact number of eligible
+messages that currently have a stored embedding for that model. The known cached count versus the
+known eligible-message total determines Cache versus Re-cache in this UI: `cached < total` means
+Cache and `cached == total` means Re-cache while no cache worker is running. The semantic ledger
+remains the durable authority for work admission, exact pending identities, reconciliation, and
+completion; it cannot create another visible phase or override the four-state projection.
+
+The progress indicator and the numeric status must describe the same denominator; one row may never
+show a percentage from the worker's current batch next to a cached/total pair from the aggregate
+snapshot. Outside caching the numeric status is exactly the last complete aggregate snapshot. While
+a cache worker runs, the snapshot is not re-queried, so the displayed cached count is that snapshot
+plus the processed count of an exact embedding run, clamped to the total; a reconciliation run only
+inspects and fingerprint-validates rows and must never move it. The indicator is determinate from
+that same pair and states the percentage in the status text. Without a count snapshot there is no
+pair, so the indicator stays indeterminate and no number or percentage is shown. Messages merely inspected or fingerprint-validated during
+reconciliation must never be presented as newly cached messages or substituted for the cached count.
 
 No timer, polling loop, periodic Worker, or continuously invalidating Room Flow is introduced for
-this status. Failures log only aggregate diagnostics. Semantic ranking remains governed by the
+count presentation. Failures log only aggregate diagnostics. Semantic ranking remains governed by the
 bounded search path above; count presentation cannot materialize, decode, rank, delete, or rebuild
 embedding rows.
 
@@ -116,6 +149,11 @@ work revision still match its admitted candidate. Failed or superseded items rem
 a later pass. Worker activity is observed from unique WorkManager state; completion may refresh
 presentation but aggregate equality cannot mark the ledger current.
 
+Full reconciliation starts without a full-corpus pre-count and advances until its keyset page is
+empty. Completion also requires successful processing and the admitted reconciliation revision to
+match. A superseding revision stops the obsolete pass; newer exact work remains pending. Inspection
+counts are not published as numeric cache progress, avoiding per-page WorkManager progress writes.
+
 The worker emits no uncached, caching, success, completion, partial-failure, or setup-failure
 Snackbar. Manual cache and recache actions retain their existing feedback. Deleting a model cancels
 its unique work and performs model deletion under the same process-wide model mutex; the mutex entry
@@ -130,9 +168,16 @@ below Auto Cache and is not shown while Auto Cache is enabled.
 
 ## 7. Required verification
 
-Focused verification must cover aggregate count mapping, configured models with no rows, coalesced
-refresh, retained-snapshot behavior, the model-leading migration/index, and absence of page-owned N+1
-count loops. Semantic-search verification must still cover multiple pages, ranking across page boundaries, strict threshold
+Focused verification must exhaustively cover the four mutually exclusive Conversation Search states:
+Loading only while the count-loading worker is actually running with no known snapshot; Cache for
+known `cached < total` while no cache worker runs; Progress only while the cache worker is actually
+`RUNNING`, with no action; and Re-cache for known `cached == total` while no cache worker runs. It
+must reject visible Failed/Retry/Queued/Finalizing states, prove that enqueued or completed work does
+not extend Progress, retain the last complete snapshot across count failure, prevent synthetic zero,
+and prove that reconciliation inspection counts do not mutate or impersonate cached counts. It must
+also cover aggregate count mapping, configured models with no rows, coalesced refresh, the
+model-leading migration/index, and absence of page-owned N+1 count loops. Semantic-search
+verification must still cover multiple pages, ranking across page boundaries, strict threshold
 exclusion, bounded retained candidates, deterministic equal-score ordering, empty results,
 dimension/byte-shape corruption, non-finite vectors, and a source/DAO contract preventing the
 unbounded full-list hot path from returning.

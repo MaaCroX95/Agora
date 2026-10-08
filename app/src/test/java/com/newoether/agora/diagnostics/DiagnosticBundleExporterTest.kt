@@ -7,10 +7,11 @@ import org.junit.Test
 
 class DiagnosticBundleExporterTest {
     @Test
-    fun `exports expose only redacted json and content-free summary with completeness metadata`() {
+    fun `redacted json keeps message content and masks only credentials while summary stays content free`() {
         val providerId = "custom-provider-00000000-0000-4000-8000-000000000001"
         val requestBody = DiagnosticRedactor.captureJson(
             """{"messages":[{"role":"user","content":"private prompt"}],"api_key":"request-secret","max_tokens":10}""",
+            credentialValues = setOf("request-secret"),
         )
         val events = listOf(
             DiagnosticEvent(
@@ -88,14 +89,14 @@ class DiagnosticBundleExporterTest {
             ),
             DiagnosticExportFormat.entries,
         )
-        assertFalse(redacted.contains("private prompt"))
-        assertFalse(redacted.contains("private response"))
-        assertFalse(redacted.contains("private tool result"))
-        assertFalse(redacted.contains("private parsed tool result"))
+        assertTrue(redacted.contains("private prompt"))
+        assertTrue(redacted.contains("private response"))
+        assertTrue(redacted.contains("private tool result"))
+        assertTrue(redacted.contains("private parsed tool result"))
         assertFalse(redacted.contains("request-secret"))
         assertFalse(redacted.contains("query-secret"))
         assertFalse(redacted.contains("header-secret"))
-        assertTrue(redacted.contains("[REDACTED_CONTENT]"))
+        assertFalse(redacted.contains("[REDACTED_CONTENT]"))
         assertTrue(redacted.contains("[REDACTED_SECRET]"))
         assertTrue(redacted.contains("max_tokens"))
         assertTrue(redacted.contains("fixture_tool"))

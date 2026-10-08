@@ -189,6 +189,8 @@ data class ChatMessage(
     val runId: String? = null,
     val runSequence: Long? = null,
     val consumedAtPass: Int? = null,
+    /** Set only on automatic user input (Task, Loop, non-blocking ask_user answers). */
+    val source: MessageSource? = null,
     /** Optional in-memory page boundary; older pages cannot reparent a rendered list item. */
     val displayPageId: String? = null,
     /** Authenticated private files for inline Markdown images; never part of native history. */
@@ -210,6 +212,7 @@ data class ChatConversation(
     val origin: String = "user",
     val graduated: Boolean = false,
     val hasUnreadGeneration: Boolean = false,
+    val isPinned: Boolean = false,
     val selectedBranchesJson: String? = null,
 )
 

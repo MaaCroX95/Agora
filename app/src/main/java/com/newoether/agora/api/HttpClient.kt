@@ -12,6 +12,7 @@ import okhttp3.Protocol
 import java.net.InetSocketAddress
 import java.net.Proxy
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSource
 import kotlinx.coroutines.asContextElement
@@ -374,7 +375,40 @@ object HttpClient {
         jsonBody: String,
         headers: Map<String, String> = emptyMap(),
         scope: com.newoether.agora.viewmodel.StreamScope?,
-        callClient: OkHttpClient = client,
+        callClient: okhttp3.Call.Factory = client,
+        maxLineBytes: Long? = null,
+        maxErrorBytes: Long? = null,
+    ): StreamHandle = streamPostBody(
+        url = url,
+        body = jsonBody.toRequestBody(JSON),
+        headers = headers,
+        diagnosticBody = jsonBody,
+        scope = scope,
+        callClient = callClient,
+        maxLineBytes = maxLineBytes,
+        maxErrorBytes = maxErrorBytes,
+    )
+
+    fun streamPostBody(
+        url: String,
+        body: RequestBody,
+        headers: Map<String, String> = emptyMap(),
+        diagnosticBody: String? = null,
+    ): StreamHandle = streamPostBody(
+        url = url,
+        body = body,
+        headers = headers,
+        diagnosticBody = diagnosticBody,
+        scope = boundStreamScope(),
+    )
+
+    fun streamPostBody(
+        url: String,
+        body: RequestBody,
+        headers: Map<String, String> = emptyMap(),
+        diagnosticBody: String? = null,
+        scope: com.newoether.agora.viewmodel.StreamScope?,
+        callClient: okhttp3.Call.Factory = client,
         maxLineBytes: Long? = null,
         maxErrorBytes: Long? = null,
     ): StreamHandle {
@@ -386,9 +420,8 @@ object HttpClient {
             method = "POST",
             url = url,
             headers = headers,
-            body = jsonBody,
+            body = diagnosticBody ?: "{\"streaming_body\":true}",
         )
-        val body = jsonBody.toRequestBody(JSON)
         val requestBuilder = Request.Builder().url(url).post(body)
         headers.forEach { (k, v) -> requestBuilder.addHeader(k, v) }
         val request = requestBuilder.build().newBuilder()
@@ -401,7 +434,7 @@ object HttpClient {
         if (scope != null) scope.register(handle)
         liveHandles.add(handle)
         return try {
-            val bodyBytes = jsonBody.toByteArray(Charsets.UTF_8).size
+            val bodyBytes = runCatching { body.contentLength() }.getOrDefault(-1L)
             trace?.mark(
                 "http_execute",
                 "bodyBytes=$bodyBytes",

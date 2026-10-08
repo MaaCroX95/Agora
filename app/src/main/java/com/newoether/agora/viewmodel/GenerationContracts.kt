@@ -15,6 +15,12 @@ data class GenerationPromptTemplate(
     val systemItems: List<PromptTemplateItem>,
     val userItems: List<PromptTemplateItem>,
     val assistantItems: List<PromptTemplateItem>,
+    /**
+     * Active memory read once when the template is captured, so every Provider pass of one Run
+     * (initial request, tool continuations, retries) sees the same text and keeps the prompt
+     * cache stable. Mid-Run edits become visible through read_active_memory and land next Run.
+     */
+    val activeMemory: String = "",
 )
 
 data class GenerationConfig(
@@ -73,6 +79,7 @@ data class GenerationContext(
     val webSearchNumResults: Int = 5,
     val webSearchBaseUrl: String = "",
     val imageGenEnabled: Boolean = false,
+    val askUserEnabled: Boolean = false,
     val imageGenApiKey: String = "",
     val imageGenBaseUrl: String = "",
     val imageGenModel: String = "gpt-image-1",
@@ -121,6 +128,13 @@ internal data class AutomaticCompactConfig(
     val userPostpend: String? = null,
     /** Filled by the effect owner that has the exact frozen tool-definition set. */
     val fixedTokenCost: Int = 0,
+    /**
+     * Main request model, not the Compact model. The threshold measures the main request's context,
+     * so it must be priced with the main model's cost model.
+     */
+    val mainModelId: String? = null,
+    /** Main request, not Compact-model, replay policy for ordinary assistant reasoning. */
+    val includeAssistantReasoning: Boolean = false,
 )
 
 /** Request-shape snapshot used only for exact context accounting; no Provider access is required. */

@@ -205,26 +205,6 @@ interface SemanticIndexDao {
 
     @Query(
         """
-        SELECT COUNT(*)
-        FROM messages m
-        INNER JOIN conversations c ON m.conversationId = c.id
-        LEFT JOIN semantic_index_work w ON w.messageId = m.id AND w.modelId = :modelId
-        WHERE c.taskId IS NULL
-          AND m.participant IN ('USER', 'MODEL')
-          AND m.text != ''
-          AND m.id NOT LIKE 'tool_%'
-          AND m.id NOT LIKE 'result_%'
-          AND m.id NOT LIKE 'compact_%'
-          AND (w.sourceRevision IS NULL OR w.sourceRevision <= :maxWorkRevision)
-        """,
-    )
-    suspend fun getReconcileMessageCount(
-        modelId: String,
-        maxWorkRevision: Long,
-    ): Int
-
-    @Query(
-        """
         SELECT m.text
         FROM messages m
         INNER JOIN conversations c ON m.conversationId = c.id

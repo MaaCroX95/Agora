@@ -1,4 +1,5 @@
 package com.newoether.agora.viewmodel
+import com.newoether.agora.data.repository.updateConversationModel
 
 import com.newoether.agora.data.ConversationSettings
 import com.newoether.agora.data.local.NewChatPersistEntity
@@ -38,6 +39,11 @@ internal data class NewChatWorkspaceSnapshot(
     val modelId: String?,
     val systemPromptId: String?,
     val conversationSettings: ConversationSettings?,
+    /**
+     * True for a WebUI session's in-memory New Chat workspace. Its send must not touch the
+     * phone's persisted New Chat singleton, so admission carries no persist snapshot for it.
+     */
+    val sessionLocal: Boolean = false,
     private val pendingPersisted: CompletableDeferred<NewChatPersistEntity?>? = null,
 ) {
     suspend fun awaitCaptured(): NewChatWorkspaceSnapshot =
@@ -165,7 +171,9 @@ internal class ConversationWorkspaceStore(
         if (ownerId == NEW_CHAT_WORKSPACE_ID) {
             enqueueNewChatUpdate { it.copy(modelId = modelId) }
         } else {
-            updateConversation(ownerId) { it.copy(modelId = modelId) }
+            scope.launch(ioDispatcher) {
+                conversationMutationMutex.withLock { conversations.updateConversationModel(ownerId, modelId) }
+            }
         }
     }
 

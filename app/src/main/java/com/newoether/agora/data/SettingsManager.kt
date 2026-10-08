@@ -16,13 +16,14 @@ import kotlinx.serialization.json.Json
 import java.util.Locale
 import kotlinx.coroutines.flow.map
 
-private val Context.dataStore by preferencesDataStore(
+internal val Context.dataStore by preferencesDataStore(
     name = "settings", produceMigrations = { listOf(modelProviderNamesMigration) },
 )
 
 class SettingsManager(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
-    private val modelPreferenceStore = SettingsModelPreferenceStore(context.dataStore, json)
+    internal val modelPreferenceStore = SettingsModelPreferenceStore(context.dataStore, json)
+    internal val backupPreferenceStore = SettingsBackupPreferenceStore(context.dataStore)
 
     companion object {
         const val DEFAULT_PROXY_HOST = "127.0.0.1"
@@ -72,6 +73,10 @@ class SettingsManager(private val context: Context) {
     }
     val contextCompactRetainCount: Flow<Int> = context.dataStore.data.map {
         it[CONTEXT_COMPACT_RETAIN_COUNT] ?: DEFAULT_CONTEXT_COMPACT_RETAIN_COUNT
+    }
+    val contextCompactPreserveSystemPrompt: Flow<Boolean> = context.dataStore.data.map {
+        it[CONTEXT_COMPACT_PRESERVE_SYSTEM_PROMPT]
+            ?: DEFAULT_CONTEXT_COMPACT_PRESERVE_SYSTEM_PROMPT
     }
     val contextCompactThresholdPercent: Flow<Int> = context.dataStore.data.map {
         it[CONTEXT_COMPACT_THRESHOLD_PERCENT]
@@ -197,6 +202,7 @@ class SettingsManager(private val context: Context) {
     val proxyBypass: Flow<String> = context.dataStore.data.map { it[PROXY_BYPASS] ?: DEFAULT_PROXY_BYPASS }
     // Confirm before the model runs state-changing commands on remote shell servers. Default on.
     val shellConfirmEnabled: Flow<Boolean> = context.dataStore.data.map { it[SHELL_CONFIRM_ENABLED] ?: true }
+    val askUserEnabled: Flow<Boolean> = context.dataStore.data.map { it[ASK_USER_ENABLED] ?: true }
     val shellDevices: Flow<List<ShellDeviceConfig>> =
         context.dataStore.data.map { preferences -> decodeEncryptedShellDevices(preferences, json) }
     val mcpServers: Flow<List<McpServerConfig>> = context.dataStore.data.map { pref ->
@@ -223,20 +229,16 @@ class SettingsManager(private val context: Context) {
     val blurEffectsEnabled: Flow<Boolean> = context.dataStore.data.map { it[BLUR_EFFECTS_ENABLED] ?: true }
     val reduceMotion: Flow<Boolean> = context.dataStore.data.map { it[REDUCE_MOTION] ?: false }
     val stickToBottom: Flow<Boolean> = context.dataStore.data.map { it[STICK_TO_BOTTOM] ?: true }
-    val parseInlineDollarMath: Flow<Boolean> =
-        context.dataStore.data.map { it[PARSE_INLINE_DOLLAR_MATH] ?: false }
+    val parseInlineDollarMath: Flow<Boolean> = context.dataStore.data.map { it[PARSE_INLINE_DOLLAR_MATH] ?: false }
+    val autoWrapCodeBlocks: Flow<Boolean> = context.dataStore.data.map { it[AUTO_WRAP_CODE_BLOCKS] ?: true }
     val hapticsEnabled: Flow<Boolean> = context.dataStore.data.map { it[HAPTICS_ENABLED] ?: true }
-    val detailedTokenUsage: Flow<Boolean> =
-        context.dataStore.data.map { it[DETAILED_TOKEN_USAGE] ?: false }
+    val detailedTokenUsage: Flow<Boolean> = context.dataStore.data.map { it[DETAILED_TOKEN_USAGE] ?: false }
     val toolCallDisplayMode: Flow<String> = context.dataStore.data.map { ToolCallDisplayModes.normalize(it[TOOL_CALL_DISPLAY_MODE]) }
     val thinkingSegmentDisplayMode: Flow<String> = context.dataStore.data.map {
         ThinkingSegmentDisplayModes.normalize(it[THINKING_SEGMENT_DISPLAY_MODE])
     }
-    val autoExpandActiveGroup: Flow<Boolean> =
-        context.dataStore.data.map { it[AUTO_EXPAND_ACTIVE_GROUP] ?: true }
-    val schemeStyle: Flow<String> = context.dataStore.data.map {
-        it[SCHEME_STYLE] ?: DEFAULT_SCHEME_STYLE
-    }
+    val autoExpandActiveGroup: Flow<Boolean> = context.dataStore.data.map { it[AUTO_EXPAND_ACTIVE_GROUP] ?: true }
+    val schemeStyle: Flow<String> = context.dataStore.data.map { it[SCHEME_STYLE] ?: DEFAULT_SCHEME_STYLE }
     val fontPreference: Flow<String> = context.dataStore.data.map { it[FONT_PREFERENCE] ?: "app_default" }
     val customFontPath: Flow<String> = context.dataStore.data.map { it[CUSTOM_FONT_PATH] ?: "" }
     val customFontName: Flow<String> = context.dataStore.data.map { it[CUSTOM_FONT_NAME] ?: "" }
@@ -247,13 +249,13 @@ class SettingsManager(private val context: Context) {
     val totalMessagesSent: Flow<Int> = context.dataStore.data.map { it[TOTAL_MESSAGES_SENT] ?: 0 }
 
     // ── Auto Backup ───────────────────────────────────────────
-    val autoBackupEnabled: Flow<Boolean> = context.dataStore.data.map { it[AUTO_BACKUP_ENABLED] ?: true }
-    val autoBackupPeriodHours: Flow<Int> = context.dataStore.data.map { it[AUTO_BACKUP_PERIOD_HOURS] ?: 24 }
-    val autoBackupCategories: Flow<String> = context.dataStore.data.map { it[AUTO_BACKUP_CATEGORIES] ?: "conversations,memories,system_prompts,settings" }
-    val autoBackupDirectory: Flow<String> = context.dataStore.data.map { it[AUTO_BACKUP_DIRECTORY] ?: "Download/Agora/Backup" }
-    val autoDeleteEnabled: Flow<Boolean> = context.dataStore.data.map { it[AUTO_DELETE_ENABLED] ?: true }
-    val autoDeletePeriodHours: Flow<Int> = context.dataStore.data.map { it[AUTO_DELETE_PERIOD_HOURS] ?: 168 }
-    val lastBackupTimestamp: Flow<Long> = context.dataStore.data.map { it[LAST_BACKUP_TIMESTAMP] ?: 0L }
+    val autoBackupEnabled: Flow<Boolean> = backupPreferenceStore.autoBackupEnabled
+    val autoBackupPeriodHours: Flow<Int> = backupPreferenceStore.autoBackupPeriodHours
+    val autoBackupCategories: Flow<String> = backupPreferenceStore.autoBackupCategories
+    val autoBackupDirectory: Flow<String> = backupPreferenceStore.autoBackupDirectory
+    val autoDeleteEnabled: Flow<Boolean> = backupPreferenceStore.autoDeleteEnabled
+    val autoDeletePeriodHours: Flow<Int> = backupPreferenceStore.autoDeletePeriodHours
+    val lastBackupTimestamp: Flow<Long> = backupPreferenceStore.lastBackupTimestamp
     val lastModelsFetchFingerprint: Flow<String> = modelPreferenceStore.lastModelsFetchFingerprint
 
     suspend fun saveProviderBaseUrl(provider: String, url: String) =
@@ -531,10 +533,9 @@ class SettingsManager(private val context: Context) {
     ): Map<String, ConversationSettings> {
         var updated: Map<String, ConversationSettings> = emptyMap()
         context.dataStore.edit { prefs ->
-            val current = prefs[CONVERSATION_SETTINGS_JSON] ?: "{}"
-            val map = try { json.decodeFromString<MutableMap<String, ConversationSettings>>(current) } catch (e: Exception) { mutableMapOf() }
+            val map = decodeConversationSettings(prefs, json).toMutableMap()
             if (settings == null || settings.isAllNull()) map.remove(conversationId)
-            else map[conversationId] = settings
+            else map[conversationId] = settings.normalizedServiceTier()
             updated = map.toMap()
             prefs[CONVERSATION_SETTINGS_JSON] = json.encodeToString(map)
         }
@@ -542,6 +543,7 @@ class SettingsManager(private val context: Context) {
     }
     suspend fun saveConversationSettingsMap(settings: Map<String, ConversationSettings>) {
         val nonEmpty = settings.filterValues { !it.isAllNull() }
+            .mapValues { (_, value) -> value.normalizedServiceTier() }
         context.dataStore.edit { prefs ->
             if (nonEmpty.isEmpty()) {
                 prefs.remove(CONVERSATION_SETTINGS_JSON)
@@ -590,6 +592,9 @@ class SettingsManager(private val context: Context) {
     suspend fun saveContextCompactRetainCount(count: Int) {
         require(count >= 0)
         context.dataStore.edit { it[CONTEXT_COMPACT_RETAIN_COUNT] = count }
+    }
+    suspend fun saveContextCompactPreserveSystemPrompt(enabled: Boolean) {
+        context.dataStore.edit { it[CONTEXT_COMPACT_PRESERVE_SYSTEM_PROMPT] = enabled }
     }
 
     suspend fun saveContextCompactThresholdPercent(percent: Int) {
@@ -670,6 +675,9 @@ class SettingsManager(private val context: Context) {
     suspend fun saveShellConfirmEnabled(enabled: Boolean) {
         context.dataStore.edit { it[SHELL_CONFIRM_ENABLED] = enabled }
     }
+    suspend fun saveAskUserEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[ASK_USER_ENABLED] = enabled }
+    }
     suspend fun saveShellDevices(devices: List<ShellDeviceConfig>) {
         context.dataStore.edit { it[SHELL_DEVICES_JSON] = com.newoether.agora.util.SecretCrypto.encrypt(json.encodeToString(devices)) }
     }
@@ -708,6 +716,9 @@ class SettingsManager(private val context: Context) {
     }
     suspend fun saveParseInlineDollarMath(enabled: Boolean) {
         context.dataStore.edit { it[PARSE_INLINE_DOLLAR_MATH] = enabled }
+    }
+    suspend fun saveAutoWrapCodeBlocks(enabled: Boolean) {
+        context.dataStore.edit { it[AUTO_WRAP_CODE_BLOCKS] = enabled }
     }
     suspend fun saveHapticsEnabled(enabled: Boolean) {
         context.dataStore.edit { it[HAPTICS_ENABLED] = enabled }
@@ -755,27 +766,13 @@ class SettingsManager(private val context: Context) {
     }
 
     // ── Auto Backup ───────────────────────────────────────────
-    suspend fun saveAutoBackupEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[AUTO_BACKUP_ENABLED] = enabled }
-    }
-    suspend fun saveAutoBackupPeriodHours(hours: Int) {
-        context.dataStore.edit { it[AUTO_BACKUP_PERIOD_HOURS] = hours }
-    }
-    suspend fun saveAutoBackupCategories(categories: String) {
-        context.dataStore.edit { it[AUTO_BACKUP_CATEGORIES] = categories }
-    }
-    suspend fun saveAutoBackupDirectory(path: String) {
-        context.dataStore.edit { it[AUTO_BACKUP_DIRECTORY] = path }
-    }
-    suspend fun saveAutoDeleteEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[AUTO_DELETE_ENABLED] = enabled }
-    }
-    suspend fun saveAutoDeletePeriodHours(hours: Int) {
-        context.dataStore.edit { it[AUTO_DELETE_PERIOD_HOURS] = hours }
-    }
-    suspend fun saveLastBackupTimestamp(timestamp: Long) {
-        context.dataStore.edit { it[LAST_BACKUP_TIMESTAMP] = timestamp }
-    }
+    suspend fun saveAutoBackupEnabled(enabled: Boolean) = backupPreferenceStore.saveAutoBackupEnabled(enabled)
+    suspend fun saveAutoBackupPeriodHours(hours: Int) = backupPreferenceStore.saveAutoBackupPeriodHours(hours)
+    suspend fun saveAutoBackupCategories(categories: String) = backupPreferenceStore.saveAutoBackupCategories(categories)
+    suspend fun saveAutoBackupDirectory(path: String) = backupPreferenceStore.saveAutoBackupDirectory(path)
+    suspend fun saveAutoDeleteEnabled(enabled: Boolean) = backupPreferenceStore.saveAutoDeleteEnabled(enabled)
+    suspend fun saveAutoDeletePeriodHours(hours: Int) = backupPreferenceStore.saveAutoDeletePeriodHours(hours)
+    suspend fun saveLastBackupTimestamp(timestamp: Long) = backupPreferenceStore.saveLastBackupTimestamp(timestamp)
     suspend fun saveLastModelsFetchFingerprint(fingerprint: String) =
         modelPreferenceStore.saveLastModelsFetchFingerprint(fingerprint)
 

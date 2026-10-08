@@ -37,7 +37,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.newoether.agora.R
@@ -57,6 +56,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.newoether.agora.ui.components.AgoraDropdownMenu
+import com.newoether.agora.ui.components.AgoraDropdownMenuItem
+import com.newoether.agora.ui.components.SecretVisibilityToggle
+import com.newoether.agora.ui.components.rememberSecretVisible
+import com.newoether.agora.ui.components.secretVisualTransformation
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -183,9 +187,9 @@ fun SettingsProviderDetailPage(
             if (isCustom) {
                 Box {
                     IconButton(onClick = { providerMenuExpanded = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.options)) }
-                    DropdownMenu(expanded = providerMenuExpanded, onDismissRequest = { providerMenuExpanded = false }, containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 16.dp, shape = RoundedCornerShape(12.dp)) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.rename)) }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { providerMenuExpanded = false; showRenameProvider = true })
-                        DropdownMenuItem(text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }, onClick = { providerMenuExpanded = false; showDeleteProvider = true })
+                    AgoraDropdownMenu(expanded = providerMenuExpanded, onDismissRequest = { providerMenuExpanded = false }, containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 16.dp) {
+                        AgoraDropdownMenuItem(text = { Text(stringResource(R.string.rename)) }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { providerMenuExpanded = false; showRenameProvider = true })
+                        AgoraDropdownMenuItem(text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }, onClick = { providerMenuExpanded = false; showDeleteProvider = true })
                     }
                 }
             }
@@ -409,9 +413,9 @@ fun SettingsProviderDetailPage(
                                     trailingContent = {
                                         Box {
                                             IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.MoreVert, stringResource(R.string.options), modifier = Modifier.size(18.dp)) }
-                                            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 16.dp, shape = RoundedCornerShape(12.dp)) {
-                                                DropdownMenuItem(text = { Text(stringResource(R.string.edit)) }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { showMenu = false; showEditModelDialog = model })
-                                                DropdownMenuItem(text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }, onClick = { showMenu = false; showDeleteModelConfirm = model })
+                                            AgoraDropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 16.dp) {
+                                                AgoraDropdownMenuItem(text = { Text(stringResource(R.string.edit)) }, leadingIcon = { Icon(Icons.Default.Edit, null) }, onClick = { showMenu = false; showEditModelDialog = model })
+                                                AgoraDropdownMenuItem(text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }, onClick = { showMenu = false; showDeleteModelConfirm = model })
                                             }
                                         }
                                     }
@@ -544,15 +548,14 @@ fun SettingsProviderDetailPage(
                                                     color = MaterialTheme.colorScheme.primary,
                                                     modifier = Modifier.padding(end = 4.dp),
                                                 )
-                                                DropdownMenu(
+                                                AgoraDropdownMenu(
                                                     expanded = expanded,
                                                     onDismissRequest = { expanded = false },
                                                     containerColor = MaterialTheme.colorScheme.surfaceContainer,
                                                     tonalElevation = 16.dp,
-                                                    shape = RoundedCornerShape(12.dp),
                                                 ) {
                                                     listOf("5m", "1h").forEach { ttl ->
-                                                        DropdownMenuItem(
+                                                        AgoraDropdownMenuItem(
                                                             text = { Text(ttl) },
                                                             leadingIcon = {
                                                                 if (cacheTtl == ttl) {
@@ -743,7 +746,8 @@ fun SettingsProviderDetailPage(
             Column(Modifier.fillMaxWidth()) {
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(stringResource(R.string.provider_key_name_hint)) }, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().noOpBringIntoView())
                 Spacer(modifier = Modifier.height(8.dp))
-                Box(modifier = Modifier.noOpBringIntoView()) { OutlinedTextField(value = key, onValueChange = { key = it }, label = { Text("${currentName} API Key") }, visualTransformation = PasswordVisualTransformation(), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) }
+                var keyVisible by rememberSecretVisible()
+                Box(modifier = Modifier.noOpBringIntoView()) { OutlinedTextField(value = key, onValueChange = { key = it }, label = { Text("${currentName} API Key") }, visualTransformation = secretVisualTransformation(keyVisible), trailingIcon = { SecretVisibilityToggle(keyVisible) { keyVisible = !keyVisible } }, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) }
             }
         }, confirmButton = { TextButton(onClick = { if (name.isNotBlank() && key.isNotBlank()) { if (isEdit) viewModel.settings.updateApiKey(entry.id, name, key) else viewModel.settings.addApiKey(name, key, currentName); showKeyDialog = null } }) { Text(if (isEdit) stringResource(R.string.provider_save) else stringResource(R.string.provider_add)) } }, dismissButton = { TextButton(onClick = { showKeyDialog = null }) { Text(stringResource(R.string.cancel)) } })
     }

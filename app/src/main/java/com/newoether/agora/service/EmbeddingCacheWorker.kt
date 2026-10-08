@@ -242,32 +242,15 @@ class EmbeddingCacheWorker(
         database: ChatDatabase,
     ): Boolean {
         val semanticDao = database.semanticIndexDao()
-        val workTotal = semanticDao.getReconcileMessageCount(
-            modelId = model.id,
-            maxWorkRevision = expectedReconcileRevision,
-        )
-        if (workTotal == 0) {
-            return semanticDao.completeReconcile(
-                modelId = model.id,
-                expectedReconcileRevision = expectedReconcileRevision,
-                updatedAt = System.currentTimeMillis(),
-            )
-        }
-        var processed = 0
         var afterMessageId: String? = null
         var embeddingConfigResolved = false
         var remoteConfig: Pair<String, String>? = null
         var complete = true
         val embeddingBatchSize = model.batchSize.coerceIn(1, MAX_BATCH_SIZE)
-        publishProgress(
-            EmbeddingCacheProgress(
-                generationRevision = expectedReconcileRevision,
-                kind = EmbeddingCacheWorkKind.RECONCILE,
-                processed = processed,
-                total = workTotal,
-            ),
-        )
-        while (processed < workTotal) {
+        while (true) {
+            if (semanticDao.getLedger(model.id)?.reconcileRevision != expectedReconcileRevision) {
+                return false
+            }
             val page = semanticDao.getReconcileMessagesPage(
                 modelId = model.id,
                 maxWorkRevision = expectedReconcileRevision,
@@ -308,18 +291,9 @@ class EmbeddingCacheWorker(
                     complete = false
                 }
             }
-            processed += page.size
-            publishProgress(
-                EmbeddingCacheProgress(
-                    generationRevision = expectedReconcileRevision,
-                    kind = EmbeddingCacheWorkKind.RECONCILE,
-                    processed = processed.coerceAtMost(workTotal),
-                    total = workTotal,
-                ),
-            )
             yield()
         }
-        if (!complete || processed != workTotal) return false
+        if (!complete) return false
         return semanticDao.completeReconcile(
             modelId = model.id,
             expectedReconcileRevision = expectedReconcileRevision,

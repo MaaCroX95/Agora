@@ -4,6 +4,7 @@ import com.newoether.agora.api.ToolDefinition
 import com.newoether.agora.api.ToolFunction
 import com.newoether.agora.api.ToolParameters
 import com.newoether.agora.api.ToolProperty
+import com.newoether.agora.api.util.Base64FileRegistry
 import com.newoether.agora.api.util.convertToOpenAiMessages
 import com.newoether.agora.api.util.prepareMessages
 import com.newoether.agora.data.local.MessageEntity
@@ -94,6 +95,34 @@ class GenerationApiPathBuilderTest {
                 ContextTokenEstimator.estimateFixed(null, emptyList()),
             path.providerConfig.maxContextWindow,
         )
+    }
+    @Test
+    fun `deepseek chat with tools enables ordinary reasoning accounting`() = runTest {
+        val repository = mockk<ConversationRepository>(relaxed = true)
+        val user = message("user", null, 0, Participant.USER)
+        suspend fun build(config: GenerationConfig, withTools: Boolean = true) =
+            GenerationApiPathBuilder(
+                conversations = repository,
+                generationErrorFormatter = { it },
+                toolDefinitions = { if (withTools) listOf(toolDefinition()) else emptyList() },
+            ).build(
+                GenerationApiPathRequest(
+                    parentId = user.id,
+                    conversationId = "conversation",
+                    config = config,
+                    context = GenerationContext(),
+                    loadedMessages = listOf(user),
+                ),
+            ).providerConfig.includeAssistantReasoning
+        val deepSeek = generationConfig(Constants.PROVIDER_DEEPSEEK).copy(
+            modelId = "deepseek-chat",
+            thinkingEnabled = true,
+        )
+        assertTrue(build(deepSeek))
+        assertTrue(build(deepSeek.copy(providerName = "Relay")))
+        assertFalse(build(deepSeek, withTools = false))
+        assertFalse(build(deepSeek.copy(responsesApiEnabled = true)))
+        assertFalse(build(deepSeek.copy(thinkingEnabled = false)))
     }
 
     @Test
@@ -202,7 +231,7 @@ class GenerationApiPathBuilderTest {
         assertEquals(listOf(oldUser.id, stoppedModel.id, queuedUser.id), path.messages.map { it.id })
         assertEquals(Participant.MODEL, path.messages[1].participant)
         assertTrue(path.messages[1].text.startsWith("partial answer"))
-        assertTrue(path.messages[1].text.contains("[Generation status: STOPPED]"))
+        assertTrue(path.messages[1].text.contains("<generation_interrupted reason=\"stopped\" />"))
         val projected = projectGenerationInputMessages(
             messages = path.messages,
             includeImages = true,
@@ -211,6 +240,7 @@ class GenerationApiPathBuilderTest {
         )
         val wire = convertToOpenAiMessages(
             prepareMessages(projected, path.providerConfig.maxContextWindow),
+            base64Files = Base64FileRegistry(),
         )
         val wireText = wire.flatMap { it.content.orEmpty() }.mapNotNull { it.text }.joinToString("\n")
 
@@ -218,7 +248,10 @@ class GenerationApiPathBuilderTest {
         assertEquals(1, Regex(Regex.escape("partial answer")).findAll(wireText).count())
         assertEquals(1, Regex(Regex.escape("first guidance")).findAll(wireText).count())
         assertEquals(1, Regex(Regex.escape("second guidance")).findAll(wireText).count())
-        assertEquals(1, Regex(Regex.escape("[Generation status: STOPPED]")).findAll(wireText).count())
+        assertEquals(
+            1,
+            Regex(Regex.escape("<generation_interrupted reason=\"stopped\" />")).findAll(wireText).count(),
+        )
     }
 
     @Test
@@ -262,6 +295,7 @@ class GenerationApiPathBuilderTest {
         assertFalse(failed.text.contains(rawError))
         val wire = convertToOpenAiMessages(
             prepareMessages(path.messages, path.providerConfig.maxContextWindow),
+            base64Files = Base64FileRegistry(),
         )
         assertEquals(listOf("user", "assistant", "user"), wire.map { it.role })
         val wireText = wire.flatMap { it.content.orEmpty() }.mapNotNull { it.text }.joinToString("\n")

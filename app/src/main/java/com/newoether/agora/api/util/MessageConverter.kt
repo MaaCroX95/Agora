@@ -1,15 +1,15 @@
 package com.newoether.agora.api.util
 
-import com.newoether.agora.util.DebugLog
 import com.newoether.agora.api.OpenAiContentPart
 import com.newoether.agora.api.OpenAiImageUrl
 import com.newoether.agora.api.OpenAiMessage
 import com.newoether.agora.api.OpenAiRequestFunction
 import com.newoether.agora.api.OpenAiRequestToolCall
+import com.newoether.agora.api.util.tokens.ContextCostModel
+import com.newoether.agora.api.util.tokens.CostModelContextEstimator
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.Participant
 import com.newoether.agora.util.Constants
-import java.io.File
 import java.security.MessageDigest
 
 internal fun openAiCompatibleWireToolName(name: String): String = when (name) {
@@ -41,26 +41,18 @@ fun imageMimeType(imagePath: String): String = when {
     else -> "image/jpeg"
 }
 
-fun encodeImageToBase64(imagePath: String): Pair<String, String>? {
-    return try {
-        val file = File(imagePath)
-        if (!file.exists()) return null
-        val bytes = file.readBytes()
-        val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-        imageMimeType(imagePath) to base64
-    } catch (e: Exception) {
-        DebugLog.e(
-            "AgoraAPI",
-            "Failed to encode image exception=${e.javaClass.simpleName}",
-        )
-        null
-    }
-}
 
-fun convertToOpenAiMessages(
+/**
+ * [forwardAssistantReasoning] replays each assistant turn's stored chain of thought as
+ * `reasoning_content`. DeepSeek thinking mode requires it for every earlier turn once a request
+ * carries tools; other providers ignore the field, so they keep the default.
+ */
+internal fun convertToOpenAiMessages(
     messages: List<ChatMessage>,
     systemPrompt: String? = null,
-    includeImages: Boolean = true
+    includeImages: Boolean = true,
+    base64Files: Base64FileRegistry,
+    forwardAssistantReasoning: Boolean = false,
 ): List<OpenAiMessage> {
     val apiMessages = mutableListOf<OpenAiMessage>()
 
@@ -80,7 +72,8 @@ fun convertToOpenAiMessages(
         // (tool results come from the following result_ messages)
         if (msg.id.startsWith(Constants.TOOL_MSG_PREFIX)) {
             val toolSegs = msg.segments?.filter { it.type == "tool" }
-            val thoughtContent = msg.segments?.lastOrNull { it.type == "thought" }?.content
+            val thoughtContent = msg.segments?.filter { it.type == "thought" }
+                ?.joinToString("\n") { it.content }
             if (!toolSegs.isNullOrEmpty()) {
                 val toolCalls = toolSegs.map { seg ->
                     val wireName = openAiCompatibleWireToolName(seg.toolName.orEmpty())
@@ -101,6 +94,7 @@ fun convertToOpenAiMessages(
                     responseOutputItemProvider = toolSegs.firstOrNull {
                         it.responseOutputItems.isNotEmpty()
                     }?.responseOutputItemProvider,
+                    responseOutputItemModel = msg.modelName,
                 ))
             } else if (msg.toolCall != null) {
                 val tc = msg.toolCall!!
@@ -116,6 +110,7 @@ fun convertToOpenAiMessages(
                     reasoningContent = thoughtContent?.ifEmpty { null },
                     responseOutputItems = tc.responseOutputItems.ifEmpty { null },
                     responseOutputItemProvider = tc.responseOutputItemProvider,
+                    responseOutputItemModel = msg.modelName,
                 ))
             }
             return@flatMap entries
@@ -153,16 +148,15 @@ fun convertToOpenAiMessages(
 
         if (includeImages && msg.participant == Participant.USER) {
             for (imagePath in msg.images) {
-                val encoded = encodeImageToBase64(imagePath)
-                if (encoded != null) {
-                    val (mimeType, base64) = encoded
-                    parts.add(
-                        OpenAiContentPart(
-                            type = "image_url",
-                            imageUrl = OpenAiImageUrl(url = "data:$mimeType;base64,$base64")
-                        )
-                    )
-                }
+                val placeholder = base64Files.register(imagePath) ?: continue
+                parts.add(
+                    OpenAiContentPart(
+                        type = "image_url",
+                        imageUrl = OpenAiImageUrl(
+                            url = "data:${imageMimeType(imagePath)};base64,$placeholder",
+                        ),
+                    ),
+                )
             }
         }
 
@@ -172,7 +166,15 @@ fun convertToOpenAiMessages(
 
         entries.add(OpenAiMessage(
             role = if (msg.participant == Participant.USER) "user" else "assistant",
-            content = parts
+            content = parts,
+            reasoningContent = if (forwardAssistantReasoning && msg.participant != Participant.USER) {
+                msg.segments
+                    ?.filter { it.type == "thought" }
+                    ?.joinToString("\n") { it.content }
+                    ?.takeIf { it.isNotBlank() }
+            } else {
+                null
+            },
         ))
         entries
     })
@@ -180,8 +182,14 @@ fun convertToOpenAiMessages(
     return apiMessages
 }
 
-fun limitContext(messages: List<ChatMessage>, contextTokenBudget: Int): List<ChatMessage> {
+fun limitContext(
+    messages: List<ChatMessage>,
+    contextTokenBudget: Int,
+    includeAssistantReasoning: Boolean = false,
+    costs: ContextCostModel = ContextCostModel.Default,
+): List<ChatMessage> {
     if (messages.isEmpty()) return emptyList()
+    val estimator = CostModelContextEstimator(costs)
 
     // A tool call and all of its results are one protocol unit. Truncating the flat list can leave
     // either an orphan result or an unanswered assistant tool call, so window complete units only.
@@ -192,7 +200,10 @@ fun limitContext(messages: List<ChatMessage>, contextTokenBudget: Int): List<Cha
     var hasNormalUserAnchor = false
     val tokenBudget = contextTokenBudget.coerceAtLeast(1).toLong()
     for (unit in units.asReversed()) {
-        val unitCost = ContextTokenEstimator.estimate(unit).toLong()
+        val unitCost = estimator.estimate(
+            unit,
+            includeAssistantReasoning = includeAssistantReasoning,
+        ).toLong()
         if (
             selected.isNotEmpty() &&
             hasNormalUserAnchor &&

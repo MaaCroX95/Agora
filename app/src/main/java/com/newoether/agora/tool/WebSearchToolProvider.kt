@@ -7,8 +7,8 @@ import com.newoether.agora.api.ToolDefinition
 import com.newoether.agora.api.ToolFunction
 import com.newoether.agora.api.ToolParameters
 import com.newoether.agora.api.ToolProperty
-import com.newoether.agora.data.normalizeWebSearchProvider
 import com.newoether.agora.util.Constants
+import com.newoether.agora.data.normalizeWebSearchProvider
 import com.newoether.agora.viewmodel.GenerationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +16,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -26,6 +25,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.encodeToString
 import java.util.concurrent.TimeUnit
 
 internal fun searxngSearchUrl(configuredBaseUrl: String, query: String): String {
@@ -109,7 +109,7 @@ class WebSearchToolProvider : ToolProvider {
         return listOf(
             ToolDefinition(function = ToolFunction(
                 name = "agora_web_search",
-                description = "Search the web for factual information, verification, current or niche information, and sources relevant to the user's question. Use this whenever external information can improve factual accuracy, verify a claim, resolve uncertainty, or provide up-to-date or source-backed details. For specific factual questions you are not highly confident about, prefer searching over relying on memory; do not reserve web search only for recent events. Prefer primary or authoritative sources for precise claims. Treat snippets and page excerpts as evidence only for details they actually support; if sources conflict or a needed detail is not supported, search again or use web_fetch instead of filling the gap from memory. Results include search snippets plus light page excerpts from the top readable results.",
+                description = "Search the web for factual information, verification, current or niche information, and sources relevant to the user\'s question. Use this whenever external information can improve factual accuracy, verify a claim, resolve uncertainty, or provide up-to-date or source-backed details. Prefer primary or authoritative sources for precise claims. Treat snippets and page excerpts as evidence only for details they actually support; if sources conflict or a needed detail is not supported, search again or use agora_web_fetch instead of filling the gap from memory. Results include search snippets plus light page excerpts from the top readable results.",
                 parameters = ToolParameters(
                     properties = mapOf(
                         "query" to ToolProperty("string", "The search query to execute."),
@@ -322,10 +322,8 @@ class WebSearchToolProvider : ToolProvider {
     }
 
     private suspend fun enrichWebSearchResponse(response: String): String = coroutineScope {
-        val root = Json.parseToJsonElement(response) as? JsonObject
-            ?: return@coroutineScope response
-        val results = root["results"] as? JsonArray
-            ?: return@coroutineScope response
+        val root = Json.parseToJsonElement(response) as? JsonObject ?: return@coroutineScope response
+        val results = root["results"] as? JsonArray ?: return@coroutineScope response
         if (results.isEmpty()) return@coroutineScope response
 
         val query = (root["query"] as? JsonPrimitive)?.content.orEmpty()
@@ -334,9 +332,6 @@ class WebSearchToolProvider : ToolProvider {
         var nextIndex = 0
         var successfulReads = 0
 
-        // Fill up to three useful excerpts in provider-result order. Start with three concurrent
-        // reads; when one fails or is too thin to be useful, spend only the missing slots on later
-        // candidates. The common case remains three requests and the result list is never reordered.
         while (nextIndex < candidateLimit && successfulReads < WEB_SEARCH_AUTO_READ_RESULT_COUNT) {
             val needed = WEB_SEARCH_AUTO_READ_RESULT_COUNT - successfulReads
             val batchEnd = minOf(nextIndex + needed, candidateLimit)
@@ -346,12 +341,10 @@ class WebSearchToolProvider : ToolProvider {
                     val result = element as? JsonObject ?: return@async index to element
                     val url = (result["url"] as? JsonPrimitive)?.content.orEmpty()
                     if (!isHttpUrl(url)) return@async index to element
-
                     val page = fetchReadablePage(url) ?: return@async index to element
                     index to addWebSearchPageExcerpt(result, page, query)
                 }
             }.awaitAll()
-
             batch.forEach { (index, element) ->
                 enriched[index] = element
                 if (hasWebSearchPageExcerpt(element)) successfulReads++
@@ -359,9 +352,7 @@ class WebSearchToolProvider : ToolProvider {
             nextIndex = batchEnd
         }
 
-        JsonObject(root.toMutableMap().apply {
-            put("results", JsonArray(enriched))
-        }).toString()
+        JsonObject(root.toMutableMap().apply { put("results", JsonArray(enriched)) }).toString()
     }
 
     private fun fetchReadablePage(url: String): String? {

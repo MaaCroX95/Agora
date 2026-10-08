@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [master, sync/upstream-2026-09-14]
+    branches: [master, sync/upstream-2026-10-08]
   pull_request:
     branches: [master]
   workflow_dispatch:
@@ -29,7 +29,9 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: "platform-tools"
 
       - uses: gradle/actions/setup-gradle@v4
 
@@ -66,9 +68,9 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
-          packages: "ndk;28.2.13676358"
+          packages: "platform-tools ndk;28.2.13676358"
 
       - name: Validate release signing secrets
         env:
@@ -101,7 +103,6 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "${{ github.workspace }}/release.jks"
           test -s "${{ github.workspace }}/release.jks"
           chmod 600 "${{ github.workspace }}/release.jks"
-
           certificate_output=$(keytool -J-Duser.language=en -J-Duser.country=US -list -v \
             -keystore "${{ github.workspace }}/release.jks" \
             -storepass "$KEYSTORE_PASSWORD" \
@@ -111,7 +112,6 @@ jobs:
             echo "::error::Configured signing certificate does not match the permanent Agora Dev certificate."
             exit 1
           fi
-
           cat >> local.properties <<EOF
           storeFile=${{ github.workspace }}/release.jks
           storePassword=$KEYSTORE_PASSWORD

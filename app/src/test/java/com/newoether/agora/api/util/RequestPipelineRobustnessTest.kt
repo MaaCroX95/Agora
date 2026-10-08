@@ -17,7 +17,10 @@ class RequestPipelineRobustnessTest {
             val prepared = prepareMessages(history, contextTokenBudget = 32_768)
             val request = OpenAiChatRequest(
                 model = "test-model",
-                messages = convertToOpenAiMessages(prepared),
+                messages = convertToOpenAiMessages(
+                    prepared,
+                    base64Files = Base64FileRegistry(),
+                ),
             )
 
             request.requireValidWireFormat("OpenAI scenario $index")
@@ -47,7 +50,10 @@ class RequestPipelineRobustnessTest {
         assertFalse(adapted.any { it.text.contains("\nArguments:") })
         OpenAiChatRequest(
             model = "test-model",
-            messages = convertToOpenAiMessages(adapted),
+            messages = convertToOpenAiMessages(
+                adapted,
+                base64Files = Base64FileRegistry(),
+            ),
         ).requireValidWireFormat("OpenAI fallback")
     }
 

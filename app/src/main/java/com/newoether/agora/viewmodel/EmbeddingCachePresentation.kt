@@ -1,9 +1,8 @@
 package com.newoether.agora.viewmodel
 
 internal enum class EmbeddingCacheRowPhase {
-    LOADING, QUEUED, CACHING, FINALIZING, FAILED, CACHE, RECACHE,
+    LOADING, CACHING, CACHE, RECACHE,
 }
-internal enum class EmbeddingCacheFailureKind { REFRESH, WORK }
 internal data class EmbeddingCacheWorkSnapshot(
     val generationRevision: Long,
     val kind: String,
@@ -35,83 +34,89 @@ internal fun embeddingCacheWorkSnapshotOrNull(
     )
 }.getOrNull()
 internal data class EmbeddingCacheRowSnapshot(
-    val phase: EmbeddingCacheRowPhase,
     val progress: EmbeddingCacheWorkSnapshot? = null,
     val cached: Int? = null,
     val indexableTotal: Int? = null,
-    val failure: EmbeddingCacheFailureKind? = null,
+    val countLoading: Boolean = false,
+    val workActive: Boolean = false,
+    val countFailed: Boolean = false,
 ) {
-    val workActive: Boolean get() =
-        phase == EmbeddingCacheRowPhase.QUEUED || phase == EmbeddingCacheRowPhase.CACHING
-    val visualPhase: EmbeddingCacheRowPhase
-        get() = when (phase) {
-            EmbeddingCacheRowPhase.QUEUED -> EmbeddingCacheRowPhase.LOADING
-            EmbeddingCacheRowPhase.FINALIZING -> EmbeddingCacheRowPhase.CACHING
-            else -> phase
+    init {
+        require((cached == null) == (indexableTotal == null))
+        require(cached == null || indexableTotal != null && cached in 0..indexableTotal)
+    }
+
+    val phase: EmbeddingCacheRowPhase?
+        get() = when {
+            workActive -> EmbeddingCacheRowPhase.CACHING
+            cached != null && indexableTotal != null ->
+                if (cached < indexableTotal) EmbeddingCacheRowPhase.CACHE
+                else EmbeddingCacheRowPhase.RECACHE
+            countLoading -> EmbeddingCacheRowPhase.LOADING
+            else -> null
         }
 
-    companion object { val Loading = EmbeddingCacheRowSnapshot(EmbeddingCacheRowPhase.LOADING) }
+    /**
+     * Cached messages to show while the worker runs, or null when no count snapshot exists.
+     *
+     * The aggregate snapshot is taken when the run starts and is not re-queried while it runs, so
+     * an exact run's own processed count advances the displayed number. A reconciliation run only
+     * inspects and fingerprint-validates existing rows, so it must never move it.
+     */
+    val cachingCached: Int?
+        get() {
+            val known = cached ?: return null
+            val total = indexableTotal ?: return null
+            val embedded = progress?.takeIf { it.kind == EXACT_WORK_KIND }?.processed ?: 0
+            return (known + embedded).coerceAtMost(total)
+        }
+
+    /**
+     * Fraction the CACHING indicator draws. It shares [cachingCached] and [indexableTotal] with the
+     * numeric status, so the ring and the number can never describe different denominators.
+     */
+    val cachingFraction: Float?
+        get() {
+            val total = indexableTotal?.takeIf { it > 0 } ?: return null
+            val shown = cachingCached ?: return null
+            return (shown.toFloat() / total).coerceIn(0f, 1f)
+        }
+
+    private companion object {
+        /** Mirrors `EmbeddingCacheWorkKind.EXACT`, which the service layer owns. */
+        const val EXACT_WORK_KIND = "EXACT"
+    }
 }
-internal object EmbeddingCacheRowReducer {
-    fun refreshRequested(previous: EmbeddingCacheRowSnapshot?): EmbeddingCacheRowSnapshot =
-        when {
-            previous == null -> EmbeddingCacheRowSnapshot.Loading
-            previous.phase == EmbeddingCacheRowPhase.FAILED &&
-                previous.failure == EmbeddingCacheFailureKind.REFRESH ->
-                previous.copy(phase = EmbeddingCacheRowPhase.LOADING, failure = null)
-            else -> previous
-        }
+/**
+ * A model whose counts have not been resolved yet is still loading them, so an absent snapshot
+ * reads as [EmbeddingCacheRowPhase.LOADING] instead of leaving the row without any status. Only a
+ * failed refresh drops the phase, because the page reports that failure separately.
+ */
+internal fun EmbeddingCacheRowSnapshot?.rowPhase(): EmbeddingCacheRowPhase? =
+    this?.phase ?: EmbeddingCacheRowPhase.LOADING.takeUnless { this?.countFailed == true }
 
-    fun workActive(
+internal object EmbeddingCacheRowReducer {
+    fun refreshRequested(previous: EmbeddingCacheRowSnapshot?) =
+        (previous ?: EmbeddingCacheRowSnapshot()).copy(countLoading = true, countFailed = false)
+
+    /** [active] covers every unfinished work state, so an enqueued run already reads as CACHING. */
+    fun workChanged(
         previous: EmbeddingCacheRowSnapshot?,
-        progress: EmbeddingCacheWorkSnapshot?,
-    ): EmbeddingCacheRowSnapshot = (previous ?: EmbeddingCacheRowSnapshot.Loading).copy(
-        phase = if (progress == null) EmbeddingCacheRowPhase.QUEUED
-            else EmbeddingCacheRowPhase.CACHING,
-        progress = progress,
-        failure = null,
+        active: Boolean,
+        progress: EmbeddingCacheWorkSnapshot? = null,
+    ) = (previous ?: EmbeddingCacheRowSnapshot()).copy(
+        workActive = active,
+        progress = progress.takeIf { active },
     )
 
-    fun finalizing(previous: EmbeddingCacheRowSnapshot?) =
-        (previous ?: EmbeddingCacheRowSnapshot.Loading).copy(
-            phase = EmbeddingCacheRowPhase.FINALIZING,
-            failure = null,
+    fun refreshed(previous: EmbeddingCacheRowSnapshot?, cached: Int, total: Int) =
+        (previous ?: EmbeddingCacheRowSnapshot()).copy(
+            cached = cached,
+            indexableTotal = total,
+            countLoading = false,
+            countFailed = false,
         )
 
-    fun failed(previous: EmbeddingCacheRowSnapshot?, kind: EmbeddingCacheFailureKind) =
-        (previous ?: EmbeddingCacheRowSnapshot.Loading).copy(
-            phase = EmbeddingCacheRowPhase.FAILED,
-            failure = kind,
-        )
-
-    fun refreshed(
-        previous: EmbeddingCacheRowSnapshot?, cached: Int, total: Int, ledgerCurrent: Boolean,
-    ): EmbeddingCacheRowSnapshot {
-        val safeTotal = total.coerceAtLeast(0)
-        val safeCached = cached.coerceIn(0, safeTotal)
-        val retained = previous ?: EmbeddingCacheRowSnapshot.Loading
-        if (retained.workActive || retained.phase == EmbeddingCacheRowPhase.FINALIZING && !ledgerCurrent) {
-            return retained.copy(cached = safeCached, indexableTotal = safeTotal)
-        }
-        if (retained.phase == EmbeddingCacheRowPhase.FAILED &&
-            retained.failure == EmbeddingCacheFailureKind.WORK) {
-            return retained.copy(cached = safeCached, indexableTotal = safeTotal)
-        }
-        return EmbeddingCacheRowSnapshot(
-            phase = if (ledgerCurrent) EmbeddingCacheRowPhase.RECACHE
-                else EmbeddingCacheRowPhase.CACHE,
-            cached = safeCached,
-            indexableTotal = safeTotal,
-        )
-    }
-
-    fun refreshFailed(previous: EmbeddingCacheRowSnapshot?): EmbeddingCacheRowSnapshot {
-        val retained = previous ?: return failed(null, EmbeddingCacheFailureKind.REFRESH)
-        if (retained.workActive || retained.phase == EmbeddingCacheRowPhase.FAILED) return retained
-        if (retained.phase != EmbeddingCacheRowPhase.FINALIZING &&
-            retained.cached != null && retained.indexableTotal != null) {
-            return retained
-        }
-        return failed(retained, EmbeddingCacheFailureKind.REFRESH)
-    }
+    fun refreshFailed(previous: EmbeddingCacheRowSnapshot?) =
+        (previous ?: EmbeddingCacheRowSnapshot()).copy(countLoading = false, countFailed = true)
 }

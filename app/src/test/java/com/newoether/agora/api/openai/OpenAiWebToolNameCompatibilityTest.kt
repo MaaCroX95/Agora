@@ -21,9 +21,10 @@ class OpenAiWebToolNameCompatibilityTest {
             role = "assistant",
             responseOutputItems = listOf(legacy),
             responseOutputItemProvider = "NanoGPT",
+            responseOutputItemModel = "test-model",
         )
 
-        val input = listOf(message).toResponsesInput(providerName = "NanoGPT")
+        val input = listOf(message).toResponsesInput(providerName = "NanoGPT", targetModel = "test-model")
 
         assertEquals("function_call", (input.single()["type"] as JsonPrimitive).content)
         assertEquals("agora_web_fetch", (input.single()["name"] as JsonPrimitive).content)
@@ -41,9 +42,10 @@ class OpenAiWebToolNameCompatibilityTest {
             role = "assistant",
             responseOutputItems = listOf(hosted),
             responseOutputItemProvider = "NanoGPT",
+            responseOutputItemModel = "test-model",
         )
 
-        val input = listOf(message).toResponsesInput(providerName = "NanoGPT")
+        val input = listOf(message).toResponsesInput(providerName = "NanoGPT", targetModel = "test-model")
 
         assertEquals(hosted, input.single())
     }

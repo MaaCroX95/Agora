@@ -31,7 +31,7 @@ class SettingsResourceContractTest {
         assertTrue(controls.contains("Icons.Default.Check"))
         assertTrue(controls.contains("MaterialTheme.colorScheme.surfaceContainer"))
         assertTrue(controls.contains("tonalElevation = 16.dp"))
-        assertTrue(controls.contains("RoundedCornerShape(12.dp)"))
+        assertTrue(controls.contains("AgoraDropdownMenu("))
         assertFalse(controls.contains("R.string.save"))
         val resources = locateResourceDirectory()
         val defaults = readStringValues(File(resources, "values"))
@@ -114,8 +114,8 @@ class SettingsResourceContractTest {
         val values = readStringValues(File(locateResourceDirectory(), "values"))
         val expected = linkedMapOf(
             "mcp_delete_header" to "Delete Header",
-            "mcp_show_header_value" to "Show Header Value",
-            "mcp_hide_header_value" to "Hide Header Value",
+            "secret_show" to "Show Value",
+            "secret_hide" to "Hide Value",
             "task_model_default" to "App Default",
             "task_run_now" to "Run Now",
             "task_delete" to "Delete Task",

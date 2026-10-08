@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -42,7 +44,10 @@ object VideoSliceDefaults {
             seconds < 10 -> 3
             seconds < 30 -> 5
             seconds < 60 -> 8
-            else -> maxOf(2, minOf(20, (seconds / 5).toInt()))
+            else -> maxOf(
+                2,
+                (seconds / 5).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+            )
         }
     }
 }
@@ -59,14 +64,24 @@ fun VideoSliceDialog(
     val defaultFrames = remember(durationMs) { VideoSliceDefaults.defaultFrameCount(durationMs) }
 
     var useFrameCountMode by remember { mutableStateOf(true) }
-    var frameCount by remember { mutableIntStateOf(defaultFrames) }
+    var frameCountInput by remember(defaultFrames) {
+        mutableStateOf(defaultFrames.toString())
+    }
+    val frameCount = frameCountInput.toIntOrNull()?.takeIf { it >= 2 }
     var intervalSec by remember(durationMs) {
         mutableIntStateOf(maxOf(1, (seconds / defaultFrames).toInt()))
     }
 
-    val effectiveFrameCount = if (useFrameCountMode) frameCount else maxOf(2, (seconds / intervalSec).toInt())
+    val effectiveFrameCount = if (useFrameCountMode) {
+        frameCount ?: 2
+    } else {
+        maxOf(
+            2,
+            (seconds / intervalSec).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+        )
+    }
     val effectiveIntervalMs = if (useFrameCountMode) {
-        if (frameCount > 1) durationMs / frameCount else 0L
+        if (effectiveFrameCount > 1) durationMs / effectiveFrameCount else 0L
     } else {
         intervalSec * 1000L
     }
@@ -164,28 +179,32 @@ fun VideoSliceDialog(
                 Spacer(Modifier.height(12.dp))
 
                 if (useFrameCountMode) {
-                    Text(
-                        stringResource(R.string.frames_count, effectiveFrameCount),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Slider(
-                        value = frameCount.toFloat(),
-                        onValueChange = { frameCount = it.roundToInt().coerceIn(2, 20) },
-                        valueRange = 2f..20f,
-                        steps = 17
-                    )
                     val betweenLabel = (effectiveIntervalMs / 1000f).let {
                         if (it < 1) "${(it * 1000).roundToInt()}ms" else "${it.roundToInt()}s"
                     }
-                    Text(
-                        stringResource(R.string.video_between_frames, betweenLabel),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    OutlinedTextField(
+                        value = frameCountInput,
+                        onValueChange = { input ->
+                            if (input.isEmpty() || input.all(Char::isDigit)) {
+                                frameCountInput = input.trimStart('0').ifEmpty {
+                                    if (input.isEmpty()) "" else "0"
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        label = {
+                            Text(stringResource(R.string.frames_count, effectiveFrameCount))
+                        },
+                        supportingText = {
+                            Text(stringResource(R.string.video_between_frames, betweenLabel))
+                        },
+                        singleLine = true,
+                        isError = frameCount == null,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     )
                 } else {
-                    val maxIntervalSec = maxOf(1, minOf(30, seconds.toInt()))
+                    val maxIntervalSec = seconds.coerceIn(1L, 30L).toInt()
                     Text(
                         stringResource(R.string.interval_seconds, effectiveIntervalMs / 1000),
                         style = MaterialTheme.typography.bodyMedium,
@@ -218,9 +237,19 @@ fun VideoSliceDialog(
                         Text(stringResource(R.string.cancel))
                     }
                     Spacer(Modifier.width(8.dp))
-                    Button(onClick = {
-                        onConfirm(VideoSliceResult(videoUri, effectiveFrameCount, effectiveIntervalMs))
-                    }, shape = RoundedCornerShape(50)) {
+                    Button(
+                        onClick = {
+                            onConfirm(
+                                VideoSliceResult(
+                                    videoUri,
+                                    effectiveFrameCount,
+                                    effectiveIntervalMs,
+                                ),
+                            )
+                        },
+                        enabled = !useFrameCountMode || frameCount != null,
+                        shape = RoundedCornerShape(50),
+                    ) {
                         Text(stringResource(R.string.extract_frames, effectiveFrameCount))
                     }
                 }
