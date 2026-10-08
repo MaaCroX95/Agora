@@ -609,6 +609,7 @@ class WebUiChatSessionTest {
         every { settings.selectedModel } returns MutableStateFlow(model)
         every { settings.enabledModels } returns MutableStateFlow(setOf(model))
         every { settings.customProviders } returns custom
+        every { settings.openAiWebSearchEnabled } returns MutableStateFlow(true)
         session.start()
         withTimeout(TIMEOUT_MS) { session.composerState.first { it.modelValid && it.controls?.openAiWebSearchAvailable == true } }
         session.settingCommand(WebSyncCommand("setting", setting = "openAiWebSearchEnabled", enabled = false, actionId = 1))
