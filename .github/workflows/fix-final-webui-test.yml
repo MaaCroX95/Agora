@@ -1,5 +1,6 @@
 name: Fix final WebUI test
 
+# One-shot workflow for the final sync test fixture adaptation.
 on:
   push:
     branches:
