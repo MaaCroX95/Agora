@@ -1,5 +1,6 @@
 name: Fix sync source size
 
+# One-shot workflow: remove itself after compacting the synced settings repository.
 on:
   push:
     branches:
